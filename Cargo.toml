@@ -1,0 +1,19 @@
+[package]
+name = "rustineverything-app"
+version = "0.1.0"
+authors = ["yuxuetr <54.yeying@gmail.com>"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dioxus = { version = "0.7.1", features = ["router", "fullstack"] }
+pulldown-cmark = "0.13.0"
+tokio = { version = "1.49.0", features = ["full"], optional = true }
+
+[features]
+default = ["web"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]
+server = ["dioxus/server", "dep:tokio"]

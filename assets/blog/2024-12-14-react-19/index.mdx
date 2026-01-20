@@ -1,0 +1,2871 @@
+---
+title: "深入解读 React 19：新特性与升级指南"
+description: "全面解析 React 19 的最新功能和改进，助你轻松升级并提升开发效率。包括 Actions、新钩子、React Server Components 等详细介绍与实战示例。"
+date: "2024-12-14"
+authors: [yuxuetr]
+tags: [React, React 19, 前端, JavaScript, 开发指南, Actions, 新钩子, React Server Components, 状态管理, 升级指南]
+keywords: [React, React 19, 前端, JavaScript, 开发指南, Actions, 新钩子, React Server Components, 状态管理, 升级指南]
+---
+
+# 深入解读 React 19：新特性与升级指南
+
+React 19 已于 2024 年 12 月 5 日正式发布，并在 npm 上稳定可用。这一版本带来了诸多令人振奋的新特性和改进，旨在简化开发流程、提升性能，并增强与现代开发需求的兼容性。本文将详细介绍 React 19 的主要新特性、改进、状态管理的变化以及如何顺利升级，帮助开发者充分利用这些新功能构建高效、响应迅速的应用。
+
+## 目录
+
+1. [主要新特性](#主要新特性)
+   - [Actions](#actions)
+   - [新钩子（Hooks）](#新钩子hooks)
+   - [React DOM Static APIs](#react-dom-static-apis)
+   - [React Server Components](#react-server-components)
+2. [改进与优化](#改进与优化)
+   - [ref 作为属性](#ref-作为属性)
+   - [Hydration 错误的差异显示](#hydration-错误的差异显示)
+   - [Context 作为提供者](#context-作为提供者)
+   - [ref 回调的清理函数](#ref-回调的清理函数)
+   - [useDeferredValue 初始值](#usedeferredvalue-初始值)
+   - [文档元数据支持](#文档元数据支持)
+   - [样式表支持](#样式表支持)
+   - [异步脚本支持](#异步脚本支持)
+   - [资源预加载支持](#资源预加载支持)
+   - [第三方脚本和扩展的兼容性](#第三方脚本和扩展的兼容性)
+   - [更好的错误报告](#更好的错误报告)
+   - [自定义元素支持](#自定义元素支持)
+3. [状态管理与 React Server Components](#状态管理与-react-server-components)
+   - [React 19 的 Server Components 与 Next.js 的 Server Components 有何相似与不同？](#react-19-的-server-components-与-nextjs-的-server-components-有何相似与不同)
+   - [React 19 中是否仍需使用第三方状态管理库（如 Zustand）？](#react-19-中是否仍需使用第三方状态管理库如-zustand)
+   - [React 19 的更新是否可以省略一些第三方库的使用？](#react-19-的更新是否可以省略一些第三方库的使用)
+4. [升级指南](#升级指南)
+   - [安装 React 19](#安装-react-19)
+   - [使用 Codemods 进行代码迁移](#使用-codemods-进行代码迁移)
+   - [处理破坏性变更](#处理破坏性变更)
+   - [应对新弃用的 API](#应对新弃用的-api)
+   - [TypeScript 的更新](#typescript-的更新)
+5. [总结](#总结)
+
+## 主要新特性
+
+### Actions
+
+#### 概述
+
+在 React 应用中，常见的操作是执行数据变更并随后更新状态。例如，当用户提交表单更改姓名时，你需要发起 API 请求，并处理响应。在之前的版本中，开发者需要手动处理待处理状态、错误、乐观更新和顺序请求等。然而，React 19 引入了 **Actions**，通过简化这些流程，自动管理这些状态更新，大大提升了开发效率。
+
+#### 示例
+
+**升级前：手动管理待处理和错误状态**
+
+```jsx
+function UpdateName() {
+  const [name, setName] = useState("");
+  const [error, setError] = useState(null);
+  const [isPending, setIsPending] = useState(false);
+
+  const handleSubmit = async () => {
+    setIsPending(true);
+    const error = await updateName(name);
+    setIsPending(false);
+    if (error) {
+      setError(error);
+      return;
+    } 
+    redirect("/path");
+  };
+
+  return (
+    <div>
+      <input value={name} onChange={(event) => setName(event.target.value)} />
+      <button onClick={handleSubmit} disabled={isPending}>
+        Update
+      </button>
+      {error && <p>{error}</p>}
+    </div>
+  );
+}
+```
+
+**升级后：使用 Actions 简化状态管理**
+
+```jsx
+function UpdateName() {
+  const [name, setName] = useState("");
+  const [error, setError] = useState(null);
+  const [isPending, startTransition] = useTransition();
+
+  const handleSubmit = () => {
+    startTransition(async () => {
+      const error = await updateName(name);
+      if (error) {
+        setError(error);
+        return;
+      } 
+      redirect("/path");
+    });
+  };
+
+  return (
+    <div>
+      <input value={name} onChange={(event) => setName(event.target.value)} />
+      <button onClick={handleSubmit} disabled={isPending}>
+        Update
+      </button>
+      {error && <p>{error}</p>}
+    </div>
+  );
+}
+```
+
+**优势**
+
+- **待处理状态**：Actions 自动管理请求的开始和结束状态，减少手动设置状态的繁琐。
+- **乐观更新**：通过 `useOptimistic` 钩子，用户可以在请求进行时立即看到更新结果，提高响应性。
+- **错误处理**：自动处理错误，支持显示错误边界并回滚乐观更新。
+- **表单支持**：`<form>` 元素支持传递函数到 `action` 和 `formAction` 属性，自动提交和重置表单。
+
+### 新钩子（Hooks）
+
+React 19 引入了多个新钩子，进一步简化状态管理和数据处理。
+
+#### useActionState
+
+**功能**：简化 Actions 的使用，返回错误、提交动作和待处理状态。
+
+**示例**
+
+```jsx
+const [error, submitAction, isPending] = useActionState(
+  async (previousState, formData) => {
+    const error = await updateName(formData.get("name"));
+    if (error) {
+      return error;
+    }
+    redirect("/path");
+    return null;
+  },
+  null,
+);
+```
+
+#### useOptimistic
+
+**功能**：支持乐观更新，在异步请求进行时立即显示最终状态。
+
+**示例**
+
+```jsx
+function ChangeName({ currentName, onUpdateName }) {
+  const [optimisticName, setOptimisticName] = useOptimistic(currentName);
+
+  const submitAction = async formData => {
+    const newName = formData.get("name");
+    setOptimisticName(newName);
+    const updatedName = await updateName(newName);
+    onUpdateName(updatedName);
+  };
+
+  return (
+    <form action={submitAction}>
+      <p>Your name is: {optimisticName}</p>
+      <p>
+        <label>Change Name:</label>
+        <input
+          type="text"
+          name="name"
+          disabled={currentName !== optimisticName}
+        />
+      </p>
+    </form>
+  );
+}
+```
+
+#### use
+
+**功能**：在渲染时读取资源（如 Promise），并支持 Suspense。
+
+**示例**
+
+```jsx
+import { use } from 'react';
+
+function Comments({ commentsPromise }) {
+  const comments = use(commentsPromise);
+  return comments.map(comment => <p key={comment.id}>{comment}</p>);
+}
+
+function Page({ commentsPromise }) {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <Comments commentsPromise={commentsPromise} />
+    </Suspense>
+  );
+}
+```
+
+**注意**：`use` 不能用于在渲染过程中创建的 Promise，需确保 Promise 来自 Suspense 兼容的库或框架。
+
+### React DOM Static APIs
+
+#### prerender 和 prerenderToNodeStream
+
+**功能**：改进静态 HTML 生成，支持数据加载等待，适用于流式渲染环境。
+
+**示例**
+
+```jsx
+import { prerender } from 'react-dom/static';
+
+async function handler(request) {
+  const { prelude } = await prerender(<App />, {
+    bootstrapScripts: ['/main.js']
+  });
+  return new Response(prelude, {
+    headers: { 'content-type': 'text/html' },
+  });
+}
+```
+
+### React Server Components
+
+#### Server Components
+
+**功能**：允许在独立于客户端应用或 SSR 服务器的环境中预渲染组件，适用于全栈 React 架构。
+
+**特点**
+
+- 运行环境独立于客户端或 SSR 服务器。
+- 可在构建时或每个请求时执行。
+
+#### Server Actions
+
+**功能**：允许客户端组件调用在服务器上执行的异步函数，通过 `"use server"` 指令实现。
+
+**示例**
+
+```jsx
+// Server Component
+'use server';
+
+export async function fetchData() {
+  // 服务器端逻辑
+}
+```
+
+```jsx
+// Client Component
+import { fetchData } from './ServerComponent';
+
+function ClientComponent() {
+  const handleClick = async () => {
+    const data = await fetchData();
+    // 处理数据
+  };
+
+  return <button onClick={handleClick}>Fetch Data</button>;
+}
+```
+
+## 改进与优化
+
+### ref 作为属性
+
+**功能**：函数组件现在可以直接接收 `ref` 作为属性，无需使用 `forwardRef`。
+
+**示例**
+
+```jsx
+function MyInput({ placeholder, ref }) {
+  return <input placeholder={placeholder} ref={ref} />;
+}
+
+// 使用方式
+<MyInput ref={inputRef} />
+```
+
+**优势**：简化函数组件中 `ref` 的传递，未来将逐步弃用 `forwardRef`。
+
+### Hydration 错误的差异显示
+
+**改进**：在 hydration 过程中，如果服务器和客户端渲染的内容不匹配，React 19 提供了更详细的差异信息，帮助开发者快速定位问题。
+
+**示例错误信息**
+
+```plaintext
+Uncaught Error: Hydration failed because the server rendered HTML didn’t match the client. As a result this tree will be regenerated on the client. This can happen if an SSR-ed Client Component used:
+- A server/client branch if (typeof window !== 'undefined').
+- Variable input such as Date.now() or Math.random() which changes each time it’s called.
+- Date formatting in a user’s locale which doesn’t match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+- ...etc.
+```
+
+### Context 作为提供者
+
+**功能**：可以直接使用 `<Context>` 代替 `<Context.Provider>`，简化上下文提供者的使用。
+
+**示例**
+
+```jsx
+const ThemeContext = createContext('');
+
+function App({ children }) {
+  return (
+    <ThemeContext value="dark">
+      {children}
+    </ThemeContext>
+  );  
+}
+```
+
+**优势**：减少代码冗余，未来将逐步弃用 `<Context.Provider>`。
+
+### ref 回调的清理函数
+
+**功能**：支持在 `ref` 回调中返回清理函数，确保在组件卸载时正确清理引用。
+
+**示例**
+
+```jsx
+<input
+  ref={(ref) => {
+    // 创建引用
+    // 返回清理函数
+    return () => {
+      // 清理逻辑
+    };
+  }}
+/>
+```
+
+**注意**：返回清理函数后，React 将跳过调用 `ref` 函数时传递 `null` 的步骤。
+
+### useDeferredValue 初始值
+
+**功能**：为 `useDeferredValue` 添加 `initialValue` 选项，允许在初始渲染时设置默认值，并在后台调度重新渲染。
+
+**示例**
+
+```jsx
+function Search({ deferredValue }) {
+  const value = useDeferredValue(deferredValue, '');
+
+  return (
+    <Results query={value} />
+  );
+}
+```
+
+### 文档元数据支持
+
+**功能**：原生支持在组件中渲染 `<title>`、`<link>` 和 `<meta>` 标签，自动提升到文档 `<head>` 部分，简化元数据管理。
+
+**示例**
+
+```jsx
+function BlogPost({ post }) {
+  return (
+    <article>
+      <h1>{post.title}</h1>
+      <title>{post.title}</title>
+      <meta name="author" content="Josh" />
+      <link rel="author" href="https://twitter.com/joshcstory/" />
+      <meta name="keywords" content={post.keywords} />
+      <p>Eee equals em-see-squared...</p>
+    </article>
+  );
+}
+```
+
+### 样式表支持
+
+**功能**：内置对样式表（外部和内联）的支持，确保样式按优先级正确加载，避免样式冲突和重复加载。
+
+**示例**
+
+```jsx
+function ComponentOne() {
+  return (
+    <Suspense fallback="loading...">
+      <link rel="stylesheet" href="foo.css" precedence="default" />
+      <link rel="stylesheet" href="bar.css" precedence="high" />
+      <article className="foo-class bar-class">
+        {...}
+      </article>
+    </Suspense>
+  );
+}
+
+function ComponentTwo() {
+  return (
+    <div>
+      <p>{...}</p>
+      <link rel="stylesheet" href="baz.css" precedence="default" />  {/* 将插入到 foo.css 和 bar.css 之间 */}
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <>
+      <ComponentOne />
+      ...
+      <ComponentOne /> {/* 不会导致重复加载样式表 */}
+    </>
+  );
+}
+```
+
+### 异步脚本支持
+
+**功能**：改进对异步脚本的支持，允许在组件树的任意位置渲染 `<script async>`，并自动去重，确保脚本只加载一次。
+
+**示例**
+
+```jsx
+function MyComponent() {
+  return (
+    <div>
+      <script async src="https://example.com/script.js" />
+      Hello World
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <html>
+      <body>
+        <MyComponent />
+        ...
+        <MyComponent /> {/* 不会导致重复加载脚本 */}
+      </body>
+    </html>
+  );
+}
+```
+
+### 资源预加载支持
+
+**功能**：新增 `prefetchDNS`、`preconnect`、`preload` 和 `preinit` API，优化资源加载性能，提升页面加载速度。
+
+**示例**
+
+```jsx
+import { prefetchDNS, preconnect, preload, preinit } from 'react-dom';
+
+function MyComponent() {
+  preinit('https://example.com/script.js', { as: 'script' }); // 立即加载并执行脚本
+  preload('https://example.com/font.woff', { as: 'font' }); // 预加载字体
+  preload('https://example.com/stylesheet.css', { as: 'style' }); // 预加载样式表
+  prefetchDNS('https://example.com'); // 预取 DNS
+  preconnect('https://example.com'); // 预连接
+}
+```
+
+### 第三方脚本和扩展的兼容性
+
+**改进**：在 hydration 过程中，React 19 更好地处理第三方脚本和浏览器扩展插入的内容，避免因内容不匹配导致的错误。
+
+### 更好的错误报告
+
+**改进**：优化错误处理机制，减少错误日志的重复，提供更清晰的错误信息，并新增 `onCaughtError` 和 `onUncaughtError` 等根选项。
+
+**示例**
+
+**升级前的错误日志**
+
+```plaintext
+Uncaught Error: hit
+  at Throws
+  at renderWithHooks
+  …
+Uncaught Error: hit    <-- 重复
+  at Throws
+  at renderWithHooks
+  …
+```
+
+**升级后的错误日志**
+
+```plaintext
+Error: hit
+  at Throws
+  at renderWithHooks
+  …
+
+The above error occurred in the Throws component:
+  at Throws
+  at ErrorBoundary
+  at App
+```
+
+### 自定义元素支持
+
+**功能**：完全支持自定义元素，确保在客户端和 SSR 环境下属性和属性的正确处理，提高与自定义元素的兼容性。
+
+**示例**
+
+```jsx
+const ThemeContext = createContext('');
+
+function App({ children }) {
+  return (
+    <ThemeContext value="dark">
+      {children}
+    </ThemeContext>
+  );  
+}
+```
+
+**注意**：在服务器端渲染时，基于属性类型的不同，决定是将其渲染为属性还是忽略。
+
+## 状态管理与 React Server Components
+
+### React 19 的 Server Components 与 Next.js 的 Server Components 有何相似与不同？
+
+**相似之处**
+
+1. **服务器端渲染（SSR）**：
+   - **React Server Components** 和 **Next.js 的 Server Components** 都支持在服务器端渲染组件。这意味着可以在服务器上预先渲染部分 UI，减少客户端的渲染负担，提高性能。
+   
+2. **数据获取优化**：
+   - 两者都允许在服务器端获取数据，并将其传递给组件进行渲染，从而优化数据加载和页面响应速度。
+
+**不同之处**
+
+1. **集成程度**：
+   - **Next.js** 是一个全功能的框架，集成了 React Server Components 以及路由、API 路由、静态生成（SSG）等多种功能，提供了一套完整的开发体验。
+   - **React Server Components** 是 React 本身的一个特性，可以在任何使用 React 的项目中使用，而不仅限于 Next.js。它提供了更灵活的组件渲染方式，但需要开发者自行集成和配置。
+
+2. **使用方式**：
+   - **Next.js** 的 Server Components 与其页面和 API 路由紧密结合，开发者可以通过文件系统路由轻松管理服务器组件。
+   - **React Server Components** 在 React 19 中更加通用，适用于各种项目架构，开发者需要手动处理服务器和客户端组件的分离与通信。
+
+### React 19 中是否仍需使用第三方状态管理库（如 Zustand）？
+
+**React 19 的新特性对状态管理的影响**
+
+React 19 引入了 **Actions** 和 **useActionState** 等新特性，这些特性旨在简化数据变更和状态管理的流程，自动处理待处理状态、错误处理、乐观更新等。这些内置功能确实在一定程度上简化了状态管理，减少了手动管理状态的代码量。
+
+**仍需使用第三方状态管理库的原因**
+
+尽管 React 19 提供了更强大的内置状态管理工具，但在以下情况下，第三方状态管理库如 Zustand 仍然具有不可替代的优势：
+
+1. **复杂的全局状态管理**：
+   - 对于大型应用，需要管理复杂的全局状态，第三方库如 Zustand 提供了更简洁和高效的 API，能够更好地处理复杂的状态逻辑。
+
+2. **持久化和中间件**：
+   - Zustand 支持状态持久化、时间旅行、状态快照等高级功能，这些功能在 React 19 的内置特性中尚未完全覆盖。
+
+3. **跨组件共享状态**：
+   - 虽然 React 的 Context API 可以实现跨组件共享状态，但 Zustand 提供了更为简单和高效的方式来管理和访问共享状态，减少了样板代码。
+
+4. **性能优化**：
+   - Zustand 通过选择性订阅和最小化重新渲染，能够在性能上提供额外的优化，特别是在高频更新的场景中表现更佳。
+
+**React 19 是否可以省略一些第三方库的使用？**
+
+React 19 的更新确实在某些方面可以减少对第三方库的依赖，但这取决于具体的应用需求：
+
+1. **简单的状态管理**：
+   - 对于状态逻辑较为简单的小型应用，React 19 的内置特性如 Actions 和 useActionState 可以满足需求，减少对 Zustand 等库的依赖。
+
+2. **表单处理**：
+   - React 19 对表单的支持更加完善，提供了自动提交和重置表单的功能，可能减少对像 Formik 这样的表单管理库的需求。
+
+3. **数据获取和缓存**：
+   - 新的 use 和 Suspense 特性简化了数据获取和缓存逻辑，在某些情况下可以减少对像 React Query 这样的数据管理库的依赖。
+
+### 总结
+
+**React 19** 通过引入 **Actions**、**useActionState**、**React Server Components** 等新特性，确实在简化状态管理和服务器端渲染方面迈出了重要的一步。这些内置功能能够减少对某些第三方库的依赖，尤其是在处理简单状态和数据获取时。
+
+然而，对于**复杂的全局状态管理**、**高级功能需求**（如持久化、中间件）以及**性能优化**等方面，第三方状态管理库如 **Zustand** 仍然是非常有价值的工具。它们提供了 React 19 内置特性尚未覆盖的功能，能够更好地满足大型应用和复杂场景的需求。
+
+因此，是否需要使用第三方状态管理库，应根据具体项目的需求和复杂性来决定。对于追求简洁和高效的状态管理，React 19 提供的内置工具已经能够满足很多需求，但在更复杂的场景下，第三方库仍然不可或缺。
+
+## 升级指南
+
+升级到 React 19 涉及一些关键步骤和注意事项。以下是详细的升级指南，帮助你顺利过渡到最新版本。
+
+### 安装 React 19
+
+**注意：新 JSX Transform 现在是必需的**
+
+React 19 引入了新的 JSX 转换，需要确保项目中启用了新的 JSX 转换以利用 `ref` 作为 prop 和其他性能改进。如果未启用新的 JSX 转换，将会看到以下警告：
+
+```plaintext
+Your app (or one of its dependencies) is using an outdated JSX transform. Update to the modern JSX transform for faster performance: https://react.dev/link/new-jsx-transform
+```
+
+**安装最新版本的 React 和 React DOM**
+
+使用 npm:
+
+```bash
+npm install --save-exact react@^19.0.0 react-dom@^19.0.0
+```
+
+使用 Yarn:
+
+```bash
+yarn add --exact react@^19.0.0 react-dom@^19.0.0
+```
+
+**如果使用 TypeScript，还需要更新类型定义**
+
+使用 npm:
+
+```bash
+npm install --save-exact @types/react@^19.0.0 @types/react-dom@^19.0.0
+```
+
+使用 Yarn:
+
+```bash
+yarn add --exact @types/react@^19.0.0 @types/react-dom@^19.0.0
+```
+
+### 使用 Codemods 进行代码迁移
+
+为了简化升级过程，React 团队与 [codemod.com](https://codemod.com) 合作，发布了一系列 codemods，能够自动更新代码以适应 React 19 的新 API 和模式。
+
+**运行所有 React 19 的 codemods**
+
+使用以下命令运行 React 19 的迁移脚本：
+
+```bash
+npx codemod@latest react/19/migration-recipe
+```
+
+这将运行 `react-codemod` 仓库中的以下 codemods：
+
+- `replace-reactdom-render`
+- `replace-string-ref`
+- `replace-act-import`
+- `replace-use-form-state`
+- `prop-types-typescript`
+
+**注意**：这不包括 TypeScript 的更改，详见下文。
+
+**查看所有可用的 codemods**
+
+请访问 [react-codemod 仓库](https://github.com/react-codemod/react-codemod) 获取所有可用的 codemod 列表。
+
+### 处理破坏性变更
+
+React 19 引入了一些破坏性变更，以下是主要变更及其处理方法：
+
+#### 渲染中的错误不再重新抛出
+
+**改进**：减少错误日志的重复，错误处理方式有所变化。
+
+**升级前**：
+
+在 DEV 模式下，渲染过程中抛出的错误会被捕获并重新抛出，同时记录到 `console.error`，导致错误日志重复。
+
+**升级后**：
+
+- **未捕获的错误**：报告给 `window.reportError`。
+- **捕获的错误**：仅记录到 `console.error`。
+
+**解决方法**：
+
+如果你的生产环境错误报告依赖于错误被重新抛出，可能需要更新错误处理逻辑。你可以在创建根时添加自定义错误处理：
+
+```jsx
+const root = createRoot(container, {
+  onUncaughtError: (error, errorInfo) => {
+    // 记录错误报告
+  },
+  onCaughtError: (error, errorInfo) => {
+    // 记录错误报告
+  }
+});
+```
+
+#### 移除已弃用的 React API
+
+**1. 移除函数组件的 propTypes 和 defaultProps**
+
+- **PropTypes**：React 19 移除了 React 包中的 propTypes 检查，建议迁移到 TypeScript 或其他类型检查方案。
+
+**升级前**：
+
+```jsx
+import PropTypes from 'prop-types';
+
+function Heading({ text }) {
+  return <h1>{text}</h1>;
+}
+Heading.propTypes = {
+  text: PropTypes.string,
+};
+Heading.defaultProps = {
+  text: 'Hello, world!',
+};
+```
+
+**升级后**：
+
+```jsx
+interface Props {
+  text?: string;
+}
+
+function Heading({ text = 'Hello, world!' }: Props) {
+  return <h1>{text}</h1>;
+}
+```
+
+**使用 Codemod 迁移 propTypes 到 TypeScript**
+
+```bash
+npx codemod@latest react/prop-types-typescript
+```
+
+**2. 移除旧版 Context API（contextTypes 和 getChildContext）**
+
+旧版 Context 仅在类组件中使用，React 19 移除了这些 API。
+
+**升级前**：
+
+```jsx
+import PropTypes from 'prop-types';
+
+class Parent extends React.Component {
+  static childContextTypes = {
+    foo: PropTypes.string.isRequired,
+  };
+
+  getChildContext() {
+    return { foo: 'bar' };
+  }
+
+  render() {
+    return <Child />;
+  }
+}
+
+class Child extends React.Component {
+  static contextTypes = {
+    foo: PropTypes.string.isRequired,
+  };
+
+  render() {
+    return <div>{this.context.foo}</div>;
+  }
+}
+```
+
+**升级后**：
+
+```jsx
+const FooContext = React.createContext();
+
+class Parent extends React.Component {
+  render() {
+    return (
+      <FooContext.Provider value='bar'>
+        <Child />
+      </FooContext.Provider>
+    );
+  }
+}
+
+class Child extends React.Component {
+  static contextType = FooContext;
+
+  render() {
+    return <div>{this.context}</div>;
+  }
+}
+```
+
+**3. 移除字符串 refs**
+
+字符串 refs 已被弃用，React 19 移除了对字符串 refs 的支持，建议迁移到回调 refs。
+
+**升级前**：
+
+```jsx
+class MyComponent extends React.Component {
+  componentDidMount() {
+    this.refs.input.focus();
+  }
+
+  render() {
+    return <input ref='input' />;
+  }
+}
+```
+
+**升级后**：
+
+```jsx
+class MyComponent extends React.Component {
+  componentDidMount() {
+    this.input.focus();
+  }
+
+  render() {
+    return <input ref={input => this.input = input} />;
+  }
+}
+```
+
+**使用 Codemod 迁移字符串 refs 到回调 refs**
+
+```bash
+npx codemod@latest react/19/replace-string-ref
+```
+
+**4. 移除模块模式工厂和 React.createFactory**
+
+这些功能在现代 React 中已很少使用，React 19 移除了对它们的支持，建议使用 JSX 代替。
+
+**升级前**：
+
+```jsx
+import { createFactory } from 'react';
+
+const button = createFactory('button');
+```
+
+**升级后**：
+
+```jsx
+const button = <button />;
+```
+
+**5. 移除 react-test-renderer/shallow**
+
+React 19 移除了 `react-test-renderer/shallow`，建议使用 `react-shallow-renderer` 或其他测试库。
+
+**升级前**：
+
+```jsx
+import ShallowRenderer from 'react-test-renderer/shallow';
+```
+
+**升级后**：
+
+```jsx
+import ShallowRenderer from 'react-shallow-renderer';
+```
+
+**6. 移除 ReactDOMTestUtils.act**
+
+`act` 已从 `react-dom/test-utils` 移动到 `react` 包中。
+
+**升级前**：
+
+```jsx
+import { act } from 'react-dom/test-utils';
+```
+
+**升级后**：
+
+```jsx
+import { act } from 'react';
+```
+
+**使用 Codemod 迁移 act 导入路径**
+
+```bash
+npx codemod@latest react/19/replace-act-import
+```
+
+**7. 移除 ReactDOM.render 和 ReactDOM.hydrate**
+
+React 19 移除了 `ReactDOM.render` 和 `ReactDOM.hydrate`，建议使用 `ReactDOM.createRoot` 和 `ReactDOM.hydrateRoot`。
+
+**升级前**：
+
+```jsx
+import { render, hydrate } from 'react-dom';
+
+render(<App />, document.getElementById('root'));
+hydrate(<App />, document.getElementById('root'));
+```
+
+**升级后**：
+
+```jsx
+import { createRoot, hydrateRoot } from 'react-dom/client';
+
+const root = createRoot(document.getElementById('root'));
+root.render(<App />);
+
+hydrateRoot(document.getElementById('root'), <App />);
+```
+
+**使用 Codemod 迁移 ReactDOM.render 和 ReactDOM.hydrate**
+
+```bash
+npx codemod@latest react/19/replace-reactdom-render
+```
+
+**8. 移除 ReactDOM.findDOMNode**
+
+`findDOMNode` 已被移除，建议使用 DOM refs 代替。
+
+**升级前**：
+
+```jsx
+import { findDOMNode } from 'react-dom';
+
+function AutoselectingInput() {
+  useEffect(() => {
+    const input = findDOMNode(this);
+    input.select()
+  }, []);
+
+  return <input defaultValue="Hello" />;
+}
+```
+
+**升级后**：
+
+```jsx
+function AutoselectingInput() {
+  const ref = useRef(null);
+  useEffect(() => {
+    ref.current.select();
+  }, []);
+
+  return <input ref={ref} defaultValue="Hello" />;
+}
+```
+
+### 应对新弃用的 API
+
+React 19 引入了一些新弃用的 API，以下是主要弃用的 API 及其应对方法：
+
+**1. Deprecated: element.ref**
+
+**说明**：React 19 支持 `ref` 作为 prop，弃用了 `element.ref`。
+
+**警告信息**
+
+```plaintext
+Accessing element.ref is no longer supported. ref is now a regular prop. It will be removed from the JSX Element type in a future release.
+```
+
+**解决方法**：使用 `props.ref` 代替 `element.ref`。
+
+**2. Deprecated: react-test-renderer**
+
+**说明**：React 19 弃用了 `react-test-renderer`，建议迁移到 `@testing-library/react` 或 `@testing-library/react-native`。
+
+**升级建议**：
+
+- 安装新的测试库：
+
+```bash
+npm install --save-dev @testing-library/react
+```
+
+- 更新测试代码以使用新的测试库。
+
+## TypeScript 的更新
+
+React 19 对 TypeScript 类型进行了多项更新，以下是主要更改及其应对方法：
+
+**1. 移除已弃用的 TypeScript 类型**
+
+React 19 清理了基于已移除 API 的 TypeScript 类型。你可能需要运行以下 codemod 来迁移类型相关的变更：
+
+```bash
+npx types-react-codemod@latest preset-19 ./path-to-app
+```
+
+**2. ref 清理函数要求**
+
+由于引入了 ref 清理函数，TypeScript 现在要求 `ref` 回调不返回任何值。
+
+**解决方法**：停止使用隐式返回，改为显式返回。
+
+**升级前**：
+
+```jsx
+<div ref={current => (instance = current)} />
+```
+
+**升级后**：
+
+```jsx
+<div ref={current => { instance = current; }} />
+```
+
+**运行 codemod**
+
+```bash
+npx codemod@latest react-19 codemod preset-19 ./path-to-app
+```
+
+**3. useRef 需要传递参数**
+
+`useRef` 现在要求传递一个初始值，简化了类型签名。
+
+**升级前**：
+
+```jsx
+const ref = useRef<number>(null);
+ref.current = 1; // TypeScript 错误
+```
+
+**升级后**：
+
+```jsx
+const ref = useRef<number | null>(null);
+ref.current = 1;
+```
+
+**4. ReactElement 类型的更改**
+
+`ReactElement` 的 `props` 现在默认为 `unknown`，建议显式指定类型参数。
+
+**升级前**：
+
+```tsx
+type Example = ReactElement["props"]; // any
+```
+
+**升级后**：
+
+```tsx
+type Example = ReactElement<{ id: string }>["props"]; // { id: string }
+```
+
+**运行 codemod**
+
+```bash
+npx types-react-codemod@latest react-element-default-any-props ./path-to-your-react-ts-files
+```
+
+**5. TypeScript 中的 JSX 命名空间**
+
+React 19 移除了全局的 JSX 命名空间，转而使用 `React.JSX`。
+
+**升级前**：
+
+```tsx
+// global.d.ts
+declare namespace JSX {
+  interface IntrinsicElements {
+    "my-element": {
+      myElementProps: string;
+    };
+  }
+}
+```
+
+**升级后**：
+
+```tsx
+// global.d.ts
+declare module "react" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "my-element": {
+        myElementProps: string;
+      };
+    }
+  }
+}
+```
+
+**6. 改进的 useReducer 类型推断**
+
+`useReducer` 现在改进了类型推断，不再接受完整的 reducer 类型作为类型参数，建议不传递类型参数，依赖上下文类型推断。
+
+**升级前**：
+
+```tsx
+useReducer<React.Reducer<State, Action>>(reducer);
+```
+
+**升级后**：
+
+```tsx
+useReducer(reducer);
+```
+
+**在边缘情况下，可以使用元组传递类型参数**
+
+```tsx
+useReducer<State, [Action]>(reducer);
+```
+
+**或在函数参数上注释类型**
+
+```tsx
+useReducer((state: State, action: Action) => state);
+```
+
+## 状态管理与 React Server Components
+
+### React 19 的 Server Components 与 Next.js 的 Server Components 有何相似与不同？
+
+**相似之处**
+
+1. **服务器端渲染（SSR）**：
+   - **React Server Components** 和 **Next.js 的 Server Components** 都支持在服务器端渲染组件。这意味着可以在服务器上预先渲染部分 UI，减少客户端的渲染负担，提高性能。
+   
+2. **数据获取优化**：
+   - 两者都允许在服务器端获取数据，并将其传递给组件进行渲染，从而优化数据加载和页面响应速度。
+
+**不同之处**
+
+1. **集成程度**：
+   - **Next.js** 是一个全功能的框架，集成了 React Server Components 以及路由、API 路由、静态生成（SSG）等多种功能，提供了一套完整的开发体验。
+   - **React Server Components** 是 React 本身的一个特性，可以在任何使用 React 的项目中使用，而不仅限于 Next.js。它提供了更灵活的组件渲染方式，但需要开发者自行集成和配置。
+
+2. **使用方式**：
+   - **Next.js** 的 Server Components 与其页面和 API 路由紧密结合，开发者可以通过文件系统路由轻松管理服务器组件。
+   - **React Server Components** 在 React 19 中更加通用，适用于各种项目架构，开发者需要手动处理服务器和客户端组件的分离与通信。
+
+### React 19 中是否仍需使用第三方状态管理库（如 Zustand）？
+
+**React 19 的新特性对状态管理的影响**
+
+React 19 引入了 **Actions** 和 **useActionState** 等新特性，这些特性旨在简化数据变更和状态管理的流程，自动处理待处理状态、错误处理、乐观更新等。这些内置功能确实在一定程度上简化了状态管理，减少了手动管理状态的代码量。
+
+**仍需使用第三方状态管理库的原因**
+
+尽管 React 19 提供了更强大的内置状态管理工具，但在以下情况下，第三方状态管理库如 Zustand 仍然具有不可替代的优势：
+
+1. **复杂的全局状态管理**：
+   - 对于大型应用，需要管理复杂的全局状态，第三方库如 Zustand 提供了更简洁和高效的 API，能够更好地处理复杂的状态逻辑。
+
+2. **持久化和中间件**：
+   - Zustand 支持状态持久化、时间旅行、状态快照等高级功能，这些功能在 React 19 的内置特性中尚未完全覆盖。
+
+3. **跨组件共享状态**：
+   - 虽然 React 的 Context API 可以实现跨组件共享状态，但 Zustand 提供了更为简单和高效的方式来管理和访问共享状态，减少了样板代码。
+
+4. **性能优化**：
+   - Zustand 通过选择性订阅和最小化重新渲染，能够在性能上提供额外的优化，特别是在高频更新的场景中表现更佳。
+
+### React 19 的更新是否可以省略一些第三方库的使用？
+
+React 19 的更新确实在某些方面可以减少对第三方库的依赖，但这取决于具体的应用需求：
+
+1. **简单的状态管理**：
+   - 对于状态逻辑较为简单的小型应用，React 19 的内置特性如 Actions 和 useActionState 可以满足需求，减少对 Zustand 等库的依赖。
+
+2. **表单处理**：
+   - React 19 对表单的支持更加完善，提供了自动提交和重置表单的功能，可能减少对像 Formik 这样的表单管理库的需求。
+
+3. **数据获取和缓存**：
+   - 新的 use 和 Suspense 特性简化了数据获取和缓存逻辑，在某些情况下可以减少对像 React Query 这样的数据管理库的依赖。
+
+## 升级指南
+
+升级到 React 19 涉及一些关键步骤和注意事项。以下是详细的升级指南，帮助你顺利过渡到最新版本。
+
+### 安装 React 19
+
+**注意：新 JSX Transform 现在是必需的**
+
+React 19 引入了新的 JSX 转换，需要确保项目中启用了新的 JSX 转换以利用 `ref` 作为 prop 和其他性能改进。如果未启用新的 JSX 转换，将会看到以下警告：
+
+```plaintext
+Your app (or one of its dependencies) is using an outdated JSX transform. Update to the modern JSX transform for faster performance: https://react.dev/link/new-jsx-transform
+```
+
+**安装最新版本的 React 和 React DOM**
+
+使用 npm:
+
+```bash
+npm install --save-exact react@^19.0.0 react-dom@^19.0.0
+```
+
+使用 Yarn:
+
+```bash
+yarn add --exact react@^19.0.0 react-dom@^19.0.0
+```
+
+**如果使用 TypeScript，还需要更新类型定义**
+
+使用 npm:
+
+```bash
+npm install --save-exact @types/react@^19.0.0 @types/react-dom@^19.0.0
+```
+
+使用 Yarn:
+
+```bash
+yarn add --exact @types/react@^19.0.0 @types/react-dom@^19.0.0
+```
+
+### 使用 Codemods 进行代码迁移
+
+为了简化升级过程，React 团队与 [codemod.com](https://codemod.com) 合作，发布了一系列 codemods，能够自动更新代码以适应 React 19 的新 API 和模式。
+
+**运行所有 React 19 的 codemods**
+
+使用以下命令运行 React 19 的迁移脚本：
+
+```bash
+npx codemod@latest react/19/migration-recipe
+```
+
+这将运行 `react-codemod` 仓库中的以下 codemods：
+
+- `replace-reactdom-render`
+- `replace-string-ref`
+- `replace-act-import`
+- `replace-use-form-state`
+- `prop-types-typescript`
+
+**注意**：这不包括 TypeScript 的更改，详见下文。
+
+**查看所有可用的 codemods**
+
+请访问 [react-codemod 仓库](https://github.com/react-codemod/react-codemod) 获取所有可用的 codemod 列表。
+
+### 处理破坏性变更
+
+React 19 引入了一些破坏性变更，以下是主要变更及其处理方法：
+
+#### 渲染中的错误不再重新抛出
+
+**改进**：减少错误日志的重复，错误处理方式有所变化。
+
+**升级前**：
+
+在 DEV 模式下，渲染过程中抛出的错误会被捕获并重新抛出，同时记录到 `console.error`，导致错误日志重复。
+
+**升级后**：
+
+- **未捕获的错误**：报告给 `window.reportError`。
+- **捕获的错误**：仅记录到 `console.error`。
+
+**解决方法**：
+
+如果你的生产环境错误报告依赖于错误被重新抛出，可能需要更新错误处理逻辑。你可以在创建根时添加自定义错误处理：
+
+```jsx
+const root = createRoot(container, {
+  onUncaughtError: (error, errorInfo) => {
+    // 记录错误报告
+  },
+  onCaughtError: (error, errorInfo) => {
+    // 记录错误报告
+  }
+});
+```
+
+#### 移除已弃用的 React API
+
+**1. 移除函数组件的 propTypes 和 defaultProps**
+
+- **PropTypes**：React 19 移除了 React 包中的 propTypes 检查，建议迁移到 TypeScript 或其他类型检查方案。
+
+**升级前**：
+
+```jsx
+import PropTypes from 'prop-types';
+
+function Heading({ text }) {
+  return <h1>{text}</h1>;
+}
+Heading.propTypes = {
+  text: PropTypes.string,
+};
+Heading.defaultProps = {
+  text: 'Hello, world!',
+};
+```
+
+**升级后**：
+
+```jsx
+interface Props {
+  text?: string;
+}
+
+function Heading({ text = 'Hello, world!' }: Props) {
+  return <h1>{text}</h1>;
+}
+```
+
+**使用 Codemod 迁移 propTypes 到 TypeScript**
+
+```bash
+npx codemod@latest react/prop-types-typescript
+```
+
+**2. 移除旧版 Context API（contextTypes 和 getChildContext）**
+
+旧版 Context 仅在类组件中使用，React 19 移除了这些 API。
+
+**升级前**：
+
+```jsx
+import PropTypes from 'prop-types';
+
+class Parent extends React.Component {
+  static childContextTypes = {
+    foo: PropTypes.string.isRequired,
+  };
+
+  getChildContext() {
+    return { foo: 'bar' };
+  }
+
+  render() {
+    return <Child />;
+  }
+}
+
+class Child extends React.Component {
+  static contextTypes = {
+    foo: PropTypes.string.isRequired,
+  };
+
+  render() {
+    return <div>{this.context.foo}</div>;
+  }
+}
+```
+
+**升级后**：
+
+```jsx
+const FooContext = React.createContext();
+
+class Parent extends React.Component {
+  render() {
+    return (
+      <FooContext.Provider value='bar'>
+        <Child />
+      </FooContext.Provider>
+    );
+  }
+}
+
+class Child extends React.Component {
+  static contextType = FooContext;
+
+  render() {
+    return <div>{this.context}</div>;
+  }
+}
+```
+
+**3. 移除字符串 refs**
+
+字符串 refs 已被弃用，React 19 移除了对字符串 refs 的支持，建议迁移到回调 refs。
+
+**升级前**：
+
+```jsx
+class MyComponent extends React.Component {
+  componentDidMount() {
+    this.refs.input.focus();
+  }
+
+  render() {
+    return <input ref='input' />;
+  }
+}
+```
+
+**升级后**：
+
+```jsx
+class MyComponent extends React.Component {
+  componentDidMount() {
+    this.input.focus();
+  }
+
+  render() {
+    return <input ref={input => this.input = input} />;
+  }
+}
+```
+
+**使用 Codemod 迁移字符串 refs 到回调 refs**
+
+```bash
+npx codemod@latest react/19/replace-string-ref
+```
+
+**4. 移除模块模式工厂和 React.createFactory**
+
+这些功能在现代 React 中已很少使用，React 19 移除了对它们的支持，建议使用 JSX 代替。
+
+**升级前**：
+
+```jsx
+import { createFactory } from 'react';
+
+const button = createFactory('button');
+```
+
+**升级后**：
+
+```jsx
+const button = <button />;
+```
+
+**5. 移除 react-test-renderer/shallow**
+
+React 19 移除了 `react-test-renderer/shallow`，建议使用 `react-shallow-renderer` 或其他测试库。
+
+**升级前**：
+
+```jsx
+import ShallowRenderer from 'react-test-renderer/shallow';
+```
+
+**升级后**：
+
+```jsx
+import ShallowRenderer from 'react-shallow-renderer';
+```
+
+**6. 移除 ReactDOMTestUtils.act**
+
+`act` 已从 `react-dom/test-utils` 移动到 `react` 包中。
+
+**升级前**：
+
+```jsx
+import { act } from 'react-dom/test-utils';
+```
+
+**升级后**：
+
+```jsx
+import { act } from 'react';
+```
+
+**使用 Codemod 迁移 act 导入路径**
+
+```bash
+npx codemod@latest react/19/replace-act-import
+```
+
+**7. 移除 ReactDOM.render 和 ReactDOM.hydrate**
+
+React 19 移除了 `ReactDOM.render` 和 `ReactDOM.hydrate`，建议使用 `ReactDOM.createRoot` 和 `ReactDOM.hydrateRoot`。
+
+**升级前**：
+
+```jsx
+import { render, hydrate } from 'react-dom';
+
+render(<App />, document.getElementById('root'));
+hydrate(<App />, document.getElementById('root'));
+```
+
+**升级后**：
+
+```jsx
+import { createRoot, hydrateRoot } from 'react-dom/client';
+
+const root = createRoot(document.getElementById('root'));
+root.render(<App />);
+
+hydrateRoot(document.getElementById('root'), <App />);
+```
+
+**使用 Codemod 迁移 ReactDOM.render 和 ReactDOM.hydrate**
+
+```bash
+npx codemod@latest react/19/replace-reactdom-render
+```
+
+**8. 移除 ReactDOM.findDOMNode**
+
+`findDOMNode` 已被移除，建议使用 DOM refs 代替。
+
+**升级前**：
+
+```jsx
+import { findDOMNode } from 'react-dom';
+
+function AutoselectingInput() {
+  useEffect(() => {
+    const input = findDOMNode(this);
+    input.select()
+  }, []);
+
+  return <input defaultValue="Hello" />;
+}
+```
+
+**升级后**：
+
+```jsx
+function AutoselectingInput() {
+  const ref = useRef(null);
+  useEffect(() => {
+    ref.current.select();
+  }, []);
+
+  return <input ref={ref} defaultValue="Hello" />;
+}
+```
+
+### 应对新弃用的 API
+
+React 19 引入了一些新弃用的 API，以下是主要弃用的 API 及其应对方法：
+
+**1. Deprecated: element.ref**
+
+**说明**：React 19 支持 `ref` 作为 prop，弃用了 `element.ref`。
+
+**警告信息**
+
+```plaintext
+Accessing element.ref is no longer supported. ref is now a regular prop. It will be removed from the JSX Element type in a future release.
+```
+
+**解决方法**：使用 `props.ref` 代替 `element.ref`。
+
+**2. Deprecated: react-test-renderer**
+
+**说明**：React 19 弃用了 `react-test-renderer`，建议迁移到 `@testing-library/react` 或 `@testing-library/react-native`。
+
+**升级建议**：
+
+- 安装新的测试库：
+
+```bash
+npm install --save-dev @testing-library/react
+```
+
+- 更新测试代码以使用新的测试库。
+  
+## TypeScript 的更新
+
+React 19 对 TypeScript 类型进行了多项更新，以下是主要更改及其应对方法：
+
+**1. 移除已弃用的 TypeScript 类型**
+
+React 19 清理了基于已移除 API 的 TypeScript 类型。你可能需要运行以下 codemod 来迁移类型相关的变更：
+
+```bash
+npx types-react-codemod@latest preset-19 ./path-to-app
+```
+
+**2. ref 清理函数要求**
+
+由于引入了 ref 清理函数，TypeScript 现在要求 `ref` 回调不返回任何值。
+
+**解决方法**：停止使用隐式返回，改为显式返回。
+
+**升级前**：
+
+```jsx
+<div ref={current => (instance = current)} />
+```
+
+**升级后**：
+
+```jsx
+<div ref={current => { instance = current; }} />
+```
+
+**运行 codemod**
+
+```bash
+npx codemod@latest react-19 codemod preset-19 ./path-to-app
+```
+
+**3. useRef 需要传递参数**
+
+`useRef` 现在要求传递一个初始值，简化了类型签名。
+
+**升级前**：
+
+```jsx
+const ref = useRef<number>(null);
+ref.current = 1; // TypeScript 错误
+```
+
+**升级后**：
+
+```jsx
+const ref = useRef<number | null>(null);
+ref.current = 1;
+```
+
+**4. ReactElement 类型的更改**
+
+`ReactElement` 的 `props` 现在默认为 `unknown`，建议显式指定类型参数。
+
+**升级前**：
+
+```tsx
+type Example = ReactElement["props"]; // any
+```
+
+**升级后**：
+
+```tsx
+type Example = ReactElement<{ id: string }>["props"]; // { id: string }
+```
+
+**运行 codemod**
+
+```bash
+npx types-react-codemod@latest react-element-default-any-props ./path-to-your-react-ts-files
+```
+
+**5. TypeScript 中的 JSX 命名空间**
+
+React 19 移除了全局的 JSX 命名空间，转而使用 `React.JSX`。
+
+**升级前**：
+
+```tsx
+// global.d.ts
+declare namespace JSX {
+  interface IntrinsicElements {
+    "my-element": {
+      myElementProps: string;
+    };
+  }
+}
+```
+
+**升级后**：
+
+```tsx
+// global.d.ts
+declare module "react" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "my-element": {
+        myElementProps: string;
+      };
+    }
+  }
+}
+```
+
+**6. 改进的 useReducer 类型推断**
+
+`useReducer` 现在改进了类型推断，不再接受完整的 reducer 类型作为类型参数，建议不传递类型参数，依赖上下文类型推断。
+
+**升级前**：
+
+```tsx
+useReducer<React.Reducer<State, Action>>(reducer);
+```
+
+**升级后**：
+
+```tsx
+useReducer(reducer);
+```
+
+**在边缘情况下，可以使用元组传递类型参数**
+
+```tsx
+useReducer<State, [Action]>(reducer);
+```
+
+**或在函数参数上注释类型**
+
+```tsx
+useReducer((state: State, action: Action) => state);
+```
+
+## 状态管理与 React Server Components
+
+### React 19 的 Server Components 与 Next.js 的 Server Components 有何相似与不同？
+
+**相似之处**
+
+1. **服务器端渲染（SSR）**：
+   - **React Server Components** 和 **Next.js 的 Server Components** 都支持在服务器端渲染组件。这意味着可以在服务器上预先渲染部分 UI，减少客户端的渲染负担，提高性能。
+   
+2. **数据获取优化**：
+   - 两者都允许在服务器端获取数据，并将其传递给组件进行渲染，从而优化数据加载和页面响应速度。
+
+**不同之处**
+
+1. **集成程度**：
+   - **Next.js** 是一个全功能的框架，集成了 React Server Components 以及路由、API 路由、静态生成（SSG）等多种功能，提供了一套完整的开发体验。
+   - **React Server Components** 是 React 本身的一个特性，可以在任何使用 React 的项目中使用，而不仅限于 Next.js。它提供了更灵活的组件渲染方式，但需要开发者自行集成和配置。
+
+2. **使用方式**：
+   - **Next.js** 的 Server Components 与其页面和 API 路由紧密结合，开发者可以通过文件系统路由轻松管理服务器组件。
+   - **React Server Components** 在 React 19 中更加通用，适用于各种项目架构，开发者需要手动处理服务器和客户端组件的分离与通信。
+
+### React 19 中是否仍需使用第三方状态管理库（如 Zustand）？
+
+**React 19 的新特性对状态管理的影响**
+
+React 19 引入了 **Actions** 和 **useActionState** 等新特性，这些特性旨在简化数据变更和状态管理的流程，自动处理待处理状态、错误处理、乐观更新等。这些内置功能确实在一定程度上简化了状态管理，减少了手动管理状态的代码量。
+
+**仍需使用第三方状态管理库的原因**
+
+尽管 React 19 提供了更强大的内置状态管理工具，但在以下情况下，第三方状态管理库如 Zustand 仍然具有不可替代的优势：
+
+1. **复杂的全局状态管理**：
+   - 对于大型应用，需要管理复杂的全局状态，第三方库如 Zustand 提供了更简洁和高效的 API，能够更好地处理复杂的状态逻辑。
+
+2. **持久化和中间件**：
+   - Zustand 支持状态持久化、时间旅行、状态快照等高级功能，这些功能在 React 19 的内置特性中尚未完全覆盖。
+
+3. **跨组件共享状态**：
+   - 虽然 React 的 Context API 可以实现跨组件共享状态，但 Zustand 提供了更为简单和高效的方式来管理和访问共享状态，减少了样板代码。
+
+4. **性能优化**：
+   - Zustand 通过选择性订阅和最小化重新渲染，能够在性能上提供额外的优化，特别是在高频更新的场景中表现更佳。
+
+**React 19 是否可以省略一些第三方库的使用？**
+
+React 19 的更新确实在某些方面可以减少对第三方库的依赖，但这取决于具体的应用需求：
+
+1. **简单的状态管理**：
+   - 对于状态逻辑较为简单的小型应用，React 19 的内置特性如 Actions 和 useActionState 可以满足需求，减少对 Zustand 等库的依赖。
+
+2. **表单处理**：
+   - React 19 对表单的支持更加完善，提供了自动提交和重置表单的功能，可能减少对像 Formik 这样的表单管理库的需求。
+
+3. **数据获取和缓存**：
+   - 新的 use 和 Suspense 特性简化了数据获取和缓存逻辑，在某些情况下可以减少对像 React Query 这样的数据管理库的依赖。
+
+### 总结
+
+**React 19** 通过引入 **Actions**、**useActionState**、**React Server Components** 等新特性，确实在简化状态管理和服务器端渲染方面迈出了重要的一步。这些内置功能能够减少对某些第三方库的依赖，尤其是在处理简单状态和数据获取时。
+
+然而，对于**复杂的全局状态管理**、**高级功能需求**（如持久化、中间件）以及**性能优化**等方面，第三方状态管理库如 **Zustand** 仍然是非常有价值的工具。它们提供了 React 19 内置特性尚未覆盖的功能，能够更好地满足大型应用和复杂场景的需求。
+
+因此，是否需要使用第三方状态管理库，应根据具体项目的需求和复杂性来决定。对于追求简洁和高效的状态管理，React 19 提供的内置工具已经能够满足很多需求，但在更复杂的场景下，第三方库仍然不可或缺。
+
+## 升级指南
+
+升级到 React 19 涉及一些关键步骤和注意事项。以下是详细的升级指南，帮助你顺利过渡到最新版本。
+
+### 安装 React 19
+
+**注意：新 JSX Transform 现在是必需的**
+
+React 19 引入了新的 JSX 转换，需要确保项目中启用了新的 JSX 转换以利用 `ref` 作为 prop 和其他性能改进。如果未启用新的 JSX 转换，将会看到以下警告：
+
+```plaintext
+Your app (or one of its dependencies) is using an outdated JSX transform. Update to the modern JSX transform for faster performance: https://react.dev/link/new-jsx-transform
+```
+
+**安装最新版本的 React 和 React DOM**
+
+使用 npm:
+
+```bash
+npm install --save-exact react@^19.0.0 react-dom@^19.0.0
+```
+
+使用 Yarn:
+
+```bash
+yarn add --exact react@^19.0.0 react-dom@^19.0.0
+```
+
+**如果使用 TypeScript，还需要更新类型定义**
+
+使用 npm:
+
+```bash
+npm install --save-exact @types/react@^19.0.0 @types/react-dom@^19.0.0
+```
+
+使用 Yarn:
+
+```bash
+yarn add --exact @types/react@^19.0.0 @types/react-dom@^19.0.0
+```
+
+### 使用 Codemods 进行代码迁移
+
+为了简化升级过程，React 团队与 [codemod.com](https://codemod.com) 合作，发布了一系列 codemods，能够自动更新代码以适应 React 19 的新 API 和模式。
+
+**运行所有 React 19 的 codemods**
+
+使用以下命令运行 React 19 的迁移脚本：
+
+```bash
+npx codemod@latest react/19/migration-recipe
+```
+
+这将运行 `react-codemod` 仓库中的以下 codemods：
+
+- `replace-reactdom-render`
+- `replace-string-ref`
+- `replace-act-import`
+- `replace-use-form-state`
+- `prop-types-typescript`
+
+**注意**：这不包括 TypeScript 的更改，详见下文。
+
+**查看所有可用的 codemods**
+
+请访问 [react-codemod 仓库](https://github.com/react-codemod/react-codemod) 获取所有可用的 codemod 列表。
+
+### 处理破坏性变更
+
+React 19 引入了一些破坏性变更，以下是主要变更及其处理方法：
+
+#### 渲染中的错误不再重新抛出
+
+**改进**：减少错误日志的重复，错误处理方式有所变化。
+
+**升级前**：
+
+在 DEV 模式下，渲染过程中抛出的错误会被捕获并重新抛出，同时记录到 `console.error`，导致错误日志重复。
+
+**升级后**：
+
+- **未捕获的错误**：报告给 `window.reportError`。
+- **捕获的错误**：仅记录到 `console.error`。
+
+**解决方法**：
+
+如果你的生产环境错误报告依赖于错误被重新抛出，可能需要更新错误处理逻辑。你可以在创建根时添加自定义错误处理：
+
+```jsx
+const root = createRoot(container, {
+  onUncaughtError: (error, errorInfo) => {
+    // 记录错误报告
+  },
+  onCaughtError: (error, errorInfo) => {
+    // 记录错误报告
+  }
+});
+```
+
+#### 移除已弃用的 React API
+
+**1. 移除函数组件的 propTypes 和 defaultProps**
+
+- **PropTypes**：React 19 移除了 React 包中的 propTypes 检查，建议迁移到 TypeScript 或其他类型检查方案。
+
+**升级前**：
+
+```jsx
+import PropTypes from 'prop-types';
+
+function Heading({ text }) {
+  return <h1>{text}</h1>;
+}
+Heading.propTypes = {
+  text: PropTypes.string,
+};
+Heading.defaultProps = {
+  text: 'Hello, world!',
+};
+```
+
+**升级后**：
+
+```jsx
+interface Props {
+  text?: string;
+}
+
+function Heading({ text = 'Hello, world!' }: Props) {
+  return <h1>{text}</h1>;
+}
+```
+
+**使用 Codemod 迁移 propTypes 到 TypeScript**
+
+```bash
+npx codemod@latest react/prop-types-typescript
+```
+
+**2. 移除旧版 Context API（contextTypes 和 getChildContext）**
+
+旧版 Context 仅在类组件中使用，React 19 移除了这些 API。
+
+**升级前**：
+
+```jsx
+import PropTypes from 'prop-types';
+
+class Parent extends React.Component {
+  static childContextTypes = {
+    foo: PropTypes.string.isRequired,
+  };
+
+  getChildContext() {
+    return { foo: 'bar' };
+  }
+
+  render() {
+    return <Child />;
+  }
+}
+
+class Child extends React.Component {
+  static contextTypes = {
+    foo: PropTypes.string.isRequired,
+  };
+
+  render() {
+    return <div>{this.context.foo}</div>;
+  }
+}
+```
+
+**升级后**：
+
+```jsx
+const FooContext = React.createContext();
+
+class Parent extends React.Component {
+  render() {
+    return (
+      <FooContext.Provider value='bar'>
+        <Child />
+      </FooContext.Provider>
+    );
+  }
+}
+
+class Child extends React.Component {
+  static contextType = FooContext;
+
+  render() {
+    return <div>{this.context}</div>;
+  }
+}
+```
+
+**3. 移除字符串 refs**
+
+字符串 refs 已被弃用，React 19 移除了对字符串 refs 的支持，建议迁移到回调 refs。
+
+**升级前**：
+
+```jsx
+class MyComponent extends React.Component {
+  componentDidMount() {
+    this.refs.input.focus();
+  }
+
+  render() {
+    return <input ref='input' />;
+  }
+}
+```
+
+**升级后**：
+
+```jsx
+class MyComponent extends React.Component {
+  componentDidMount() {
+    this.input.focus();
+  }
+
+  render() {
+    return <input ref={input => this.input = input} />;
+  }
+}
+```
+
+**使用 Codemod 迁移字符串 refs 到回调 refs**
+
+```bash
+npx codemod@latest react/19/replace-string-ref
+```
+
+**4. 移除模块模式工厂和 React.createFactory**
+
+这些功能在现代 React 中已很少使用，React 19 移除了对它们的支持，建议使用 JSX 代替。
+
+**升级前**：
+
+```jsx
+import { createFactory } from 'react';
+
+const button = createFactory('button');
+```
+
+**升级后**：
+
+```jsx
+const button = <button />;
+```
+
+**5. 移除 react-test-renderer/shallow**
+
+React 19 移除了 `react-test-renderer/shallow`，建议使用 `react-shallow-renderer` 或其他测试库。
+
+**升级前**：
+
+```jsx
+import ShallowRenderer from 'react-test-renderer/shallow';
+```
+
+**升级后**：
+
+```jsx
+import ShallowRenderer from 'react-shallow-renderer';
+```
+
+**6. 移除 ReactDOMTestUtils.act**
+
+`act` 已从 `react-dom/test-utils` 移动到 `react` 包中。
+
+**升级前**：
+
+```jsx
+import { act } from 'react-dom/test-utils';
+```
+
+**升级后**：
+
+```jsx
+import { act } from 'react';
+```
+
+**使用 Codemod 迁移 act 导入路径**
+
+```bash
+npx codemod@latest react/19/replace-act-import
+```
+
+**7. 移除 ReactDOM.render 和 ReactDOM.hydrate**
+
+React 19 移除了 `ReactDOM.render` 和 `ReactDOM.hydrate`，建议使用 `ReactDOM.createRoot` 和 `ReactDOM.hydrateRoot`。
+
+**升级前**：
+
+```jsx
+import { render, hydrate } from 'react-dom';
+
+render(<App />, document.getElementById('root'));
+hydrate(<App />, document.getElementById('root'));
+```
+
+**升级后**：
+
+```jsx
+import { createRoot, hydrateRoot } from 'react-dom/client';
+
+const root = createRoot(document.getElementById('root'));
+root.render(<App />);
+
+hydrateRoot(document.getElementById('root'), <App />);
+```
+
+**使用 Codemod 迁移 ReactDOM.render 和 ReactDOM.hydrate**
+
+```bash
+npx codemod@latest react/19/replace-reactdom-render
+```
+
+**8. 移除 ReactDOM.findDOMNode**
+
+`findDOMNode` 已被移除，建议使用 DOM refs 代替。
+
+**升级前**：
+
+```jsx
+import { findDOMNode } from 'react-dom';
+
+function AutoselectingInput() {
+  useEffect(() => {
+    const input = findDOMNode(this);
+    input.select()
+  }, []);
+
+  return <input defaultValue="Hello" />;
+}
+```
+
+**升级后**：
+
+```jsx
+function AutoselectingInput() {
+  const ref = useRef(null);
+  useEffect(() => {
+    ref.current.select();
+  }, []);
+
+  return <input ref={ref} defaultValue="Hello" />;
+}
+```
+
+### 应对新弃用的 API
+
+React 19 引入了一些新弃用的 API，以下是主要弃用的 API 及其应对方法：
+
+**1. Deprecated: element.ref**
+
+**说明**：React 19 支持 `ref` 作为 prop，弃用了 `element.ref`。
+
+**警告信息**
+
+```plaintext
+Accessing element.ref is no longer supported. ref is now a regular prop. It will be removed from the JSX Element type in a future release.
+```
+
+**解决方法**：使用 `props.ref` 代替 `element.ref`。
+
+**2. Deprecated: react-test-renderer**
+
+**说明**：React 19 弃用了 `react-test-renderer`，建议迁移到 `@testing-library/react` 或 `@testing-library/react-native`。
+
+**升级建议**：
+
+- 安装新的测试库：
+
+```bash
+npm install --save-dev @testing-library/react
+```
+
+- 更新测试代码以使用新的测试库。
+
+## TypeScript 的更新
+
+React 19 对 TypeScript 类型进行了多项更新，以下是主要更改及其应对方法：
+
+**1. 移除已弃用的 TypeScript 类型**
+
+React 19 清理了基于已移除 API 的 TypeScript 类型。你可能需要运行以下 codemod 来迁移类型相关的变更：
+
+```bash
+npx types-react-codemod@latest preset-19 ./path-to-app
+```
+
+**2. ref 清理函数要求**
+
+由于引入了 ref 清理函数，TypeScript 现在要求 `ref` 回调不返回任何值。
+
+**解决方法**：停止使用隐式返回，改为显式返回。
+
+**升级前**：
+
+```jsx
+<div ref={current => (instance = current)} />
+```
+
+**升级后**：
+
+```jsx
+<div ref={current => { instance = current; }} />
+```
+
+**运行 codemod**
+
+```bash
+npx codemod@latest react-19 codemod preset-19 ./path-to-app
+```
+
+**3. useRef 需要传递参数**
+
+`useRef` 现在要求传递一个初始值，简化了类型签名。
+
+**升级前**：
+
+```jsx
+const ref = useRef<number>(null);
+ref.current = 1; // TypeScript 错误
+```
+
+**升级后**：
+
+```jsx
+const ref = useRef<number | null>(null);
+ref.current = 1;
+```
+
+**4. ReactElement 类型的更改**
+
+`ReactElement` 的 `props` 现在默认为 `unknown`，建议显式指定类型参数。
+
+**升级前**：
+
+```tsx
+type Example = ReactElement["props"]; // any
+```
+
+**升级后**：
+
+```tsx
+type Example = ReactElement<{ id: string }>["props"]; // { id: string }
+```
+
+**运行 codemod**
+
+```bash
+npx types-react-codemod@latest react-element-default-any-props ./path-to-your-react-ts-files
+```
+
+**5. TypeScript 中的 JSX 命名空间**
+
+React 19 移除了全局的 JSX 命名空间，转而使用 `React.JSX`。
+
+**升级前**：
+
+```tsx
+// global.d.ts
+declare namespace JSX {
+  interface IntrinsicElements {
+    "my-element": {
+      myElementProps: string;
+    };
+  }
+}
+```
+
+**升级后**：
+
+```tsx
+// global.d.ts
+declare module "react" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "my-element": {
+        myElementProps: string;
+      };
+    }
+  }
+}
+```
+
+**6. 改进的 useReducer 类型推断**
+
+`useReducer` 现在改进了类型推断，不再接受完整的 reducer 类型作为类型参数，建议不传递类型参数，依赖上下文类型推断。
+
+**升级前**：
+
+```tsx
+useReducer<React.Reducer<State, Action>>(reducer);
+```
+
+**升级后**：
+
+```tsx
+useReducer(reducer);
+```
+
+**在边缘情况下，可以使用元组传递类型参数**
+
+```tsx
+useReducer<State, [Action]>(reducer);
+```
+
+**或在函数参数上注释类型**
+
+```tsx
+useReducer((state: State, action: Action) => state);
+```
+
+## 状态管理与 React Server Components
+
+### React 19 的 Server Components 与 Next.js 的 Server Components 有何相似与不同？
+
+**相似之处**
+
+1. **服务器端渲染（SSR）**：
+   - **React Server Components** 和 **Next.js 的 Server Components** 都支持在服务器端渲染组件。这意味着可以在服务器上预先渲染部分 UI，减少客户端的渲染负担，提高性能。
+   
+2. **数据获取优化**：
+   - 两者都允许在服务器端获取数据，并将其传递给组件进行渲染，从而优化数据加载和页面响应速度。
+
+**不同之处**
+
+1. **集成程度**：
+   - **Next.js** 是一个全功能的框架，集成了 React Server Components 以及路由、API 路由、静态生成（SSG）等多种功能，提供了一套完整的开发体验。
+   - **React Server Components** 是 React 本身的一个特性，可以在任何使用 React 的项目中使用，而不仅限于 Next.js。它提供了更灵活的组件渲染方式，但需要开发者自行集成和配置。
+
+2. **使用方式**：
+   - **Next.js** 的 Server Components 与其页面和 API 路由紧密结合，开发者可以通过文件系统路由轻松管理服务器组件。
+   - **React Server Components** 在 React 19 中更加通用，适用于各种项目架构，开发者需要手动处理服务器和客户端组件的分离与通信。
+
+### React 19 中是否仍需使用第三方状态管理库（如 Zustand）？
+
+**React 19 的新特性对状态管理的影响**
+
+React 19 引入了 **Actions** 和 **useActionState** 等新特性，这些特性旨在简化数据变更和状态管理的流程，自动处理待处理状态、错误处理、乐观更新等。这些内置功能确实在一定程度上简化了状态管理，减少了手动管理状态的代码量。
+
+**仍需使用第三方状态管理库的原因**
+
+尽管 React 19 提供了更强大的内置状态管理工具，但在以下情况下，第三方状态管理库如 Zustand 仍然具有不可替代的优势：
+
+1. **复杂的全局状态管理**：
+   - 对于大型应用，需要管理复杂的全局状态，第三方库如 Zustand 提供了更简洁和高效的 API，能够更好地处理复杂的状态逻辑。
+
+2. **持久化和中间件**：
+   - Zustand 支持状态持久化、时间旅行、状态快照等高级功能，这些功能在 React 19 的内置特性中尚未完全覆盖。
+
+3. **跨组件共享状态**：
+   - 虽然 React 的 Context API 可以实现跨组件共享状态，但 Zustand 提供了更为简单和高效的方式来管理和访问共享状态，减少了样板代码。
+
+4. **性能优化**：
+   - Zustand 通过选择性订阅和最小化重新渲染，能够在性能上提供额外的优化，特别是在高频更新的场景中表现更佳。
+
+**React 19 是否可以省略一些第三方库的使用？**
+
+React 19 的更新确实在某些方面可以减少对第三方库的依赖，但这取决于具体的应用需求：
+
+1. **简单的状态管理**：
+   - 对于状态逻辑较为简单的小型应用，React 19 的内置特性如 Actions 和 useActionState 可以满足需求，减少对 Zustand 等库的依赖。
+
+2. **表单处理**：
+   - React 19 对表单的支持更加完善，提供了自动提交和重置表单的功能，可能减少对像 Formik 这样的表单管理库的需求。
+
+3. **数据获取和缓存**：
+   - 新的 use 和 Suspense 特性简化了数据获取和缓存逻辑，在某些情况下可以减少对像 React Query 这样的数据管理库的依赖。
+
+### 总结
+
+**React 19** 通过引入 **Actions**、**useActionState**、**React Server Components** 等新特性，确实在简化状态管理和服务器端渲染方面迈出了重要的一步。这些内置功能能够减少对某些第三方库的依赖，尤其是在处理简单状态和数据获取时。
+
+然而，对于**复杂的全局状态管理**、**高级功能需求**（如持久化、中间件）以及**性能优化**等方面，第三方状态管理库如 **Zustand** 仍然是非常有价值的工具。它们提供了 React 19 内置特性尚未覆盖的功能，能够更好地满足大型应用和复杂场景的需求。
+
+因此，是否需要使用第三方状态管理库，应根据具体项目的需求和复杂性来决定。对于追求简洁和高效的状态管理，React 19 提供的内置工具已经能够满足很多需求，但在更复杂的场景下，第三方库仍然不可或缺。
+
+## 升级指南
+
+升级到 React 19 涉及一些关键步骤和注意事项。以下是详细的升级指南，帮助你顺利过渡到最新版本。
+
+### 安装 React 19
+
+**注意：新 JSX Transform 现在是必需的**
+
+React 19 引入了新的 JSX 转换，需要确保项目中启用了新的 JSX 转换以利用 `ref` 作为 prop 和其他性能改进。如果未启用新的 JSX 转换，将会看到以下警告：
+
+```plaintext
+Your app (or one of its dependencies) is using an outdated JSX transform. Update to the modern JSX transform for faster performance: https://react.dev/link/new-jsx-transform
+```
+
+**安装最新版本的 React 和 React DOM**
+
+使用 npm:
+
+```bash
+npm install --save-exact react@^19.0.0 react-dom@^19.0.0
+```
+
+使用 Yarn:
+
+```bash
+yarn add --exact react@^19.0.0 react-dom@^19.0.0
+```
+
+**如果使用 TypeScript，还需要更新类型定义**
+
+使用 npm:
+
+```bash
+npm install --save-exact @types/react@^19.0.0 @types/react-dom@^19.0.0
+```
+
+使用 Yarn:
+
+```bash
+yarn add --exact @types/react@^19.0.0 @types/react-dom@^19.0.0
+```
+
+### 使用 Codemods 进行代码迁移
+
+为了简化升级过程，React 团队与 [codemod.com](https://codemod.com) 合作，发布了一系列 codemods，能够自动更新代码以适应 React 19 的新 API 和模式。
+
+**运行所有 React 19 的 codemods**
+
+使用以下命令运行 React 19 的迁移脚本：
+
+```bash
+npx codemod@latest react/19/migration-recipe
+```
+
+这将运行 `react-codemod` 仓库中的以下 codemods：
+
+- `replace-reactdom-render`
+- `replace-string-ref`
+- `replace-act-import`
+- `replace-use-form-state`
+- `prop-types-typescript`
+
+**注意**：这不包括 TypeScript 的更改，详见下文。
+
+**查看所有可用的 codemods**
+
+请访问 [react-codemod 仓库](https://github.com/react-codemod/react-codemod) 获取所有可用的 codemod 列表。
+
+### 处理破坏性变更
+
+React 19 引入了一些破坏性变更，以下是主要变更及其处理方法：
+
+#### 渲染中的错误不再重新抛出
+
+**改进**：减少错误日志的重复，错误处理方式有所变化。
+
+**升级前**：
+
+在 DEV 模式下，渲染过程中抛出的错误会被捕获并重新抛出，同时记录到 `console.error`，导致错误日志重复。
+
+**升级后**：
+
+- **未捕获的错误**：报告给 `window.reportError`。
+- **捕获的错误**：仅记录到 `console.error`。
+
+**解决方法**：
+
+如果你的生产环境错误报告依赖于错误被重新抛出，可能需要更新错误处理逻辑。你可以在创建根时添加自定义错误处理：
+
+```jsx
+const root = createRoot(container, {
+  onUncaughtError: (error, errorInfo) => {
+    // 记录错误报告
+  },
+  onCaughtError: (error, errorInfo) => {
+    // 记录错误报告
+  }
+});
+```
+
+#### 移除已弃用的 React API
+
+**1. 移除函数组件的 propTypes 和 defaultProps**
+
+- **PropTypes**：React 19 移除了 React 包中的 propTypes 检查，建议迁移到 TypeScript 或其他类型检查方案。
+
+**升级前**：
+
+```jsx
+import PropTypes from 'prop-types';
+
+function Heading({ text }) {
+  return <h1>{text}</h1>;
+}
+Heading.propTypes = {
+  text: PropTypes.string,
+};
+Heading.defaultProps = {
+  text: 'Hello, world!',
+};
+```
+
+**升级后**：
+
+```jsx
+interface Props {
+  text?: string;
+}
+
+function Heading({ text = 'Hello, world!' }: Props) {
+  return <h1>{text}</h1>;
+}
+```
+
+**使用 Codemod 迁移 propTypes 到 TypeScript**
+
+```bash
+npx codemod@latest react/prop-types-typescript
+```
+
+**2. 移除旧版 Context API（contextTypes 和 getChildContext）**
+
+旧版 Context 仅在类组件中使用，React 19 移除了这些 API。
+
+**升级前**：
+
+```jsx
+import PropTypes from 'prop-types';
+
+class Parent extends React.Component {
+  static childContextTypes = {
+    foo: PropTypes.string.isRequired,
+  };
+
+  getChildContext() {
+    return { foo: 'bar' };
+  }
+
+  render() {
+    return <Child />;
+  }
+}
+
+class Child extends React.Component {
+  static contextTypes = {
+    foo: PropTypes.string.isRequired,
+  };
+
+  render() {
+    return <div>{this.context.foo}</div>;
+  }
+}
+```
+
+**升级后**：
+
+```jsx
+const FooContext = React.createContext();
+
+class Parent extends React.Component {
+  render() {
+    return (
+      <FooContext.Provider value='bar'>
+        <Child />
+      </FooContext.Provider>
+    );
+  }
+}
+
+class Child extends React.Component {
+  static contextType = FooContext;
+
+  render() {
+    return <div>{this.context}</div>;
+  }
+}
+```
+
+**3. 移除字符串 refs**
+
+字符串 refs 已被弃用，React 19 移除了对字符串 refs 的支持，建议迁移到回调 refs。
+
+**升级前**：
+
+```jsx
+class MyComponent extends React.Component {
+  componentDidMount() {
+    this.refs.input.focus();
+  }
+
+  render() {
+    return <input ref='input' />;
+  }
+}
+```
+
+**升级后**：
+
+```jsx
+class MyComponent extends React.Component {
+  componentDidMount() {
+    this.input.focus();
+  }
+
+  render() {
+    return <input ref={input => this.input = input} />;
+  }
+}
+```
+
+**使用 Codemod 迁移字符串 refs 到回调 refs**
+
+```bash
+npx codemod@latest react/19/replace-string-ref
+```
+
+**4. 移除模块模式工厂和 React.createFactory**
+
+这些功能在现代 React 中已很少使用，React 19 移除了对它们的支持，建议使用 JSX 代替。
+
+**升级前**：
+
+```jsx
+import { createFactory } from 'react';
+
+const button = createFactory('button');
+```
+
+**升级后**：
+
+```jsx
+const button = <button />;
+```
+
+**5. 移除 react-test-renderer/shallow**
+
+React 19 移除了 `react-test-renderer/shallow`，建议使用 `react-shallow-renderer` 或其他测试库。
+
+**升级前**：
+
+```jsx
+import ShallowRenderer from 'react-test-renderer/shallow';
+```
+
+**升级后**：
+
+```jsx
+import ShallowRenderer from 'react-shallow-renderer';
+```
+
+**6. 移除 ReactDOMTestUtils.act**
+
+`act` 已从 `react-dom/test-utils` 移动到 `react` 包中。
+
+**升级前**：
+
+```jsx
+import { act } from 'react-dom/test-utils';
+```
+
+**升级后**：
+
+```jsx
+import { act } from 'react';
+```
+
+**使用 Codemod 迁移 act 导入路径**
+
+```bash
+npx codemod@latest react/19/replace-act-import
+```
+
+**7. 移除 ReactDOM.render 和 ReactDOM.hydrate**
+
+React 19 移除了 `ReactDOM.render` 和 `ReactDOM.hydrate`，建议使用 `ReactDOM.createRoot` 和 `ReactDOM.hydrateRoot`。
+
+**升级前**：
+
+```jsx
+import { render, hydrate } from 'react-dom';
+
+render(<App />, document.getElementById('root'));
+hydrate(<App />, document.getElementById('root'));
+```
+
+**升级后**：
+
+```jsx
+import { createRoot, hydrateRoot } from 'react-dom/client';
+
+const root = createRoot(document.getElementById('root'));
+root.render(<App />);
+
+hydrateRoot(document.getElementById('root'), <App />);
+```
+
+**使用 Codemod 迁移 ReactDOM.render 和 ReactDOM.hydrate**
+
+```bash
+npx codemod@latest react/19/replace-reactdom-render
+```
+
+**8. 移除 ReactDOM.findDOMNode**
+
+`findDOMNode` 已被移除，建议使用 DOM refs 代替。
+
+**升级前**：
+
+```jsx
+import { findDOMNode } from 'react-dom';
+
+function AutoselectingInput() {
+  useEffect(() => {
+    const input = findDOMNode(this);
+    input.select()
+  }, []);
+
+  return <input defaultValue="Hello" />;
+}
+```
+
+**升级后**：
+
+```jsx
+function AutoselectingInput() {
+  const ref = useRef(null);
+  useEffect(() => {
+    ref.current.select();
+  }, []);
+
+  return <input ref={ref} defaultValue="Hello" />;
+}
+```
+
+### 应对新弃用的 API
+
+React 19 引入了一些新弃用的 API，以下是主要弃用的 API 及其应对方法：
+
+**1. Deprecated: element.ref**
+
+**说明**：React 19 支持 `ref` 作为 prop，弃用了 `element.ref`。
+
+**警告信息**
+
+```plaintext
+Accessing element.ref is no longer supported. ref is now a regular prop. It will be removed from the JSX Element type in a future release.
+```
+
+**解决方法**：使用 `props.ref` 代替 `element.ref`。
+
+**2. Deprecated: react-test-renderer**
+
+**说明**：React 19 弃用了 `react-test-renderer`，建议迁移到 `@testing-library/react` 或 `@testing-library/react-native`。
+
+**升级建议**：
+
+- 安装新的测试库：
+
+```bash
+npm install --save-dev @testing-library/react
+```
+
+- 更新测试代码以使用新的测试库。
+
+## TypeScript 的更新
+
+React 19 对 TypeScript 类型进行了多项更新，以下是主要更改及其应对方法：
+
+**1. 移除已弃用的 TypeScript 类型**
+
+React 19 清理了基于已移除 API 的 TypeScript 类型。你可能需要运行以下 codemod 来迁移类型相关的变更：
+
+```bash
+npx types-react-codemod@latest preset-19 ./path-to-app
+```
+
+**2. ref 清理函数要求**
+
+由于引入了 ref 清理函数，TypeScript 现在要求 `ref` 回调不返回任何值。
+
+**解决方法**：停止使用隐式返回，改为显式返回。
+
+**升级前**：
+
+```jsx
+<div ref={current => (instance = current)} />
+```
+
+**升级后**：
+
+```jsx
+<div ref={current => { instance = current; }} />
+```
+
+**运行 codemod**
+
+```bash
+npx codemod@latest react-19 codemod preset-19 ./path-to-app
+```
+
+**3. useRef 需要传递参数**
+
+`useRef` 现在要求传递一个初始值，简化了类型签名。
+
+**升级前**：
+
+```jsx
+const ref = useRef<number>(null);
+ref.current = 1; // TypeScript 错误
+```
+
+**升级后**：
+
+```jsx
+const ref = useRef<number | null>(null);
+ref.current = 1;
+```
+
+**4. ReactElement 类型的更改**
+
+`ReactElement` 的 `props` 现在默认为 `unknown`，建议显式指定类型参数。
+
+**升级前**：
+
+```tsx
+type Example = ReactElement["props"]; // any
+```
+
+**升级后**：
+
+```tsx
+type Example = ReactElement<{ id: string }>["props"]; // { id: string }
+```
+
+**运行 codemod**
+
+```bash
+npx types-react-codemod@latest react-element-default-any-props ./path-to-your-react-ts-files
+```
+
+**5. TypeScript 中的 JSX 命名空间**
+
+React 19 移除了全局的 JSX 命名空间，转而使用 `React.JSX`。
+
+**升级前**：
+
+```tsx
+// global.d.ts
+declare namespace JSX {
+  interface IntrinsicElements {
+    "my-element": {
+      myElementProps: string;
+    };
+  }
+}
+```
+
+**升级后**：
+
+```tsx
+// global.d.ts
+declare module "react" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "my-element": {
+        myElementProps: string;
+      };
+    }
+  }
+}
+```
+
+**6. 改进的 useReducer 类型推断**
+
+`useReducer` 现在改进了类型推断，不再接受完整的 reducer 类型作为类型参数，建议不传递类型参数，依赖上下文类型推断。
+
+**升级前**：
+
+```tsx
+useReducer<React.Reducer<State, Action>>(reducer);
+```
+
+**升级后**：
+
+```tsx
+useReducer(reducer);
+```
+
+**在边缘情况下，可以使用元组传递类型参数**
+
+```tsx
+useReducer<State, [Action]>(reducer);
+```
+
+**或在函数参数上注释类型**
+
+```tsx
+useReducer((state: State, action: Action) => state);
+```
+
+## 总结
+
+React 19 带来了诸多令人兴奋的新特性和改进，包括 **Actions**、**新钩子**、**React Server Components** 等，极大地简化了开发流程，提升了应用性能。通过优化错误处理、增强自定义元素支持以及引入资源预加载 API，React 19 为开发者提供了更强大的工具和更灵活的架构，助力构建高效、响应迅速的现代应用。
+
+此外，React 19 在状态管理和服务器组件方面的更新，虽然在一定程度上减少了对第三方库的依赖，但对于复杂的状态管理和高级功能需求，第三方库如 **Zustand** 依然是不可或缺的工具。开发者应根据项目需求和复杂性选择最合适的状态管理方案。
+
+升级到 React 19 涉及一些破坏性变更和新的最佳实践，但通过使用官方提供的 codemods 和详细的升级指南，你可以顺利过渡到最新版本，充分利用其新特性提升开发体验和应用性能。
+
+如果你希望提升 React 应用的开发体验和性能，强烈建议尽快升级到 React 19，并深入探索其新特性。欲了解更多详细信息，请参阅官方 [React 19 文档](https://react.dev/link/hydration-mismatch)。
+
+---
+
+## 参考资料
+
+- [React 19 文档](https://react.dev/reference/react)
+- [React 19 迁移指南](https://react.dev/blog/2024/04/25/react-19-upgrade-guide)
+- [React 19 新特性](https://react.dev/blog/2024/12/05/react-19#whats-new-in-react-19)

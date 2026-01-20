@@ -1,0 +1,528 @@
+---
+title: "SwiftUI 中的 List、ForEach 与 Identifiable 全面解析"
+description: "在 SwiftUI 中，我们可以使用 List 来展示列表数据，而不必像 UIKit 中那样麻烦地配置 UITableView。本文将手把手讲解如何使用 List、ForEach 和 Identifiable 进行简单或复杂的列表布局，并演示如何自定义行样式、背景及分割线。"
+authors: [yuxuetr]
+tags: [SwiftUI, Swift, iOS]
+keywords: [SwiftUI, SwiftUI教程, iOS开发, SwiftUI List, SwiftUI ForEach, SwiftUI Identifiable, 列表视图, iOS列表]
+---
+
+# SwiftUI 中的 List、ForEach 与 Identifiable 全面解析
+
+[上一节](../2025-01-12-swiftui-animation-and-transition/index.mdx)
+我们介绍了 SwiftUI 中的动画和过渡效果，本节我们继续介绍 SwiftUI 中的列表视图。
+
+在 UIKit 中， `UITableView` 是使用最为广泛的 UI 控件之一，常见于新闻类应用、社交应用等。
+在 SwiftUI 出现之前，我们需要编写大量的代码和配置（比如自定义单元格、设置数据源等），
+才能在 `UITableView` 中显示简单的列表。
+
+如今，**SwiftUI** 中的 `List` 控件让这一切变得非常简单：
+几行代码就可以快速实现一个动态列表，而且可以轻松自定义行布局。
+
+本文将系统讲解如何使用 `List` 与 `ForEach` 来展示简单或复杂的列表数据，
+同时结合 `Identifiable` 协议来为每一个元素提供唯一标识。
+我们还会深入介绍如何自定义列表分割线、背景以及在不同场景下灵活运用各种行布局。
+
+{/* truncate */}
+
+---
+
+## 目录
+
+1. [创建一个简单的 List](#creating-a-simple-list)  
+2. [在 List 中同时使用 Text 和 Image](#using-text-and-image-in-a-list)  
+3. [使用自定义的模型并结合 Identifiable](#using-a-custom-model-and-combining-identifiable)  
+4. [从同一个列表中实现多种不同行布局](#implementing-multiple-row-layouts-in-the-same-list)  
+5. [自定义 List 的外观](#customizing-the-appearance-of-a-list)  
+6. [完整示例代码](#complete-example-code)
+
+---
+
+## 创建一个简单的 List{#creating-a-simple-list}
+
+最基础的方式，就是在 `ContentView` 中直接使用 `List` 包裹要展示的视图，例如：
+
+```swift
+struct ContentView: View {
+    var body: some View {
+        List {
+            Text("Item 1")
+            Text("Item 2")
+            Text("Item 3")
+            Text("Item 4")
+        }
+    }
+}
+```
+
+这样就可以在预览或者模拟器里看到一个基本的列表，每一行对应一个 `Text`。
+SwiftUI 自动为你做好了列表的分割线、滚动等行为。
+
+### 使用 ForEach{#using-foreach}
+
+当我们要展示一组相似的数据时，可以使用 `ForEach` 来动态生成视图。例如：
+
+```swift
+List {
+    ForEach(1...4, id: \.self) { index in
+        Text("Item \(index)")
+    }
+}
+```
+
+或者还可以进一步简化为：
+
+```swift
+List(1...4, id: \.self) {
+    Text("Item \($0)")
+}
+```
+
+这里 `1...4` 表示一个区间 `[1, 2, 3, 4]`。
+通过 `id: \.self` 告诉 SwiftUI：这组数据的唯一标识就是它自身的值。
+这样，SwiftUI 在检测到数据变动时，可以正确地刷新对应的行。  
+借助 `ForEach`，只需几行代码就能完成一个动态列表的实现。
+
+---
+
+## 在 `List` 中同时使用 `Text` 和 `Image`{#using-text-and-image-in-a-list}
+
+实际的应用中，我们经常需要在列表行里同时展示文字和图片。
+类似 `UITableView`，我们可能要自定义 cell 的布局；
+在 SwiftUI 中，只需要把已有的 `Image`、`Text`、`HStack`、`VStack` 等组合即可。
+
+### 简单示例
+
+假设我们有两个数组：  
+- `restaurantNames`：存储餐厅名称  
+- `restaurantImages`：存储餐厅对应的图片名称  
+
+我们可以这样写：
+
+```swift
+List(restaurantNames.indices, id: \.self) { index in
+    HStack {
+        Image(restaurantImages[index])
+            .resizable()
+            .frame(width: 40, height: 40)
+            .cornerRadius(5)
+        Text(restaurantNames[index])
+    }
+}
+.listStyle(.plain)
+```
+
+这里：
+- `restaurantNames.indices` 返回一个 `[0, 1, 2, ..., n]` 的区间，可作为循环索引；
+- 使用 `HStack` 横向排布图片和文字；
+- 通过 `listStyle(.plain)` 修改列表样式。
+
+只需不到十行代码，就能展示一个带有图片与文字的列表。
+
+---
+
+## 使用自定义的模型并结合 `Identifiable`{#using-a-custom-model-and-combining-identifiable}
+
+若想让数据结构更清晰，我们通常不会拆成两个数组，而是使用一个自定义的 `struct` 来组合数据。比如我们定义一个 `Restaurant`：
+
+```swift
+struct Restaurant {
+    var name: String
+    var image: String
+}
+```
+
+接着创建一个包含若干 `Restaurant` 的数组 `restaurants`：
+
+```swift
+var restaurants = [
+    Restaurant(name: "Cafe Deadend", image: "cafedeadend"),
+    Restaurant(name: "Homei", image: "homei"),
+    ...
+]
+```
+
+### 为什么需要唯一标识（id）？
+
+在 SwiftUI 中，`List` 和 `ForEach` 都需要知道如何区分或跟踪各个元素，否则当某条数据发生变化时，会因为无法识别哪条数据对应哪个视图，从而导致刷新异常。
+
+我们可以在使用 `List` 时这样指定：
+
+```swift
+List(restaurants, id: \.name) { restaurant in
+    HStack {
+        Image(restaurant.image)
+            .resizable()
+            .frame(width: 40, height: 40)
+            .cornerRadius(5)
+        Text(restaurant.name)
+    }
+}
+```
+
+这里用 `name` 作为唯一标识。但是如果有两个餐厅重名，就会出现冲突，导致视图重复或混乱。
+
+#### 通过 `UUID()` 赋予每条数据一个独一无二的 `id`
+
+更好的方式是让每一个 `Restaurant` 都有一个 `id`：
+
+```swift
+struct Restaurant: Identifiable {
+    var id = UUID()   // 自动生成唯一标识
+    var name: String
+    var image: String
+}
+```
+
+并让 `Restaurant` 遵守 `Identifiable` 协议。
+这样就不用在 `List` 中显式指定 `id` 了，代码可以简化为：
+
+```swift
+List(restaurants) { restaurant in
+    HStack {
+        Image(restaurant.image)
+            .resizable()
+            .frame(width: 40, height: 40)
+            .cornerRadius(5)
+        Text(restaurant.name)
+    }
+}
+```
+
+SwiftUI 会自动识别 `restaurant.id` 作为唯一键，不会出现重复视图的问题。
+
+---
+
+## 从同一个列表中实现多种不同行布局{#implementing-multiple-row-layouts-in-the-same-list}
+
+有时我们希望不同的列表项呈现不同的布局。比如前两行想要大图加文字覆盖，后面的行用小图加文字横排。我们可以通过以下方式实现：将布局抽离成不同的 `View` 子结构，然后在 `List` 中根据数据或索引动态选择布局。
+
+### 封装行布局
+
+常见的做法是写两个视图：
+
+```swift
+struct BasicImageRow: View {
+    var restaurant: Restaurant
+    
+    var body: some View {
+        HStack {
+            Image(restaurant.image)
+                .resizable()
+                .frame(width: 40, height: 40)
+                .cornerRadius(5)
+            Text(restaurant.name)
+        }
+    }
+}
+
+struct FullImageRow: View {
+    var restaurant: Restaurant
+    
+    var body: some View {
+        ZStack {
+            Image(restaurant.image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(height: 200)
+                .cornerRadius(10)
+                .overlay(
+                    Rectangle()
+                        .foregroundStyle(.black)
+                        .cornerRadius(10)
+                        .opacity(0.2)
+                )
+            Text(restaurant.name)
+                .font(.system(.title, design: .rounded))
+                .fontWeight(.black)
+                .foregroundColor(.white)
+        }
+    }
+}
+```
+
+然后在主列表中根据索引来决定使用哪种行布局：
+
+```swift
+List {
+    ForEach(restaurants.indices, id: \.self) { index in
+        if (0...1).contains(index) {
+            // 前两行用大图
+            FullImageRow(restaurant: restaurants[index])
+        } else {
+            // 其他行用小图
+            BasicImageRow(restaurant: restaurants[index])
+        }
+    }
+}
+.listStyle(.plain)
+```
+
+只需在 `if` 分支里切换不同的行布局，即可实现混合的列表风格。
+
+---
+
+## 自定义 `List` 的外观{#customizing-the-appearance-of-a-list}
+
+从 iOS 15 / iOS 16 开始，SwiftUI 为我们提供了一些自定义列表的能力，包括分割线（Separator）、背景色（或背景图片）等。
+
+### 修改分割线颜色
+
+可以使用 `listRowSeparatorTint(_:)` 来给行分割线上色，例如：
+
+```swift
+List(restaurants) { restaurant in
+    Text(restaurant.name)
+    // ...
+}
+.listRowSeparatorTint(.green) // 分割线颜色改为绿色
+```
+
+也可以写在循环中，针对每个 `ForEach` 视图生效。
+
+### 隐藏分割线
+
+若不想显示分割线：
+
+```swift
+List {
+    ForEach(restaurants.indices, id: \.self) { index in
+        // 行布局
+    }
+    .listRowSeparator(.hidden)  // 将分割线设为隐藏
+}
+.listStyle(.plain)
+```
+
+如果只想隐藏下方的分割线，可以通过 `edges: .bottom` 指定隐藏位置。
+
+### 自定义列表背景
+
+从 iOS 16 开始，可以使用 `.scrollContentBackground(.hidden)` 搭配 `.background` 来自定义滚动内容区域的背景。例如设置一个纯色：
+
+```swift
+List(restaurants) { restaurant in
+    // ...
+}
+.background(.yellow)              // 列表背景是黄色
+.scrollContentBackground(.hidden) // 隐藏默认滚动背景，让黄色透出来
+```
+
+也可以设置为一张图片：
+
+```swift
+List(restaurants) {
+    // ...
+}
+.background {
+    Image("homei")
+        .resizable()
+        .scaledToFill()
+        .clipped()
+        .ignoresSafeArea()
+}
+.scrollContentBackground(.hidden)
+```
+
+这样就可以用一张大图作为列表的背景。
+
+---
+
+## 总结{#summary}
+
+通过以上内容，你已经对 SwiftUI 中的 `List`、`ForEach` 与 `Identifiable` 有了更清晰的理解，
+并能灵活应用到自己的实际项目中。
+
+---
+
+## 完整示例代码{#complete-example-code}
+
+下面是一个汇总的示例，演示了如何在同一个项目中结合各种写法与布局。你可以将其复制到 Xcode 中运行并查看效果。
+
+```swift
+import SwiftUI
+
+// 让 Restaurant 遵守 Identifiable 协议，每个元素有唯一 id
+struct Restaurant: Identifiable {
+    var id = UUID()
+    var name: String
+    var image: String
+}
+
+// 模拟的数据
+var restaurants = [
+    Restaurant(name: "Cafe Deadend", image: "cafedeadend"),
+    Restaurant(name: "Homei", image: "homei"),
+    Restaurant(name: "Teakha", image: "teakha"),
+    Restaurant(name: "Cafe Loisl", image: "cafeloisl"),
+    Restaurant(name: "Petite Oyster", image: "petiteoyster"),
+    Restaurant(name: "For Kee Restaurant", image: "forkeerestaurant"),
+    Restaurant(name: "Po's Atelier", image: "posatelier"),
+    Restaurant(name: "Bourke Street Bakery", image: "bourkestreetbakery"),
+    Restaurant(name: "Haigh's Chocolate", image: "haighschocolate"),
+    Restaurant(name: "Palomino Espresso", image: "palominoespresso"),
+    Restaurant(name: "Upstate", image: "upstate"),
+    Restaurant(name: "Traif", image: "traif"),
+    Restaurant(name: "Graham Avenue Meats And Deli", image: "grahamavenuemeats"),
+    Restaurant(name: "Waffle & Wolf", image: "wafflewolf"),
+    Restaurant(name: "Five Leaves", image: "fiveleaves"),
+    Restaurant(name: "Cafe Lore", image: "cafelore"),
+    Restaurant(name: "Confessional", image: "confessional"),
+    Restaurant(name: "Barrafina", image: "barrafina"),
+    Restaurant(name: "Donostia", image: "donostia"),
+    Restaurant(name: "Royal Oak", image: "royaloak"),
+    Restaurant(name: "CASK Pub and Kitchen", image: "caskpubkitchen")
+]
+
+// 也保留了原先 restaurantNames, restaurantImages 仅作参考
+var restaurantNames = [
+    "Cafe Deadend","Homei","Teakha","Cafe Loisl","Petite Oyster",
+    "For Kee Restaurant", "Po's Atelier","Bourke Street Bakery",
+    "Haigh's Chocolate","Palomino Espresso","Upstate","Traif",
+    "Graham Avenue Meats And Deli", "Waffle & Wolf","Five Leaves",
+    "Cafe Lore","Confessional","Barrafina","Donostia","Royal Oak",
+    "CASK Pub and Kitchen"
+]
+
+var restaurantImages = [
+    "cafedeadend","homei","teakha","cafeloisl","petiteoyster","forkeerestaurant",
+    "posatelier","bourkestreetbakery","haighschocolate","palominoespresso",
+    "upstate","traif","grahamavenuemeats","wafflewolf","fiveleaves",
+    "cafelore","confessional","barrafina","donostia","royaloak","caskpubkitchen"
+]
+
+// 主视图
+struct ContentView: View {
+    var body: some View {
+        List(restaurants) { restaurant in
+            
+            // 根据索引切换布局
+            ForEach(restaurants.indices, id: \.self) { index in
+                if (0...1).contains(index) {
+                    FullImageRow(restaurant: restaurants[index])
+                } else {
+                    BasicImageRow(restaurant: restaurants[index])
+                }
+            }
+            .listRowSeparator(.hidden, edges: .bottom)
+        }
+        // 使用大图作为列表背景
+        .background {
+            Image("homei")
+                .resizable()
+                .scaledToFill()
+                .clipped()
+                .ignoresSafeArea()
+        }
+        .scrollContentBackground(.hidden)
+    }
+}
+
+// 一个 Demo，展示使用 FullImageRow
+struct Demo5: View {
+    var body: some View {
+        List(restaurants) { restaurant in
+            FullImageRow(restaurant: restaurant)
+        }
+        .listStyle(.plain)
+    }
+}
+
+// 一个 Demo，展示使用 BasicImageRow
+struct Demo4: View {
+    var body: some View {
+        List(restaurants) { restaurant in
+            BasicImageRow(restaurant: restaurant)
+        }
+        .listStyle(.plain)
+    }
+}
+
+// 大图布局
+struct FullImageRow: View {
+    var restaurant: Restaurant
+    
+    var body: some View {
+        ZStack {
+            Image(restaurant.image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(height: 200)
+                .cornerRadius(10)
+                .overlay(
+                    Rectangle()
+                        .foregroundStyle(.black)
+                        .cornerRadius(10)
+                        .opacity(0.2)
+                )
+            Text(restaurant.name)
+                .font(.system(.title, design: .rounded))
+                .fontWeight(.black)
+                .foregroundColor(.white)
+        }
+    }
+}
+
+// 小图布局
+struct BasicImageRow: View {
+    var restaurant: Restaurant
+    
+    var body: some View {
+        HStack {
+            Image(restaurant.image)
+                .resizable()
+                .frame(width: 40, height: 40)
+                .cornerRadius(5)
+            Text(restaurant.name)
+        }
+    }
+}
+
+// 以下是一些最初的 Demo
+struct Demo3: View {
+    var body: some View {
+        List {
+            ForEach(1..<4, id: \.self) {
+                Text("Item \($0)")
+            }
+        }
+    }
+}
+
+struct Demo2: View {
+    var body: some View {
+        List {
+            ForEach(1..<4) { index in
+                Text("Item \(index)")
+            }
+        }
+    }
+}
+
+struct Demo1: View {
+    var body: some View {
+        List {
+            Text("Item 1")
+            Text("Item 2")
+            Text("Item 3")
+            Text("Item 4")
+        }
+    }
+}
+
+#Preview {
+    ContentView()
+}
+```
+
+在这个示例中，你可以：
+- 查看不同的 `DemoX` 以了解不同阶段的列表写法；  
+- 将 `List(restaurants) { ... }` 中的代码按需调整，切换使用 `BasicImageRow` 或 `FullImageRow`；  
+- 修改 `.background` 和 `.scrollContentBackground(.hidden)` 来展示不同的背景处理方式；  
+- 调整 `.listRowSeparator(.hidden, edges: .bottom)` 或 `.listRowSeparatorTint(.green)` 来定制分割线外观。
+
+通过上述方式，你可以轻松地在 SwiftUI 中构建一个功能强大且外观定制灵活的列表界面。
+
+---
+
+以上就是 SwiftUI 中 `List`、`ForEach` 与 `Identifiable` 的完整用法以及一些常见的自定义技巧。
+希望这些示例能帮助你在实际项目中快速搭建和优化列表界面。
