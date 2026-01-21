@@ -19,3 +19,7 @@ script = []
 # Javascript code file
 # serve: [dev-server] only
 script = []
+[web.watcher]
+reload_html = false
+watch_path = ["src"]
+ignore = ["public", "assets", "target", ".git", "node_modules"]

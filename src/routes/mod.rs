@@ -223,7 +223,7 @@ pub fn Blog(id: i32) -> Element {
                   Link { to: Route::Blog { id: id + 1 }, class: "text-blue-600 dark:text-blue-400 hover:underline", "下一篇" }
               }
 
-              CommentBox {}
+              CommentBox { blog_id: id.to_string() }
           }
       }
   }

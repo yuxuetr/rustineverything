@@ -384,6 +384,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link 0.2.1",
 ]
@@ -4031,8 +4032,12 @@ dependencies = [
 name = "rustineverything-app"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "chrono",
  "dioxus",
  "pulldown-cmark",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
