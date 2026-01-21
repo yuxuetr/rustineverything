@@ -35,11 +35,7 @@ pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError
 
 #[post("/api/comments/post")]
 pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Comment>, ServerFnError> {
-  let path = "assets/data/comments.json";
-  // Ensure directory exists to avoid build trigger on directory creation if it was missing?
-  // Actually writing to assets/data might be triggering the rebuild.
-
-  // Check if we should use a different path to avoid watcher
+    // Check if we should use a different path to avoid watcher
   let db_path = if tokio::fs::try_exists("public/data").await.unwrap_or(false) {
     "public/data/comments.json"
   } else {
