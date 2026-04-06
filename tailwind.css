@@ -1,2 +1,33 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+
+/* Force Dark Mode to use class strategy instead of media strategy */
+@variant dark (&:where(.dark, .dark *));
+
+/* Map 'slate' classes to 'stone' colors for a warmer look */
+@theme {
+    --color-slate-50: var(--color-stone-50);
+    --color-slate-100: var(--color-stone-100);
+    --color-slate-200: var(--color-stone-200);
+    --color-slate-300: var(--color-stone-300);
+    --color-slate-400: var(--color-stone-400);
+    --color-slate-500: var(--color-stone-500);
+    --color-slate-600: var(--color-stone-600);
+    --color-slate-700: var(--color-stone-700);
+    --color-slate-800: var(--color-stone-800);
+    --color-slate-900: var(--color-stone-900);
+    --color-slate-950: var(--color-stone-950);
+
+    /* Map 'blue' brand colors to 'orange' for a Rust-themed look */
+    --color-blue-50: var(--color-orange-50);
+    --color-blue-100: var(--color-orange-100);
+    --color-blue-200: var(--color-orange-200);
+    --color-blue-300: var(--color-orange-300);
+    --color-blue-400: var(--color-orange-400);
+    --color-blue-500: var(--color-orange-500);
+    --color-blue-600: var(--color-orange-600);
+    --color-blue-700: var(--color-orange-700);
+    --color-blue-800: var(--color-orange-800);
+    --color-blue-900: var(--color-orange-900);
+    --color-blue-950: var(--color-orange-950);
+}
