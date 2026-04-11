@@ -1,0 +1,17 @@
+[package]
+name = "rustineverything-core"
+version = "0.1.0"
+authors = ["yuxuetr <54.yeying@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+wasmi.workspace = true
+sea-orm = { workspace = true, optional = true }
+chrono = { workspace = true }
+rustineverything-sdk = { path = "../sdk" }
+
+[features]
+server = ["dep:tokio", "dep:sea-orm"]

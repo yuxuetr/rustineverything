@@ -1,0 +1,18 @@
+[package]
+name = "rustineverything-app"
+version = "0.1.0"
+authors = ["yuxuetr <54.yeying@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+dioxus.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+rustineverything-core = { path = "../core" }
+
+[features]
+default = ["web"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]
+server = ["dioxus/server", "rustineverything-core/server"]

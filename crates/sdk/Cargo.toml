@@ -1,0 +1,9 @@
+[package]
+name = "rustineverything-sdk"
+version = "0.1.0"
+authors = ["yuxuetr <54.yeying@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
