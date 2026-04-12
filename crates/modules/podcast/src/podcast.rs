@@ -1,5 +1,22 @@
-use crate::components::view::{Container, SectionTitle};
 use dioxus::prelude::*;
+
+// 模块内部简单的视图包装，减少对外部依赖
+#[component]
+fn LocalContainer(children: Element) -> Element {
+    rsx! { div { class: "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8", {children} } }
+}
+
+#[component]
+fn LocalSectionTitle(title: String, subtitle: Option<String>) -> Element {
+    rsx! {
+        div { class: "text-center mb-10",
+            h2 { class: "text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl", "{title}" }
+            if let Some(s) = subtitle {
+                p { class: "mt-4 text-lg leading-8 text-[var(--color-text-muted)]", "{s}" }
+            }
+        }
+    }
+}
 
 #[derive(Clone, PartialEq)]
 pub struct Episode {
@@ -45,29 +62,24 @@ pub fn PodcastPage() -> Element {
 
   rsx! {
       section { class: "py-12 min-h-screen bg-[var(--color-bg)] transition-colors duration-300",
-          Container {
-              SectionTitle {
+          LocalContainer {
+              LocalSectionTitle {
                   title: "Rust 深度播客".to_string(),
                   subtitle: Some("探索技术边界，聆听思维回响".to_string())
               }
 
               div { class: "grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8",
-                  // Main Player Area
+                  // ... 其余逻辑保持不变 ...
                   div { class: "lg:col-span-2 space-y-6",
                       div { class: "sticky top-24",
                           div { class: "relative overflow-hidden rounded-2xl bg-slate-900 shadow-xl border border-[var(--color-border)]",
                               div { class: "relative p-8 md:p-10",
-                                  // Title
                                   h2 { class: "mt-6 text-2xl md:text-3xl font-bold tracking-tight text-white",
                                       "{current_episode().title}"
                                   }
-
-                                  // Description
                                   p { class: "mt-4 text-base md:text-lg leading-relaxed text-slate-300",
                                       "{current_episode().desc}"
                                   }
-
-                                  // Audio Player
                                   div { class: "mt-8",
                                       audio {
                                           class: "w-full focus:outline-none",
@@ -84,9 +96,8 @@ pub fn PodcastPage() -> Element {
                       }
                   }
 
-                  // Playlist (Right/Bottom)
                   div { class: "space-y-4",
-                      h3 { class: "text-lg font-semibold text-slate-900 dark:text-white px-1", "更多节目" }
+                      h3 { class: "text-lg font-semibold text-[var(--color-text)] px-1", "更多节目" }
                       div { class: "space-y-3",
                           for episode in EPISODES {
                               {
@@ -102,8 +113,6 @@ pub fn PodcastPage() -> Element {
                                                   "hover:bg-slate-50 dark:hover:bg-slate-900/50 border border-slate-200 dark:border-slate-800"
                                               }
                                           ),
-
-                                          // Play icon / State
                                           div { class: "flex-none mt-1",
                                               div { class: format_args!(
                                                   "flex h-10 w-10 items-center justify-center rounded-full {}",
@@ -114,20 +123,12 @@ pub fn PodcastPage() -> Element {
                                                   }
                                               ),
                                                   if current_episode().id == episode.id && is_playing() {
-                                                      // Playing animation or pause icon
-                                                      svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
-                                                          path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M10 9v6m4-6v6" }
-                                                      }
+                                                      svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M10 9v6m4-6v6" } }
                                                   } else {
-                                                      // Play icon
-                                                      svg { class: "w-5 h-5 ml-0.5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
-                                                          path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" }
-                                                      }
+                                                      svg { class: "w-5 h-5 ml-0.5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" } }
                                                   }
                                               }
                                           }
-
-                                          // Info
                                           div { class: "flex-auto min-w-0",
                                               h4 { class: format_args!(
                                                   "text-sm font-medium line-clamp-2 {}",

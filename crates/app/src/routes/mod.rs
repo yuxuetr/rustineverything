@@ -4,10 +4,10 @@ use dioxus::router::{Link, Routable};
 use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
 use crate::components::nav::Navbar;
-use crate::components::podcast::PodcastPage;
 use crate::components::view::{Container, SectionTitle};
 use rustineverything_module_blog::markdown::Markdown;
 use rustineverything_module_blog::server::get_blog_content;
+use rustineverything_module_podcast::podcast::PodcastPage;
 
 /// Application routes
 #[derive(Debug, Clone, Routable, PartialEq)]

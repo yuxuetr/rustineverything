@@ -4898,6 +4898,7 @@ dependencies = [
  "pulldown-cmark",
  "rustineverything-core",
  "rustineverything-module-blog",
+ "rustineverything-module-podcast",
  "serde",
  "serde_json",
  "tokio",
