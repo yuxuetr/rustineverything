@@ -55,6 +55,18 @@ impl PluginManager {
 
         Ok(result_str)
     }
+
+    /// 聚合多个主题插件的 CSS
+    pub fn aggregate_theme_css(&self, wasm_modules: &[Vec<u8>]) -> String {
+        let mut aggregated_css = String::new();
+        for wasm_bytes in wasm_modules {
+            if let Ok(css) = self.call_with_string(wasm_bytes, "get_theme_css", "") {
+                aggregated_css.push_str(&css);
+                aggregated_css.push('\n');
+            }
+        }
+        aggregated_css
+    }
 }
 
 #[cfg(test)]
@@ -86,5 +98,19 @@ mod tests {
 
         let result_zh = manager.call_with_string(&wasm_bytes, "translate", &input_zh).expect("Failed to call plugin");
         assert_eq!(result_zh, "博客");
+    }
+
+    #[test]
+    fn test_theme_plugin() {
+        let wasm_path = "/Users/hal/.target/wasm32-unknown-unknown/release/theme_ocean_plugin.wasm";
+        if !std::path::Path::new(wasm_path).exists() { return; }
+
+        let wasm_bytes = fs::read(wasm_path).expect("Failed to read wasm file");
+        let manager = PluginManager::new();
+
+        let css = manager.aggregate_theme_css(&[wasm_bytes]);
+        assert!(css.contains("--color-primary"));
+        assert!(css.contains("oklch"));
+        println!("Theme Plugin Test Passed! Aggregated CSS:\n{}", css);
     }
 }
