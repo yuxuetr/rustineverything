@@ -5,10 +5,15 @@ authors = ["yuxuetr <54.yeying@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-dioxus.workspace = true
-serde.workspace = true
+dioxus = { workspace = true, features = ["router", "fullstack"] }
+serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-rustineverything-core = { path = "../core" }
+rustineverything-core = { path = "../core", features = ["server"] }
+pulldown-cmark = "0.13.0"
+base64 = "0.22"
+chrono = { workspace = true, features = ["serde"] }
+tokio = { workspace = true, features = ["full"] }
+oauth2 = "5.0.0"
 
 [features]
 default = ["web"]

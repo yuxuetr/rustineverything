@@ -2,18 +2,21 @@ use dioxus::prelude::*;
 use dioxus::router::{Link, Outlet};
 
 use crate::components::view::Container;
-use crate::i18n::{t, use_i18n, Language};
+use crate::i18n::{t, use_i18n, use_t, Language};
 use crate::routes::Route;
 use dioxus::document::eval;
 
 /// Shared navbar layout.
-///
-/// This component wraps all routed pages and provides consistent navigation.
 #[component]
 pub fn Navbar() -> Element {
   let route = use_route::<Route>();
   let mut lang = use_i18n();
   let mut is_dark = use_signal(|| false);
+
+  // Dynamic Translations from WASM Plugins
+  let t_blog = use_t("nav-blog");
+  let t_podcast = use_t("nav-podcast");
+  let t_forum = use_t("nav-forum");
 
   let link_class = move |target: Route| {
     let is_active = match (&route, &target) {
@@ -23,9 +26,10 @@ pub fn Navbar() -> Element {
     };
 
     if is_active {
-      "text-blue-600 dark:text-blue-400 font-semibold"
+      // Use the CSS variable defined by our Theme Plugin!
+      "text-[var(--color-primary)] font-bold border-b-2 border-[var(--color-primary)] h-14 flex items-center"
     } else {
-      "text-slate-700 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white transition-colors"
+      "text-slate-700 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white transition-colors h-14 flex items-center"
     }
   };
 
@@ -74,13 +78,9 @@ pub fn Navbar() -> Element {
                   div { class: "flex items-center gap-6",
                       Link { to: Route::Home {}, class: "font-extrabold tracking-tight text-slate-900 dark:text-white", "Rust in Everything" }
                       nav { class: "hidden md:flex items-center gap-4 text-sm font-medium",
-                          Link { to: Route::BlogIndex {}, class: link_class(Route::BlogIndex {}), "{t(lang(), \"nav.blog\")}" }
-                          Link { to: Route::Podcast {}, class: link_class(Route::Podcast {}), "{t(lang(), \"nav.podcast\")}" }
-                          Link { to: Route::Courses {}, class: link_class(Route::Courses {}), "{t(lang(), \"nav.courses\")}" }
-                          Link { to: Route::Docs {}, class: link_class(Route::Docs {}), "{t(lang(), \"nav.docs\")}" }
-                          Link { to: Route::Cases {}, class: link_class(Route::Cases {}), "{t(lang(), \"nav.cases\")}" }
-                          Link { to: Route::Ai {}, class: link_class(Route::Ai {}), "{t(lang(), \"nav.ai\")}" }
-                          Link { to: Route::Web3 {}, class: link_class(Route::Web3 {}), "{t(lang(), \"nav.web3\")}" }
+                          Link { to: Route::BlogIndex {}, class: link_class(Route::BlogIndex {}), "{t_blog}" }
+                          Link { to: Route::Podcast {}, class: link_class(Route::Podcast {}), "{t_podcast}" }
+                          Link { to: Route::TopicsIndex {}, class: link_class(Route::TopicsIndex {}), "{t_forum}" }
                       }
                   }
 
@@ -129,12 +129,12 @@ pub fn Navbar() -> Element {
                   div {
                       span { class: "font-semibold text-slate-900 dark:text-white", "Rust in Everything" }
                       span { class: "mx-2", "·" }
-                      span { "{t(lang(), \"footer.slogan\")}" }
+                      span { "专注 Rust 技术栈" }
                   }
                   div { class: "flex gap-4",
                       Link { to: Route::TopicsIndex {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Topics" }
-                      Link { to: Route::BlogIndex {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "{t(lang(), \"nav.blog\")}" }
-                      Link { to: Route::Docs {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "{t(lang(), \"nav.docs\")}" }
+                      Link { to: Route::BlogIndex {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Blog" }
+                      Link { to: Route::Docs {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Docs" }
                   }
               }
           }

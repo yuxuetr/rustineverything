@@ -31,7 +31,7 @@ pub const EPISODES: [Episode; 3] = [
     Episode {
         id: 3,
         title: "用Rust打造工业级AI智能体",
-        desc: "实战分享：如何利用Rust的高性能和安全性优势，构建稳定、高效的工业级AI Agent系统。",
+        desc: "实战分享：如何利用Rust的高性能和安全性优势，构建稳定、高效 of 工业级AI Agent system。",
         url: asset!("/assets/audio/用Rust打造工业级AI智能体.m4a"),
         duration: "28:50",
         date: "2024-01-01",

@@ -1,11 +1,38 @@
 use dioxus::fullstack::{post, ServerFnError};
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
-use rustineverything_core::auth::{AuthService, AuthConfig};
+use rustineverything_core::auth::{AuthConfig};
+use rustineverything_core::PluginManager;
+use std::fs;
+
+#[post("/api/i18n/translate")]
+pub async fn translate_server(key: String, lang: String) -> Result<String, ServerFnError> {
+    let wasm_path = "/Users/hal/.target/wasm32-unknown-unknown/release/i18n_fluent_plugin.wasm";
+    if !std::path::Path::new(wasm_path).exists() { return Ok(key); }
+    
+    let wasm_bytes = fs::read(wasm_path).map_err(|e| ServerFnError::new(e.to_string()))?;
+    let manager = PluginManager::new();
+    
+    let input = serde_json::json!({ "key": key, "lang": lang }).to_string();
+    manager.call_with_string(&wasm_bytes, "translate", &input)
+        .map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+#[post("/api/theme/aggregated-css")]
+pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
+    let wasm_path = "/Users/hal/.target/wasm32-unknown-unknown/release/theme_ocean_plugin.wasm";
+    if !std::path::Path::new(wasm_path).exists() { return Ok("".to_string()); }
+    
+    let wasm_bytes = fs::read(wasm_path).map_err(|e| ServerFnError::new(e.to_string()))?;
+    let manager = PluginManager::new();
+    
+    Ok(manager.aggregate_theme_css(&[wasm_bytes]))
+}
 
 #[post("/api/auth/login-url")]
 pub async fn get_login_url(provider: String) -> Result<String, ServerFnError> {
-    // In a real app, these would come from environment variables
+    use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl, CsrfToken};
+
     let config = AuthConfig {
         github_client_id: std::env::var("GITHUB_CLIENT_ID").unwrap_or_default(),
         github_client_secret: std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_default(),
@@ -14,26 +41,31 @@ pub async fn get_login_url(provider: String) -> Result<String, ServerFnError> {
         redirect_url: "http://localhost:8080/api/auth/callback".to_string(),
     };
 
-    let auth_service = AuthService::new(config);
-
-    let (url, _csrf_token) = match provider.as_str() {
+    let client = match provider.as_str() {
         "github" => {
-            let client = auth_service.get_github_client();
-            client.authorize_url(oauth2::CsrfToken::new_random).url()
+            BasicClient::new(ClientId::new(config.github_client_id))
+                .set_client_secret(ClientSecret::new(config.github_client_secret))
+                .set_auth_uri(AuthUrl::new("https://github.com/login/oauth/authorize".to_string()).unwrap())
+                .set_token_uri(TokenUrl::new("https://github.com/login/oauth/access_token".to_string()).unwrap())
+                .set_redirect_uri(RedirectUrl::new(config.redirect_url).unwrap())
         },
         "google" => {
-            let client = auth_service.get_google_client();
-            client.authorize_url(oauth2::CsrfToken::new_random).url()
+            BasicClient::new(ClientId::new(config.google_client_id))
+                .set_client_secret(ClientSecret::new(config.google_client_secret))
+                .set_auth_uri(AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_string()).unwrap())
+                .set_token_uri(TokenUrl::new("https://oauth2.googleapis.com/token".to_string()).unwrap())
+                .set_redirect_uri(RedirectUrl::new(config.redirect_url).unwrap())
         },
         _ => return Err(ServerFnError::new("Unsupported provider")),
     };
 
+    let (url, _csrf_token) = client.authorize_url(CsrfToken::new_random).url();
     Ok(url.to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Comment {
-...
+  pub id: String,
   pub blog_id: String,
   pub content: String,
   pub author: String,
@@ -43,17 +75,15 @@ pub struct Comment {
 #[post("/api/comments")]
 pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError> {
   let path = "public/data/comments.json";
-  if !tokio::fs::try_exists(path).await.unwrap_or(false) {
+  if !std::path::Path::new(path).exists() {
     return Ok(Vec::new());
   }
 
-  let content = tokio::fs::read_to_string(path)
-    .await
+  let content = fs::read_to_string(path)
     .map_err(|e| ServerFnError::new(format!("Failed to read comments: {}", e)))?;
 
   let comments: Vec<Comment> = serde_json::from_str(&content).unwrap_or_default();
 
-  // Sort by date descending (newest first)
   let mut filtered: Vec<Comment> = comments
     .into_iter()
     .filter(|c| c.blog_id == blog_id)
@@ -64,24 +94,17 @@ pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError
 
 #[post("/api/comments/post")]
 pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Comment>, ServerFnError> {
-    // Check if we should use a different path to avoid watcher
-  let db_path = if tokio::fs::try_exists("public/data").await.unwrap_or(false) {
-    "public/data/comments.json"
-  } else {
-    // Fallback or create if not exists
-    if let Err(_) = tokio::fs::create_dir_all("public/data").await {
-      // Log error
-    }
-    "public/data/comments.json"
-  };
+  let db_dir = "public/data";
+  let db_path = "public/data/comments.json";
+  
+  if !std::path::Path::new(db_dir).exists() {
+      fs::create_dir_all(db_dir).map_err(|e| ServerFnError::new(e.to_string()))?;
+  }
 
-  let mut comments: Vec<Comment> = if tokio::fs::try_exists(db_path).await.unwrap_or(false) {
-    let c = tokio::fs::read_to_string(db_path)
-      .await
-      .unwrap_or_else(|_| "[]".to_string());
+  let mut comments: Vec<Comment> = if std::path::Path::new(db_path).exists() {
+    let c = fs::read_to_string(db_path).unwrap_or_else(|_| "[]".to_string());
     serde_json::from_str(&c).unwrap_or_default()
   } else {
-    // Try reading from old path for migration? Or just start fresh.
     Vec::new()
   };
 
@@ -98,11 +121,9 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
   let json = serde_json::to_string_pretty(&comments)
     .map_err(|e| ServerFnError::new(format!("Failed to serialize comments: {}", e)))?;
 
-  tokio::fs::write(db_path, json)
-    .await
+  fs::write(db_path, json)
     .map_err(|e| ServerFnError::new(format!("Failed to save comments: {}", e)))?;
 
-  // Return updated list for this blog
   get_comments(blog_id).await
 }
 
@@ -110,57 +131,24 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
 pub async fn upload_image(name: String, data_base64: String) -> Result<String, ServerFnError> {
   use base64::Engine as _;
 
-  println!(
-    "Server: upload_image called with name: {}, data_len: {}",
-    name,
-    data_base64.len()
-  );
-  if let Ok(cwd) = std::env::current_dir() {
-    println!("Server: Current working directory: {:?}", cwd);
-  }
-
-  // Remove header if present (e.g., "data:image/png;base64,")
   let base64_str = data_base64.split(',').last().unwrap_or(&data_base64);
 
   let data = base64::engine::general_purpose::STANDARD
     .decode(base64_str)
-    .map_err(|e| {
-      println!("Server: Decode error: {}", e);
-      ServerFnError::new(format!("Failed to decode base64: {}", e))
-    })?;
+    .map_err(|e| ServerFnError::new(format!("Failed to decode base64: {}", e)))?;
 
   let filename = format!("{}_{}", chrono::Utc::now().timestamp(), name);
-  // Ensure directory exists
   let dir_path = "public/uploads";
-  if let Err(e) = tokio::fs::create_dir_all(dir_path).await {
-    println!("Server: Failed to create directory {}: {}", dir_path, e);
-    return Err(ServerFnError::new(format!(
-      "Failed to create directory: {}",
-      e
-    )));
+  if !std::path::Path::new(dir_path).exists() {
+      fs::create_dir_all(dir_path).map_err(|e| ServerFnError::new(e.to_string()))?;
   }
 
   let path = format!("{}/{}", dir_path, filename);
-  println!("Server: Writing to path: {}", path);
+  fs::write(&path, &data).map_err(|e| ServerFnError::new(format!("Failed to write file: {}", e)))?;
 
-  if let Err(e) = tokio::fs::write(&path, &data).await {
-    println!("Server: Write error: {}", e);
-    return Err(ServerFnError::new(format!("Failed to write file: {}", e)));
-  }
-
-  println!(
-    "Server: Successfully wrote {} bytes to {}",
-    data.len(),
-    path
-  );
   Ok(format!("/uploads/{}", filename))
 }
 
-/// Echo the user input on the server.
-///
-/// This function is exposed as a POST endpoint at `/api/echo`.
-/// On the client (web/desktop), calling `echo_server` will perform
-/// an HTTP request to this endpoint and return the echoed value.
 #[post("/api/echo")]
 pub async fn echo_server(input: String) -> Result<String, ServerFnError> {
   Ok(input)
@@ -169,12 +157,11 @@ pub async fn echo_server(input: String) -> Result<String, ServerFnError> {
 #[post("/api/content/blog")]
 pub async fn get_blog_content(id: String) -> Result<String, ServerFnError> {
   let filepath = match id.as_str() {
-    "1" => "assets/content/welcome.md".to_string(),
-    "2" => "assets/blog/2026-01-10-python-struct/index.mdx".to_string(),
+    "1" => "../../assets/content/welcome.md".to_string(),
+    "2" => "../../assets/blog/2026-01-10-python-struct/index.mdx".to_string(),
     _ => return Err(ServerFnError::new("Blog post not found")),
   };
 
-  tokio::fs::read_to_string(&filepath)
-    .await
+  fs::read_to_string(&filepath)
     .map_err(|e| ServerFnError::new(format!("Failed to read post: {}", e)))
 }
