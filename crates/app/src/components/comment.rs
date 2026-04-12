@@ -1,6 +1,7 @@
-use super::markdown::Markdown;
-use crate::server::{get_comments, post_comment, upload_image};
+use rustineverything_module_blog::markdown::Markdown;
+use rustineverything_module_blog::server::{get_comments, post_comment, Comment};
 use dioxus::prelude::*;
+
 
 #[derive(PartialEq, Props, Clone)]
 pub struct CommentBoxProps {

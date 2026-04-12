@@ -4897,6 +4897,7 @@ dependencies = [
  "oauth2",
  "pulldown-cmark",
  "rustineverything-core",
+ "rustineverything-module-blog",
  "serde",
  "serde_json",
  "tokio",
@@ -4921,8 +4922,13 @@ dependencies = [
 name = "rustineverything-module-blog"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dioxus",
+ "pulldown-cmark",
  "rustineverything-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

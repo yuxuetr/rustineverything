@@ -10,6 +10,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 # 核心库在前端不需要 server 特性
 rustineverything-core = { path = "../core" }
+rustineverything-module-blog = { path = "../modules/blog" }
 pulldown-cmark = "0.13.0"
 chrono = { workspace = true, features = ["serde"] }
 

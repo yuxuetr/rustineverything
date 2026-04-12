@@ -4,5 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dioxus.workspace = true
+dioxus = { workspace = true, features = ["fullstack"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 rustineverything-sdk = { path = "../../sdk" }
+pulldown-cmark = "0.13.0"
+chrono = { workspace = true, features = ["serde"] }
+tokio = { workspace = true, features = ["full"] }
