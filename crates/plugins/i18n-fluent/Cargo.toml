@@ -1,0 +1,13 @@
+[package]
+name = "i18n-fluent-plugin"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rustineverything-sdk = { path = "../../sdk" }
+fluent-bundle = "0.16.0"
+unic-langid = { version = "0.9.5", features = ["macros"] }
+serde_json = "1.0"

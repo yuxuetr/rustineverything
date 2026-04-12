@@ -63,19 +63,28 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn test_prefix_plugin() {
-        let wasm_path = "/Users/hal/.target/wasm32-unknown-unknown/release/prefix_plugin.wasm";
-        
-        if !std::path::Path::new(wasm_path).exists() {
-            return; // Skip if not built yet in this environment
-        }
+    fn test_i18n_fluent_plugin() {
+        let wasm_path = "/Users/hal/.target/wasm32-unknown-unknown/release/i18n_fluent_plugin.wasm";
+        if !std::path::Path::new(wasm_path).exists() { return; }
 
         let wasm_bytes = fs::read(wasm_path).expect("Failed to read wasm file");
         let manager = PluginManager::new();
 
-        let input = "Hello World";
-        let result = manager.call_with_string(&wasm_bytes, "process_text", input).expect("Failed to call plugin");
+        // 模拟翻译请求
+        let input = serde_json::json!({
+            "key": "nav-blog",
+            "lang": "en"
+        }).to_string();
 
-        assert_eq!(result, "[Plugin: Prefix] Hello World");
+        let result = manager.call_with_string(&wasm_bytes, "translate", &input).expect("Failed to call plugin");
+        assert_eq!(result, "Blog");
+
+        let input_zh = serde_json::json!({
+            "key": "nav-blog",
+            "lang": "zh"
+        }).to_string();
+
+        let result_zh = manager.call_with_string(&wasm_bytes, "translate", &input_zh).expect("Failed to call plugin");
+        assert_eq!(result_zh, "博客");
     }
 }

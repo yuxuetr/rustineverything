@@ -6,6 +6,7 @@ members = [
     "crates/modules/podcast",
     "crates/app",
     "crates/plugins/prefix-plugin",
+    "crates/plugins/i18n-fluent",
 ]
 resolver = "2"
 
