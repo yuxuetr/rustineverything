@@ -1,0 +1,889 @@
+---
+title: "SwiftUI动画和过渡（Transitions）详解教程"
+description: "SwiftUI让我们可以像Keynote的Magic Move一样，为应用程序添加酷炫的动画与过渡效果。本文将带你深入学习SwiftUI中的隐式动画、显式动画及各种转场效果，并通过示例演示如何实现各种常见的动画场景。"
+authors: [yuxuetr]
+tags: [SwiftUI, iOS, Swift]
+keywords: [SwiftUI, iOS开发, SwiftUI动画, SwiftUI过渡, SwiftUI transitions, SwiftUI implicit animation, SwiftUI explicit animation, SwiftUI教程]
+---
+
+# SwiftUI 动画与过渡（Transitions）详解教程
+
+[上一节](../2025-01-12-swiftui-path-and-shape/index.mdx)我们介绍了 SwiftUI 中的 `Path` 和 `Shape` 控件，
+本节我们将介绍 SwiftUI 中的动画与过渡。
+
+SwiftUI 的出现，让我们在进行动画开发时，可以像在 Keynote 中使用 “Magic Move” 一样简单。
+Keynote 的 Magic Move 会自动分析幻灯片之间元素的变化并自动添加过渡效果；
+而在 SwiftUI 中，**你只需要定义视图的两个状态**，SwiftUI 就能帮你完成从一个状态到另一个状态的动画过渡。  
+
+在这篇文章里，你将学习如何使用 **SwiftUI** 提供的 **隐式动画** 与 **显式动画** 
+来为视图创建各种动画效果，以及如何在视图之间使用 **Transitions**（过渡）来实现插入与移除动画。
+
+{/* truncate */}
+
+## 目录
+1. [隐式动画（Implicit Animations）](#implicit-animations)
+2. [显式动画（Explicit Animations）](#explicit-animations)
+3. [使用 rotationEffect 创建加载指示器](#using-rotationeffect-to-create-a-loading-indicator)
+4. [创建进度指示器（Progress Indicator）](#creating-a-progress-indicator)
+5. [延迟动画（delay）](#delay-animation)
+6. [矩形到圆形的变形动画](#rectangle-to-circle-shape-transformation-animation)
+7. [视图的插入与移除过渡（Transitions）](#view-insertion-and-removal-transitions)
+9. [总结](#summary)
+10. [完整示例代码](#complete-example-code)
+
+
+---
+
+## 隐式动画{#implicit-animations}
+
+在 SwiftUI 中，**隐式动画** 是指通过使用 `animation` 修饰符（modifier）
+来自动动画化视图的状态变化。你只需要将 `animation` 修饰符附加到需要被动画化的视图上，
+并指定动画类型即可。
+
+SwiftUI 会在监测到状态发生变化时，自动为这些变化创建动画。
+
+### 基本示例
+
+例如，在下面的示例中，我们创建了一个红色圆形和一个心形图标。当你点击它时：
+1. 圆形由红色变为浅灰色；
+2. 心形由白色变成红色；
+3. 心形图标放大一倍。
+
+在 `ContentView.swift` 中的示例（简化版）：
+
+```swift
+struct ContentView: View {
+    @State private var circleColorChanged = false
+    @State private var heartColorChanged = false
+    @State private var heartSizeChanged = false
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .frame(width: 200, height: 200)
+                .foregroundStyle(circleColorChanged ? Color(.systemGray5) : .red)
+            Image(systemName: "heart.fill")
+                .foregroundStyle(heartColorChanged ? .red : .white)
+                .font(.system(size: 100))
+                .scaleEffect(heartSizeChanged ? 1.0 : 0.5)
+        }
+        .onTapGesture {
+            circleColorChanged.toggle()
+            heartColorChanged.toggle()
+            heartSizeChanged.toggle()
+        }
+    }
+}
+```
+
+如果只是这样写，没有添加动画修饰符，那么点击圆形和心形图标时，
+它们的颜色与大小会在 **没有过渡效果** 的情况下瞬间切换。  
+
+为实现隐式动画，我们可以给 `Circle()` 或者 `Image()` 分别添加 
+`.animation(.default, value: circleColorChanged)` 这样的修饰符。
+当 SwiftUI 检测到 `circleColorChanged` 的变化时，就会自动计算并渲染动画：
+
+```swift
+Circle()
+    .frame(width: 200, height: 200)
+    .foregroundStyle(circleColorChanged ? Color(.systemGray5) : .red)
+    .animation(.default, value: circleColorChanged)
+
+Image(systemName: "heart.fill")
+    .foregroundStyle(heartColorChanged ? .red : .white)
+    .font(.system(size: 100))
+    .scaleEffect(heartSizeChanged ? 1.0 : 0.5)
+    .animation(.default, value: heartSizeChanged)
+```
+
+这里的 `.default` 动画在 iOS 17 中默认是一个弹性动画（spring），你也可以使用其它如 
+`.linear`、`.easeInOut` 等内置动画类型，或使用 `.spring()` 进行更多自定义。
+
+#### 多视图同时动画
+
+我们也可以把 `animation` 修饰符放在父视图上（如 `ZStack`），实现多个视图同时动画，
+但要注意指定哪些 state 的变化需要动画，以及动画如何组合。
+
+---
+
+## 显式动画{#explicit-animations}
+
+与隐式动画相比，**显式动画** 可以帮助我们更精细地控制动画的执行。
+要实现显式动画，我们使用 `withAnimation()` 包裹需要动画化的状态改变。
+
+例如，如果想让上面示例中的**所有**状态变化都使用相同的 spring 动画，我们可以这样写：
+
+```swift
+ZStack {
+    Circle()
+        .frame(width: 200, height: 200)
+        .foregroundColor(circleColorChanged ? Color(.systemGray5) : .red)
+    Image(systemName: "heart.fill")
+        .foregroundColor(heartColorChanged ? .red : .white)
+        .font(.system(size: 100))
+        .scaleEffect(heartSizeChanged ? 1.0 : 0.5)
+}
+.onTapGesture {
+    withAnimation(.spring(.bouncy, blendDuration: 1.0)) {
+        self.circleColorChanged.toggle()
+        self.heartColorChanged.toggle()
+        self.heartSizeChanged.toggle()
+    }
+}
+```
+
+这样就 **不需要** 在视图上使用 `animation` 修饰符，
+而是把所有的 state 切换都放进 `withAnimation` 的闭包中，
+SwiftUI 会自动为这些切换添加动画。
+
+### 局部控制
+
+如果你只想对某个状态变化使用动画，而对其他状态不使用动画，
+可以将对应的那行代码从 `withAnimation` 闭包里剥离出来，
+或对某个状态分别使用不同的动画修饰符。
+
+---
+
+## 使用 rotationEffect 创建加载指示器{#using-rotationeffect-to-create-a-loading-indicator}
+
+SwiftUI 动画的另一个妙处在于：我们不需要详细编码动画的过程，只需要设置初始状态和结束状态，
+SwiftUI 就会为我们补间计算动画。  
+
+下面来看一个 **旋转动画** 的示例。
+
+假设我们想要实现一个旋转的加载指示器，可以使用 `.rotationEffect` 和 `.animation` 配合 `repeatForever` 来实现。
+
+```swift
+struct ContentView: View {
+    @State private var isLoading = false
+    
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: 0.7)
+            .stroke(Color.green, lineWidth: 5)
+            .frame(width: 100, height: 100)
+            .rotationEffect(Angle(degrees: isLoading ? 360 : 0))
+            .animation(.default.repeatForever(autoreverses: false), value: isLoading)
+            .onAppear {
+                isLoading = true
+            }
+    }
+}
+```
+
+- `trim(from: 0, to: 0.7)` 让圆只显示 70% 的弧度；
+- 当 `isLoading` 从 `false` 切换为 `true` 时，`rotationEffect` 就会从 `0` 度变为 `360` 度；
+- `.repeatForever(autoreverses: false)` 让动画可以无限循环。
+
+**如果想调整转速**，可以将 `.default` 替换为 `.linear(duration: 5)` 等等。
+
+---
+
+## 创建进度指示器（Progress Indicator）{#creating-a-progress-indicator}
+
+有些场景下，我们不仅仅想告诉用户“正在加载”，还希望用户能看到具体的任务进度。
+这时可以使用一个 **浮点数**类型的 state 来作为当前进度。
+
+下面给出一个圆形的进度指示器示例，它包含：  
+1. 一个用于显示进度数字的 `Text`；  
+2. 一个背景圆形；  
+3. 一个显示进度的弧形（通过 `trim(from: 0, to: progress)`）。  
+
+```swift
+struct ContentView: View {
+    @State private var progress: CGFloat = 0.0
+    
+    var body: some View {
+        ZStack {
+            Text("\(Int(progress * 100))%")
+                .font(.system(.title, design: .rounded))
+                .bold()
+            Circle()
+                .stroke(Color(.systemGray5), lineWidth: 10)
+                .frame(width: 150, height: 150)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(.green, lineWidth: 10)
+                .frame(width: 150, height: 150)
+                .rotationEffect(Angle(degrees: -90))
+        }
+        .onAppear {
+            // 利用定时器模拟进度递增
+            Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+                self.progress += 0.05
+                if self.progress >= 1.0 {
+                    timer.invalidate()
+                }
+            }
+        }
+    }
+}
+```
+
+真实项目中，你会根据实际进度（例如网络上传下载进度）更新 `progress`，
+动画和界面展示就可同步更新。
+
+---
+
+## 延迟动画（delay）{#delay-animation}
+
+SwiftUI 中你还可以让动画 **延迟** 一段时间才开始，常见的做法是使用 `.delay(_:)`。例如：
+
+```swift
+Animation.default.delay(1.0)
+```
+
+如果想打造类似 **小点依次放大缩小** 的“加载中”动画，
+可以利用 `.delay` 在多个视图上设置不同的延迟时间，制造“先后次序感”。
+
+```swift
+struct ContentView: View {
+    @State private var isLoading = false
+    
+    var body: some View {
+        HStack {
+            ForEach(0...4, id: \.self) { index in
+                Circle()
+                    .frame(width: 10, height: 10)
+                    .foregroundStyle(.green)
+                    .scaleEffect(self.isLoading ? 0 : 1)
+                    .animation(
+                        .linear(duration: 0.6)
+                            .repeatForever()
+                            .delay(0.2 * Double(index)),
+                        value: isLoading
+                    )
+            }
+        }
+        .onAppear {
+            self.isLoading = true
+        }
+    }
+}
+```
+
+---
+
+## 矩形到圆形的变形动画{#rectangle-to-circle-shape-transformation-animation}
+
+SwiftUI 的内置图形元素（如 `RoundedRectangle`、`Circle` 等）也可以利用动画在属性发生改变时，
+进行“形状变形”，如下所示：
+
+```swift
+struct ContentView: View {
+    @State private var recordBegin = false
+    @State private var recording = false
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: recordBegin ? 30 : 5)
+                .frame(width: recordBegin ? 60 : 250, height: 60)
+                .foregroundStyle(recordBegin ? .red : .green)
+                .overlay(
+                    Image(systemName: "mic.fill")
+                        .font(.system(.title))
+                        .foregroundStyle(.white)
+                        .scaleEffect(recording ? 0.7 : 1)
+                )
+            
+            RoundedRectangle(cornerRadius: recordBegin ? 35 : 10)
+                .trim(from: 0, to: recordBegin ? 0.0001 : 1)
+                .stroke(lineWidth: 5)
+                .frame(width: recordBegin ? 70 : 260, height: 70)
+                .foregroundStyle(.green)
+        }
+        .onTapGesture {
+            withAnimation(.default) {
+                self.recordBegin.toggle()
+            }
+            withAnimation(.default.repeatForever().delay(0.5)) {
+                self.recording.toggle()
+            }
+        }
+    }
+}
+```
+
+- `recordBegin` 控制 **按钮的形变**（从绿色矩形到红色圆形）；
+- `recording` 控制 **麦克风的缩放**，并通过 `repeatForever()` 让这个缩放动画不断重复。
+
+---
+
+## 视图的插入与移除过渡（Transitions）{#view-insertion-and-removal-transitions}	
+
+前面提到的所有示例都是基于 **同一个视图** 的属性变化。
+SwiftUI 还可以让你控制 **视图的插入或移除** 动画，这在实践中更能打造“有进有退”的交互体验。  
+
+在 SwiftUI 中，过渡（Transition）就是指视图在 **插入** 或 **移除** 时使用的动画方式。
+例如，当我们要在点击按钮后展示一个新视图，就会用到过渡动画。
+
+### 基本示例
+
+下面是一段简化的代码示例：点击绿色方块后，蓝色方块才出现；再次点击时，蓝色方块移除。
+这就需要我们在添加蓝色方块的 `if show { ... }` 里，给它添加 `.transition(...)` 修饰符，
+并与一个 `withAnimation` 结合使用：
+
+```swift
+struct ContentView: View {
+    @State private var show = false
+    
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 10)
+                .frame(width: 300, height: 300)
+                .foregroundColor(.green)
+                .overlay(
+                    Text("Show details")
+                        .font(.system(.largeTitle, design: .rounded))
+                        .bold()
+                        .foregroundColor(.white)
+                )
+            
+            if show {
+                RoundedRectangle(cornerRadius: 10)
+                    .frame(width: 300, height: 300)
+                    .foregroundColor(.blue)
+                    .overlay(
+                        Text("Well, here is the details")
+                            .font(.system(.largeTitle, design: .rounded))
+                            .bold()
+                            .foregroundColor(.white)
+                    )
+                    .transition(.scale(scale: 0, anchor: .bottom))
+            }
+        }
+        .onTapGesture {
+            withAnimation(.default) {
+                self.show.toggle()
+            }
+        }
+    }
+}
+```
+
+如果我们 **不指定** `transition`，默认情况下 SwiftUI 会使用 **淡入淡出** 的方式插入和移除视图。
+
+### 其它常见过渡
+
+- `.slide`：从一侧滑入/滑出  
+- `.move(edge: .leading)`：在插入时从某一个方向移动进来，在移除时向相同方向移出  
+- `.offset(x: -600, y: 0)`：可以自定义偏移距离，模拟从屏幕外飞入/飞出  
+
+还可以使用 `combined(with:)` 将多个过渡组合起来，比如缩放+偏移+透明度：
+
+```swift
+.transition(.offset(x: -600, y: 0).combined(with: .scale).combined(with: .opacity))
+```
+
+或定义一个扩展，把常用的过渡封装起来：
+```swift
+extension AnyTransition {
+    static var offsetScaleOpacity: AnyTransition {
+        AnyTransition.offset(x: -600, y: 0)
+            .combined(with: .scale)
+            .combined(with: .opacity)
+    }
+}
+```
+
+### 非对称过渡（Asymmetric Transitions）{#asymmetric-transitions}
+
+有时你想插入视图时用 **scale** 动画，移除视图时用 **offset** 动画，
+这就需要 **不对称**（Asymmetric）过渡。例如：
+
+```swift
+.transition(.asymmetric(insertion: .scale(scale: 0, anchor: .bottom),
+                       removal: .offset(x: -600, y: 0)))
+```
+
+这样，在视图出现时执行缩放效果，移除时执行偏移动画。
+
+---
+
+## 总结{#summary}
+
+动画在移动端 UI 设计中有着极其重要的作用。
+它们不仅让应用更具观感与吸引力，也可以在用户交互时传递额外的信息。
+大量的应用都在使用动画来构建流畅的用户体验，以在竞争激烈的应用市场中脱颖而出。  
+
+SwiftUI 通过 **声明式** 的思路大大简化了动画和过渡的实现过程：  
+- 只需定义视图在各个状态下的外观；  
+- 由 SwiftUI 负责插值（补间）计算与渲染；  
+- 通过隐式动画与显式动画，你可以轻松细化对动画的控制；  
+- 过渡动画让视图的插入和移除更加平滑自然。  
+
+希望通过以上内容，你已经对 SwiftUI 中的动画和过渡原理有了更清晰的理解，
+并能灵活应用到自己的实际项目中。
+
+---
+
+## 完整示例代码{#complete-example-code}
+
+### 动画（Animations）示例
+
+```swift
+import SwiftUI
+
+struct ContentView: View {
+    @State private var recordBegin = false
+    @State private var recording = false
+    
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: recordBegin ? 30: 5)
+                .frame(width: recordBegin ? 60 : 250, height: 60)
+                .foregroundColor(recordBegin ? .red : .green)
+                .overlay(
+                    Image(systemName: "mic.fill")
+                        .font(.system(.title))
+                        .foregroundStyle(.white)
+                        .scaleEffect(recording ? 0.7 : 1)
+                )
+            
+            RoundedRectangle(cornerRadius: recordBegin ? 30: 10)
+                .trim(from: 0, to: recording ? 0.0001 : 1)
+                .stroke(lineWidth: 5)
+                .frame(width: recordBegin ? 70 : 260, height: 70)
+                .foregroundColor(.green)
+        }
+        .onTapGesture {
+            withAnimation(.default) {
+                self.recordBegin.toggle()
+            }
+            
+            withAnimation(.default.repeatForever().delay(0.5)) {
+                self.recording.toggle()
+            }
+        }
+    }
+}
+
+// 下方都是示例演示，便于阅读。
+struct Demo9: View {
+    @State private var isLoading = false
+    var body: some View {
+        HStack {
+            ForEach(0..<5, id: \.self) { index in
+                Circle()
+                    .frame(width: 10, height: 10)
+                    .foregroundStyle(.blue)
+                    .scaleEffect(self.isLoading ? 1 : 0)
+                    .animation(Animation.linear(duration: 0.6)
+                    .repeatForever()
+                    .delay(0.2 * Double(index)), value: isLoading)
+            }
+            .onAppear {
+                self.isLoading = true
+            }
+        }
+    }
+}
+
+struct Demo8: View {
+    @State private var progress: CGFloat = 0.0
+    var body: some View {
+        ZStack {
+            Text("\(Int(progress * 100))%")
+                .font(.system(.title, design: .rounded))
+                .bold()
+            Circle()
+                .stroke(Color(.systemGray5), lineWidth: 20)
+                .frame(width: 150, height: 150)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(Color.blue, lineWidth: 20)
+                .frame(width: 150, height: 150)
+                .rotationEffect(Angle(degrees: -90))
+        }
+        .onAppear {
+            Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+                self.progress += 0.05
+                if self.progress >= 1.0 {
+                    timer.invalidate()
+                }
+            }
+        }
+    }
+}
+
+struct Demo7: View {
+    @State private var isLoading = false
+    var body: some View {
+        ZStack {
+            Text("Loading...")
+                .font(.system(.body, design: .rounded))
+                .bold()
+                .offset(y: -25)
+            
+            RoundedRectangle(cornerRadius: 3)
+                .stroke(Color(.systemGray5), lineWidth: 3)
+                .frame(width: 250, height: 3)
+            
+            RoundedRectangle(cornerRadius: 3)
+                .stroke(Color(.green), lineWidth: 3)
+                .frame(width: 30, height: 3)
+                .offset(x: isLoading ? 110 : -110)
+                .animation(Animation.linear(duration: 1)
+                           .repeatForever(autoreverses: false),
+                           value: isLoading)
+        }
+        .onAppear {
+            self.isLoading = true
+        }
+    }
+}
+
+struct Demo6: View {
+    @State private var isLoading = false
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color(.systemGray5), lineWidth: 14)
+                .frame(width: 100, height: 100)
+            
+            Circle()
+                .trim(from: 0, to: 0.2)
+                .stroke(Color.blue, lineWidth: 7)
+                .frame(width: 100, height: 100)
+                .rotationEffect(Angle(degrees: isLoading ? 360 : 0))
+                .animation(Animation.linear(duration: 1)
+                           .repeatForever(autoreverses: false),
+                           value: isLoading)
+                .onAppear {
+                    self.isLoading = true
+                }
+        }
+    }
+}
+
+struct Demo5: View {
+    @State private var isLoading = false
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: 0.7)
+            .stroke(Color.blue, lineWidth: 5)
+            .frame(width: 100, height: 100)
+            .rotationEffect(Angle(degrees: isLoading ? 360 : 0))
+            .animation(.linear(duration: 5)
+                       .repeatForever(autoreverses: false),
+                       value: isLoading)
+            .onAppear {
+                isLoading = true
+            }
+    }
+}
+
+struct Demo4: View {
+    @State private var circleColorChanged = false
+    @State private var heartColorChanged = false
+    @State private var heartSizeChanged = false
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .frame(width: 200, height: 200)
+                .foregroundStyle(circleColorChanged ? Color(.systemGray5) : .red)
+                .animation(.spring(.bouncy, blendDuration: 1.0),
+                           value: circleColorChanged)
+            
+            Image(systemName: "heart.fill")
+                .foregroundStyle(heartColorChanged ? .red : .white)
+                .font(.system(size: 100))
+                .animation(.spring(.bouncy, blendDuration: 1.0),
+                           value: heartColorChanged)
+                .scaleEffect(heartSizeChanged ? 1.0 : 0.5)
+        }
+        .onTapGesture {
+            self.circleColorChanged.toggle()
+            self.heartColorChanged.toggle()
+            self.heartSizeChanged.toggle()
+        }
+    }
+}
+
+struct Demo3: View {
+    @State private var circleColorChanged = false
+    @State private var heartColorChanged = false
+    @State private var heartSizeChanged = false
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .frame(width: 200, height: 200)
+                .foregroundColor(circleColorChanged ? Color(.systemGray5) : .red)
+            
+            Image(systemName: "heart.fill")
+                .foregroundColor(heartColorChanged ? .red : .white)
+                .font(.system(size: 100))
+                .scaleEffect(heartSizeChanged ? 1.0 : 0.5)
+        }
+        .onTapGesture {
+            withAnimation(.spring(.bouncy, blendDuration: 1.0)) {
+                self.circleColorChanged.toggle()
+                self.heartColorChanged.toggle()
+                self.heartSizeChanged.toggle()
+            }
+        }
+    }
+}
+
+struct Demo2: View {
+    @State private var circleColorChanged = false
+    @State private var heartColorChanged = false
+    @State private var heartSizeChanged = false
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .frame(width: 200, height: 200)
+                .foregroundStyle(circleColorChanged ? Color(.systemGray5): .red)
+            
+            Image(systemName: "heart.fill")
+                .foregroundStyle(heartColorChanged ? .red : .white)
+                .font(.system(size: 100))
+                .scaleEffect(heartSizeChanged ? 1.0 : 0.5)
+        }
+        .animation(.spring(.bouncy, blendDuration: 1.0), value: circleColorChanged)
+        .animation(.default, value: heartSizeChanged)
+        .onTapGesture {
+            self.circleColorChanged.toggle()
+            self.heartColorChanged.toggle()
+            self.heartSizeChanged.toggle()
+        }
+    }
+}
+
+struct Demo1: View {
+    @State private var circleColorChanged = false
+    @State private var heartColorChanged = false
+    @State private var heartSizeChanged = false
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .frame(width: 200, height: 200)
+                .foregroundColor(circleColorChanged ? Color(.systemGray5) : .red)
+            
+            Image(systemName: "heart.fill")
+                .foregroundColor(heartColorChanged ? .red : .white)
+                .font(.system(size: 140))
+                .scaleEffect(heartSizeChanged ? 1.0 : 0.5)
+        }
+        .onTapGesture {
+            circleColorChanged.toggle()
+            heartColorChanged.toggle()
+            heartSizeChanged.toggle()
+        }
+    }
+}
+
+#Preview {
+    ContentView()
+}
+```
+
+### 过渡（Transitions）示例
+
+```swift
+import SwiftUI
+
+struct ContentView: View {
+    @State private var show = false
+    
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 10)
+                .frame(width: 300, height: 300)
+                .foregroundColor(.green)
+                .overlay(
+                    Text("Show details")
+                        .font(.system(.largeTitle, design: .rounded))
+                        .bold()
+                        .foregroundColor(.white)
+                )
+            if show {
+                RoundedRectangle(cornerRadius: 10)
+                    .frame(width: 300, height: 300)
+                    .foregroundColor(.blue)
+                    .overlay(
+                        Text("Well, here is the details")
+                            .font(.system(.largeTitle, design: .rounded))
+                            .bold()
+                            .foregroundColor(.white)
+                    )
+                    .transition(.scaleAndOffset)
+            }
+        }
+        .onTapGesture {
+            withAnimation(.default) {
+                self.show.toggle()
+            }
+        }
+    }
+}
+
+extension AnyTransition {
+    static var offsetScaleOpacity: AnyTransition {
+        AnyTransition.offset(x: -600, y: 0)
+            .combined(with: .scale)
+            .combined(with: .opacity)
+    }
+    
+    static var scaleAndOffset: AnyTransition {
+        AnyTransition.asymmetric(
+            insertion: .scale(scale: 0, anchor: .bottom),
+            removal: .offset(x: -600, y: 0)
+        )
+    }
+}
+
+struct Demo4: View {
+    @State private var show = false
+    
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 10)
+                .frame(width: 300, height: 300)
+                .foregroundColor(.green)
+                .overlay(
+                    Text("Show details")
+                        .font(.system(.largeTitle, design: .rounded))
+                        .bold()
+                        .foregroundColor(.white)
+                )
+            if show {
+                RoundedRectangle(cornerRadius: 10)
+                    .frame(width: 300, height: 300)
+                    .foregroundColor(.blue)
+                    .overlay(
+                        Text("Well, here is the details")
+                            .font(.system(.largeTitle, design: .rounded))
+                            .bold()
+                            .foregroundColor(.white)
+                    )
+                    .transition(.offsetScaleOpacity)
+            }
+        }
+        .onTapGesture {
+            withAnimation(.default) {
+                self.show.toggle()
+            }
+        }
+    }
+}
+
+struct Demo3: View {
+    @State private var show = false
+    
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 10)
+                .frame(width: 300, height: 300)
+                .foregroundColor(.green)
+                .overlay(
+                    Text("Show details")
+                        .font(.system(.largeTitle, design: .rounded))
+                        .bold()
+                        .foregroundColor(.white)
+                )
+            if show {
+                RoundedRectangle(cornerRadius: 10)
+                    .frame(width: 300, height: 300)
+                    .foregroundColor(.blue)
+                    .overlay(
+                        Text("Well, here is the details")
+                            .font(.system(.largeTitle, design: .rounded))
+                            .bold()
+                            .foregroundColor(.white)
+                    )
+                    .transition(.offset(x: -600, y: 0)
+                                .combined(with: .scale)
+                                .combined(with: .opacity))
+            }
+        }
+        .onTapGesture {
+            withAnimation(.default) {
+                self.show.toggle()
+            }
+        }
+    }
+}
+
+struct Demo2: View {
+    @State private var show = false
+    
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 10)
+                .frame(width: 300, height: 300)
+                .foregroundColor(.green)
+                .overlay(
+                    Text("Show details")
+                        .font(.system(.largeTitle, design: .rounded))
+                        .bold()
+                        .foregroundColor(.white)
+                )
+            if show {
+                RoundedRectangle(cornerRadius: 10)
+                    .frame(width: 300, height: 300)
+                    .foregroundColor(.blue)
+                    .overlay(
+                        Text("Well, here is the details")
+                            .font(.system(.largeTitle, design: .rounded))
+                            .bold()
+                            .foregroundColor(.white)
+                    )
+                    .transition(.offset(x:-600, y:0))
+            }
+        }
+        .onTapGesture {
+            withAnimation(.default) {
+                self.show.toggle()
+            }
+        }
+    }
+}
+
+struct Demo1: View {
+    @State private var show = false
+    
+    var body: some View {
+        VStack {
+            RoundedRectangle(cornerRadius: 10)
+                .frame(width: 300, height: 300)
+                .foregroundColor(.green)
+                .overlay(
+                    Text("Show details")
+                        .font(.system(.largeTitle, design: .rounded))
+                        .bold()
+                        .foregroundColor(.white)
+                )
+            if show {
+                RoundedRectangle(cornerRadius: 10)
+                    .frame(width: 300, height: 300)
+                    .foregroundColor(.blue)
+                    .overlay(
+                        Text("Well, here is the details")
+                            .font(.system(.largeTitle, design: .rounded))
+                            .bold()
+                            .foregroundColor(.white)
+                    )
+                    .transition(.scale(scale: 0, anchor: .bottom))
+            }
+        }
+        .onTapGesture {
+            withAnimation(.default) {
+                self.show.toggle()
+            }
+        }
+    }
+}
+
+#Preview {
+    ContentView()
+}
+```
+
+---
+
+通过上面这些示例，你应该能够熟悉 SwiftUI 动画与过渡的基本使用方式，并逐步在自己的项目中加以灵活运用。祝你编码愉快，打造属于自己独特风格的炫酷动画与过渡效果！

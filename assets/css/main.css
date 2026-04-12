@@ -1,0 +1,32 @@
+/* === Theme Plugin Variable Defaults === */
+/* Overridden at runtime by WASM theme plugin injection */
+:root {
+    --color-primary: oklch(65% 0.15 250);
+    --color-bg: #fafaf9;
+    --color-surface: #f8fafc;
+    --color-text: #1c1917;
+    --color-text-muted: #475569;
+    --color-border: #e2e8f0;
+}
+.dark {
+    --color-primary: oklch(75% 0.15 250);
+    --color-bg: #0c0a09;
+    --color-surface: #0f172a;
+    --color-text: #fafaf9;
+    --color-text-muted: #94a3b8;
+    --color-border: #1e293b;
+}
+
+/* App-wide styling */
+body {
+    margin: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Base link styles if not covered by Tailwind */
+a {
+    transition: color 0.2s ease;
+}

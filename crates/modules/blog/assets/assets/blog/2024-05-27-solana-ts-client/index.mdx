@@ -1,0 +1,360 @@
+---
+title: "Solana 的 JavaScript 客户端" 
+authors: [yuxuetr]
+description: Solana-Web3.js 库旨在提供对 Solana 的全面覆盖。该库建立在 Solana 的 JSON RPC API 之上。
+tags: [Solana]
+keywords: [Solana,Web3.js,JavaScript,客户端,Web3,Web3 Development,Dapp]
+---
+import { RedText, BlueText, YellowText } from '@site/src/components/ColorText'
+
+# Solana 的 JavaScript 客户端
+
+## 什么是 Solana-Web3.js?
+Solana-Web3.js 库旨在提供对 Solana 的全面覆盖。
+
+**该库建立在 Solana 的 JSON RPC API 之上**。
+
+可以在 [`@solana/web3.js` 文档](https://solana-labs.github.io/solana-web3.js/) 找到完整文档。
+
+## 常用术语
+- **Program**：<YellowText text="无状态的可执行代码，用于解释指令。程序能够根据提供的指令执行操作"/>。
+- **Instruction**：<YellowText text="客户端可以包含在交易中的程序的最小单位"/>。
+在其处理代码中，一条指令可能包含一个或多个跨程序调用。
+- **Transaction**：由客户端使用一个或多个密钥对签名的一个或多个指令，以原子方式执行，仅有两种可能结果：成功或失败。
+
+更多术语请参见 [Solana 术语表](https://docs.solana.com/terminology).
+
+## 入门
+### 安装
+使用 yarn：
+```sh
+yarn add @solana/web3.js
+```
+使用 npm：
+```sh
+npm install --save @solana/web3.js
+```
+浏览器捆绑包：
+```html
+<script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.js"></script>
+<script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+```
+
+### 用法
+JavaScript:
+```javascript
+const solanaWeb3 = require("@solana/web3.js");
+console.log(solanaWeb3);
+```
+
+ES6:
+```javascript
+import * as solanaWeb3 from "@solana/web3.js";
+console.log(solanaWeb3);
+```
+
+浏览器捆绑包：
+```html
+<script>
+  // solanaWeb3 是由捆绑包脚本提供的全局命名空间
+  console.log(solanaWeb3);
+</script>
+```
+
+## 快速开始
+### 连接到钱包
+要让用户使用您的 dApp 或 Solana 应用，他们需要获取他们的**密钥对**。
+
+<YellowText text="密钥对是一个包含匹配的公钥和私钥的实体，用于签署交易"/>。
+
+<YellowText text="获取密钥对的两种方式"/>：
+1. **生成新的密钥对**
+2. **使用密钥(`secret key`)获得密钥对**
+
+生成新的密钥对：
+```javascript
+const { Keypair } = require("@solana/web3.js");
+
+let keypair = Keypair.generate();
+```
+
+通过密钥获得密钥对：
+```javascript
+const { Keypair } = require("@solana/web3.js");
+
+let secretKey = Uint8Array.from([
+  202, 171, 192, 129, 150, 189, 204, 241, 142, 71, 205, 2, 81, 97, 2, 176, 48,
+  81, 45, 1, 96, 138, 220, 132, 231, 131, 120, 77, 66, 40, 97, 172, 91, 245, 84,
+  221, 157, 190, 9, 145, 176, 130, 25, 43, 72, 107, 190, 229, 75, 88, 191, 136,
+  7, 167, 109, 91, 170, 164, 186, 15, 142, 36, 12, 23,
+]);
+
+let keypair = Keypair.fromSecretKey(secretKey);
+```
+
+目前许多钱包允许用户通过各种扩展或网络钱包带入他们的密钥对。
+
+<RedText text="一般建议使用钱包而不是密钥对来签署交易"/>。
+
+<YellowText text="钱包在 dApp 和密钥对之间创建了一个分离层，确保 dApp 永远不会访问密钥"/>。
+
+可以通过 `wallet-adapter` 库找到连接外部钱包的方法。
+
+### 创建和发送交易
+<YellowText text="要与 Solana 上的程序交互，需要创建、签署并发送交易到网络"/>。
+
+<YellowText text="交易是带有签名的指令集合"/>。
+
+<YellowText text="指令在交易中的顺序决定了它们的执行顺序"/>。
+
+**使用 `Transaction` 对象创建交易，并添加所需的消息、地址或指令**。
+
+以下是一个**转账交易**的示例：
+```javascript
+const {
+  Keypair,
+  Transaction,
+  SystemProgram,
+  LAMPORTS_PER_SOL,
+} = require("@solana/web3.js");
+
+let fromKeypair = Keypair.generate();
+let toKeypair = Keypair.generate();
+let transaction = new Transaction();
+
+transaction.add(
+  SystemProgram.transfer({
+    fromPubkey: fromKeypair.publicKey,
+    toPubkey: toKeypair.publicKey,
+    lamports: LAMPORTS_PER_SOL,
+  }),
+);
+```
+上述代码创建了一个准备签名并广播到网络的交易。
+
+`SystemProgram.transfer` 指令被添加到交易中，
+包含要发送的 `lamports` 数量，以及 `to` 和 `from` 的公钥。
+
+<YellowText text="签署交易并发送到网络"/>：
+```javascript
+const {
+  sendAndConfirmTransaction,
+  clusterApiUrl,
+  Connection,
+} = require("@solana/web3.js");
+
+let keypair = Keypair.generate();
+let connection = new Connection(clusterApiUrl("testnet"));
+
+sendAndConfirmTransaction(connection, transaction, [keypair]);
+```
+上述代码使用 `SystemProgram` 的 `TransactionInstruction` 创建交易，并将其发送到网络。
+
+使用 `Connection` 定义连接到的 Solana 网络，主要是 `mainnet-beta`、`testnet` 或 `devnet`。
+
+### 与自定义程序交互
+在 Solana 上，所有操作都与不同的程序交互，包括转账交易。
+
+Solana 上的程序目前用 Rust 或 C 编写。
+
+例如，`SystemProgram` 的 `allocate` 方法签名如下：
+```rust
+pub fn allocate(
+    pubkey: &Pubkey,
+    space: u64
+) -> Instruction
+```
+<YellowText text="要与程序交互，必须首先知道所有将要交互的账户"/>。
+
+<YellowText text="必须提供程序将交互的每个账户"/>，
+
+<YellowText text="并指定账户是否是签名者（`isSigner`）或可写（`isWritable`）"/>。
+
+在上面的`allocate`方法中，**需要一个单独的帐户公钥，以及要分配的空间量**。
+
+我们知道`allocate`方法**通过在帐户内分配空间来写入**，因此需要`isWritable`。
+
+当您**指定运行指令的帐户**时，需要`isSigner`。
+
+在这种情况下，<YellowText text="签署者是调用在其内部分配空间的帐户"/>。
+
+让我们看看如何使用`solana-web3.js`调用此指令:
+
+调用 `allocate` 方法示例：
+```javascript
+let keypair = web3.Keypair.generate();
+let payer = web3.Keypair.generate();
+let connection = new web3.Connection(web3.clusterApiUrl("testnet"));
+
+let airdropSignature = await connection.requestAirdrop(
+  payer.publicKey,
+  web3.LAMPORTS_PER_SOL,
+);
+
+await connection.confirmTransaction({ signature: airdropSignature });
+```
+
+首先，我们设置账户 `Keypair` 和连接，以便在测试网上进行分配。
+
+我们还创建一个支付方 `Keypair` 并进行空投一些 `Sol`，以便支付分配交易。
+```javascript
+let allocateTransaction = new web3.Transaction({
+  feePayer: payer.publicKey,
+});
+let keys = [{ pubkey: keypair.publicKey, isSigner: true, isWritable: true }];
+let params = { space: 100 };
+```
+
+我们创建了交易`allocateTransaction`、`keys` 和 `params` 对象。
+
+在创建交易时，`feePayer` 是一个可选字段，用于指定谁支付交易费，默认为交易中第一个签名者的公钥。
+
+`keys` 代表程序的`allocate`函数将与之交互的所有账户。
+
+由于`allocate`函数还需要空间，我们创建了`params`，在稍后调用`allocate`函数时使用。
+```javascript
+let allocateStruct = {
+  index: 8,
+  layout: struct([u32("instruction"), ns64("space")]),
+};
+```
+上述内容是使用 `@solana/buffer-layout` 的 `u32` 和 `ns64` 创建的，以便促进有效载荷的创建。
+
+分配函数接受参数空间。为了与函数交互，我们必须将数据提供为缓冲区格式。
+
+`buffer-layout` 库有助于为 Solana 上的 Rust 程序正确分配缓冲区并对其进行编码解释。
+
+让我们来分解这个结构。
+```javascript
+{
+  index: 8, /* <-- */
+  layout: struct([
+    u32('instruction'),
+    ns64('space'),
+  ])
+}
+```
+`index`设置为 `8`，因为分配函数位于 `SystemProgram` 的指令枚举中的第 `8` 个位置。
+
+```rust
+/* https://github.com/solana-labs/solana/blob/21bc43ed58c63c827ba4db30426965ef3e807180/sdk/program/src/system_instruction.rs#L142-L305 */
+pub enum SystemInstruction {
+    /** 0 **/CreateAccount {/**/},
+    /** 1 **/Assign {/**/},
+    /** 2 **/Transfer {/**/},
+    /** 3 **/CreateAccountWithSeed {/**/},
+    /** 4 **/AdvanceNonceAccount,
+    /** 5 **/WithdrawNonceAccount(u64),
+    /** 6 **/InitializeNonceAccount(Pubkey),
+    /** 7 **/AuthorizeNonceAccount(Pubkey),
+    /** 8 **/Allocate {/**/},
+    /** 9 **/AllocateWithSeed {/**/},
+    /** 10 **/AssignWithSeed {/**/},
+    /** 11 **/TransferWithSeed {/**/},
+    /** 12 **/UpgradeNonceAccount,
+}
+```
+接下来是`u32('instruction')`。
+```javascript
+{
+  index: 8,
+  layout: struct([
+    u32('instruction'), /* <-- */
+    ns64('space'),
+  ])
+}
+```
+在使用它调用指令时，分配结构中的布局必须始终首先具有 `u32('instruction')`。
+```javascript
+{
+  index: 8,
+  layout: struct([
+    u32('instruction'),
+    ns64('space'), /* <-- */
+  ])
+}
+```
+`ns64('space')` 是 `allocate` 函数的参数。 
+您可以在 Rust 中的原始 `allocate` 函数中看到，`space` 的类型是 `u64`。 
+`u64` 是无符号 `64` 位整数。 
+
+JavaScript 默认只提供最多 `53` 位整数。
+
+`ns64` 来自 `@solana/buffer-layout`，用于帮助在 Rust 和 JavaScript 之间进行类型转换。
+
+您可以在 `solana-labs/buffer-layout` 中找到更多关于 Rust 和 JavaScript 之间的类型转换。
+```javascript
+let data = Buffer.alloc(allocateStruct.layout.span);
+let layoutFields = Object.assign({ instruction: allocateStruct.index }, params);
+allocateStruct.layout.encode(layoutFields, data);
+```
+
+使用先前创建的缓冲布局，我们可以**分配数据缓冲区**。
+
+然后，我们分配我们的参数 `{ space: 100 }`，以便它正确映射到布局，并将其编码到数据缓冲区中。
+
+现在数据已准备好发送到程序。
+```javascript
+allocateTransaction.add(
+  new web3.TransactionInstruction({
+    keys,
+    programId: web3.SystemProgram.programId,
+    data,
+  }),
+);
+
+await web3.sendAndConfirmTransaction(connection, allocateTransaction, [
+  payer,
+  keypair,
+]);
+```
+最后，我们将包含所有账户密钥、付款人、数据和程序ID的交易指令添加到交易中，并将交易广播到网络。
+
+完整代码：
+```javascript
+const { struct, u32, ns64 } = require("@solana/buffer-layout");
+const { Buffer } = require("buffer");
+const web3 = require("@solana/web3.js");
+
+let keypair = web3.Keypair.generate();
+let payer = web3.Keypair.generate();
+
+let connection = new web3.Connection(web3.clusterApiUrl("testnet"));
+
+let airdropSignature = await connection.requestAirdrop(
+  payer.publicKey,
+  web3.LAMPORTS_PER_SOL,
+);
+
+await connection.confirmTransaction({ signature: airdropSignature });
+
+let allocateTransaction = new web3.Transaction({
+  feePayer: payer.publicKey,
+});
+let keys = [{ pubkey: keypair.publicKey, isSigner: true, isWritable: true }];
+let params = { space: 100 };
+
+let allocateStruct = {
+  index: 8,
+  layout: struct([u32("instruction"), ns64("space")]),
+};
+
+let data = Buffer.alloc(allocateStruct.layout.span);
+let layoutFields = Object.assign({ instruction: allocateStruct.index }, params);
+allocateStruct.layout.encode(layoutFields, data);
+
+allocateTransaction.add(
+  new web3.TransactionInstruction({
+    keys,
+    programId: web3.SystemProgram.programId,
+    data,
+  }),
+);
+
+await web3.sendAndConfirmTransaction(connection, allocateTransaction, [
+  payer,
+  keypair,
+]);
+```
+
+## 总结

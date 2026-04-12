@@ -29,6 +29,7 @@ mobile = ["dioxus/mobile"]
 server = [
     "dioxus/server",
     "rustineverything-core/server",
+    "rustineverything-module-blog/server",
     "dep:tokio",
     "dep:base64",
     "dep:oauth2",

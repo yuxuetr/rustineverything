@@ -1,0 +1,629 @@
+---
+title: "使用SwiftUI构建Apple Wallet风格的动画与视图过渡"
+description: "本教程将演示如何使用SwiftUI手势、动画与视图转换，打造Apple Wallet风格的卡片堆叠、重排与交易历史显示功能。"
+authors: [yuxuetr]
+tags: [SwiftUI, iOS, Swift]
+keywords: ["SwiftUI","Apple Wallet","卡片动画","视图转场","移动开发","iOS开发","手势","拖拽"]
+---
+
+export const meta = {
+  title: '使用SwiftUI构建Apple Wallet风格的动画与视图过渡 | SwiftUI教程',
+  description: '以SwiftUI实现Apple Wallet类似的信用卡动画、卡片拖拽重排以及视图过渡效果，通过示例了解如何在项目中运用手势与自定义动画。',
+  keywords: ['SwiftUI','Apple Wallet','动画','视图转场','手势','拖拽','iOS','移动开发'],
+}
+
+# 使用SwiftUI构建Apple Wallet风格的动画与视图过渡
+
+[上一章节](../2025-01-21-swiftui-tinder-card/index.mdx)中，
+我们使用SwiftUI的**手势**与**动画**，实现了一个类似Tinder的卡片滑动UI。
+
+在本篇教程中，我们将继续探索SwiftUI中的动画与手势，
+并使用 `LongPressGesture` 和 `DragGesture` 来实现一个类似Apple Wallet的卡片堆叠、拖拽重排以及视图过渡效果。
+
+通过学习本示例，你将掌握以下内容：
+
+- 如何结合 **State**、**GestureState**、**TapGesture**、**LongPressGesture** 和 **DragGesture** 实现交互控制；
+- 如何利用 **transition** 与 **animation** 修饰器，实现卡片的**进场动画**以及点击卡片后显示交易历史的动画过渡；
+- 如何拖拽并重排卡片，同时更新数据源并触发SwiftUI的自动动画刷新。
+
+若你还未使用过苹果自带的Wallet App，不妨先打开Wallet查看其交互效果，了解本章节要实现的最终动画效果。
+
+{/* truncate */}
+
+---
+
+## 目录
+
+1. [项目准备](#project-preparation)
+2. [创建卡片视图（CardView）](#create-cardview)
+3. [构建WalletView和卡片堆叠](#build-walletview-and-card-stack)
+4. [添加进场动画（Slide-in Animation）](#add-slide-in-animation)
+5. [点击卡片并显示交易历史](#tap-card-and-show-transaction-history)
+6. [使用拖拽手势重排卡片](#rearrange-cards-with-drag-gesture)
+7. [总结](#conclusion)
+
+---
+
+## 项目准备 {#project-preparation}
+
+卡片数据结构如下:
+```swift
+struct Card: Identifiable {
+	let id: UUID
+	let number: String
+	let type: CardType
+	let expiryDate: String
+	let name: String
+	let image: String
+}
+
+// 示例卡片数据
+let testCards: [Card] = [
+	Card(id: UUID(), number: "1234 5678 9012 3456", type: .visa, expiryDate: "12/25", name: "John Doe", image: "visa"),
+	Card(id: UUID(), number: "6789 0123 4567 8901", type: .mastercard, expiryDate: "06/26", name: "Jane Smith", image: "mastercard"),
+	Card(id: UUID(), number: "3456 7890 1234 5678", type: .discover, expiryDate: "09/27", name: "Alice Johnson", image: "discover"),
+]
+```
+
+交易数据结构如下:
+```swift
+struct Transaction: Identifiable {
+	let id: UUID
+	let merchant: String
+	let amount: Double
+	let date: Date
+	let icon: String
+}
+
+// 示例交易数据
+let testTransactions: [Transaction] = [
+	Transaction(id: UUID(), merchant: "Apple", amount: 100.0, date: Date(), icon: "apple"),
+	Transaction(id: UUID(), merchant: "Amazon", amount: 200.0, date: Date(), icon: "amazon"),
+	Transaction(id: UUID(), merchant: "Starbucks", amount: 300.0, date: Date(), icon: "starbucks"),
+]
+```
+---
+
+## 创建卡片视图（`CardView`）{#create-cardview}
+
+示例中的卡片图片只包含卡片品牌（例如Visa、Master等），并不带个人信息或卡号。
+为了更真实，我们将使用 `overlay` 在图片上叠加文字显示卡号和姓名。
+创建名为 `CardView.swift` 的新文件，并如下实现：
+
+```swift
+struct CardView: View {
+    var card: Card
+    
+    var body: some View {
+        Image(card.image)
+            .resizable()
+            .scaledToFit()
+            .overlay(
+                VStack(alignment: .leading) {
+                    Text(card.number)
+                        .bold()
+                    
+                    HStack {
+                        Text(card.name)
+                            .bold()
+                        Text("Valid Thru")
+                            .font(.footnote)
+                        Text(card.expiryDate)
+                            .font(.footnote)
+                    }
+                }
+                .foregroundColor(.white)
+                .padding(.leading, 25)
+                .padding(.bottom, 20),
+                alignment: .bottomLeading
+            )
+            .shadow(color: .gray, radius: 1.0, x: 0.0, y: 1.0)
+    }
+}
+```
+
+### 预览CardView{#preview-cardview}
+
+在 `#Preview` 中传入示例 `Card` 即可进行预览：
+
+```swift
+#Preview(testCards[0].type.rawValue) {
+    CardView(card: testCards[0])
+}
+```
+
+如果一切正常，在Xcode预览中就能看到带有文字信息的卡片效果。
+
+---
+
+## 构建WalletView和卡片堆叠{#build-walletview-and-card-stack}
+
+接下来，我们将借助 `ZStack` 叠加数张 `CardView`，形成立体堆叠效果，并在其上实现各种动画与手势功能。
+
+1. **删除原本的 `ContentView.swift`**；
+2. 在 `View` 文件夹下创建新的 `WalletView.swift`；
+3. 修改 `SwiftUIWalletApp.swift` 里的 `WindowGroup` 初始视图为 `WalletView()`，以避免编译错误：
+
+```swift
+struct SwiftUIWalletApp: App {
+    var body: some Scene {
+        WindowGroup {
+            WalletView()  // 替换为WalletView
+        }
+    }
+}
+```
+
+### 顶部导航栏 {#top-navbar}
+
+在 `WalletView.swift` 中，先创建一个简单的顶部导航栏 `TopNavBar`：
+
+```swift
+struct TopNavBar: View {
+    var body: some View {
+        HStack {
+            Text("Wallet")
+                .font(.system(.largeTitle, design: .rounded))
+                .fontWeight(.heavy)
+            
+            Spacer()
+            
+            Image(systemName: "plus.circle.fill")
+                .font(.system(.title))
+        }
+        .padding(.horizontal)
+        .padding(.top, 20)
+    }
+}
+```
+
+### 叠放卡片 {#stack-cards}
+
+在 `WalletView` 的主体布局中，使用 `VStack` 竖向排列顶部导航与卡片堆叠：
+
+```swift
+struct WalletView: View {
+    var cards: [Card] = testCards  // 默认测试数据
+    
+    var body: some View {
+        VStack {
+            TopNavBar()
+                .padding(.bottom)
+            
+            Spacer()
+            
+            ZStack {
+                ForEach(cards) { card in
+                    CardView(card: card)
+                        .padding(.horizontal, 35)
+                }
+            }
+            
+            Spacer()
+        }
+    }
+}
+```
+
+如果此时预览或运行，会发现**最后一张卡片**（如Discover）遮住了其它卡片，并且叠放顺序与期望相反。以下两点需要解决：
+1. **卡片未展开**：它们都叠在同一位置；
+2. **顺序反了**：`testCards` 第一张应该在最顶层。
+
+---
+
+### 调整叠放顺序（`zIndex`）并让卡片错落展开 {#adjust-stack-order-zindex-and-card-spacing}
+
+#### 1. 设置`zIndex`
+
+SwiftUI 中，`zIndex` 值越大，该视图越在顶层。
+我们可以将**索引较小**的卡片视为**顶层**，因此令其拥有**更大的zIndex**。
+在 `WalletView` 中添加辅助函数：
+
+```swift
+private func zIndex(for card: Card) -> Double {
+    guard let cardIndex = index(for: card) else {
+        return 0.0
+    }
+    return -Double(cardIndex)  // 索引小 -> zIndex大
+}
+
+private func index(for card: Card) -> Int? {
+    guard let index = cards.firstIndex(where: { $0.id == card.id }) else {
+        return nil
+    }
+    return index
+}
+```
+
+并在 `CardView(card: card)` 处加上 `.zIndex(self.zIndex(for: card))`：
+
+```swift
+CardView(card: card)
+    .padding(.horizontal, 35)
+    .zIndex(self.zIndex(for: card))
+```
+
+现在，数组首位（如Visa卡）的 `zIndex` 值最大（负数最小），会置顶显示。 
+
+#### 2. 通过offset让卡片分层
+
+接着为每张卡片设定不同的垂直偏移量(`offset`)。
+我们先定义一个卡片偏移常量，在 `WalletView` 中添加：
+
+```swift
+private static let cardOffset: CGFloat = 50.0
+```
+
+并创建一个 `offset(for:)` 函数来根据索引计算偏移量：
+
+```swift
+private func offset(for card: Card) -> CGSize {
+    guard let cardIndex = index(for: card) else {
+        return CGSize()
+    }
+    // 每张卡片在垂直方向错开50的倍数
+    return CGSize(width: 0, height: -Self.cardOffset * CGFloat(cardIndex))
+}
+```
+
+然后在 `CardView` 中添加 `.offset(self.offset(for: card))`：
+
+```swift
+CardView(card: card)
+    .padding(.horizontal, 35)
+    .offset(self.offset(for: card))
+    .zIndex(self.zIndex(for: card))
+```
+
+这样，最上层卡片（索引0）偏移最小，下面的卡片偏移会更大，从而在视觉上出现**堆叠**的效果。
+
+---
+
+## 添加进场动画（`Slide-in Animation`）{#add-slide-in-animation}
+
+我们想让卡片在应用启动时，从左侧滑入并依次出现。
+为此，可在 `WalletView` 中使用 **transition** 与 **animation** 修饰器，
+为每张卡片实现渐入效果。
+
+### 1. 触发动画的 State {#state-for-animation}
+
+在 `WalletView` 中声明一个 `@State private var isCardPresented = false` 表示卡片是否已呈现：
+
+```swift
+@State private var isCardPresented = false
+```
+
+### 2. 为卡片配置视图转换与动画 {#configure-view-transition-and-animation}
+
+在 `ForEach(cards)` 内部，为 `CardView` 添加如下修饰：
+
+```swift
+CardView(card: card)
+    .offset(self.offset(for: card))
+    .padding(.horizontal, 35)
+    .zIndex(self.zIndex(for: card))
+    .transition(AnyTransition
+                .slide
+                .combined(with: .move(edge: .leading))
+                .combined(with: .opacity))
+    .animation(self.transitionAnimation(for: card), value: isCardPresented)
+    .id(isCardPresented) // 以State变量为id，触发视图刷新
+```
+
+这里的 `transition` 指定了 **slide** + **move(edge: .leading)** + **opacity** 的组合效果，而 `.animation(...)` 决定了具体的动画实现。
+
+接着，我们自定义 `transitionAnimation(for:)`：
+
+```swift
+private func transitionAnimation(for card: Card) -> Animation {
+    var delay = 0.0
+    if let index = index(for: card) {
+        // 卡片索引越小，延迟越大
+        delay = Double(cards.count - index) * 0.1
+    }
+    return Animation.spring(response: 0.1,
+                           dampingFraction: 0.8,
+                           blendDuration: 0.02)
+           .delay(delay)
+}
+```
+
+上面通过延迟 (`delay`) 实现先展示索引**较大的**卡片（底层卡）再出现索引较小的卡片（顶部卡）。
+
+### 3. 在 `onAppear` 中触发动画 {#trigger-animation-on-appear}
+
+在 `ZStack` 或 `VStack` 上添加 `onAppear`，
+当视图加载后立即将 `isCardPresented` 切为 `true`，从而触发动画：
+
+```swift
+ZStack {
+    ForEach(cards) { card in
+        ...
+    }
+}
+.onAppear {
+    isCardPresented.toggle()
+}
+```
+
+这样，一启动应用，卡片会从屏幕左侧依次滑入并呈现层叠效果。
+
+---
+
+## 点击卡片并显示交易历史 {#tap-card-and-show-transaction-history}
+
+Wallet应用中，**轻点某张卡片**可以查看交易历史（自下方弹出）。
+我们用 `isCardPressed` 和 `selectedCard` 这两个State变量来控制这部分逻辑。
+
+```swift
+@State var isCardPressed = false
+@State var selectedCard: Card?
+```
+
+### 1. 绑定TapGesture {#bind-tapgesture}
+
+在对 `CardView` 的 `.gesture` 处理中，添加一个 `TapGesture` 来切换 `isCardPressed` 以及记录当前卡片：
+
+```swift
+.gesture(
+    TapGesture()
+        .onEnded { _ in
+            withAnimation(.easeOut(duration: 0.15).delay(0.1)) {
+                self.isCardPressed.toggle()
+                self.selectedCard = self.isCardPressed ? card : nil
+            }
+        }
+)
+```
+
+### 2. 调整卡片偏移 {#adjust-card-offset}
+
+当某张卡片被选中时，我们希望**选中卡片及其上方卡片都上移**（偏移量0），而其他卡片移到屏幕下方，形成离场效果。
+更新 `offset(for:)` 逻辑：
+
+```swift
+private func offset(for card: Card) -> CGSize {
+    guard let cardIndex = index(for: card) else {
+        return CGSize()
+    }
+    
+    // 如果用户选中了卡片
+    if isCardPressed {
+        guard let selectedCard = self.selectedCard,
+              let selectedCardIndex = index(for: selectedCard) else {
+            return .zero
+        }
+        
+        // 对于选中卡片以及其上方的卡片，都保持在原位
+        if cardIndex >= selectedCardIndex {
+            return .zero
+        }
+        
+        // 其余卡片则离场（向下偏移一个较大值）
+        let offset = CGSize(width: 0, height: 1400)
+        return offset
+    }
+    
+    // 默认堆叠时的偏移
+    return CGSize(width: 0, height: -Self.cardOffset * CGFloat(cardIndex))
+}
+```
+
+### 3. 显示交易历史视图 {#show-transaction-history-view}
+
+在 `VStack` 的 `Spacer()` 之上插入一个条件视图，根据 `isCardPressed` 
+来显示 `TransactionHistoryView`：
+
+```swift
+if isCardPressed {
+    TransactionHistoryView(transactions: testTransactions)
+        .padding(.top, 10)
+        .transition(.move(edge: .bottom))
+}
+```
+
+一旦 `isCardPressed` 为true，交易历史视图就会自底部**过渡**出现，营造抽屉弹出的效果。
+
+---
+
+## 使用拖拽手势重排卡片 {#rearrange-cards-with-drag-gesture}
+
+Wallet 还有一项功能：**长按**并**拖拽**卡片进行重新排序。整体流程如下：
+1. 仅当用户**长按**卡片成功后，才允许进行拖拽；
+2. 拖拽过程中卡片会略微向上偏移（表示被“抓取”），可以随手在卡片堆中调整顺序；
+3. 松手后，卡片插入新的位置，整个堆叠顺序随之更新。
+
+### 1. 定义DragState
+
+我们需要追踪“是否长按”、“拖拽位移”、“被拖拽卡片索引”等信息，可借助一个枚举 `DragState`：
+
+```swift
+enum DragState {
+    case inactive
+    case pressing(index: Int? = nil)
+    case dragging(index: Int? = nil, translation: CGSize)
+    
+    var index: Int? {
+        switch self {
+        case .pressing(let index), .dragging(let index, _):
+            return index
+        case .inactive:
+            return nil
+        }
+    }
+    
+    var translation: CGSize {
+        switch self {
+        case .inactive, .pressing:
+            return .zero
+        case .dragging(_, let translation):
+            return translation
+        }
+    }
+    
+    var isPressing: Bool {
+        switch self {
+        case .pressing, .dragging:
+            return true
+        case .inactive:
+            return false
+        }
+    }
+    
+    var isDragging: Bool {
+        switch self {
+        case .dragging:
+            return true
+        case .inactive, .pressing:
+            return false
+        }
+    }
+}
+```
+
+再在 `WalletView` 中声明 `@GestureState private var dragState = DragState.inactive` 来存储当前手势状态。
+
+### 2. 同时支持点击与长按拖拽 {#support-tap-and-long-press-drag}
+
+SwiftUI允许将多个手势用 `.exclusively(before:)` 组合，使系统**只识别到一种**手势。
+这里我们让**单击**与**长按-拖拽**互斥：
+
+```swift
+.gesture(
+    TapGesture()
+        .onEnded { _ in
+            withAnimation(.easeOut(duration: 0.15).delay(0.1)) {
+                self.isCardPressed.toggle()
+                self.selectedCard = self.isCardPressed ? card : nil
+            }
+        }
+        .exclusively(
+            before: LongPressGesture(minimumDuration: 0.05)
+                .sequenced(before: DragGesture())
+                .updating(self.$dragState) { (value, state, transaction) in
+                    switch value {
+                    case .first(true):
+                        // 触发了长按
+                        state = .pressing(index: self.index(for: card))
+                    case .second(true, let drag):
+                        // 进入拖拽
+                        state = .dragging(index: self.index(for: card), 
+                                          translation: drag?.translation ?? .zero)
+                    default:
+                        break
+                    }
+                }
+                .onEnded { (value) in
+                    // 拖拽结束，更新卡片顺序
+                    guard case .second(true, let drag?) = value else { return }
+                    withAnimation {
+                        self.rearrangeCards(with: card, dragOffset: drag.translation)
+                    }
+                }
+        )
+)
+```
+
+此处 `.exclusively(before:)` 指**要么**识别为点击（若手势先检测到点击），
+**要么**识别为长按+拖拽（若长按得以成立），两者不会混淆。
+
+### 3. 拖拽中的偏移与zIndex变化 {#offset-and-zindex-changes-during-drag}
+
+更新 `offset(for:)` 来支持拖拽时的额外偏移：
+
+```swift
+private func offset(for card: Card) -> CGSize {
+    guard let cardIndex = index(for: card) else { return .zero }
+    
+    // 如果点击展示交易
+    if isCardPressed {
+        ...
+    }
+    
+    // 拖拽逻辑
+    var pressedOffset = CGSize.zero
+    var dragOffsetY: CGFloat = 0.0
+    
+    if let draggingIndex = dragState.index,
+       cardIndex == draggingIndex {
+        // 长按时卡片略微上移 -20
+        pressedOffset.height = dragState.isPressing ? -20 : 0
+        
+        // 若水平位移>10或<-10，卡片在水平方向稍微偏移
+        switch dragState.translation.width {
+        case let width where width < -10:
+            pressedOffset.width = -20
+        case let width where width > 10:
+            pressedOffset.width = 20
+        default:
+            break
+        }
+        // 拖拽位移在垂直方向叠加
+        dragOffsetY = dragState.translation.height
+    }
+    
+    return CGSize(width: 0 + pressedOffset.width,
+                  height: -Self.cardOffset * CGFloat(cardIndex)
+                          + pressedOffset.height
+                          + dragOffsetY)
+}
+```
+
+同时，修改 `zIndex(for:)` 在卡片被拖拽时动态计算zIndex，
+让用户拖拽的卡片可以在堆叠中上下浮动：
+
+```swift
+private func zIndex(for card: Card) -> Double {
+    guard let cardIndex = index(for: card) else {
+        return 0.0
+    }
+    
+    let defaultZIndex = -Double(cardIndex) // 默认负索引
+    
+    if let draggingIndex = dragState.index,
+       cardIndex == draggingIndex {
+        return defaultZIndex + Double(dragState.translation.height / Self.cardOffset)
+    }
+    
+    return defaultZIndex
+}
+```
+
+### 4. 松手后更新卡片顺序 {#update-card-order-after-release}
+
+在 `.onEnded` 中，我们调用 `rearrangeCards(with:card, dragOffset:)` 来根据拖拽位移重新插入卡片。此函数先移除拖拽的卡片，再将其插入新的索引位置：
+
+```swift
+@State var cards: [Card] = testCards
+
+private func rearrangeCards(with card: Card, dragOffset: CGSize) {
+    guard let draggingCardIndex = index(for: card) else { return }
+    
+    // 根据拖拽的垂直距离变化计算新的索引
+    var newIndex = draggingCardIndex + Int(-dragOffset.height / Self.cardOffset)
+    // 防止越界
+    newIndex = max(0, min(newIndex, cards.count - 1))
+    
+    let removedCard = cards.remove(at: draggingCardIndex)
+    cards.insert(removedCard, at: newIndex)
+}
+```
+
+更新完 `cards` 数组后，SwiftUI会自动重绘，从而完成卡片新顺序的动画过渡。
+至此，你可以在模拟器中长按并拖拽卡片，松开后即可重排，完整地还原**Apple Wallet**的主要交互体验！
+
+---
+
+## 总结 {#conclusion}
+
+通过本示例，你可以将**类似Apple Wallet**的卡片滑入动画、点击查看交易、长按拖拽重排等功能整合到SwiftUI项目中。
+相比传统UIKit，SwiftUI通过 **State** 与 **GestureState** 将状态驱动与UI层相结合，
+极大简化了动画编排与手势控制的难度：
+
+- 只需**更新数据源**或**状态变量**，SwiftUI就会**自动动画**并实现视图过渡；
+- 可以采用 `.exclusively(before:)` 等手段对多手势进行组合；
+- 借助 `.offset`、`.zIndex`、`.transition`、`.animation` 等修饰器即可灵活构建复杂交互。
+
+无论是**Tinder风格的左右滑动**还是**Wallet风格的堆叠式卡片拖拽**，思路都是将界面拆分为“顶层卡片”、
+“底层卡片”等可交互元素，并利用SwiftUI的状态绑定与组合动画来完成逼真的可视化效果。
+希望这些技巧能为你的iOS项目带来更多灵感，打造更加流畅且高效的用户体验！

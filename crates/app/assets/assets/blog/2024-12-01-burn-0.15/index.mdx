@@ -1,0 +1,84 @@
+---
+title: "Burn 0.15.0 发布公告"
+authors: [yuxuetr]
+description: Burn 0.15.0 带来了矩阵乘法和卷积操作的重大性能提升，并新增对 ROCm/HIP 和 SPIR-V 的实验性支持，同时引入了多后端兼容性和量化操作等新特性。
+tags: [Burn, Rust, 深度学习, GPU, ROCm, SPIR-V, 量化]
+keywords: [Burn 0.15, Rust 深度学习框架, GPU 加速, ONNX 支持, 量化操作, 多后端支持]
+---
+
+# Burn 0.15.0 发布公告
+
+## 概述
+
+Burn 0.15.0 带来了显著的性能改进，特别是在矩阵乘法和卷积操作方面。
+
+此外，此版本还引入了以下重要更新：
+
+- **实验性支持**：新增 `ROCm/HIP` 和 `SPIR-V` 支持，通过 `CubeCL` 运行时实现。
+- **多后端兼容性**：奠定多后端支持的基础。
+- **新特性**：增加了量化操作支持。
+- **ONNX 支持扩展**：包括更多的算子支持和错误修复，以提升覆盖率。
+
+除此之外，Burn `0.15.0` 还包含多项错误修复、性能优化、新的张量操作，以及改进的文档支持。
+
+---
+
+## 模块与张量相关更新
+
+- **移除**：对常量泛型模块的拷贝限制。
+- **新增**：`deform_conv2d`（实现于 `torchvision`）、`Softmin`、`round`、`floor`、`ceil` 等浮点操作。
+- **增强**：为张量同步增加支持，添加 `tensor.one_hot` 整数操作。
+- **更改**：LR 调度器调整为首次调用 `.step()` 时返回初始学习率。
+
+---
+
+## ONNX 支持扩展
+
+- 支持多维索引的 `gather` 操作。
+- 增强张量形状跟踪能力。
+- 新增 `ConvTranspose1d` 和 `trilu` 操作支持。
+- 修复 `where` 操作在标量输入下的行为。
+
+---
+
+## 后端改进
+
+- 支持 `CudaDevice` 和 `MetalDevice`，避免重复创建设备。
+- 新增 SPIR-V 编译器支持 (`burn-wgpu`) 和 HIP 支持 (`burn-hip`)。
+- 引入 `BackendRouter`，为分布式后端处理铺路。
+- 修复自动微分相关的内存泄漏和 NaN 问题。
+
+---
+
+## 文档与示例
+
+- 新增自定义 `cubecl` 内核的文档。
+- 改进了回归任务的示例和 `burn-tch` 文档。
+- 修复了多个 Burn Book 的链接及 Raspberry Pi 示例的编译问题。
+
+---
+
+## 性能与优化
+
+- **性能提升**：增强了切片内核的性能，改进了 `conv2d` 和 `conv_transpose2d` 的自动调优。
+- **数据局部性优化**：为隐式 GEMM 提供更好的性能支持，并新增边界检查以支持任意输入形状。
+
+---
+
+## Miscellaneous 更新
+
+- **工具链**：更新了 CI 工作流及工具，修复编译器设置的多处问题。
+- **兼容性**：确保最小支持 Rust 版本为 1.81。
+
+---
+
+## 参考
+
+- [Burn 官方 GitHub Release 页面](https://github.com/burn-rs/burn/releases)
+- [Burn 文档](https://burn.dev)
+- [原文链接](https://burn.dev/blog/release-0.15.0/)
+- [CubeCL 文档](https://docs.rs/cubecl)
+
+---
+
+通过 Burn `0.15.0`，深度学习开发者可以更高效地利用 GPU 加速和量化技术，同时享受多后端支持带来的灵活性。欢迎尝试新版本并加入我们的社区，共同推动 Rust 生态的技术进步！

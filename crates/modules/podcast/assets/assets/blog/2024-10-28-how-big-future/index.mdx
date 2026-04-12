@@ -1,0 +1,181 @@
+---
+title: "你的Future有多大？" 
+authors: [yuxuetr]
+description: 本文将探讨Rust中的`std::future::Future`，深入了解其大小对性能和资源管理的影响，并分享一些优化Future大小的实用技巧。
+tags: [Rust,Future]
+keywords: [Rust,Future,性能优化,异步编程,接Rust项目外包开发]
+---
+import { RedText, BlueText, YellowText } from '@site/src/components/ColorText'
+
+# 你的Future有多大？
+
+在本文中，我们将探讨Rust中的`std::future::Future`，深入了解其大小对性能和资源管理的影响，并分享一些优化Future大小的实用技巧。
+
+## 引言
+
+Rust的异步编程模型依赖于`Future`，它代表一个可能尚未完成的计算。
+理解`Future`的大小对于编写高效的异步代码至关重要，尤其是在资源有限的环境中，如嵌入式系统或高并发服务器。
+
+本文将带你了解如何测量Future的大小、为什么这很重要，以及如何通过一些策略来优化Future的大小。
+
+## 什么是Future？
+
+在Rust中，有两种创建`Future`的方法：
+
+1. **手动实现**：定义一个结构体或枚举，然后为其实现`Future` trait。
+2. **使用`async`关键字**：通过`async`块或`async`函数创建`Future`。
+任何`async`块（`async { .. }`）或`async`函数（`async fn foo() { .. }`）都会返回一个`Future`。
+
+例如：
+
+```rust
+async fn example_async_function() {
+    // 异步操作
+}
+```
+
+这个`example_async_function`函数返回一个`Future`，该`Future`在被`poll`时会执行其中的异步操作。
+
+## Future的大小有多大？
+
+在Rust中，`Future`的大小取决于它所包含的状态和数据。
+编译器在编译时会确定每个`Future`的确切大小，这对于内存分配和性能优化非常重要。
+
+### 如何测量Future的大小？
+
+可以使用`std::mem::size_of`函数来测量任何类型在内存中的大小。
+
+对于`Future`，你可以创建一个通用的函数来获取其大小：
+
+```rust
+use std::future::Future;
+use std::mem;
+
+fn how_big_is_that_future<F: Future>(_fut: F) -> usize {
+    mem::size_of::<F>()
+}
+
+#[tokio::main]
+async fn main() {
+    let fut = async {
+        // 一些异步操作
+    };
+    println!("Future size: {} bytes", how_big_is_that_future(fut));
+}
+```
+
+这个泛型函数会在编译时被具体化（**monomorphised**），
+即Rust编译器会为每种不同的`F`生成一个独立的函数版本，从而知道每个`Future`的具体大小。
+
+## 为什么我们关心Future的大小？
+
+了解`Future`的大小对于以下几个方面至关重要：
+
+1. **栈空间限制**：`Future`通常在栈上分配，而每个线程的栈空间是有限的（例如，标准库中每个线程默认有`2 MiB`的栈空间）。
+2. **性能优化**：较大的`Future`会占用更多的内存，可能导致缓存未命中，影响性能。
+3. **避免栈溢出**：过大的`Future`可能导致栈空间耗尽，导致程序崩溃。
+
+### 示例：大型Future
+
+以下是一个创建大型`Future`的示例：
+
+```rust
+async fn nothing() {}
+
+async fn huge() {
+    let mut a = [0_u8; 20_000];
+    nothing().await;
+    for (idx, item) in a.iter_mut().enumerate() {
+        *item = (idx % 256) as u8;
+    }
+}
+```
+
+在这个示例中，`huge`函数创建了一个包含20,000个`u8`元素的数组，并在`await`点之后填充数组。
+即使在发布模式下，这个`Future`也占用了`20,002`字节（`20,000`字节用于数组，2字节用于`nothing`函数的`Future`）。
+
+## 如何优化Future的大小？
+
+### 1. 使用Box将Future放到堆上
+
+如果`Future`非常大，可以将其包装在`Box`中，将其存储在堆上，而不是栈上。
+
+这样可以减少栈空间的占用。
+
+```rust
+async fn not_so_innocent() {
+    Box::pin(huge()).await;
+}
+```
+
+使用`Box::pin`而不是`Box::new`，因为`Future`需要被固定（`pinned`）以供轮询。
+
+### 2. Tokio中的自动Boxing
+
+Tokio在编译为调试模式时，会检查用户提供的`Future`的大小，并在超过一定阈值时自动将其`Box`。
+最新版本的Tokio还扩展了这一行为到发布模式，设置了`16 KiB`的限制。
+
+```rust
+tokio::spawn(huge());
+```
+
+通过这种方式，Tokio会自动将超过16 KiB的`Future`放到堆上，避免栈溢出。
+
+### 3. 使用Tracing进行任务大小监控
+
+Tokio Console现在支持在任务生成时记录`Future`的大小，并提供警告以提示开发者可能存在的问题。
+
+此外，Clippy已经引入了`large_futures` lint，可以在编译时检测过大的`Future`，帮助开发者在问题发生前进行优化。
+
+## 完整示例
+
+以下是一个完整的示例，展示了如何测量和优化`Future`的大小：
+
+```rust
+use std::future::Future;
+use std::mem;
+
+fn how_big_is_that_future<F: Future>(_fut: F) -> usize {
+    mem::size_of::<F>()
+}
+
+async fn nothing() {}
+
+async fn huge() {
+    let mut a = [0_u8; 20_000];
+    nothing().await;
+    for (idx, item) in a.iter_mut().enumerate() {
+        *item = (idx % 256) as u8;
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let fut = huge();
+    println!("Future size: {} bytes", how_big_is_that_future(fut));
+
+    tokio::spawn(fut);
+}
+```
+
+运行上述代码，你将看到`huge`函数的`Future`大小，并且Tokio会根据配置自动将其Box到堆上。
+
+## 总结
+
+了解和优化`Future`的大小对于编写高效、可靠的Rust异步代码至关重要。
+
+通过以下几种方法，可以有效管理和减少`Future`的内存占用：
+
+1. **测量Future的大小**：使用`std::mem::size_of`函数。
+2. **Boxing大型Future**：将其存储在堆上，减小栈空间占用。
+3. **利用Tokio的自动Boxing**：让Tokio自动处理大型`Future`。
+4. **使用Clippy进行静态检查**：提前发现并优化过大的`Future`。
+
+通过这些策略，你可以确保Rust异步代码在各种环境下高效运行，避免内存和性能问题。
+
+## 参考资料
+
+- [Rust官方文档](https://www.rust-lang.org/zh-CN/learn)
+- [Tokio异步运行时](https://tokio.rs/)
+- [Clippy工具](https://github.com/rust-lang/rust-clippy)
+- [Tokio Console](https://tokio.rs/tokio-console)

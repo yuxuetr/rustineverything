@@ -1,0 +1,187 @@
+---
+title: "Python的包管理器: Rye 使用指南和注意事项" 
+authors: [yuxuetr]
+description: Rye 是一个现代化的 Python 包管理工具，旨在简化 Python 项目的管理和构建流程。它提供了更快的依赖解析和更简单的项目配置方式。本文将带您了解如何使用 Rye 来管理您的 Python 项目。
+tags: [Python,Rye]
+keywords: [Python,Rye,包管理工具,pip,conda,poetry,pipenv,anaconda,包管理工具对比]
+---
+
+import { RedText, BlueText, YellowText } from '@site/src/components/ColorText'
+
+# Python的包管理器: Rye 使用指南和注意事项
+
+Rye 是一个现代化的 Python 包管理工具，旨在简化 Python 项目的管理和构建流程。
+它提供了更快的依赖解析和更简单的项目配置方式。
+本文将带您了解如何使用 Rye 来管理您的 Python 项目。
+
+在我们深入介绍安装和基本使用指南之前，重要的是让您了解Rye实际上是什么。
+Rye是一个一站式工具。其理念是，作为Python开发人员，您需要了解的只有Rye，
+因为Rye是您进入体验的起点。
+
+作为Rye用户，您甚至不需要自己安装Python，因为Rye会替您完成这一切。
+这意味着要使用Rye，您只需要安装Rye，其他工作由Rye自己完成。
+
+<RedText text="一旦Rye安装在您的系统上，它可以为您自动安装Python解释器，可以指定版本"/>，
+从软件包索引安装软件包，管理虚拟环境并进行幕后管理等。
+
+## 工具对比
+
+| 工具    | 优势                                                                 | 劣势                                               |
+|---------|----------------------------------------------------------------------|----------------------------------------------------|
+| **Rye** | - 自动管理虚拟环境<br/>- 依赖解析速度快<br/>- 简化项目初始化和配置     | - 相对较新<br/>- 社区支持和生态系统尚未完全成熟      |
+| **Pip** | - 简单<br/>- 广泛支持<br/>- 与 PyPI 的直接集成                         | - 缺乏内置的虚拟环境管理                           |
+| **Conda** | - 强大的环境管理<br/>- 支持多语言<br/>- 适合科学计算                  | - 较大的安装包<br/>- 可能引入不必要的复杂性          |
+| **Poetry** | - 强大的依赖管理<br/>- 简化的项目配置                               | - 在大型项目中速度较慢                              |
+| **Pipenv** | - 自动管理虚拟环境<br/>- 简化的依赖管理                             | - 速度较慢<br/>- 与其他工具集成性较差                |	
+
+## 安装 Rye
+
+**Rye**安装有一个优点，那就是：不需要提前安装Python环境。
+不像**pip**，**pipenv**，**poetry**等工具，需要提前安装Python环境。
+
+虽然**Anaconda/MiniConda**也不需要提前安装环境，有一些包做了优化加速(比如Numpy之类的)，
+但是Anaconda系列的包管理工具比较大，不适合所有场景。尤其是Anaconda有一个缺点就是：
+**Anaconda**不好升级，导致不能指定高于某个版本的Python环境。
+
+当然Rye也有缺点，就是比较新，可能不像pip那样稳定和广泛支持。
+但是Rye的一大好处就是可以严格管理Python依赖包的版本，并且可以将开发依赖和生产依赖分开。
+脚本启动等功能，也是Rye的一大特色。(由于Rye是Rust编写，所以，可能是受到Rust的Cargo工具的启发，我猜是这样)
+
+### Linux/MacOS安装方式
+
+```bash
+curl -sSf https://rye.astral.sh/get | bash
+```
+
+### Windows上安装Rye
+
+[安装连接](https://github.com/astral-sh/rye/releases/latest/download/rye-x86_64-windows.exe)
+
+安装完成后，您可以通过运行 `rye --version` 来验证安装是否成功。
+
+:::tip
+官网安装指南: [https://rye.astral.sh/guide/installation/](https://rye.astral.sh/guide/installation/)
+:::
+
+## 创建新项目
+
+使用 Rye 创建新项目非常简单。使用`init`子命令即可，可以指定`init`更多的选项，比如指定Python版本等。
+
+只需在命令行中运行以下命令：
+
+```bash
+rye init your_project_name
+# 或
+rye init your_project_name --py=3.11 # 指定 Python 版本
+# 或
+rye init your_project_name -p=3.11   # 简写,指定Python版本
+```
+
+这将创建一个名为 `your_project_name` 的新目录，并在其中初始化一个新的 Python 项目。
+
+## 添加依赖
+
+Rye 使得添加和管理项目依赖变得非常简单。要向项目添加依赖，可以使用以下命令：
+
+```bash
+rye add diffusers
+# 或
+rye add diffusers --dev   # 添加开发依赖
+# 或
+rye add diffusers==0.30.0 # 指定版本
+# 或
+rye add "diffusers[torch]" # 指定依赖包的额外功能
+```
+
+这将把 `diffusers` 包添加到项目的依赖中，并自动更新项目的依赖文件。
+
+## 移除依赖
+
+如果您需要移除某个依赖，只需运行：
+
+```bash
+rye remove diffusers
+```
+
+这将从项目中移除 `diffusers` 包，并更新依赖文件。
+
+## 管理虚拟环境
+
+**Rye** 自动为每个项目创建和管理虚拟环境。
+<BlueText text="您无需手动激活或管理虚拟环境，Rye 会在需要时自动为您处理"/>。
+**只要进入到创建的项目目录中，Rye会自动激活虚拟环境**。可以执行`python -V`检查Python版本。
+
+![Rye虚拟环境](./rye-virtualenv.png 'Rye虚拟环境')
+
+## 构建和发布
+
+Rye 还提供了简单的构建和发布工具。要构建项目，可以使用：
+
+```bash
+rye build
+```
+
+构建完成后，您可以通过以下命令发布项目：
+
+```bash
+rye publish
+```
+
+确保您已配置好发布所需的凭据。
+
+## 运行项目脚本
+要运行脚本，需要做以下几步：
+
+1. 需要配置`pyproject.toml`文件中的`scripts`字段。
+
+```toml
+[project.scripts]
+my-hello-script = 'hello:main'
+```
+
+2. 创建脚本文件`hello.py`，并在其中定义`main`函数。
+
+```python
+def main():
+	print("Run Rye main")
+```
+:::tip
+这里需要注意，要把`hello.py`文件放在项目的根目录下的`src`的目录下。
+:::
+
+3. 运行项目脚本
+
+```bash
+rye run my-hello-script
+```
+这里的`my-hello-script`就是`pyproject.toml`文件中的`scripts`字段中的`my-hello-script`。
+
+## 在项目中使用Python直接运行脚本
+
+由于进入了`rye init`创建的项目后，就会默认激活虚拟环境，所以，可以直接使用Python运行脚本。
+
+比如，创建一个`demo.py`文件，内容如下：
+
+```python
+def main():
+	print("Hello Rye")
+```
+
+运行方式：
+```bash
+python demo.py
+```
+:::tip
+只要`*.py`放在项目根目录下，或者项目的其他目录下，都可以直接使用Python运行脚本。
+:::
+
+![Rye环境中使用python运行脚本](./python-script.png 'Rye环境中使用python运行脚本')
+
+## 总结
+Python 的包管理器一直都是一个**痛点问题**。Rye 是一个新的工具，它试图解决这个问题。
+
+Rye 是一个强大的工具，为 Python 开发者提供了简洁高效的包管理体验。
+通过简化依赖管理、自动化虚拟环境以及提供便捷的构建和发布功能，
+Rye 帮助开发者更专注于编写代码，而不是管理项目配置。
+
+希望这篇指南能帮助您更好地使用 Rye 来管理您的 Python 项目！如果您有任何问题或建议，欢迎在评论区留言。

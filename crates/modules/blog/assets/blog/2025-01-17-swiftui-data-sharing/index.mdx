@@ -1,0 +1,284 @@
+---
+title: "使用 Combine 和 `@EnvironmentObject` 实现数据共享"
+description: "本文将深入探讨如何运用 SwiftUI、Combine 与 `@EnvironmentObject` 在应用中实现数据共享与用户偏好管理，包括使用 UserDefaults 进行持久化存储，以及对列表视图进行动态刷新、筛选和排序等操作。"
+authors: [yuxuetr]
+tags: [SwiftUI, Swift, iOS]
+keywords: ["SwiftUI","Combine","EnvironmentObject","数据共享","UserDefaults","iOS 开发","Apple 开发","移动端开发","Swift"]
+---
+
+# 使用 Combine 和 `@EnvironmentObject` 实现数据共享
+
+在[上一章节](../2025-01-16-swiftui-form/index.mdx)中，
+我们已经使用 SwiftUI 的 `Form` 组件实现了一个设置界面（Settings），
+并为其添加了排序、筛选等多种选项。
+然而，当用户在设置界面选择了不同的偏好后，主列表并不会根据用户的设置进行动态更新。
+
+本篇文章将继续扩展我们的应用，通过 **Combine** 和 **@EnvironmentObject** 来实现数据共享，
+使我们的设置与主列表能够联动更新。
+
+在这篇文章中，我们将讨论以下几个重点：
+1. 如何使用 **enum** 来重构并简化代码  
+2. 如何借助 **UserDefaults** 永久保存用户的偏好设置  
+3. 如何使用 **Combine** 和 **@EnvironmentObject** 在视图之间共享数据、并实现自动刷新  
+
+{/* truncate */}
+
+---  
+
+## 一、使用 Enum 重构代码
+
+目前，我们在界面中用数组存放了三种餐厅列表的显示顺序（如「Alphabetical」「Show Favorite First」「Show Check-in First」）。
+虽然直接使用字符串数组没问题，但借助枚举可以使代码更简洁、可读性更好，也更符合类型安全的理念。
+
+例如，可以在名为 `DisplayOrderType` 的枚举中包含所有与显示顺序相关的值，
+并让其遵循 `CaseIterable` 以便我们可以遍历所有枚举值：
+
+```swift
+enum DisplayOrderType: Int, CaseIterable {
+	case alphabetical = 0
+	case favoriteFirst = 1
+	case checkInFirst = 2
+
+	init(type: Int) {
+		switch type {
+		case 0: self = .alphabetical
+		case 1: self = .favoriteFirst
+		case 2: self = .checkInFirst
+		default: self = .alphabetical
+		}
+	}
+	
+	var text: String {
+		switch self {
+		case .alphabetical:
+			return "Alphabetical"
+		case .favoriteFirst:
+			return "Show Favorite First"
+		case .checkInFirst:
+			return "Show Check-in First"
+		}
+	}
+}
+```
+
+完成后，你可以将枚举代码放在 `SettingStore.swift` 中，方便与后续设置相关的逻辑一起管理。
+在 `SettingView.swift` 中，
+将原先的 `selectedOrder` 改为 `@State private var selectedOrder = DisplayOrderType.alphabetical`，
+并在 `Picker` 中使用 `ForEach(DisplayOrderType.allCases, id: \.self) { ... }` 来展示所有可用的枚举值。
+这样不仅让代码更整洁，也为后续扩展（比如增加新的排序方式）提供了更好的可维护性。
+
+---
+
+## 二、使用 UserDefaults 存储用户偏好设置
+
+当用户重启应用后，如果我们的设置又恢复到默认值，显然并不理想。
+为此，我们可以使用 iOS 内置的 `UserDefaults` 机制来将用户的设置以键值对的形式保存在本地。
+
+在 `SettingStore.swift` 中创建一个 `SettingStore` 类，用于读写用户偏好：
+
+```swift
+final class SettingStore {
+	init() {
+		UserDefaults.standard.register(defaults: [
+			"view.preferences.showCheckInOnly": false,
+			"view.preferences.displayOrder": 0,
+			"view.preferences.maxPriceLevel": 5
+		])
+	}
+
+	var showCheckInOnly: Bool = UserDefaults.standard.bool(forKey: "view.preferences.showCheckInOnly") {
+		didSet {
+			UserDefaults.standard.set(showCheckInOnly, forKey: "view.preferences.showCheckInOnly")
+		}
+	}
+	
+	var displayOrder: DisplayOrderType = DisplayOrderType(type: UserDefaults.standard.integer(forKey: "view.preferences.displayOrder")) {
+		didSet {
+			UserDefaults.standard.set(displayOrder.rawValue, forKey: "view.preferences.displayOrder")
+		}
+	}
+	
+	var maxPriceLevel: Int = UserDefaults.standard.integer(forKey: "view.preferences.maxPriceLevel") {
+		didSet {
+			UserDefaults.standard.set(maxPriceLevel, forKey: "view.preferences.maxPriceLevel")
+		}
+	}
+}
+```
+
+在 `init` 方法中，我们调用 `register(defaults:)` 方法为初次启动或未设置的键赋予默认值。
+之后的每个属性都在 `didSet` 中使用 `UserDefaults.standard.set(...)` 来持续更新到本地，
+让每次修改都即时保存。  
+
+接下来，在 `SettingView.swift` 中可以引入 `SettingStore`，并在点击“保存”按钮后，
+将当前的 UI 状态同步回 `SettingStore`：
+
+```swift
+Button {
+	self.settingStore.showCheckInOnly = self.showCheckInOnly
+	self.settingStore.displayOrder = self.selectedOrder
+	self.settingStore.maxPriceLevel = self.maxPriceLevel
+	dismiss()
+} label: {
+	Text("Save")
+		.foregroundStyle(.primary)
+}
+```
+
+为了在视图出现时就加载用户保存的偏好，可以使用 `.onAppear` 修饰符：
+
+```swift
+.onAppear {
+	self.selectedOrder = self.settingStore.displayOrder
+	self.showCheckInOnly = self.settingStore.showCheckInOnly
+	self.maxPriceLevel = self.settingStore.maxPriceLevel
+}
+```
+
+这样，每次打开 Settings 界面，都能自动将已保存的用户设置加载并展示出来。
+
+---
+
+## 三、使用 Combine 与 `@EnvironmentObject` 共享数据
+
+尽管已经将用户的偏好保存在本地，但我们的列表依然不会自动刷新。
+为此，我们需要让主列表也能够“感知”到用户设置的变化，从而在偏好更新后重新加载或排序数据。
+
+### 1. 认识 `@EnvironmentObject`、`ObservableObject`、`@Published`
+
+- **`@EnvironmentObject`**：可将某个对象（通常是包含全局或重要状态的对象）注入到应用的环境（Environment）中，使任意后代视图都可以访问并监听这个对象。  
+- **`ObservableObject`**：是 Combine 提供的一个协议，用于让对象在其内部属性发生变化后，通过发布者—订阅者（Publisher-Subscriber）模型通知订阅它的视图更新。  
+- **`@Published`**：与 `ObservableObject` 配合使用。被 `@Published` 修饰的属性在变动时，会自动向所有观察者发出通知，触发界面更新。
+
+### 2. 改造 `SettingStore` 支持 Combine
+
+要让 `SettingStore` 能对外发布变动，需要：
+
+1. 在 `SettingStore.swift` 顶部引入 `import Combine`  
+2. 让 `SettingStore` 遵循 `ObservableObject`：  
+   ```swift
+   final class SettingStore: ObservableObject {
+   ```
+3. 将需要发布变更的属性（如 `showCheckInOnly`、`displayOrder`、`maxPriceLevel`）
+使用 `@Published` 修饰：
+
+   ```swift
+   @Published var showCheckInOnly: Bool = ...
+   @Published var displayOrder: DisplayOrderType = ...
+   @Published var maxPriceLevel: Int = ...
+   ```
+
+如此一来，当设置项发生变化时，所有监听了 `SettingStore` 的视图都会收到通知。
+
+### 3. 在视图间注入 SettingStore 并订阅
+
+在 `SwiftUIFormApp.swift` 中，我们创建并将 `settingStore` 以 `environmentObject` 
+的形式注入到整个应用环境：
+
+```swift
+@main
+struct SwiftUIFormApp: App {
+	var settingStore = SettingStore()
+
+	var body: some Scene {
+		WindowGroup {
+			ContentView()
+				.environmentObject(settingStore)
+		}
+	}
+}
+```
+
+这样在 `ContentView.swift` 中便可以使用 `@EnvironmentObject var settingStore: SettingStore` 
+获取这一对象；同时在弹出的 `SettingView.swift` 中，也以同样方式使用。
+
+关键在于：
+
+```swift
+.sheet(isPresented: $showSettings) {
+	SettingView()
+		.environmentObject(self.settingStore)
+}
+```
+
+并在 `ContentView` 中也把自身改造为环境订阅者：
+
+```swift
+@EnvironmentObject var settingStore: SettingStore
+```
+
+当 Setting 界面修改了 `settingStore` 中的属性后，主界面就会自动收到通知并进行刷新。
+
+---
+
+## 四、实现列表筛选与排序逻辑
+
+有了数据共享的管道后，我们只需要在主界面（`ContentView`）对列表进行筛选或排序处理即可。
+以下示例展示了如何根据用户偏好 “Show Check-in Only” 和 “Max Price Level” 进行过滤：
+
+```swift
+private func shouldShowItem(restaurant: Restaurant) -> Bool {
+	return (!self.settingStore.showCheckInOnly || restaurant.isCheckIn)
+		&& (restaurant.priceLevel <= self.settingStore.maxPriceLevel)
+}
+```
+
+在 `List` 中只展示满足条件的餐厅：
+
+```swift
+ForEach(restaurants.sorted(by: self.settingStore.displayOrder.predicate())) { restaurant in
+	if self.shouldShowItem(restaurant: restaurant) {
+		BasicImageRow(restaurant: restaurant)
+		// ...
+	}
+}
+```
+
+其中，排序逻辑可以放在之前的枚举 `DisplayOrderType` 中，
+通过返回一个闭包（predicate）来决定排序顺序。
+
+例如：
+
+```swift
+func predicate() -> ((Restaurant, Restaurant) -> Bool) {
+	switch self {
+	case .alphabetical:
+		return { $0.name < $1.name }
+	case .favoriteFirst:
+		return { $0.isFavorite && !$1.isFavorite }
+	case .checkInFirst:
+		return { $0.isCheckIn && !$1.isCheckIn }
+	}
+}
+```
+
+一旦用户在 Settings 界面里勾选或切换选项并保存，`settingStore` 会自动更新相关属性，
+列表界面也会被通知到，进而实时重新渲染出最新筛选、排序后的结果。
+
+---
+
+## 五、总结与展望
+
+在本篇文章中，我们借助 **Combine** 与 **@EnvironmentObject** 
+成功实现了数据在应用不同视图间的共享，以及当用户偏好变化时对主列表视图的自动刷新。
+
+主要包含以下关键点：
+
+1. 使用 `enum` 改善类型安全与可维护性  
+2. 通过 `UserDefaults` 永久保存用户设置  
+3. 借助 Combine 让 `SettingStore` 成为可观察对象（`ObservableObject`），并用 `@Published` 提供数据变动通知  
+4. 使用 `@EnvironmentObject` 让应用中任何视图都可访问同一份 `SettingStore` 数据，并在更改时自动刷新界面  
+
+得益于 SwiftUI 与 Combine 的声明式数据驱动方式，我们在实现这些功能时几乎不需要手动编写通知或回调的逻辑，
+大量繁杂的状态管理都被自动化处理。
+在后续开发中，你可以继续深入研究 Combine 在表单验证、网络请求处理或更复杂的状态管理上的应用，
+进一步提升应用的可维护性与扩展性。
+
+> **下一步可以做什么：**  
+> - 扩展更多筛选条件，例如餐厅类型（Type）、地理位置（Location）等  
+> - 在应用中广泛使用 Combine，将其与网络数据请求或复杂计算相结合  
+> - 尝试将设置或用户数据同步到 iCloud，或使用 Core Data 进行更丰富的数据持久化  
+
+通过本篇文章，你已经掌握了在 SwiftUI 环境下使用 Combine 和 @EnvironmentObject 的基本思路，
+并完成了一个能够自动刷新视图和保存用户偏好设置的小示例。
+希望能够为你的 iOS 开发之旅带来更多灵感！

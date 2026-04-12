@@ -16,11 +16,12 @@ pub fn init_i18n() {
   use_context_provider(|| Signal::new(Language::Zh));
 }
 
-/// A hook that provides a reactive translation for a key
-pub fn use_t(key: &str) -> ReadOnlySignal<String> {
+/// 获取翻译文本的 Hook
+/// 返回一个 Signal<String> 以确保 UI 能够响应翻译加载完成
+pub fn use_t(key: &str) -> Signal<String> {
     let lang = use_i18n();
     let key_str = key.to_string();
-
+    
     let res = use_resource(move || {
         let key_str = key_str.clone();
         async move {
@@ -29,16 +30,18 @@ pub fn use_t(key: &str) -> ReadOnlySignal<String> {
         }
     });
 
-    let val = match &*res.read() {
-        Some(val) => val.clone(),
-        None => key.to_string(),
-    };
+    let mut output = use_signal(|| key.to_string());
 
-    Signal::new(val).into()
+    // 当资源加载完成时，更新输出信号
+    if let Some(val) = res.read().as_ref() {
+        if *val != *output.read() {
+            output.set(val.clone());
+        }
+    }
+
+    output
 }
 
-
-// Keep legacy t for fallback or non-reactive uses
 pub fn t(lang: Language, key: &str) -> String {
   match (lang, key) {
     (Language::Zh, "nav.blog") => "博客".to_string(),

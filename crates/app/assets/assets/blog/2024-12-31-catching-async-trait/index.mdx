@@ -1,0 +1,169 @@
+---
+title: 跟上 Rust 的异步进展：Traits 中的 async 函数
+authors: [yuxuetr]
+description: 探索 Rust 中 Traits 引入的异步函数，了解 Rust 1.39 版本的更新，及其对异步编程的影响。深入解析 async-trait crate 的使用及其背后的技术细节。
+tags: [Rust, 异步编程, Traits]
+keywords: [Rust, 异步编程, Traits, async-trait, async]
+---
+  
+# 跟上 Rust 的异步进展：Traits 中的 async 函数
+
+
+## 引言
+
+在 2023 年 12 月，一件小奇迹发生了：Traits 中的 `async fn` 正式发布。
+
+自 Rust 1.39 版本起，我们已经拥有了独立的异步函数：
+
+```rust
+pub async fn read_hosts() -> eyre::Result<Vec<u8>> {
+    // 等等
+}
+```
+
+以及在 `impl` 块中的异步函数：
+
+```rust
+impl HostReader {
+    pub async fn read_hosts(&self) -> eyre::Result<Vec<u8>> {
+        // 等等
+    }
+}
+```
+
+但我们仍然无法在 Traits 中使用异步函数：
+
+```rust
+use std::io;
+
+trait AsyncRead {
+    async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize>;
+}
+```
+
+当尝试编译时，会出现如下错误：
+
+```bash
+❯ cargo +1.74.0 check --quiet
+error[E0706]: functions in traits cannot be declared `async`
+ --> src/main.rs:9:5
+  |
+9 |     async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize>;
+  |     -----^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |     |
+  |     `async` because of this
+  |
+  = note: `async` trait functions are not currently supported
+  = note: consider using the `async-trait` crate: https://crates.io/crates/async-trait
+  = note: see issue #91611 <https://github.com/rust-lang/rust/issues/91611> for more information
+
+For more information about this error, try `rustc --explain E0706`.
+error: could not compile `sansioex` (bin "sansioex") due to previous error
+```
+
+## Cool Bear 的热贴士
+
+### cargo +channel 语法有效
+
+`cargo +channel` 语法有效，因为这里的 `cargo` 是由 `rustup` 提供的一个 shim。
+
+有效的 channel 名称看起来像 `x.y.z`、`stable`、`beta`、`nightly` 等——与 `rust-toolchain.toml` 文件或任何其他 toolchain override 中遇到的名称相同。
+
+### 使用 `async-trait` crate
+
+长期以来，推荐使用 `async-trait` crate 来在 Traits 中使用异步函数：
+
+```rust
+use std::io;
+
+#[async_trait::async_trait]
+trait AsyncRead {
+    async fn read(&mut self, buf: &mut [u8]) -> io::Result<usize>;
+}
+```
+
+这种方法有效，但它改变了 Trait 定义（以及任何实现），使其返回已固定、盒装的 futures。
+
+### 盒装 futures？
+
+是的！这些是分配在堆上的 `futures`。
+
+### 为什么？
+
+因为 `futures`——异步函数返回的值——可能具有不同的大小！
+
+### 局部变量的大小
+
+下面这个函数返回的 `future` 大小：
+
+```rust
+async fn foo() {
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    println!("done");
+}
+```
+
+与这个函数相比：
+
+```rust
+async fn bar() {
+    let mut a = [0u8; 72];
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    for _ in 0..10 {
+        a[0] += 1;
+    }
+    println!("done");
+}
+```
+
+`bar` 函数的 future 大小更大，因为它包含了更多的状态需要跟踪：
+
+```bash
+❯ cargo run --quiet
+foo: 128
+bar: 200
+```
+
+因为 `bar` 函数中的数组在异步睡眠期间没有被释放——所有内容都存储在 future 中。
+
+这就是一个问题，因为通常，当我们调用一个函数时，我们希望知道应该为返回值保留多少空间：我们说返回值是“有尺寸的”。
+
+而在这里，“我们”实际上指的是编译器——为局部变量在栈上保留空间是函数被调用时的第一步之一。
+
+在反汇编中可以看到：
+
+```bash
+❯ cargo asm sansioex::main --quiet --simplify --color | head -5
+
+sansioex::main:
+Lfunc_begin45:
+        sub sp, sp, #256
+        stp x20, x19, [sp, #224]
+        stp x29, x30, [sp, #240]
+```
+
+这里的 `sub` 指令总共保留了 256 字节。
+
+## Cool Bear 的热贴士
+
+### cargo asm 子命令
+
+这里展示的 `cargo asm` 子命令来自 `cargo-show-asm`，可以通过以下命令安装：
+
+```bash
+cargo install --locked --all-features cargo-show-asm
+```
+
+原始的 `cargo-asm` crate 仍然有效，但功能较少，自 2018 年以来没有更新。
+
+## 总结
+
+在 Rust 中，Traits 中的异步函数的引入是一个重要的进展，但也带来了新的挑战，
+如 `async-trait` crate 带来的 boxed futures 问题。
+这一变化背后的原因主要是由于异步函数返回的 futures 大小不固定，编译器需要在编译时为函数返回值保留固定大小的空间。
+
+通过理解这些技术细节，Rust 开发者可以更好地利用 Rust 的异步编程特性，同时避免潜在的性能问题和复杂性。
+
+## 参考
+
+- [Catching up with async Rust](https://fasterthanli.me/articles/catching-up-with-async-rust)

@@ -1,0 +1,473 @@
+---
+title: "SwiftUI 手势详解：Tap、Long Press、Drag 与通用手势组件"
+description: "深入学习 SwiftUI 中多种内置手势的用法，包括点击、长按、拖拽以及如何构建可复用的通用 Draggable 视图。"
+authors: [yuxuetr]
+tags: [SwiftUI, iOS, Swift]
+keywords: [SwiftUI, iOS, Swift, tutorial, gesture, tap, long-press, drag, draggable, 手势, 点击, 长按, 拖拽, 通用手势组件]
+---
+
+# SwiftUI 手势详解：Tap、Long Press、Drag 与通用手势组件
+
+[上一章节](../2025-01-19-swiftui-swipe-to-delete/index.mdx)
+介绍了 SwiftUI 中如何为列表添加左滑删除、长按触发上下文菜单和点击弹出 Action Sheet 等互动功能。
+本章将进一步扩展这个功能，深入探讨如何让用户与列表产生更多交互。
+
+本章将进一步探讨 SwiftUI 提供的多种内置手势，以及如何将这些手势与视图组合使用。
+我们会先深入了解几种常见的内置手势：`TapGesture`、`LongPressGesture`、`DragGesture` 等，
+最后还会展示如何构建一个通用的拖拽视图组件，让你能够方便地将“拖拽”功能应用于任意 View。
+
+{/* truncate */}
+---
+
+## 使用 `.gesture` 修饰器
+
+在 SwiftUI 中，我们可以对任意视图使用 `.gesture` 修饰器来附加一个手势识别器（Gesture Recognizer）。
+以下示例在一个 `Image` 视图上附加了一个简单的 `TapGesture`：
+
+```swift
+var body: some View {
+    Image(systemName: "star.circle.fill")
+        .font(.system(size: 200))
+        .foregroundStyle(.green)
+        .gesture(
+            TapGesture()
+                .onEnded {
+                    print("Tapped!")
+                }
+        )
+}
+```
+
+如果要测试该代码，你可以新建一个 SwiftUI 项目，然后把上述代码粘贴到 `ContentView.swift` 中运行即可。
+
+下面的示例在这个基础上稍作改动，增加一个缩放的动画效果。
+我们用 `@State` 修饰一个布尔变量 `isPressed` 来控制图像的缩放：
+
+```swift
+struct ContentView: View {
+    @State private var isPressed = false
+    
+    var body: some View {
+        Image(systemName: "star.circle.fill")
+            .font(.system(size: 200))
+            .scaleEffect(isPressed ? 0.5 : 1.0)
+            .animation(.easeInOut, value: isPressed)
+            .foregroundStyle(.green)
+            .gesture(
+                TapGesture()
+                    .onEnded {
+                        self.isPressed.toggle()
+                    }
+            )
+    }
+}
+```
+
+现在，当你点击星形图标时，它会在两种缩放状态之间切换，并带有平滑的动画。
+这展示了使用 `.gesture` 来识别特定手势并结合动画的简单示例。
+
+---
+
+## 长按手势（Long Press Gesture）
+
+除了点击手势之外，SwiftUI 还内置了 `LongPressGesture`，用来侦听长按事件。
+若想在按住图像超过 1 秒后才进行某种行为，例如让图像缩放，可以这样做：
+
+```swift
+.gesture(
+    LongPressGesture(minimumDuration: 1.0)
+        .onEnded { _ in
+            self.isPressed.toggle()
+        }
+)
+```
+
+现在，你需要按住星形图标至少 1 秒，才会触发 `.onEnded` 闭包，进行缩放切换。  
+
+---
+
+## 使用 `@GestureState` 来追踪手势状态
+
+当使用长按手势时，你可能会注意到一个 UX 问题：用户按下图像的一瞬间，屏幕并没有任何反馈。
+只有当触发了长按 1 秒后，图像才会切换缩放状态。
+我们可以在用户开始按下图像时就给予一些视觉反馈（比如降低图像的不透明度），从而提升用户体验。
+
+要区分“手指刚按下”与“长按结束”，SwiftUI 提供了一个非常有用的属性包装器：`@GestureState`。
+它可以让我们在手势执行的不同阶段更新状态，并在手势结束后自动重置其值。
+下面示例中，我们添加一个 `@GestureState` 属性 `longPressTap`，
+并配合 `.updating` 方法来追踪手势状态：
+
+```swift
+@GestureState private var longPressTap = false
+```
+
+更新 `Image` 视图代码如下：
+
+```swift
+Image(systemName: "star.circle.fill")
+    .font(.system(size: 200))
+    .opacity(longPressTap ? 0.4 : 1.0)
+    .scaleEffect(isPressed ? 0.5 : 1.0)
+    .animation(.easeInOut, value: isPressed)
+    .foregroundStyle(.green)
+    .gesture(
+        LongPressGesture(minimumDuration: 1.0)
+            .updating($longPressTap) { currentState, state, _ in
+                state = currentState
+            }
+            .onEnded { _ in
+                self.isPressed.toggle()
+            }
+    )
+```
+
+- `opacity(longPressTap ? 0.4 : 1.0)`：当检测到手指按下时（`longPressTap` 为 `true`），把图像透明度降到 `0.4`。  
+- `updating($longPressTap) { currentState, state, transaction in ... }`：在长按手势进行的过程中，该闭包会不停调用，我们将 `state` 更新为 `currentState`。  
+- 当手势结束时，`@GestureState` 会将 `longPressTap` 自动重置为初始值（`false`）。
+
+运行后，你会发现用户长按图像的瞬间，图像就会变暗，长按满 1 秒后才执行大小切换效果。
+
+---
+
+## 拖拽手势（Drag Gesture）
+
+除了点击、长按，还有一个非常常见的手势是 **拖拽（Drag）**。
+下面演示如何让用户能够拖拽星形图标到任意位置。
+
+首先，我们在 `ContentView` 里用 `@GestureState` 声明一个 `dragOffset` 来追踪拖拽的偏移量：
+
+```swift
+struct ContentView: View {
+    @GestureState private var dragOffset = CGSize.zero
+    
+    var body: some View {
+        Image(systemName: "star.circle.fill")
+            .font(.system(size: 100))
+            .offset(x: dragOffset.width, y: dragOffset.height)
+            .animation(.easeInOut, value: dragOffset)
+            .foregroundStyle(.green)
+            .gesture(
+                DragGesture()
+                    .updating($dragOffset) { value, state, _ in
+                        state = value.translation
+                    }
+            )
+    }
+}
+```
+
+- 当用户在屏幕上拖拽图像时，`DragGesture` 会不断调用 `.updating` 闭包，其中 `value.translation` 存储了当前拖动的位移。我们把它赋值给 `state`，即 `dragOffset`。  
+- 拖拽结束后，`dragOffset` 会自动重置为 `.zero`，也就意味着图像会回到初始位置。
+
+### 如何让图像留在拖拽结束的位置？
+
+`@GestureState` 的特性决定了它会在手势结束时重置，我们可以增加一个 `@State` 属性来持久化最终位置。示例代码：
+
+```swift
+@State private var position = CGSize.zero
+@GestureState private var dragOffset = CGSize.zero
+
+var body: some View {
+    Image(systemName: "star.circle.fill")
+        .font(.system(size: 100))
+        .offset(x: position.width + dragOffset.width,
+                y: position.height + dragOffset.height)
+        .animation(.easeInOut, value: dragOffset)
+        .foregroundStyle(.green)
+        .gesture(
+            DragGesture()
+                .updating($dragOffset) { value, state, _ in
+                    state = value.translation
+                }
+                .onEnded { value in
+                    self.position.width += value.translation.width
+                    self.position.height += value.translation.height
+                }
+        )
+}
+```
+
+- `position` 表示图像的最终位置。  
+- 在 `onEnded` 闭包里，将这次拖拽的位移加到原有位置上。  
+- `offset` 的位置会以 `position + dragOffset` 来计算。
+
+现在星形图标会始终停留在拖拽结束的位置。
+
+---
+
+## 组合多个手势
+
+有时，我们需要在同一个视图上组合多个手势。
+例如：必须先长按 1 秒，才能够开始拖拽。
+
+SwiftUI 提供了三种手势组合方式：
+
+1. **Simultaneous**：同时侦听多个手势。  
+2. **Exclusive**：当检测到其中一个手势后，忽略其他手势。  
+3. **Sequenced**：按顺序识别多个手势。
+
+这里我们用 **Sequenced** 来让用户先长按，再进行拖拽。
+
+示例代码如下：
+
+```swift
+struct ContentView: View {
+    @GestureState private var isPressed = false
+    @GestureState private var dragOffset = CGSize.zero
+    @State private var position = CGSize.zero
+    
+    var body: some View {
+        Image(systemName: "star.circle.fill")
+            .font(.system(size: 100))
+            .opacity(isPressed ? 0.5 : 1.0)
+            .offset(x: position.width + dragOffset.width,
+                    y: position.height + dragOffset.height)
+            .animation(.easeInOut, value: dragOffset)
+            .foregroundColor(.green)
+            .gesture(
+                LongPressGesture(minimumDuration: 1.0)
+                    .updating($isPressed) { currentState, state, _ in
+                        state = currentState
+                    }
+                    .sequenced(before: DragGesture())
+                    .updating($dragOffset) { value, state, _ in
+                        switch value {
+                        case .first(true):
+                            // 正在长按阶段
+                            print("Tapping")
+                        case .second(true, let drag):
+                            // 已成功长按，进入拖拽阶段
+                            state = drag?.translation ?? .zero
+                        default:
+                            break
+                        }
+                    }
+                    .onEnded { value in
+                        // 长按 + 拖拽结束后，更新最终位置
+                        guard case .second(true, let drag?) = value else {
+                            return
+                        }
+                        self.position.width += drag.translation.width
+                        self.position.height += drag.translation.height
+                    }
+            )
+    }
+}
+```
+
+- 先创建 `LongPressGesture`，再用 `.sequenced(before:)` 连接上 `DragGesture`。  
+- 在 `.updating` 中，根据当前手势阶段（.first 或 .second）来判断是长按还是拖拽，并更新对应的状态值。  
+- 在 `.onEnded` 里，同样要注意区别手势阶段，只有当第二阶段（拖拽）结束时，才更新位置。
+
+现在用户必须先按住图像 1 秒，才能开始拖动星形图标。
+
+---
+
+## 使用 Enum 重构手势状态
+
+在上面的例子中，我们分别用 `isPressed` 和 `dragOffset` 来表示不同手势的状态。
+如果手势状态复杂（例如需要更多中间状态），这会让代码变得不太容易维护。
+一种更好的做法是借助 **枚举** 来统一管理手势状态。
+
+如下所示：
+
+```swift
+enum DragState {
+    case inactive
+    case pressing
+    case dragging(translation: CGSize)
+    
+    var translation: CGSize {
+        switch self {
+        case .inactive, .pressing:
+            return .zero
+        case .dragging(let translation):
+            return translation
+        }
+    }
+    
+    var isPressing: Bool {
+        switch self {
+        case .pressing, .dragging:
+            return true
+        case .inactive:
+            return false
+        }
+    }
+}
+```
+
+- `inactive`：手势未触发。  
+- `pressing`：正在长按。  
+- `dragging(translation: CGSize)`：正在拖拽，并携带一个位移值。
+
+随后，我们只需要一个 `@GestureState` 来追踪当前的枚举状态：
+
+```swift
+@GestureState private var dragState = DragState.inactive
+@State private var position = CGSize.zero
+
+var body: some View {
+    Image(systemName: "star.circle.fill")
+        .font(.system(size: 100))
+        .opacity(dragState.isPressing ? 0.5 : 1.0)
+        .offset(x: position.width + dragState.translation.width,
+                y: position.height + dragState.translation.height)
+        .animation(.easeInOut, value: dragState.translation)
+        .foregroundColor(.green)
+        .gesture(
+            LongPressGesture(minimumDuration: 1.0)
+                .sequenced(before: DragGesture())
+                .updating($dragState) { value, state, _ in
+                    switch value {
+                    case .first(true):
+                        state = .pressing
+                    case .second(true, let drag):
+                        state = .dragging(translation: drag?.translation ?? .zero)
+                    default:
+                        break
+                    }
+                }
+                .onEnded { value in
+                    guard case .second(true, let drag?) = value else {
+                        return
+                    }
+                    self.position.width += drag.translation.width
+                    self.position.height += drag.translation.height
+                }
+        )
+}
+```
+
+这样不仅使状态管理更加明晰，而且当需要扩展新的手势状态时，只需在枚举中添加新 case 并在对应的分支中处理即可，具有更好的可维护性。
+
+---
+
+## 构建通用的可拖拽视图（DraggableView）
+
+我们已经实现了一个可拖拽的星形，但如果还想做一个可拖拽的文字、圆形、矩形……难道要重复所有代码吗？
+显然不必这么麻烦。我们可以把拖拽功能封装成一个 **可复用的通用视图**。
+
+如下所示：
+
+```swift
+enum DraggableState {
+    case inactive
+    case pressing
+    case dragging(translation: CGSize)
+    
+    var translation: CGSize {
+        switch self {
+        case .inactive, .pressing:
+            return .zero
+        case .dragging(let translation):
+            return translation
+        }
+    }
+    
+    var isPressing: Bool {
+        switch self {
+        case .pressing, .dragging:
+            return true
+        case .inactive:
+            return false
+        }
+    }
+}
+
+struct DraggableView<Content>: View where Content: View {
+    @GestureState private var dragState = DraggableState.inactive
+    @State private var position = CGSize.zero
+    
+    // 使用泛型，让 DraggableView 可以封装任意类型的子 View
+    var content: () -> Content
+    
+    var body: some View {
+        content()
+            .opacity(dragState.isPressing ? 0.5 : 1.0)
+            .offset(x: position.width + dragState.translation.width,
+                    y: position.height + dragState.translation.height)
+            .animation(.easeInOut, value: dragState.translation)
+            .gesture(
+                LongPressGesture(minimumDuration: 1.0)
+                    .sequenced(before: DragGesture())
+                    .updating($dragState) { value, state, _ in
+                        switch value {
+                        case .first(true):
+                            state = .pressing
+                        case .second(true, let drag):
+                            state = .dragging(translation: drag?.translation ?? .zero)
+                        default:
+                            break
+                        }
+                    }
+                    .onEnded { value in
+                        guard case .second(true, let drag?) = value else {
+                            return
+                        }
+                        self.position.width += drag.translation.width
+                        self.position.height += drag.translation.height
+                    }
+            )
+    }
+}
+```
+
+这样就定义了一个 **`DraggableView`**，它内部已经处理了“长按后再拖拽”的逻辑，只需要用户提供 **内容视图** 即可。
+
+### 测试我们的 `DraggableView`
+
+在 `#Preview` 中尝试不同的内容：
+
+```swift
+#Preview {
+    DraggableView {
+        Image(systemName: "star.circle.fill")
+            .font(.system(size: 100))
+            .foregroundColor(.green)
+    }
+}
+```
+
+运行后，你会发现一个绿色的星形图标可以先长按再拖拽。若想换成文本：
+
+```swift
+#Preview {
+    DraggableView {
+        Text("Swift")
+            .bold()
+            .font(.system(size: 50, weight: .bold, design: .rounded))
+            .foregroundColor(.red)
+    }
+}
+```
+
+或者一个圆形：
+
+```swift
+#Preview {
+    DraggableView {
+        Circle()
+            .frame(width: 100, height: 100)
+            .foregroundColor(.purple)
+    }
+}
+```
+
+无论星形、文字或圆形，都能自动获得“长按 + 拖拽”行为，灵活又方便。
+
+---
+
+## 总结
+
+在本章中，我们深入探讨了 SwiftUI 的手势处理：
+
+1. **TapGesture**：常用于单击事件。  
+2. **LongPressGesture**：可检测用户按住时间并配合视觉反馈。  
+3. **DragGesture**：拖拽操作，同时演示了如何使用 `@GestureState` 与 `@State` 结合来控制最终位置。  
+4. **手势组合**：使用 `.sequenced` 将多个手势按序执行，也可使用 `.simultaneous` 或 `.exclusively`。  
+5. **枚举管理复杂状态**：借助 enum 可以更好地组织手势中不同阶段的状态。  
+6. **可复用手势组件**：通过泛型 `DraggableView` 将手势逻辑与内容解耦，实现一处封装、多处使用。
+
+借助 SwiftUI 自带的友好 API，以及 `.gesture` 修饰器，你可以非常轻松地为你的 App 添加丰富的交互功能，
+打造更具吸引力的用户体验。现在就动手，试试将各种手势添加到你的下一款 SwiftUI 应用中吧！  

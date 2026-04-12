@@ -4,10 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dioxus = { workspace = true, features = ["fullstack"] }
+dioxus = { workspace = true, features = ["fullstack", "router"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 rustineverything-sdk = { path = "../../sdk" }
+rustineverything-module-podcast = { path = "../podcast" }
 pulldown-cmark = "0.13.0"
 chrono = { workspace = true, features = ["serde"] }
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["full"], optional = true }
+
+[features]
+server = ["dioxus/server", "dep:tokio"]

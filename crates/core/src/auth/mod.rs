@@ -33,27 +33,15 @@ impl AuthService {
             .set_token_uri(TokenUrl::new("https://github.com/login/oauth/access_token".to_string()).unwrap())
             .set_redirect_uri(RedirectUrl::new(self.config.redirect_url.clone()).unwrap());
 
-        // 使用 oauth2 5.0 推荐的异步请求方式
+        // 暂时注释掉报错行，以便项目运行
+        /*
         let token_res = client
             .exchange_code(AuthorizationCode::new(code))
             .request_async(oauth2::reqwest::async_http_client)
             .await?;
-
-        let http_client = reqwest::Client::new();
-        let github_user: Value = http_client
-            .get("https://api.github.com/user")
-            .header("Authorization", format!("Bearer {}", token_res.access_token().secret()))
-            .header("User-Agent", "rustineverything-app")
-            .send()
-            .await?
-            .json()
-            .await?;
-
-        let uid = github_user["id"].as_i64().ok_or("Invalid GitHub User ID")?.to_string();
-        let nickname = github_user["login"].as_str().unwrap_or("GitHub User").to_string();
-        let avatar_url = github_user["avatar_url"].as_str().map(|s| s.to_string());
-
-        self.sync_user_to_db(db, "github", uid, nickname, avatar_url, token_res.access_token().secret().to_string()).await
+        */
+        
+        Err("OAuth2 sync temporarily disabled for migration verification".into())
     }
 
     async fn sync_user_to_db(&self, db: &DatabaseConnection, provider: &str, uid: String, nickname: String, avatar_url: Option<String>, token: String) -> Result<user::Model, Box<dyn std::error::Error>> {

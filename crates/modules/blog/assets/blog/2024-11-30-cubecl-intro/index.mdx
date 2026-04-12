@@ -1,0 +1,135 @@
+---
+title: "CubeCL：一个为 Rust 设计的多平台高性能计算语言扩展"
+authors: [yuxuetr]
+description: 了解 CubeCL，这是一个面向 Rust 的跨平台高性能计算语言扩展。支持 GPU 编程，具备零成本抽象，支持自动向量化、comptime 和自动调优，适合开发可移植的高效计算内核。
+tags: [Rust, GPU 编程, 高性能计算, CubeCL, CUDA, WGPU, ROCm]
+keywords: [CubeCL, Rust 高性能计算, GPU 编程, 自动向量化, comptime, 自动调优, CUDA 支持, WGPU 支持, ROCm 支持]
+---
+
+# CubeCL：一个为 Rust 设计的多平台高性能计算语言扩展
+
+
+使用 CubeCL，您可以通过 Rust 编写 GPU 程序，借助零成本抽象开发出可维护、灵活且高效的计算内核。CubeCL 目前完全支持函数、泛型和结构体，并部分支持 trait、方法和类型推导。随着项目的演进，我们预计将支持更多 Rust 语言特性，同时保持最佳性能。
+
+## 示例
+
+只需用 `cube` 属性标注函数，即可指定其运行在 GPU 上：
+
+```rust
+use cubecl::prelude::*;
+
+#[cube(launch_unchecked)]
+fn gelu_array<F: Float>(input: &Array<Line<F>>, output: &mut Array<Line<F>>) {
+    if ABSOLUTE_POS < input.len() {
+        output[ABSOLUTE_POS] = gelu_scalar(input[ABSOLUTE_POS]);
+    }
+}
+
+#[cube]
+fn gelu_scalar<F: Float>(x: Line<F>) -> Line<F> {
+    let sqrt2 = F::new(comptime!(2.0f32.sqrt()));
+    let tmp = x / Line::new(sqrt2);
+
+    x * (Line::erf(tmp) + 1.0) / 2.0
+}
+```
+
+通过自动生成的 `gelu_array::launch_unchecked` 函数即可启动内核：
+
+```rust
+pub fn launch<R: Runtime>(device: &R::Device) {
+    let client = R::client(device);
+    let input = &[-1., 0., 1., 5.];
+    let vectorization = 4;
+    let output_handle = client.empty(input.len() * core::mem::size_of::<f32>());
+    let input_handle = client.create(f32::as_bytes(input));
+
+    unsafe {
+        gelu_array::launch_unchecked::<f32, R>(
+            &client,
+            CubeCount::Static(1, 1, 1),
+            CubeDim::new(input.len() as u32 / vectorization, 1, 1),
+            ArrayArg::from_raw_parts(&input_handle, input.len(), vectorization as u8),
+            ArrayArg::from_raw_parts(&output_handle, input.len(), vectorization as u8),
+        )
+    };
+
+    let bytes = client.read(output_handle.binding());
+    let output = f32::from_bytes(&bytes);
+
+    println!("Executed gelu with runtime {:?} => {output:?}", R::name());
+}
+```
+
+运行以下命令即可体验 GELU 示例：
+
+```bash
+cargo run --example gelu --features cuda # 使用 CUDA 运行时
+cargo run --example gelu --features wgpu # 使用 WGPU 运行时
+```
+
+## 运行时支持
+
+支持以下 GPU 运行时：
+
+- [WGPU](https://github.com/gfx-rs/wgpu)：跨平台 GPU 支持（Vulkan、Metal、DirectX、WebGPU）
+- [CUDA](https://developer.nvidia.com/cuda-toolkit)：NVIDIA GPU 支持
+- [ROCm/HIP](https://www.amd.com/en/products/software/rocm.html)：AMD GPU 支持（开发中）
+
+未来还计划开发一个使用 SIMD 指令的优化 JIT CPU 运行时，
+基于 [Cranelift](https://cranelift.dev)。
+
+## 项目动机
+
+CubeCL 的目标是简化高性能、跨硬件可移植计算内核的开发。
+目前，要在不同硬件上实现最佳性能，通常需要使用不同语言（如 CUDA、Metal 或 ROCm）编写定制内核。
+这种繁琐流程激发了我们开发 CubeCL 的初衷。
+
+CubeCL 采用了以下核心特性：
+
+1. **自动向量化**：在编译时自动使用最优 SIMD 指令。
+2. **Comptime**：在编译 GPU 内核时动态修改 IR。
+3. **自动调优**：在运行时选择最佳内核配置。
+
+这些特性不仅提升了性能，还增强了代码的可组合性、可重用性和可维护性。
+
+我们的愿景不仅是提供优化的计算语言，还包括构建一个 Rust 高性能计算生态系统。
+
+CubeCL 已经提供了线性代数组件，并计划支持卷积、随机数生成、快速傅里叶变换等算法。
+
+## 特性概览
+
+### 自动向量化
+
+通过 CubeCL，可以为输入变量指定向量化因子，运行时将自动使用最佳指令集。
+内核代码始终保持简单，向量化处理由 CubeCL 自动完成。
+
+### Comptime 优化
+
+CubeCL 允许在编译时动态修改 IR，实现指令特化、循环展开、形状特化等优化。
+这样可以避免为不同硬件手写多个内核变种。
+
+### 自动调优
+
+自动调优通过运行小型基准测试，自动选择性能最佳的内核配置，并缓存结果以优化后续运行时间。
+
+## 学习资源
+
+目前的学习资源较少，但可以参考 [线性代数库](https://github.com/tracel-ai/cubecl/blob/main/crates/cubecl-linalg/README.md) 了解 CubeCL 的实际使用。
+
+## 声明与历史
+
+CubeCL 当前处于 **alpha 阶段**。
+
+最初 CubeCL 仅作为 [Burn](https://burn.dev) 的 WebGPU 后端。
+随着优化需求的增加，开发了中间表示（IR），并支持 CUDA 编译目标。
+
+通过 Rust 的 proc 宏，创建了一个易用的前端，最终形成了 CubeCL。
+
+
+通过 CubeCL，释放 Rust 在高性能计算中的潜力，欢迎您的参与和贡献！
+
+## 链接
+
+- [CubeCL GitHub 仓库](https://github.com/tracel-ai/cubecl)
+- [CubeCL 线性代数库](https://github.com/tracel-ai/cubecl/blob/main/crates/cubecl-linalg)

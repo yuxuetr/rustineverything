@@ -1,0 +1,98 @@
+---
+title: "Rust 1.82 新特性介绍"
+authors: [yuxuetr]
+description: Rust 1.82.0 发布，包含 Cargo 信息命令、Apple 目标提升、精确捕获的 `use<..>` 语法、原生语法创建原始指针、安全项与不安全 extern、不安全属性、模式匹配中省略空类型、浮点 NaN 语义和 const、稳定的 API 等新特性。
+tags: [Rust]
+keywords: [Rust,Rust项目承接,Rust外包]
+---
+
+import { RedText, BlueText, GreenText, YellowText } from '@site/src/components/ColorText'
+
+# Rust 1.82 新特性介绍
+
+2024年10月17日，Rust 发布团队宣布发布 Rust 1.82.0。
+Rust 是一门编程语言，旨在帮助每个人构建可靠且高效的软件。
+
+如果您已经通过 `rustup` 安装了之前版本的 Rust，可以通过以下命令更新到 `1.82.0`：
+
+```bash
+$ rustup update stable
+```
+
+如果您还没有安装 rustup，可以从我们网站的相关页面获取，并查看 1.82.0 的详细发行说明。
+
+## Rust 1.82.0 中的新特性
+
+### Cargo 信息命令
+
+Cargo 现在有一个新的 `info` 子命令，用于显示注册表中某个包的信息。
+
+这一功能满足了一个接近十年历史的请求！例如，您可以通过 `cargo info cc` 查看以下信息：
+
+```plaintext
+cc #build-dependencies
+A build-time dependency for Cargo build scripts to assist in invoking the native
+C compiler to compile native C code into a static archive to be linked into Rust
+code.
+version: 1.1.23 (latest 1.1.30)
+license: MIT OR Apache-2.0
+rust-version: 1.63
+documentation: https://docs.rs/cc
+homepage: https://github.com/rust-lang/cc-rs
+repository: https://github.com/rust-lang/cc-rs
+crates.io: https://crates.io/crates/cc/1.1.23
+features:
+  jobserver = []
+  parallel  = [dep:libc, dep:jobserver]
+note: to see how you depend on cc, run `cargo tree --invert --package cc@1.1.23`
+```
+
+### Apple 目标提升
+
+- **macOS 在 64 位 ARM 上成为 Tier 1**：Rust 目标 `aarch64-apple-darwin` 现在是 Tier 1 目标，表示我们对其正常工作的最高保证。
+- **Mac Catalyst 目标成为 Tier 2**：Mac Catalyst 是 Apple 的一项技术，允许在 Mac 上本地运行 iOS 应用程序。现在这些目标是 Tier 2，可以通过 `rustup target add aarch64-apple-ios-macabi x86_64-apple-ios-macabi` 下载。
+
+### 精确捕获的 `use<..>` 语法
+
+Rust 现在支持在某些 `impl Trait` 边界中使用 `use<..>` 语法来控制捕获哪些泛型生命周期参数。
+这使得在返回位置 `impl Trait` 类型中捕获泛型参数更加精确。
+
+### 原生语法创建原始指针
+
+Rust 现在**提供了原生语法来创建原始指针**：
+- `addr_of!(expr)` 变为 `&raw const expr`
+- `addr_of_mut!(expr)` 变为 `&raw mut expr`
+
+### 安全项与不安全 extern
+
+Rust 代码可以使用来自外部代码的函数和静态变量。
+
+现在允许在 extern 块中使用 `unsafe extern`，并在其中标记某些项为安全使用。
+
+### 不安全属性
+
+某些 Rust 属性，如 `no_mangle`，可以在没有任何不安全块的情况下导致未定义行为。
+
+现在这些属性被视为“不安全”，应该写为：
+
+```rust
+#[unsafe(no_mangle)]
+pub fn my_global_function() { }
+```
+
+### 模式匹配中省略空类型
+
+可以省略匹配空类型的模式：
+
+```rust
+use std::convert::Infallible;
+pub fn unwrap_without_panic<T>(x: Result<T, Infallible>) -> T {
+    let Ok(x) = x;
+    x
+}
+```
+
+### 浮点 NaN 语义和 const
+
+Rust 现在标准化了 **NaN 值**的行为规则，并允许在 `const fn` 中使用浮点运算。
+

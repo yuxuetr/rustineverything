@@ -1,0 +1,754 @@
+---
+title: "SwiftUI绘图与图表实战：使用Path与Shape实现线条、饼图及甜甜圈图表"
+description: "全面掌握SwiftUI中的Path与Shape，通过示例实现自定义线条、弧线、饼图及甜甜圈图表，打造更具交互性的UI。"
+authors: [yuxuetr]
+tags: [SwiftUI, iOS, Swift]
+keywords: [SwiftUI, SwiftUI 绘图, SwiftUI Path, SwiftUI Shape, SwiftUI 饼图, SwiftUI 甜甜圈图表, SwiftUI 进度指示器]
+---
+
+# SwiftUI绘图与图表实战：使用Path与Shape实现线条、饼图及甜甜圈图表
+
+[上一篇](../2025-01-11-swiftui-state/index.mdx)博客我们介绍了 SwiftUI 中的 `@State` 和 `@Binding` 控件，
+
+今天我们来介绍 SwiftUI 中的 `Path` 和 `Shape` 控件。
+
+在iOS开发中，很多资深开发者都使用过Core Graphics来绘制自定义的图形和控件。
+随着SwiftUI的兴起，Apple也为我们提供了强大的Path和Shape API，
+可以用更简洁、更声明式的方式来绘制各种矢量图形。
+
+在本教程中，你将学习如何使用SwiftUI的`Path`和`Shape`协议来绘制直线、弧线，
+以及进阶的饼图与甜甜圈图表。
+
+本教程主要涵盖：
+
+- 理解`Path`类型，并在SwiftUI中绘制线条与形状  
+- 探索`Shape`协议，自定义绘制复杂形状  
+- 使用`Path.addArc`绘制弧线、饼图  
+- 创建基于`Circle`的进度指示器  
+- 利用`Circle().trim(from:to:)`绘制甜甜圈图表  
+
+通过阅读本文并练习其中的示例，你将能够更灵活地利用SwiftUI中的绘制功能，实现个性化的UI控件与数据可视化组件。
+
+{/* truncate */}
+---
+
+## 1. 认识 SwiftUI 的 Path
+
+在SwiftUI中，我们可以使用 `Path` 结构体来绘制线条与形状。
+正如Apple官方文档[（参考）](https://developer.apple.com/documentation/swiftui/path)所述，
+`Path`代表了一个二维形状的轮廓，通过一系列绘制指令（点、线、弧等）来构建图形。
+
+### 一个简单的矩形示例
+
+让我们先来画一个矩形。在传统的描述方式中，若要画一个矩形，你可能会按照下面的步骤来描述：
+
+1. 从坐标 `(20, 20)` 开始。
+2. 画一条线到 `(300, 20)`。
+3. 接着画一条线到 `(300, 200)`。
+4. 再画一条线到 `(20, 200)`。
+5. 最后用绿色进行填充。
+
+那么，这些口述步骤在SwiftUI中如何实现呢？
+
+看如下代码：
+
+```swift
+Path() { path in
+    path.move(to: CGPoint(x: 20, y: 20))
+    path.addLine(to: CGPoint(x: 300, y: 20))
+    path.addLine(to: CGPoint(x: 300, y: 200))
+    path.addLine(to: CGPoint(x: 20, y: 200))
+}
+.fill(.green)
+```
+
+在这里，我们使用`Path`的初始化方法，**传入一个闭包来进行绘制指令**：
+
+- `move(to:)`: 用于移动画笔到指定坐标。  
+- `addLine(to:)`: 用于从当前点到指定点绘制线段。  
+- `.fill(.green)`: 则表示我们将形状用绿色进行填充。  
+
+将此代码放入Xcode的预览里，你就能看到一个绿色的矩形。
+
+---
+
+## 2. 使用 Stroke 来绘制边框
+
+如果你只想绘制矩形的轮廓而不填充它，可以使用 `.stroke` 修饰符：
+
+```swift
+Path() { path in
+    path.move(to: CGPoint(x: 20, y: 20))
+    path.addLine(to: CGPoint(x: 300, y: 20))
+    path.addLine(to: CGPoint(x: 300, y: 200))
+    path.addLine(to: CGPoint(x: 20, y: 200))
+    path.closeSubpath()
+}
+.stroke(.green, lineWidth: 10)
+```
+
+- `closeSubpath()`: 会自动将当前点连接回起始点，从而闭合路径形成一个完整的矩形。  
+- `.stroke(.green, lineWidth: 10)`: 用于给图形描边，同时可以指定颜色和线条粗细。  
+
+如果去掉 `closeSubpath()`，最后一个角到起始点的线段就不会被绘制。
+
+---
+
+## 3. 绘制曲线
+
+`Path` 不仅可以绘制直线，还能绘制弧线或曲线。
+SwiftUI 为我们提供了 `addQuadCurve`、`addCurve`、`addArc` 等方法。
+让我们通过一个例子来绘制一个顶部带弧度的“拱形”矩形：
+
+```swift
+Path() { path in
+    path.move(to: CGPoint(x: 20, y: 60))
+    path.addLine(to: CGPoint(x: 40, y: 60))
+    path.addQuadCurve(to: CGPoint(x: 210, y: 60),
+                      control: CGPoint(x: 125, y: 0))
+    path.addLine(to: CGPoint(x: 230, y: 60))
+    path.addLine(to: CGPoint(x: 230, y: 100))
+    path.addLine(to: CGPoint(x: 20, y: 100))
+}
+.fill(Color.purple)
+```
+
+其中 `addQuadCurve(to:control:)` 可以指定目标锚点（这里是 `(210, 60)`） 和一个控制点 `(125, 0)` 来绘制二次贝塞尔曲线。  
+通过调整控制点的位置，可以控制顶部拱形的弧度，使图形看起来更加圆润或平缓。
+
+---
+
+## 4. 同时填充与描边
+
+如果想要既填充又描边，单独使用 `.fill` 或 `.stroke` 是无法同时满足的。
+此时，你可以使用 `ZStack` 来叠放两个相同路径、不同修饰符的图层：
+
+```swift
+ZStack {
+    Path() { path in
+        path.move(to: CGPoint(x: 20, y: 60))
+        path.addLine(to: CGPoint(x: 40, y: 60))
+        path.addQuadCurve(to: CGPoint(x: 210, y: 60), control: CGPoint(x: 125, y: 0))
+        path.addLine(to: CGPoint(x: 230, y: 60))
+        path.addLine(to: CGPoint(x: 230, y: 100))
+        path.addLine(to: CGPoint(x: 20, y: 100))
+    }
+    .fill(Color.purple)
+
+    Path() { path in
+        path.move(to: CGPoint(x: 20, y: 60))
+        path.addLine(to: CGPoint(x: 40, y: 60))
+        path.addQuadCurve(to: CGPoint(x: 210, y: 60), control: CGPoint(x: 125, y: 0))
+        path.addLine(to: CGPoint(x: 230, y: 60))
+        path.addLine(to: CGPoint(x: 230, y: 100))
+        path.addLine(to: CGPoint(x: 20, y: 100))
+        path.closeSubpath()
+    }
+    .stroke(Color.black, lineWidth: 5)
+}
+```
+
+- 其中第一段`Path`用`.fill(Color.purple)`来绘制紫色的填充。  
+- 第二段`Path`用`.stroke(.black, lineWidth: 5)`来绘制黑色的边框。
+
+这样就能同时显示填充与描边的效果。
+
+---
+
+## 5. 绘制圆弧与饼图
+
+### 5.1 使用 `addArc` 绘制圆弧
+
+SwiftUI提供了一个非常便捷的方法 `addArc(center:radius:startAngle:endAngle:clockwise:)` 
+来绘制圆弧（Arc），这也是制作饼图等图形的关键方法。下面是一个简单示例：
+
+```swift
+Path { path in
+    path.move(to: CGPoint(x: 200, y: 200))
+    path.addArc(center: .init(x: 200, y: 200),
+                radius: 150,
+                startAngle: .degrees(0),
+                endAngle: .degrees(90),
+                clockwise: true)
+}
+.fill(.green)
+```
+
+在这段代码中：  
+- `center`: 是圆弧的圆心；  
+- `radius`: 是弧的半径；  
+- `startAngle` 和 `endAngle`: 定义了弧的起始与结束角度（单位为`Angle`，通常用 `.degrees()` 来指定）。  
+- `clockwise`: 指定绘制方向。  
+
+若你对起始角与结束角感到困惑，可想象一只逆时针指针从0°到90°的移动，也可以在调试时多尝试不同角度，以加深对该方法的理解。
+
+### 5.2 制作饼图
+
+将多个弧形组合在一起，就可以绘制一个饼图。
+
+思路是：  
+1. 先移动到圆心；  
+2. 调用 `addArc` 来绘制某一段弧；  
+3. 使用 `ZStack` 来叠加多个饼状弧；  
+4. 为每段饼状图设置不同的起始角度与结束角度，并使用不同的填充颜色。
+
+例如：
+
+```swift
+ZStack {
+    Path { path in
+        path.move(to: CGPoint(x: 187, y: 187))
+        path.addArc(center: .init(x: 187, y: 187),
+                    radius: 150,
+                    startAngle: .degrees(0),
+                    endAngle: .degrees(190),
+                    clockwise: true)
+    }
+    .fill(.yellow)
+    
+    Path { path in
+        path.move(to: CGPoint(x: 187, y: 187))
+        path.addArc(center: .init(x: 187, y: 187),
+                    radius: 150,
+                    startAngle: .degrees(190),
+                    endAngle: .degrees(110),
+                    clockwise: true)
+    }
+    .fill(.teal)
+    
+    Path { path in
+        path.move(to: CGPoint(x: 187, y: 187))
+        path.addArc(center: .init(x: 187, y: 187),
+                    radius: 150,
+                    startAngle: .degrees(110),
+                    endAngle: .degrees(90),
+                    clockwise: true)
+    }
+    .fill(.blue)
+    
+    Path { path in
+        path.move(to: CGPoint(x: 187, y: 187))
+        path.addArc(center: .init(x: 187, y: 187),
+                    radius: 150,
+                    startAngle: .degrees(90),
+                    endAngle: .degrees(360),
+                    clockwise: true)
+    }
+    .fill(.purple)
+}
+```
+
+这样就构成了一个4段的饼图。
+如果想要更多段落，只需根据数值占比来设置不同的起始和结束角度，
+再对应 `.fill(...)` 进行不同颜色填充即可。
+
+#### 5.2.1 高亮某个分区
+
+有时候，我们想让某个饼图区块“突出”显示，可以通过 `.offset(x:y:)` 来让该区块相对于原圆心偏移。
+
+例如，给紫色区块添加偏移量：
+
+```swift
+.fill(.purple)
+.offset(x: 20, y: 20)
+```
+
+如果想在此区块上添加文字说明，可以在上面叠加 `.overlay(...)` 修饰符：
+
+```swift
+.fill(.purple)
+.offset(x: 20, y: 20)
+.overlay(
+    Text("25%")
+        .font(.system(.largeTitle, design: .rounded))
+        .bold()
+        .foregroundColor(.white)
+        .offset(x: 80, y: -110)
+)
+```
+
+这样就可以让该分区显示数据标签。
+
+---
+
+## 6. 深入 Shape 协议
+
+在前面的示例中，我们一直在直接使用`Path()`来绘制图形。
+如果需要一个能够自适应大小的形状并在多处复用，则可以考虑让它遵循 `Shape` 协议。  
+
+### 6.1 何时使用 `Shape` 协议？
+
+如果你想要**一个形状可以在不同的布局环境下自动调整大小**，那么就非常适合使用 `Shape`。
+
+因为 `Shape` 协议要求实现以下方法：
+
+```swift
+func path(in rect: CGRect) -> Path
+```
+
+这里 `rect` 就是SwiftUI告诉我们的绘制区域，它的`size`属性便于我们做自适应的处理，
+避免写死坐标。
+
+### 6.2 自定义 Dome 形状示例
+
+假设我们想要一个“拱形”或“圆顶”形状可以在不同大小下使用，那么可以创建一个`Dome`结构体：
+
+```swift
+struct Dome: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addQuadCurve(to: CGPoint(x: rect.size.width, y: 0),
+                          control: CGPoint(x: rect.size.width / 2,
+                                           y: -(rect.size.width * 0.1)))
+        path.addRect(CGRect(x: 0,
+                            y: 0,
+                            width: rect.size.width,
+                            height: rect.size.height))
+        return path
+    }
+}
+```
+
+在 `path(in:)` 方法中，我们利用 `rect` 的宽度、高度来绘制顶端带弧度的矩形。
+`addQuadCurve` 的控制点基于 `rect.size.width` 计算，这样就可以在不同尺寸下保持大致相同的弧度比例。
+
+然后，在SwiftUI视图中，我们可以把这个 `Dome` 用作背景或直接视图来使用，例如为一个按钮添加背景：
+
+```swift
+Button(action: {
+    // Action
+}) {
+    Text("Test")
+        .font(.system(.title, design: .rounded))
+        .bold()
+        .foregroundColor(.white)
+        .frame(width: 250, height: 50)
+        .background(Dome().fill(Color.red))
+}
+```
+
+这样就能得到一个动态自适应的“圆顶”按钮。
+
+---
+
+## 7. 使用 SwiftUI 内置形状
+
+除了自定义 `Shape` 外，SwiftUI本身就提供了常见的基础形状，比如：  
+- `Circle`  
+- `Rectangle`  
+- `RoundedRectangle`  
+- `Ellipse`  
+
+如果我们需要创建一个“停止”按钮，或者圆形中带有一个方块图案的UI，只需简单组合这两个内置形状即可。
+
+例如：
+
+```swift
+Circle()
+    .foregroundColor(.green)
+    .frame(width: 200, height: 200)
+    .overlay(
+        RoundedRectangle(cornerRadius: 5)
+            .frame(width: 80, height: 80)
+            .foregroundColor(.white)
+    )
+```
+
+其中，`Circle()`绘制绿色的圆形；`overlay(...)` 叠加一个白色的圆角矩形，
+即可做出一个“停止”按钮的效果。
+
+---
+
+## 8. 创建进度指示器
+
+通过组合`Circle`和`.trim(from:to:)`修饰符，我们可以制作各种常见的进度条或环形进度指示器。  
+
+### 8.1 环形进度指示器
+
+下方示例中，我们先创建一个灰色的完整圆环作为底层，然后再添加一个带有颜色渐变的弧线，表示当前进度。
+
+```swift
+struct ContentView: View {
+    private var purpleGradient = LinearGradient(
+        gradient: Gradient(colors: [
+            Color(red: 207/255, green: 150/255, blue: 207/255),
+            Color(red: 107/255, green: 116/255, blue: 179/255)
+        ]),
+        startPoint: .trailing,
+        endPoint: .leading
+    )
+
+    var body: some View {
+        ZStack {
+            // 灰色底圈
+            Circle()
+                .stroke(Color(.systemGray6), lineWidth: 20)
+                .frame(width: 300, height: 300)
+
+            // 上层进度圈（trim控制弧度占比）
+            Circle()
+                .trim(from: 0, to: 0.85) // 这里表示85%的进度
+                .stroke(purpleGradient, lineWidth: 20)
+                .frame(width: 300, height: 300)
+                .overlay {
+                    VStack {
+                        Text("85%")
+                            .font(.system(size: 80, weight: .bold, design: .rounded))
+                            .foregroundColor(.gray)
+                        Text("Complete")
+                            .font(.system(.body, design: .rounded))
+                            .bold()
+                            .foregroundColor(.gray)
+                    }
+                }
+        }
+    }
+}
+```
+
+- `trim(from: 0, to: 0.85)` 表示只绘制从0到0.85的这段圆弧，刚好是整个圆弧的85%。  
+- `.overlay { ... }` 让我们可以在中间叠加文字，用于显示进度百分比。
+
+---
+
+## 9. 绘制甜甜圈（Donut）图表
+
+当我们想要呈现多段占比数据时，除了饼图，还可以使用甜甜圈图表（环形图）。
+
+思路依然是使用 `Circle().trim(from:to:)` 来分别绘制多个段落，并指定不同的起止值。
+每段都可以设置不同的颜色及 `.offset`、`.overlay` 来凸显效果。
+
+```swift
+ZStack {
+    Circle()
+        .trim(from: 0, to: 0.4)
+        .stroke(Color(.systemBlue), lineWidth: 80)
+
+    Circle()
+        .trim(from: 0.4, to: 0.6)
+        .stroke(Color(.systemTeal), lineWidth: 80)
+
+    Circle()
+        .trim(from: 0.6, to: 0.75)
+        .stroke(Color(.systemPurple), lineWidth: 80)
+
+    Circle()
+        .trim(from: 0.75, to: 1)
+        .stroke(Color(.systemYellow), lineWidth: 90)
+        .overlay(
+            Text("25%")
+                .font(.system(.title, design: .rounded))
+                .bold()
+                .foregroundColor(.white)
+                .offset(x: 80, y: -100)
+        )
+}
+.frame(width: 250, height: 250)
+```
+
+- 第一段：`0 ~ 0.4` 表示40%。  
+- 第二段：`0.4 ~ 0.6` 表示20%。  
+- 第三段：`0.6 ~ 0.75` 表示15%。  
+- 第四段：`0.75 ~ 1` 表示最后25%。  
+
+对于颜色和线宽，你可以根据需求做进一步定制。
+只要清楚 `.trim(from:to:)` 就是裁切 Circle 的绘制范围即可。
+
+---
+
+## 10. 总结
+
+SwiftUI中的 `Path` 和 `Shape` 给了我们非常灵活且简洁的绘图方式。本教程展示了如何：
+
+- 使用 `Path` 在绝对坐标系中绘制各类直线、曲线以及弧线；  
+- 通过 `.fill`、`.stroke` 以及 `ZStack` 技巧，灵活地实现形状的同时填充与描边；  
+- 利用 `Shape` 协议自定义可复用、可自适应大小的形状；  
+- 使用内置形状（`Circle`、`Rectangle` 等）快速拼装各种常见UI控件；  
+- 借助 `Circle().trim(from:to:)` 来绘制进度指示器、甜甜圈图表等分割形状；  
+- 结合 `.offset`、`.overlay`、`ZStack` 等修饰符，实现图表的动态高亮与文本标注。
+
+以下是练习完整示例代码，供你在Xcode中直接复制运行、对照学习。
+建议读者再结合自己的项目需求，多做尝试和改造，真正掌握SwiftUI中的绘制奥义。
+
+---
+
+## 全部示例代码
+
+```swift
+import SwiftUI
+
+struct ContentView: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .trim(from: 0, to: 0.4)
+                .stroke(Color(.systemBlue), lineWidth: 80)
+            
+            Circle()
+                .trim(from: 0.4, to: 0.6)
+                .stroke(Color(.systemGreen), lineWidth: 80)
+            
+            Circle()
+                .trim(from: 0.6, to: 0.75)
+                .stroke(Color(.systemRed), lineWidth: 80)
+            
+            Circle()
+                .trim(from: 0.75, to: 1)
+                .stroke(Color(.systemYellow), lineWidth: 90)
+                .overlay(
+                    Text("25%")
+                        .font(.system(.title, design: .rounded))
+                        .bold()
+                        .foregroundColor(.white)
+                        .offset(x: 80, y: -100)
+                )
+        }
+        .frame(width: 250, height: 250)
+    }
+}
+
+// 一个带有渐变圆形进度示例
+struct Demo10: View {
+    private var purpleGradient = LinearGradient(
+        gradient: Gradient(colors: [
+            Color(red: 207/255, green: 150/255, blue: 207/255),
+            Color(red:107/255, green: 116/255, blue: 179/255)
+        ]),
+        startPoint: .trailing,
+        endPoint: .leading
+    )
+    
+    var body: some View {
+        ZStack {
+            Circle()
+                .trim(from: 0, to: 0.8)
+                .stroke(purpleGradient, lineWidth: 20)
+                .frame(width: 300, height: 300)
+                .overlay(
+                    VStack {
+                        Text("80%")
+                            .font(.system(size: 80, weight: .bold, design: .rounded))
+                            .foregroundColor(.gray)
+                        Text("Complete")
+                            .font(.system(.body, design: .rounded))
+                            .foregroundColor(.gray)
+                    }
+                )
+        }
+    }
+}
+
+// 一个自定义 Shape 的示例
+struct Demo: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addQuadCurve(to: CGPoint(x: rect.size.width, y: 0),
+                          control: CGPoint(x: rect.size.width/2, y: -(rect.size.width * 0.1)))
+        path.addRect(CGRect(x: 0, y: 0,
+                            width: rect.size.width,
+                            height: rect.size.height))
+        return path
+    }
+}
+
+struct Demo9: View {
+    var body: some View {
+        VStack {
+            Button(action: {
+                print("Button tapped")
+            }) {
+                Text("Button")
+                    .font(.system(.title, design: .rounded))
+                    .bold()
+                    .foregroundColor(.white)
+                    .frame(width: 250, height: 50)
+                    .background(Demo().fill(Color.red))
+            }
+            
+            Circle()
+                .foregroundColor(.green)
+                .frame(width: 100, height: 100)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .frame(width: 50, height: 50)
+                        .foregroundColor(.white)
+                )
+        }
+    }
+}
+
+struct Demo8: View {
+    var body: some View {
+        Path() { path in
+            path.move(to: CGPoint(x: 0, y: 0))
+            path.addQuadCurve(to: CGPoint(x: 200, y: 0),
+                              control: CGPoint(x: 100, y: -20))
+            path.addRect(CGRect(x: 0, y: 0,
+                                width: 200,
+                                height: 40))
+        }
+        .fill(.green)
+    }
+}
+
+struct Demo7: View {
+    var body: some View {
+        Path() { path in
+            path.move(to: CGPoint(x: 0, y: 0))
+            path.addQuadCurve(to: CGPoint(x: 200, y: 0),
+                              control: CGPoint(x: 100, y: -20))
+            path.addLine(to: CGPoint(x: 200, y: 40))
+            path.addLine(to: CGPoint(x: 200, y: 40))
+            path.addLine(to: CGPoint(x: 0, y: 0))
+        }
+        .fill(.green)
+    }
+}
+
+struct Demo6: View {
+    var body: some View {
+        ZStack {
+            Path { path in
+                path.move(to: CGPoint(x: 187, y: 187))
+                path.addArc(center: CGPoint(x: 187, y: 187),
+                            radius: 150,
+                            startAngle: .degrees(0),
+                            endAngle: .degrees(190),
+                            clockwise: true)
+            }
+            .fill(.yellow)
+            
+            Path { path in
+                path.move(to: CGPoint(x: 187, y: 187))
+                path.addArc(center: CGPoint(x: 187, y: 187),
+                            radius: 150,
+                            startAngle: .degrees(190),
+                            endAngle: .degrees(110),
+                            clockwise: true)
+            }
+            .fill(.teal)
+            
+            Path { path in
+                path.move(to: CGPoint(x: 187, y: 187))
+                path.addArc(center: CGPoint(x: 187, y: 187),
+                            radius: 150,
+                            startAngle: .degrees(110),
+                            endAngle: .degrees(90),
+                            clockwise: true)
+            }
+            .fill(.blue)
+            
+            Path { path in
+                path.move(to: CGPoint(x: 187, y: 187))
+                path.addArc(center: CGPoint(x: 187, y: 187),
+                            radius: 150,
+                            startAngle: .degrees(90),
+                            endAngle: .degrees(360),
+                            clockwise: true)
+            }
+            .fill(.purple)
+            .offset(x: 20, y: 20)
+            .overlay(
+                Text("25%")
+                    .font(.system(.largeTitle, design: .rounded))
+                    .bold()
+                    .foregroundColor(.white)
+                    .offset(x: 80, y: -110)
+            )
+        }
+    }
+}
+
+struct Demo5: View {
+    var body: some View {
+        Path { path in
+            path.move(to: CGPoint(x: 200, y: 200))
+            path.addArc(center: CGPoint(x: 200, y: 200),
+                        radius: 150,
+                        startAngle: .degrees(0),
+                        endAngle: .degrees(90),
+                        clockwise: true)
+        }
+        .fill(.green)
+    }
+}
+
+struct Demo4: View {
+    var body: some View {
+        ZStack {
+            Path() { path in
+                path.move(to: CGPoint(x: 20, y: 60))
+                path.addLine(to: CGPoint(x: 40, y: 60))
+                path.addQuadCurve(to: CGPoint(x: 210, y: 60),
+                                  control: CGPoint(x: 125, y: 0))
+                path.addLine(to: CGPoint(x: 230, y: 60))
+                path.addLine(to: CGPoint(x: 230, y: 100))
+                path.addLine(to: CGPoint(x: 20, y: 100))
+            }
+            .fill(.purple)
+            
+            Path() { path in
+                path.move(to: CGPoint(x: 20, y: 60))
+                path.addLine(to: CGPoint(x: 40, y: 60))
+                path.addQuadCurve(to: CGPoint(x: 210, y: 60),
+                                  control: CGPoint(x: 125, y: 0))
+                path.addLine(to: CGPoint(x: 230, y: 60))
+                path.addLine(to: CGPoint(x: 230, y: 100))
+                path.addLine(to: CGPoint(x: 20, y: 100))
+                path.closeSubpath()
+            }
+            .stroke(.green, lineWidth: 5)
+        }
+    }
+}
+
+struct Demo3: View {
+    var body: some View {
+        Path() { path in
+            path.move(to: CGPoint(x: 20, y: 60))
+            path.addLine(to: CGPoint(x: 40, y: 60))
+            path.addQuadCurve(to: CGPoint(x: 210, y: 60),
+                              control: CGPoint(x: 125, y: 0))
+            path.addLine(to: CGPoint(x: 230, y: 60))
+            path.addLine(to: CGPoint(x: 230, y: 100))
+            path.addLine(to: CGPoint(x: 20, y: 100))
+        }
+        .fill(.purple)
+    }
+}
+
+struct Demo2: View {
+    var body: some View {
+        Path() { path in
+            path.move(to: CGPoint(x: 20, y: 20))
+            path.addLine(to: CGPoint(x: 300, y: 20))
+            path.addLine(to: CGPoint(x: 300, y: 200))
+            path.addLine(to: CGPoint(x: 20, y: 200))
+            path.closeSubpath()
+        }
+        .stroke(.green, lineWidth: 10)
+    }
+}
+
+struct Demo1: View {
+    var body: some View {
+        Path() { path in
+            path.move(to: CGPoint(x: 20, y: 20))
+            path.addLine(to: CGPoint(x: 300, y: 20))
+            path.addLine(to: CGPoint(x: 300, y: 200))
+            path.addLine(to: CGPoint(x: 20, y: 200))
+        }
+        .fill(.green)
+    }
+}
+
+#Preview {
+    ContentView()
+}
+```
+
+通过这些示例，你已经深入了解了如何利用 SwiftUI 的 `Path` 与 `Shape` API 来自定义绘图与图表。
+尽管本章只展示了一部分功能，但实际上你还能利用它们做更多高级、酷炫的UI效果。
+希望这篇教程能帮你快速上手并激发更多灵感！

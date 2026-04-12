@@ -1,0 +1,309 @@
+---
+title: "命令行工具: Magick" 
+authors: [yuxuetr]
+description: 本文介绍了命令行图像处理工具 Magick 的使用方法，以及一些常用的命令示例。
+tags: [Magick,ImageMagick]
+keywords: [命令行图像处理,Magick,ImageMagick,图像处理,命令行工具]
+---
+
+# 命令行工具: Magick
+
+使用 `magick` 程序可以在图像格式之间进行转换，以及调整图像大小、模糊、裁剪、去斑、抖动、绘制、翻转、拼接、重采样等。
+
+请参阅命令行处理以获取有关如何构建 `magick` 命令的建议，或查看下面的命令示例。
+
+我们列出了一些 `magick` 命令的示例，以说明其有用性和易用性。
+
+首先，让我们将 **JPEG** 格式的图像转换为 **PNG** 格式：
+
+```sh
+magick rose.jpg rose.png 
+```
+
+接下来，我们在将图像写入 PNG 格式之前，先**减小图像尺寸**：
+
+```sh
+magick rose.jpg -resize 50% rose.png 
+```
+
+你可以**组合多个图像处理操作**以产生复杂的结果：
+
+```sh
+magick -size 320x85 canvas:none -font Bookman-DemiItalic -pointsize 72 \
+  -draw "text 25,60 'Magick'" -channel RGBA -blur 0x6 -fill darkred -stroke magenta \
+  -draw "text 20,55 'Magick'" fuzzy-magick.png 
+```
+
+或者，在这里我们以**提高质量的方式调整图像大小**：
+
+```sh
+magick input.png -colorspace RGB +sigmoidal-contrast 11.6933 \
+  -define filter:filter=Sinc -define filter:window=Jinc -define filter:lobes=3 \
+  -resize 400% -sigmoidal-contrast 11.6933 -colorspace sRGB output.png
+```
+
+可以利用 `magick` 工具中的其他命令行工具。
+
+要调用此功能，只需创建一个指向 `magick` 工具的符号链接，或者将要使用的工具作为第一个参数指定。
+
+这两种方法是等效的：
+
+```sh
+ln -s magick
+convert rose.jpg rose.png
+magick rose.jpg rose.png 
+```
+
+您可以在 ImageMagick 使用示例中找到更多使用 `magick` 的示例。
+
+## 选项摘要
+`magick` 命令识别这些选项。点击选项以获取有关该选项如何工作的更多详细信息。
+
+- `-adaptive-blur geometry`：自适应模糊像素；减少边缘附近的效果
+- `-adaptive-resize geometry`：使用数据相关三角剖分自适应调整图像大小
+- `-adaptive-sharpen geometry`：自适应锐化像素；增加边缘附近的效果
+- `-adjoin`：将图像连接成一个多图像文件
+- `-affine matrix`：仿射变换矩阵
+- `-alpha`：开启、激活、关闭、停用、设置、不透明、复制、透明、提取、背景或塑造 Alpha 通道
+- `-annotate geometry text`：用文字注释图像
+- `-antialias`：移除像素锯齿
+- `-append`：附加图像序列
+- `-authenticate value`：使用此密码解密图像
+- `-auto-gamma`：自动调整图像的伽玛级别
+- `-auto-level`：自动调整图像的颜色级别
+- `-auto-orient`：自动调整图像方向
+- `-background color`：背景颜色
+- `-bench iterations`：测量性能
+- `-bias value`：在卷积图像时添加偏置
+- `-bilateral-blur geometry`：非线性、保边和降噪的平滑滤波器
+- `-black-threshold value`：将所有低于阈值的像素强制转换为黑色
+- `-blue-primary point`：色度蓝色主点
+- `-blue-shift factor`：模拟月光下的夜景
+- `-blur geometry`：减少图像噪声和细节级别
+- `-border geometry`：用颜色边框包围图像
+- `-bordercolor color`：边框颜色
+- `-brightness-contrast geometry`：改善图像的亮度/对比度
+- `-canny geometry`：使用多级算法检测图像中的各种边缘
+- `-caption string`：为图像指定标题
+- `-cdl filename`：使用颜色决策列表进行颜色校正
+- `-channel type`：应用选项以选择图像通道
+- `-charcoal radius`：模拟木炭绘画效果
+- `-chop geometry`：从图像内部移除像素
+- `-clahe geometry`：对比度受限自适应直方图均衡
+- `-clamp`：将像素值低于零的像素设置为零，将像素值高于量子范围的像素设置为量子范围（例如 65535），否则像素值保持不变
+- `-clip`：沿 8BIM 配置文件的第一路径剪辑
+- `-clip-mask filename`：将剪辑蒙版与图像关联
+- `-clip-path id`：沿 8BIM 配置文件中的命名路径剪辑
+- `-clone index`：克隆图像
+- `-clut`：将颜色查找表应用于图像
+- `-connected-components connectivity`：唯一标记的连通组件，选择 4 或 8 路连通性
+- `-contrast-stretch geometry`：通过“拉伸”强度值范围来提高图像的对比度
+- `-coalesce`：合并一系列图像
+- `-colorize value`：用填充颜色为图像上色
+- `-color-matrix matrix`：对图像进行颜色校正
+- `-colors value`：图像中的首选颜色数量
+- `-colorspace type`：设置图像的颜色空间
+- `-combine`：组合一系列图像
+- `-comment string`：为图像添加注释
+- `-compare`：比较图像
+- `-complexoperator`：对图像序列执行复杂数学运算
+- `-compose operator`：设置图像合成操作符
+- `-composite`：合成图像
+- `-compress type`：图像压缩类型
+- `-contrast`：增强或减少图像对比度
+- `-convolve coefficients`：将卷积核应用于图像
+- `-copy geometry offset`：从图像的一个区域复制像素到另一个区域
+- `-crop geometry`：裁剪图像
+- `-cycle amount`：循环图像的颜色映射
+- `-decipher filename`：将加密像素转换为普通像素
+- `-debug events`：显示详细的调试信息
+- `-define format:option`：定义一个或多个图像格式选项
+- `-deconstruct`：将图像序列分解为组成部分
+- `-delay centiseconds`：暂停后显示下一张图像
+- `-delete index`：从图像序列中删除图像
+- `-density geometry`：图像的水平和垂直密度
+- `-depth value`：图像深度
+- `-despeckle`：减少图像中的斑点
+- `-direction type`：文本渲染方向（从右到左或从左到右）
+- `-display server`：从此 X 服务器获取图像或字体
+- `-dispose method`：图层处理方法
+- `-distribute-cache port`：启动分布式像素缓存服务器
+- `-distort type coefficients`：扭曲图像
+- `-dither method`：对图像应用误差扩散
+- `-draw string`：用图形原语注释图像
+- `-duplicate count,indexes`：将图像复制一次或多次
+- `-edge radius`：应用滤镜检测图像中的边缘
+- `-emboss radius`：浮雕效果
+- `-encipher filename`：将普通像素转换为加密像素
+- `-encoding type`：文本编码类型
+- `-endian type`：图像的字节顺序（大端或小端）
+- `-enhance`：应用数字滤波器增强噪声图像
+- `-equalize`：对图像进行直方图均衡
+- `-evaluate operator value`：评估算术、关系或逻辑表达式
+- `-evaluate-sequence operator`：对图像序列评估算术、关系或逻辑表达式
+- `-extent geometry`：设置图像大小
+- `-extract geometry`：从图像中提取区域
+- `-family name`：使用指定字体系列渲染文本
+- `-features distance`：分析图像特征（例如，对比度、相关性等）
+- `-fft`：实现离散傅里叶变换（DFT）
+- `-fill color`：填充图形原语时使用的颜色
+- `-filter type`：调整图像大小时使用的滤镜
+- `-flatten`：平铺一系列图像
+- `-flip`：垂直翻转图像
+- `-floodfill geometry color`：用颜色填充图像
+- `-flop`：水平翻转图像
+- `-font name`：使用指定字体渲染文本
+- `-format string`：输出格式化的图像特征
+- `-frame geometry`：用装饰性边框包围图像
+- `-function name`：对图像应用函数
+- `-fuzz distance`：在此距离内的颜色被认为是相等的
+- `-fx expression`：将数学表达式应用于图像通道
+- `-gamma value`：伽玛校正等级
+- `-gaussian-blur geometry`：减少图像噪声和细节级别
+- `-geometry geometry`：图像的首选大小或位置
+- `-gravity type`：水平和垂直文本位置
+- `-grayscale method`：将图像转换为灰度
+- `-green-primary point`：色度绿色主点
+- `-help`：打印程序选项
+- `-hough-lines geometry`：识别图像中的线条
+- `-identify`：识别图像格式和特征
+- `-ift`：实现逆离散傅里叶变换（DFT）
+- `-illuminant type`：参考光源
+- `-implode amount`：将图像像素向中心内爆
+- `-insert index`：将最后一张图像插入图像序列
+- `-integral`：计算图像的值（像素值）之和
+- `-intensity method`：生成像素强度值的方法
+- `-intent type`：在管理图像颜色时的渲染意图类型
+- `-interlace type`：图像交错方式
+- `-interline-spacing value`：两行文本之间的间距
+- `-interpolate method`：像素颜色插值方法
+- `-interword-spacing value`：两个单词之间的间距
+- `-kerning value`：两个字符之间的间距
+- `-kuwahara geometry`：边缘保留降噪滤波器
+- `-label string`：为图像指定标签
+- `-lat geometry`：局部自适应阈值
+- `-layers method`：优化或比较图像图层
+- `-level value`：调整图像对比度
+- `-limit type value`：像素缓存资源限制
+- `-linear-stretch geometry`：线性饱和直方图拉伸
+- `-liquid-rescale geometry`：使用接缝雕刻调整图像大小
+- `-list type`：颜色、配置、委托、格式、魔术、模块、资源或类型
+- `-log format`：调试信息格式
+- `-loop iterations`：向 GIF 动画添加 Netscape 循环扩展
+- `-mask filename`：与图像关联的蒙版
+- `-mattecolor color`：边框颜色
+- `-median radius`：对图像应用中值滤波器
+- `-mean-shift geometry`：在图像中划分任意形状的聚类
+- `-metric type`：使用此度量衡量图像之间的差异
+- `-mode radius`：使每个像素成为邻域的“主导颜色”
+- `-modulate value`：调整图像的亮度、饱和度和色调
+- `-moments`：显示图像矩
+- `-monitor`：监控进度
+- `-monochrome`：将图像转换为黑白
+- `-morph value`：变形图像序列
+- `-morphology method kernel`：对图像应用形态学方法
+- `-motion-blur geometry`：模拟运动模糊
+- `-negate`：用补色替换每个像素
+- `-noise radius`：在图像中添加或减少噪声
+- `-normalize`：将图像转换为覆盖完整色域
+- `-opaque color`：将此颜色更改为填充颜色
+- `-ordered-dither NxN`：对图像进行有序抖动
+- `-orient type`：图像方向
+- `-page geometry`：图像画布的大小和位置
+- `-paint radius`：模拟油画效果
+- `-perceptible`：将值小于 `|epsilon|` 的像素设置为 `-epsilon` 或 `epsilon`（取较近者），否则像素值保持不变
+- `-ping`：有效地确定图像属性
+- `-pointsize value`：字体大小
+- `-polaroid angle`：模拟宝丽来照片
+- `-poly terms`：从图像序列和相应的项（系数和度对）构建多项式
+- `-posterize levels`：将图像减少到有限的颜色级别
+- `-precision value`：设置打印的最大有效位数
+- `-preview type`：图像预览类型
+- `-print string`：解释字符串并打印到控制台
+- `-process image-filter`：使用自定义图像滤波器处理图像
+- `-profile filename`：添加、删除或应用图像配置文件
+- `-quality value`：`JPEG/MIFF/PNG` 压缩级别
+- `-quantize colorspace`：在此颜色空间中减少图像颜色
+- `-quiet`：抑制所有警告消息
+- `-rotational-blur angle`：径向模糊图像
+- `-raise value`：使图像边缘变亮或变暗以创建 3D 效果
+- `-random-threshold low,high`：对图像应用随机阈值
+- `-red-primary point`：色度红色主点
+- `-regard-warnings`：注意警告信息
+- `-region geometry`：将选项应用于图像的一部分
+- `-remap filename`：转换图像颜色以匹配此颜色集
+- `-render`：渲染矢量图形
+- `-repage geometry`：图像画布的大小和位置
+- `-resample geometry`：更改图像的分辨率
+- `-reshape geometry`：重塑图像
+- `-resize geometry`：调整图像大小
+- `-respect-parentheses`：设置在括号边界内生效
+- `-roll geometry`：在垂直或水平方向上滚动图像
+- `-rotate degrees`：对图像应用 `Paeth` 旋转
+- `-sample geometry`：使用像素采样缩放图像
+- `-sampling-factor geometry`：水平和垂直采样因子
+- `-scale geometry`：缩放图像
+- `-scene value`：图像场景编号
+- `-seed value`：为伪随机数生成新序列
+- `-segment values`：分割图像
+- `-selective-blur geometry`：在对比度阈值内选择性模糊像素
+- `-separate`：将图像通道分离为灰度图像
+- `-sepia-tone threshold`：模拟棕褐色照片
+- `-set attribute value`：设置图像属性
+- `-shade degrees`：使用远光源对图像进行阴影处理
+- `-shadow geometry`：模拟图像阴影
+- `-sharpen geometry`：锐化图像
+- `-shave geometry`：从图像边缘剃除像素
+- `-shear geometry`：沿 `X` 或 `Y` 轴滑动图像的一边
+- `-sigmoidal-contrast geometry`：增加对比度而不饱和高光或阴影
+- `-smush offset`：将图像序列拼接在一起
+- `-size geometry`：图像的宽度和高度
+- `-sketch geometry`：模拟铅笔素描
+- `-solarize threshold`：反转阈值以上的所有像素
+- `-sort-pixels`：按强度升序对每条扫描线中的像素排序
+- `-splice geometry`：将背景颜色拼接到图像中
+- `-spread radius`：随机位移图像像素
+- `-statistic type geometry`：用邻域的相应统计量替换每个像素
+- `-strip`：删除图像的所有配置文件和注释
+- `-stroke color`：图形原语的描边颜色
+- `-strokewidth value`：图形原语的描边宽度
+- `-stretch type`：使用这种字体拉伸渲染文本
+- `-style type`：使用这种字体样式渲染文本
+- `-swap indexes`：交换图像序列中的两幅图像
+- `-swirl degrees`：围绕中心旋转图像像素
+- `-synchronize`：将图像同步到存储设备
+- `-taint`：将图像标记为已修改
+- `-texture filename`：图像背景上平铺的纹理名称
+- `-threshold value`：对图像应用阈值
+- `-thumbnail geometry`：创建图像缩略图
+- `-tile filename`：填充图形原语时平铺图像
+- `-tile-offset geometry`：设置图像平铺偏移
+- `-tint value`：用填充颜色为图像着色
+- `-transform`：仿射变换图像
+- `-transparent color`：使图像中的颜色透明
+- `-transparent-color color`：透明颜色
+- `-transpose`：垂直翻转图像并旋转 90 度
+- `-transverse`：水平翻转图像并旋转 270 度
+- `-treedepth value`：颜色树深度
+- `-trim`：修剪图像边缘
+- `-type type`：图像类型
+- `-undercolor color`：注释边框颜色
+- `-unique-colors`：丢弃所有重复的像素颜色
+- `-units type`：图像分辨率的单位
+- `-unsharp geometry`：锐化图像
+- `-verbose`：打印图像的详细信息
+- `-version`：打印版本信息
+- `-view`：`FlashPix` 视图变换
+- `-vignette geometry`：在晕影样式下柔化图像边缘
+- `-virtual-pixel method`：访问图像边界之外的像素方法
+- `-wave geometry`：沿正弦波改变图像
+- `-wavelet-denoise threshold`：使用小波变换去除图像噪声
+- `-weight type`：使用这种字体重量渲染文本
+- `-white-point point`：色度白点
+- `-white-threshold value`：将阈值以上的所有像素变为白色
+- `-word-break type`：设置换行位置。选择默认值 `normal` 或 `break-word`
+- `-write filename`：将图像写入此文件
+
+这是 magick 命令的选项摘要，可帮助用户根据需要对图像进行各种处理。
+
+每个选项后面的描述解释了它的功能和用法。

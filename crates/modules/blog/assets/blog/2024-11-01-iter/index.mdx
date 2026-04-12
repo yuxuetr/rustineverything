@@ -1,0 +1,139 @@
+---
+title: "Rust中的`iter()`与`into_iter()`的区别" 
+authors: [yuxuetr]
+description: 本教程将深入探讨Rust中的`iter()`和`into_iter()`函数，解释它们的区别和使用场景，并通过示例演示如何选择合适的迭代器。
+tags: [Rust]
+keywords: [Rust,迭代器,接Rust项目外包开发]
+---
+
+import { RedText, BlueText, YellowText } from '@site/src/components/ColorText'
+
+# Rust中的`iter()`与`into_iter()`的区别
+
+## 1. 引言
+
+Rust语言提供了迭代器，使得复杂的数据结构遍历、转换和过滤变得简单。
+
+Rust中常见的迭代器包括`iter()`、`iter_mut()`和`into_iter()`。`iter()`和`into_iter()`针对不同的使用场景提供了便利。
+
+在本教程中，我们将学习`iter()`和`into_iter()`的基础知识，最后通过一个示例用例，了解何时使用哪种迭代器。
+
+## 2. 理解迭代器
+
+迭代器是允许我们遍历一系列元素的对象。它通过`next()`方法一个一个地返回元素。
+
+迭代器是惰性的，即它们在被`for`循环、`collect`等操作消费之前不会执行。
+
+### 常见的迭代器包括：
+
+- **`iter()`**：允许我们遍历元素的<RedText text="不可变引用"/>。
+- **`iter_mut()`**：允许我们遍历元素的<RedText text="可变引用"/>，能够对元素进行修改。
+- **`into_iter()`**：允许我们遍历元素的所有权序列，即迭代器会<RedText text="接管元素的所有权"/>。
+
+## 3. `iter()`
+
+让我们深入了解`iter()`迭代器。它允许我们在不可变引用上创建迭代器：
+
+```rust
+let names = vec!["Java", "Rust", "Python"];
+let mut len = 0;
+for name in names.iter() {
+    len += name.len();
+}
+assert_eq!(14, len);
+```
+
+在上述代码中，我们初始化了一个名为`names`的变量，它是一个包含三个元素的向量。
+
+接下来，我们使用`iter()`方法遍历向量中的每个元素。通过调用`iter()`函数，我们可以依次处理向量中的每个元素。
+
+最后，我们遍历迭代器并将所有元素的长度相加。
+
+### 进一步说明
+
+- **所有权保持**：`iter()`不会取得原始集合的所有权，因此我们仍然可以在循环后使用`names`变量。
+
+```rust
+println!("{:?}", names);
+```
+
+这里，我们仍然可以使用`names`变量，因为`iter()`不会获取集合的所有权。
+
+- **不可变引用**：`iter()`无法在迭代过程中修改向量中的元素。
+
+```rust
+for name in names.iter() {
+		*name = "C++"; // 这会报错，因为`iter()`返回的是不可变引用
+		len += name.len();
+}
+```
+
+上述代码会报错，因为我们试图修改一个不可变引用。
+即使`names`变量是可变的，`iter()`仍然无法修改向量的内容。在这种情况下，我们可以使用`iter_mut()`函数。
+
+## 4. `into_iter()`
+
+`into_iter()`迭代器的工作方式类似于`iter()`，但它会取得变量的所有权：
+
+```rust
+let names = vec!["Java", "Rust", "Python"];
+let mut len = 0;
+for name in names.into_iter() {
+    len += name.len();
+}
+assert_eq!(14, len);
+```
+
+上述代码与之前的`iter()`示例类似，但我们使用了`into_iter()`。这个函数会取得`names`变量的所有权。
+
+### 所有权转移
+
+```rust
+println!("{:?}", names); // 这会报错，因为`into_iter()`已经取得了`names`的所有权
+```
+
+上述代码会报错，因为`into_iter()`取得了`names`的所有权，导致我们无法再次使用它。
+
+### 可变引用
+
+通过`into_iter()`，我们可以在迭代过程中修改集合的内容：
+
+```rust
+for mut name in names.into_iter() {
+    name = "C++"; // 这是允许的，因为我们已经取得了所有权
+    len += name.len();
+}
+```
+
+在这个例子中，我们修改了元素的值，因为`into_iter()`已经取得了所有权。
+
+## 5. 关键区别
+
+两者都可以应用于数据集合，但有以下不同：
+
+- **所有权**：
+   - `iter()`: <YellowText text="不会取得集合的所有权，允许在迭代后继续使用集合"/>。
+   - `into_iter()`: <YellowText text="会取得集合的所有权，迭代后集合不再可用"/>。
+
+- **可变性**：
+   - `iter()`: <YellowText text="返回不可变引用，无法修改集合中的元素"/>。
+   - `iter_mut()`: <YellowText text="返回可变引用，允许修改集合中的元素"/>。
+   - `into_iter()`: <YellowText text="取得所有权，可以对元素进行完全的所有权操作，包括修改"/>。
+
+### 使用场景
+
+- <BlueText text="只需要读取元素"/>：使用`iter()`。
+- <BlueText text="需要修改元素"/>：使用`iter_mut()`。
+- <BlueText text="需要取得元素的所有权"/>：使用`into_iter()`。
+
+## 6. 结论
+
+在本教程中，我们学习了Rust中`iter()`和`into_iter()`函数的基础知识，并通过示例了解了它们之间的区别和使用场景。
+
+简而言之：
+
+- 使用`iter()`当你需要只读访问集合中的元素且不需要取得所有权时。
+- 使用`iter_mut()`当你需要在遍历过程中修改集合中的元素时。
+- 使用`into_iter()`当你需要取得集合中元素的所有权，并且不再需要使用原始集合时。
+
+通过选择合适的迭代器，你可以编写更高效、更安全的Rust代码，充分利用Rust的所有权和借用机制。

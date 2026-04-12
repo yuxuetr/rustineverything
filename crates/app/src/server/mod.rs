@@ -3,20 +3,31 @@ use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-// 定义基础路径
-const TARGET_WASM_DIR: &str = "/Users/hal/.target/wasm32-unknown-unknown/release";
+// 统一使用项目资产目录下的插件
+const PLUGIN_ASSETS_DIR: &str = "assets/plugins";
 
 #[post("/api/i18n/translate")]
 pub async fn translate_server(key: String, lang: String) -> Result<String, ServerFnError> {
     #[cfg(feature = "server")]
     {
         use rustineverything_core::PluginManager;
-        let wasm_path = format!("{}/i18n_fluent_plugin.wasm", TARGET_WASM_DIR);
-        if !std::path::Path::new(&wasm_path).exists() { return Ok(key); }
-        let wasm_bytes = fs::read(wasm_path).map_err(|e| ServerFnError::new(e.to_string()))?;
+        let wasm_path = format!("{}/i18n_fluent_plugin.wasm", PLUGIN_ASSETS_DIR);
+        
+        if !std::path::Path::new(&wasm_path).exists() {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            eprintln!("[i18n] Plugin NOT FOUND at: {} (CWD: {:?})", wasm_path, cwd);
+            return Ok(key); 
+        }
+        
+        let wasm_bytes = fs::read(&wasm_path).map_err(|e| ServerFnError::new(e.to_string()))?;
         let manager = PluginManager::new();
+        
         let input = serde_json::json!({ "key": key, "lang": lang }).to_string();
-        manager.call_with_string(&wasm_bytes, "translate", &input).map_err(|e| ServerFnError::new(e.to_string()))
+        let result = manager.call_with_string(&wasm_bytes, "translate", &input)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+            
+        println!("[i18n] Translating '{}' -> '{}'", key, result);
+        Ok(result)
     }
     #[cfg(not(feature = "server"))]
     { Ok(key) }
@@ -27,11 +38,20 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
     #[cfg(feature = "server")]
     {
         use rustineverything_core::PluginManager;
-        let wasm_path = format!("{}/theme_ocean_plugin.wasm", TARGET_WASM_DIR);
-        if !std::path::Path::new(&wasm_path).exists() { return Ok("".to_string()); }
+        let wasm_path = format!("{}/theme_ocean_plugin.wasm", PLUGIN_ASSETS_DIR);
+        
+        if !std::path::Path::new(&wasm_path).exists() {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            eprintln!("[Theme] Plugin NOT FOUND at: {} (CWD: {:?})", wasm_path, cwd);
+            return Ok("".to_string()); 
+        }
+        
         let wasm_bytes = fs::read(wasm_path).map_err(|e| ServerFnError::new(e.to_string()))?;
         let manager = PluginManager::new();
-        Ok(manager.aggregate_theme_css(&[wasm_bytes]))
+        
+        let css = manager.aggregate_theme_css(&[wasm_bytes]);
+        println!("[Theme] Generated CSS length: {}", css.len());
+        Ok(css)
     }
     #[cfg(not(feature = "server"))]
     { Ok("".to_string()) }
@@ -68,7 +88,6 @@ pub async fn auth_callback(code: String, provider: String) -> Result<String, Ser
     {
         use rustineverything_core::auth::{AuthService, AuthConfig};
         use rustineverything_core::db::init_db;
-        
         let config = AuthConfig {
             github_client_id: std::env::var("GITHUB_CLIENT_ID").unwrap_or_default(),
             github_client_secret: std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_default(),
@@ -76,16 +95,13 @@ pub async fn auth_callback(code: String, provider: String) -> Result<String, Ser
             google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
             redirect_url: "http://localhost:8080/api/auth/callback".to_string(),
         };
-        
         let db_url = std::env::var("DATABASE_URL").unwrap_or("postgres://postgres:password@localhost/rustineverything".to_string());
         let db = init_db(&db_url).await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        
         let auth_service = AuthService::new(config);
         let user = match provider.as_str() {
             "github" => auth_service.sync_github_user(&db, code).await.map_err(|e| ServerFnError::new(e.to_string()))?,
             _ => return Err(ServerFnError::new("Unsupported provider")),
         };
-        
         Ok(format!("Welcome, {}!", user.nickname))
     }
     #[cfg(not(feature = "server"))]

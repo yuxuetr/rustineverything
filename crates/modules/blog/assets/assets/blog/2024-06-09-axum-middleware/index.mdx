@@ -1,0 +1,222 @@
+---
+title: "Axum中如何实现中间件？" 
+authors: [yuxuetr]
+description: 本文将介绍Axum中实现中间件的两种方法：使用`from_fn`和`tower::Layer`。
+tags: [Rust,Axum,中间件,Middleware]
+keywords: [Rust,axum,中间件,Middleware,Tower,Tower HTTP]
+---
+# Axum中如何实现中间件？
+
+在Axum中，中间件是处理请求和响应的强大工具。
+
+它们可以**在请求到达实际处理程序之前或响应发回客户端之前对其进行处理**。
+
+Axum提供了多种方式来实现中间件。
+
+本文将介绍两种常用的方法：使用`from_fn`和`tower::Layer`。
+
+## 方式一：`from_fn`
+
+`from_fn`是一种简便的方法，可以快速创建中间件。它适用于那些不需要复杂逻辑的中间件。
+
+### 示例代码: `request_id`
+
+以下是一个通过`from_fn`实现请求ID中间件的示例：
+
+```rust
+// request_id.rs
+use super::REQUEST_ID_HEADER;
+use axum::{extract::Request, http::HeaderValue, middleware::Next, response::Response};
+use tracing::warn;
+
+pub async fn set_request_id(mut req: Request, next: Next) -> Response {
+  let id = match req.headers().get(REQUEST_ID_HEADER) {
+    Some(v) => Some(v.clone()),
+    None => {
+      let request_id = uuid::Uuid::new_v4().to_string();
+      match HeaderValue::from_str(&request_id) {
+        Ok(v) => {
+          req.headers_mut().insert(REQUEST_ID_HEADER, v.clone());
+          Some(v)
+        }
+        Err(e) => {
+          warn!("parse generated request id failed: {}", e);
+          None
+        }
+      }
+    }
+  };
+
+  let mut res = next.run(req).await;
+
+  if let Some(id) = id {
+    res.headers_mut().insert(REQUEST_ID_HEADER, id);
+  }
+  res
+}
+```
+
+在这个示例中，中间件会检查请求头中是否包含请求ID。
+如果没有，则生成一个新的UUID并将其添加到请求头中。
+然后，继续处理请求并在响应头中添加相同的请求ID。
+
+### Token验证中间件
+
+这里再提供一个示例，展示如何实现一个验证Token的中间件：
+
+```rust
+// auth.rs
+use crate::AppState;
+use axum::{
+  extract::{FromRequestParts, Request, State},
+  http::StatusCode,
+  middleware::Next,
+  response::{IntoResponse, Response},
+};
+use axum_extra::{
+  headers::{authorization::Bearer, Authorization},
+  TypedHeader;
+use tracing::warn;
+
+pub async fn verify_token(State(state): State<AppState>, req: Request, next: Next) -> Response {
+  let (mut parts, body) = req.into_parts();
+  let req = match TypedHeader::<Authorization<Bearer>>::from_request_parts(&mut parts, &state).await {
+    Ok(TypedHeader(Authorization(bearer))) => {
+      let token = bearer.token();
+      match state.dk.verify(token) {
+        Ok(user) => {
+          let mut req = Request::from_parts(parts, body);
+          req.extensions_mut().insert(user);
+          req
+        }
+        Err(e) => {
+          let msg = format!("verify token failed: {}", e);
+          warn!(msg);
+          return (StatusCode::FORBIDDEN, msg).into_response();
+        }
+      }
+    }
+    Err(e) => {
+      let msg = format!("parse Authorization header failed: {}", e);
+      warn!(msg);
+      return (StatusCode::UNAUTHORIZED, msg).into_response();
+    }
+  };
+  next.run(req).await
+}
+```
+
+在这个示例中，中间件会检查请求头中的Authorization Bearer token，并验证其有效性。
+如果验证失败，将返回相应的错误响应。
+
+
+## 方式二: `tower::Layer`
+
+`tower::Layer`是创建复杂中间件的推荐方式。
+
+它提供了更多的灵活性和控制，可以处理更复杂的逻辑。
+
+### 示例代码
+
+以下是一个通过`tower::Layer`实现服务器时间中间件的示例：
+
+```rust
+// server_time.rs
+use super::{REQUEST_ID_HEADER, SERVER_TIME_HEADER};
+use axum::{extract::Request, response::Response};
+use std::{
+  future::Future,
+  pin::Pin,
+  task::{Context, Poll},
+};
+use tokio::time::Instant;
+use tower::{Layer, Service};
+use tracing::warn;
+
+#[derive(Clone)]
+pub struct ServerTimeLayer;
+
+impl<S> Layer<S> for ServerTimeLayer {
+  type Service = ServerTimeMiddleware<S>;
+
+  fn layer(&self, inner: S) -> Self::Service {
+    ServerTimeMiddleware { inner }
+  }
+}
+
+#[derive(Clone)]
+pub struct ServerTimeMiddleware<S> {
+  inner: S,
+}
+
+impl<S> Service<Request> for ServerTimeMiddleware<S>
+where
+  S: Service<Request, Response = Response> + Send + 'static,
+  S::Future: Send + 'static,
+{
+  type Response = S::Response;
+  type Error = S::Error;
+  type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+  fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    self.inner.poll_ready(cx)
+  }
+
+  fn call(&mut self, req: Request) -> Self::Future {
+    let start = Instant::now();
+    let future = self.inner.call(req);
+    Box::pin(async move {
+      let mut res: Response = future.await?;
+      let elapsed = format!("{}us", start.elapsed().as_micros());
+      match elapsed.parse() {
+        Ok(v) => {
+          res.headers_mut().insert(SERVER_TIME_HEADER, v);
+        }
+        Err(e) => {
+          warn!(
+            "Parse elapsed time failed: {} for request {:?}",
+            e,
+            res.headers().get(REQUEST_ID_HEADER)
+          );
+        }
+      }
+      Ok(res)
+    })
+  }
+}
+```
+
+在这个示例中，中间件会记录请求处理的时间，并将其添加到响应头中。
+它使用`tower::Layer`来创建一个自定义的中间件结构体`ServerTimeMiddleware`。
+
+通过这些示例，可以看到在Axum中实现中间件的灵活性和强大功能。
+根据需求选择合适的方法，可以帮助你更好地管理和处理HTTP请求和响应。
+
+## 总结
+
+1. **中间件概述**：
+  - 中间件是处理请求和响应的工具，可以在请求到达处理程序之前或响应发回客户端之前对其进行处理。
+  - Axum提供了多种实现中间件的方法，主要有`from_fn`和`tower::Layer`两种方式。
+
+2. **方式一：`from_fn`**：
+  
+	- `from_fn`方法适用于快速创建简单的中间件。
+  - 示例代码展示了如何通过`from_fn`实现请求ID中间件：
+    
+		- 检查请求头是否包含请求ID，如果没有则生成一个新的UUID并添加到请求头中。
+    - 继续处理请求，并在响应头中添加相同的请求ID。
+
+3. **方式二：`tower::Layer`**：
+  
+	- `tower::Layer`方法适用于创建复杂的中间件，提供更多灵活性和控制。
+  - 示例代码展示了如何通过`tower::Layer`实现服务器时间中间件：
+    
+		- 记录请求处理时间，并将其添加到响应头中。
+    - 创建一个自定义的中间件结构体`ServerTimeMiddleware`。
+
+4. **Token验证中间件**：
+  
+	- 示例代码展示了如何实现一个验证Token的中间件：
+    
+		- 检查请求头中的Authorization Bearer token，并验证其有效性。
+    - 如果验证失败，返回相应的错误响应。

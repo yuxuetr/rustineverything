@@ -1,0 +1,68 @@
+---
+title: "Rustls 的性能超越 OpenSSL 和 BoringSSL"
+authors: [yuxuetr]
+description: "ISRG 近年来一直在大力投资 Rustls TLS 库。我们的目标是创建一个既能保证内存安全又在性能上领先的库。"
+tags: [Rust]
+keywords: [Rust,Rustls,Rust项目承接,Rust外包]
+---
+
+import { RedText, BlueText, GreenText, YellowText } from '@site/src/components/ColorText'
+
+# Rustls 的性能超越 OpenSSL 和 BoringSSL
+
+ISRG 近年来一直在大力投资 Rustls TLS 库。我们的目标是创建一个既能保证内存安全又在性能上领先的库。
+
+今年一月，我们发布了一篇关于我们性能之旅起点的文章。
+从那时起，我们取得了长足的进步，今天我们很高兴分享 Rustls 性能的最新进展。
+
+## 什么是 Rustls？
+
+Rustls 是一个内存安全的 TLS 实现，专注于性能。它已经可以用于生产环境，并在广泛的应用中使用。
+您可以在维基百科上了解更多关于其历史的信息。
+
+Rustls 提供 C API 和 FIPS 支持，使我们能够将内存安全和性能带给广泛的现有程序。
+
+这一点很重要，因为 OpenSSL 及其衍生产品在互联网上被广泛使用，长期以来存在内存安全漏洞，
+今年又发现了更多漏洞。
+
+是时候让互联网摆脱基于 C 的 TLS 了。
+
+## 握手性能
+
+我们首先来看一下在相同硬件和相同资源限制下每秒可以完成的握手次数。
+
+这些测试连接一个客户端到一个服务器，通过内存缓冲区进行，并测量客户端和服务器处理时的时间，
+因此在没有网络延迟或系统调用开销的情况下，它们提供了性能的上限。
+
+![BoringSSL vs OpenSSL vs Rustls resumption performance](https://www.memorysafety.org/images/blog/blog-2024-10-22-chart1.png)
+
+![resumed handshakes per second](https://www.memorysafety.org/images/blog/blog-2024-10-22-chart2.png)
+
+Rustls 在每个测试场景中都领先。
+
+## 吞吐量性能
+
+接下来，我们看一下在相同硬件和相同资源限制下的吞吐量，以每秒兆字节为单位：
+
+![BoringSSL vs OpenSSL vs Rustls transfer performance](https://www.memorysafety.org/images/blog/blog-2024-10-22-chart3.png)
+
+Rustls 在所有测试中也同样表现出色。
+
+## 测试方法
+
+测试是在 Debian Linux 上进行的，使用的是裸机 Intel Xeon E-2386G CPU，禁用了超线程和动态频率缩放，
+并将 CPU 缩放调节器设置为所有核心的性能模式。更多细节可以在这里找到。
+
+## 尝试 Rustls！
+
+Rustls 已经可以用于生产环境，我们鼓励大家试用它。除了内存安全和出色的性能，它还提供：
+
+- C 和 Rust API
+- FIPS 支持
+- 后量子密钥交换（即将更新算法）
+- 加密客户端 Hello（客户端侧）
+- 操作系统信任验证器支持
+
+
+## 链接
+- [原文链接](https://www.memorysafety.org/blog/rustls-performance-outperforms/)

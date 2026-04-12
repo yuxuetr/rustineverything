@@ -1,0 +1,160 @@
+---
+title: "深入探索 Rust 宏：构建模式的完整指南"
+authors: [yuxuetr]
+description: 本文详细介绍了 Rust 宏的两种主要实现方式：宏模式（macro-by-example）和过程宏（proc-macro），并分享了作者在 Kubernetes 服务重构中的经验和思考。
+tags: [Rust,宏,macro-by-example,proc-macro]
+keywords: [Rust 宏,宏模式,过程宏,代码生成,Rust Builder 模式]
+---
+
+# 深入探索 Rust 宏：构建模式的完整指南
+
+在本文中，我将分享如何使用 Rust 宏来解决复杂构建需求，同时探索 `macro-by-example` 和 `proc-macro` 的实现方式。
+
+---
+
+## 背景故事
+
+安德烈·乌涅洛·利赫内罗维茨提出用 Rust 重写 Kubernetes 服务的想法并获得了批准。
+这让我在最近写了大量的 Rust 代码。
+Rust 的宏系统是其中最复杂的部分之一，即使对于经验丰富的 Rust 开发者也是如此。
+
+安德烈·乌涅洛·利赫内罗维茨的场景是构建一个工具，用来与多个内部服务通信。
+这些服务的连接模式各异，例如 Basic Auth、Bearer Tokens 和 OAuth，每种模式都有不同的字段要求。
+这显然是一个适合使用 **构建者模式** 的场景。
+
+---
+
+## 现有库的调研
+
+在着手实现之前，我调研了几个现有的库：
+
+- **`derive_builder`**：支持删除 `Option` 字段，但会将其设为必填，不符合我的需求。
+- **`builder_macro`**：保留 `Option` 字段，但生成的代码不够整洁。
+
+因此，我决定自己编写一个宏来实现自动化。
+
+---
+
+## 使用 `macro-by-example`
+
+首先，我尝试了使用 `macro_rules!` 来实现自动化。以下是我的改进实现：
+
+```rust
+macro_rules! builder {
+    (@builder_field_type Option<$ftype:ty>) => { Option<$ftype> };
+    (@builder_field_type $ftype:ty) => { Option<$ftype> };
+    ($builder:ident -> $client:ident { $( $fname:ident{$($ftype:tt)+} $(,)? )* }) => {
+        #[derive(Debug)]
+        pub struct $client {
+            $( $fname: $($ftype)+, )*
+        }
+
+        #[derive(Debug)]
+        pub struct $builder {
+            $( $fname: $crate::builder!(@builder_field_type $($ftype)+), )*
+        }
+
+        impl $builder {
+            $(
+                paste::paste! {
+                pub fn [<with_ $fname>](&mut self, $fname: $crate::builder!(@builder_field_setter_type $($ftype)+)) -> &mut Self {
+                    self.$fname = Some($fname);
+                    self
+                }
+                }
+            )*
+
+            pub fn build(&self) -> Result<$client, std::boxed::Box<dyn std::error::Error>> {
+                Ok($client {
+                    $( $fname: $crate::builder!(@builder_unwrap_field self $fname $($ftype)+), )*
+                })
+            }
+        }
+
+        impl $client {
+            pub fn builder() -> $builder {
+                $builder {
+                    $( $fname: None, )*
+                }
+            }
+        }
+    };
+}
+
+builder!(Builder -> Client {
+    field{bool},
+});
+```
+
+最终效果是一个灵活的 `Builder` 宏，支持动态生成字段和方法。
+
+---
+
+## 使用过程宏（`proc-macro`）
+
+过程宏是另一种强大的实现方式，允许我们动态解析 `TokenStream` 并生成代码。
+
+以下是一个基本的过程宏示例：
+
+```rust
+use proc_macro::TokenStream;
+use quote::quote;
+
+#[proc_macro_derive(Builder)]
+pub fn builder_derive(input: TokenStream) -> TokenStream {
+    let expanded = quote! {
+        #[derive(Debug)]
+        pub struct Builder {
+        }
+    };
+    TokenStream::from(expanded)
+}
+```
+
+更复杂的版本可以解析结构体的字段，并动态生成相应的 `Builder` 结构体和方法。
+
+以下代码示例展示了如何提取字段类型并实现自定义构建逻辑：
+
+```rust
+fn inner_type(ty: &Type) -> (bool, &Type) {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.first() {
+            if segment.ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(ref angle_bracketed) =
+                    segment.arguments
+                {
+                    if let Some(syn::GenericArgument::Type(ref inner_ty)) =
+                        angle_bracketed.args.first()
+                    {
+                        return (true, inner_ty);
+                    }
+                }
+            }
+        }
+    }
+    (false, ty)
+}
+```
+
+最终，完整的 `proc-macro` 实现可以自动生成 Builder 模式的完整逻辑。
+
+---
+
+## 比较两种实现方式
+
+| 特性             | `macro-by-example`                        | `proc-macro`                       |
+|------------------|-------------------------------------------|-------------------------------------|
+| **易用性**        | 相对简单，适合快速实现                   | 需要更多代码和独立的 crate         |
+| **灵活性**        | 受限于宏系统的规则，不能动态生成类型名    | 可动态生成字段、方法和类型          |
+| **适用场景**      | 适合固定结构或简单需求                   | 适合复杂的动态代码生成             |
+
+---
+
+## 总结
+
+Rust 的宏系统强大而灵活，无论是 `macro-by-example` 还是 `proc-macro` 都各有用武之地。
+
+在解决重复性代码生成时，这些工具可以大幅提升开发效率。希望这篇文章能帮助初学者更好地理解和使用 Rust 宏。
+
+## 链接
+- [Rust Macros: A Cautionary Tale](https://andrzej.lichnerowicz.pl/en/blog/rust-macros-a-cautionary-tale/)

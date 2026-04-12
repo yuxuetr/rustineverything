@@ -1,0 +1,264 @@
+---
+title: "Trait-gen：Trait 实现生成宏"
+authors: [yuxuetr]
+description: trait-gen 是一个提供 trait 实现生成的属性宏的库。它允许为多种类型生成 trait 实现，而无需自定义声明宏、代码重复或通用实现，从而使代码更易于阅读和维护。
+tags: [Rust]
+keywords: [Rust,trait-gen,Rust项目承接,Rust外包]
+---
+
+import { RedText, BlueText, GreenText, YellowText } from '@site/src/components/ColorText'
+
+# Trait-gen：Trait 实现生成宏
+
+## 概述
+
+`trait-gen` 是一个提供 trait 实现生成的属性宏的库。
+
+它允许为多种类型生成 trait 实现，而无需自定义声明宏、代码重复或通用实现，从而使代码更易于阅读和维护。
+
+## 使用示例
+
+以下是一个简单的示例：
+
+```rust
+use trait_gen::trait_gen;
+
+#[trait_gen(T -> u8, u16, u32, u64, u128)]
+impl MyLog for T {
+    fn my_log2(self) -> u32 {
+        T::BITS - 1 - self.leading_zeros()
+    }
+}
+```
+
+`trait_gen` 属性将 `T` 替换为给定的类型，生成如下代码：
+
+```rust
+impl MyLog for u8 {
+    fn my_log2(self) -> u32 {
+        u8::BITS - 1 - self.leading_zeros()
+    }
+}
+impl MyLog for u16 {
+    fn my_log2(self) -> u32 {
+        u16::BITS - 1 - self.leading_zeros()
+    }
+}
+// 其他类型依此类推
+```
+
+## 使用方法
+
+<BlueText text="该属性放置在伪泛型实现代码之前"/>。
+**泛型参数**首先给出，<BlueText text="后跟"/>**右箭头**（`->`）和**类型参数列表**。
+
+```rust
+#[trait_gen(T -> Type1, Type2, Type3)]
+impl Trait for T {
+    // ...
+}
+```
+
+属性宏会依次将代码中的泛型参数 `T` 替换为后续类型（Type1、Type2、Type3），生成所有实现。
+
+所有以 `T` 开头的类型路径都会被替换。
+
+例如，`T::default()` 会生成 `Type1::default()`、`Type2::default()` 等，
+但 `super::T` 保持不变，因为它属于另一个作用域。
+
+代码必须与所有类型兼容，否则编译器将触发相关错误。例如，`#[trait_gen(T -> u64, f64)]` 不能应用于 `let x: T = 0;`，因为 `0` 不是有效的浮点字面量。
+
+实际类型还会替换文档注释、宏和字符串字面量中的任何 `${T}` 出现。
+
+### 注意事项
+
+- 使用字母 "T" 不是强制性的，任何类型路径都可以。例如，`gen::Type` 也是可以的。但为了提高可读性，建议使用简短的大写标识符。
+- 可以链式使用两个或多个属性以生成所有组合。
+- `trait_gen` 也可以用于类型实现。
+
+## 动机
+
+生成多个实现的方法有几种：
+
+1. 手动复制
+2. 使用声明宏
+3. 使用通用实现
+
+上面的实现示例可以通过声明宏实现：
+
+```rust
+macro_rules! impl_my_log {
+    ($($t:ty)*) => (
+        $(impl MyLog for $t {
+            fn my_log2(self) -> u32 {
+                $t::BITS - 1 - self.leading_zeros()
+            }
+        })*
+    )
+}
+
+impl_my_log! { u8 u16 u32 u64 u128 }
+```
+
+但这种方法冗长且比原生代码难以阅读。
+
+我们必须每次编写自定义宏，包括其声明、模式和一些元素的转换（如参数 `$t`）。
+
+此外，IDE 通常无法提供上下文帮助或在宏代码中应用重构。
+
+使用通用实现还有其他**缺点**：
+
+- 除了同一 crate 中未被通用实现覆盖的类型外，禁止任何其他实现。
+- 找到对应的 trait 并不总是可能。虽然 `num` crate 对原始类型提供了很多帮助，但并不是所有情况都涵盖。
+- 即使操作和常量被 trait 覆盖，也很快需要一长串 trait 约束。
+
+## 示例
+
+以下是支持的替换示例，库的集成测试中还有更多示例。
+
+第一个示例更多是说明什么被替换，什么不被替换，而不是实际实现：
+
+```rust
+#[trait_gen(U -> u32, i32, u64, i64)]
+impl AddMod for U {
+    fn add_mod(self, other: U, m: U) -> U {
+        const U: U = 0;
+        let zero = U::default();
+        let offset: super::U = super::U(0);
+        (self + other + U + zero + offset.0 as U) % m
+    }
+}
+```
+
+扩展为（我们只展示第一个类型，`u32`）：
+
+```rust
+impl AddMod for u32 {
+    fn add_mod(self, other: u32, m: u32) -> u32 {
+        const U: u32 = 0;
+        let zero = u32::default();
+        let offset: super::U = super::U(0);
+        (self + other + U + zero + offset.0 as u32) % m
+    }
+}
+```
+
+### 复杂示例
+
+以下示例展示了如何使用类型参数：
+
+```rust
+struct Meter<U>(U);
+struct Foot<U>(U);
+
+trait GetLength<T> {
+    fn length(&self) -> T;
+}
+
+#[trait_gen(U -> f32, f64)]
+impl GetLength<U> for Meter<U> {
+    fn length(&self) -> U {
+        self.0 as U
+    }
+}
+```
+
+该属性可以与另一个属性组合，以创建泛型组合，
+实现 `Meter<f32>`、`Meter<f64>`、`Foot<f32>`、`Foot<f64>` 的 trait：
+
+```rust
+#[trait_gen(T -> Meter, Foot)]
+#[trait_gen(U -> f32, f64)]
+impl GetLength<U> for T<U> {
+    fn length(&self) -> U {
+        self.0 as U
+    }
+}
+```
+
+这将扩展为：
+
+```rust
+impl GetLength<f32> for Meter<f32> {
+    fn length(&self) -> f32 { self.0 as f32 }
+}
+impl GetLength<f64> for Meter<f64> {
+    fn length(&self) -> f64 { self.0 as f64 }
+}
+impl GetLength<f32> for Foot<f32> {
+    fn length(&self) -> f32 { self.0 as f32 }
+}
+impl GetLength<f64> for Foot<f64> {
+    fn length(&self) -> f64 { self.0 as f64 }
+}
+```
+
+多段路径（带有 `::` 的路径）和路径参数（如 `<f32>`）也可以用于参数中。
+
+例如，使用 `gen::U` 可以避免与已经定义的单字母类型混淆。
+
+## 遗留格式
+
+早期版本中使用了较短的格式，尽管仍然支持，但可能更难阅读：
+
+```rust
+#[trait_gen(Type1, Type2, Type3)]
+impl Trait for Type1 {
+    // ...
+}
+```
+
+在这里，Type1 的代码将按原样生成，然后 Type2 和 Type3 将替换 Type1 以生成它们的实现。
+这是等效属性的快捷方式。
+
+## 替代格式
+
+当启用 `in_format` 特性时，还支持替代格式：
+
+```rust
+trait-gen = { version="0.3", features=["in_format"] }
+```
+
+在这里，使用 `in` 替代箭头 `->`，**且参数类型必须放在方括号中**：
+
+```rust
+#[trait_gen(T in [u8, u16, u32, u64, u128])]
+impl MyLog for T {
+    fn my_log2(self) -> u32 {
+        T::BITS - 1 - self.leading_zeros()
+    }
+}
+```
+
+使用此格式会发出“已弃用”的警告，
+可以通过在文件顶部添加 `#![allow(deprecated)]` 指令或在生成的代码中添加 `#[allow(deprecated)]` 来关闭。
+
+## 限制
+
+`trait_gen` 属性的过程宏**无法处理作用域**，因此不支持任何与泛型参数相同字面量的类型声明。
+
+例如，以下代码因泛型函数冲突而无法编译：
+
+```rust
+#[trait_gen(T -> u64, i64, u32, i32)]
+impl AddMod for T {
+    type Output = T;
+
+    fn add_mod(self, rhs: Self, modulo: Self) -> Self::Output {
+        fn int_mod<T: Num> (a: T, m: T) -> T { // <== 错误，冲突的 'T'
+            a % m
+        }
+        int_mod(self + rhs, modulo)
+    }
+}
+```
+
+泛型参数必须是类型路径；不能是更复杂的类型，如引用或切片。
+
+## 兼容性
+
+`trait-gen` crate 在 Windows 64 位和 Linux 64/32 位平台上测试了 rustc 1.58.0 及更高版本。
+
+## 链接
+
+- [trait-gen](https://crates.io/crates/trait-gen)

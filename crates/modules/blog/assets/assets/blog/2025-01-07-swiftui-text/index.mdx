@@ -1,0 +1,305 @@
+---
+title: "SwiftUI Text 使用详解教程"
+description: "深入学习SwiftUI中Text控件的使用方法，包括文本显示、样式定制、字体设置、旋转效果等。适合希望掌握SwiftUI Text控件的开发者。"
+authors: [yuxuetr]
+tags: [SwiftUI, iOS, Swift]
+keywords: [SwiftUI, SwiftUI Text, SwiftUI 教程, SwiftUI Text 使用, SwiftUI Text 修饰符, iOS 开发]
+---
+
+# SwiftUI Text 使用详解教程
+
+上一篇 [SwiftUI 入门](../2025-01-06-swiftui-intro/index.mdx) 介绍了 SwiftUI。
+
+如果你之前使用过UIKit，你会发现SwiftUI中的`Text`控件与UIKit中的`UILabel`非常相似。
+`Text`是一个视图(`View`)，用于显示**单行**或**多行**文本。
+虽然`Text`控件是不可编辑的，但它在屏幕上展示只读信息时非常有用。
+例如，如果你想在屏幕上展示一条消息，可以使用`Text`来实现。
+
+在本教程中，我们将详细介绍如何使用`Text`控件来展示信息。
+你还将学习如何通过不同的颜色、字体、背景以及旋转效果来自定义文本。
+
+{/* truncate */}
+
+## 目录
+
+1. [创建一个新的SwiftUI项目](#create-a-new-swiftui-project)
+2. [显示简单文本](#display-simple-text)
+3. [更改字体类型和颜色](#change-font-type-and-color)
+4. [处理多行文本](#handle-multi-line-text)
+5. [设置内边距和行间距](#set-padding-and-line-spacing)
+6. [旋转文本](#rotate-text)
+7. [使用自定义字体](#use-custom-font)
+8. [显示Markdown文本](#display-markdown-text)
+9. [总结](#summary)
+
+## 创建一个新的SwiftUI项目{#create-a-new-swiftui-project}
+
+要开始使用SwiftUI，首先需要在Xcode中创建一个新的项目：
+
+1. 打开Xcode，选择**创建一个新的Xcode项目**。
+2. 在iOS类别下选择**App**模板，然后点击**下一步**。
+3. 输入项目名称，例如`SwiftUIText`。组织名称可以使用你的公司或组织名称，组织标识符应为应用的唯一标识符，如`com.yourcompany`。
+4. 在**Interface**选项中选择**SwiftUI**，语言选择**Swift**。
+5. 点击**下一步**，选择保存项目的文件夹。
+
+创建项目后，Xcode会自动加载`ContentView.swift`文件并显示设计/预览画布。
+如果看不到预览，可以通过Xcode菜单选择**Editor > Canvas**来启用。
+为了获得更多的代码空间，可以隐藏项目导航器和检查器。
+
+默认情况下，Xcode会为`ContentView.swift`生成一些SwiftUI代码。
+在Xcode 16中，预览画布会自动在你选择的模拟器（如iPhone 15/16 Pro）中渲染应用预览。
+
+## 显示简单文本{#display-simple-text}
+
+生成的示例代码展示了如何显示单行文本和图片，并使用`VStack`将它们嵌套在一起。
+我们将重点讨论`Text`控件的使用。
+
+要在屏幕上显示文本，初始化一个`Text`对象并传入要显示的文本。例如：
+
+```swift
+Text("Stay Hungry. Stay Foolish.")
+```
+
+预览画布将显示文本“Stay Hungry. Stay Foolish.”。这是在SwiftUI中创建文本视图的基本语法。你可以自由更改文本内容，预览画布会即时更新以显示更改。
+
+## 更改字体类型和颜色{#change-font-type-and-color}
+
+在SwiftUI中，你可以通过调用称为修饰符的方法来更改控件的属性（如颜色、字体、粗细）。
+例如，若要使文本加粗，可以使用`fontWeight`修饰符：
+
+```swift
+Text("Stay Hungry. Stay Foolish.")
+    .fontWeight(.bold)
+```
+
+SwiftUI中的修饰符使用点语法调用。当你输入点时，Xcode会显示可用的修饰符列表。
+例如，在`fontWeight`后输入点，会看到各种字体粗细选项。
+选择`.bold`可以使文本加粗，选择`.heavy`或`.black`则可以使其更加粗壮。
+
+**你还可以链式调用多个修饰符**。例如，将加粗的文本稍微放大：
+
+```swift
+Text("Stay Hungry. Stay Foolish.")
+    .fontWeight(.bold)
+    .font(.title)
+```
+
+为了提高可读性，通常将链式修饰符分行书写：
+
+```swift
+Text("Stay Hungry. Stay Foolish.")
+    .fontWeight(.bold)
+    .font(.title)
+```
+
+`font`修饰符允许你更改文本视图的字体属性。在上述代码中，我们指定了`.title`字体样式以放大文本。SwiftUI提供了多种内置文本样式，如`.title`、`.largeTitle`、`.body`等。如果需要进一步增大字体大小，可以将`.title`替换为`.largeTitle`。
+
+> **注意：**你可以随时参考[SwiftUI Font文档](https://developer.apple.com/documentation/swiftui/font)了解`font`修饰符支持的所有值。
+
+你还可以指定字体设计，例如使用圆角字体：
+
+```swift
+.font(.system(.title, design: .rounded))
+```
+
+这将使用系统字体的`.title`样式和`.rounded`设计。预览画布会立即显示圆角文本。
+
+### 动态类型{#dynamic-type}
+
+动态类型是iOS的一项功能，它会根据用户的设置（**设置 > 显示与亮度 > 文本大小**）自动调整字体大小。当你使用文本样式（如`.title`）时，字体大小会自动调整以匹配用户的首选字体大小，确保文本始终清晰可读。
+
+如果想使用固定大小的字体，可以这样设置：
+
+```swift
+.font(.system(size: 20))
+```
+
+这将使用20点的固定字体大小。
+
+### 更改字体颜色{#change-font-color}
+
+要更改字体颜色，可以使用`foregroundStyle`修饰符：
+
+```swift
+.foregroundStyle(.green)
+```
+
+`foregroundStyle`接受一个`Color`值，例如`.green`、`.red`、`.purple`等。
+
+## 处理多行文本{#handle-multi-line-text}
+
+`Text`控件默认支持多行文本，可以显示段落而无需额外的修饰符。例如：
+
+```swift
+Text("Your time is limited, so don’t waste it living someone else’s life. Don’t be trapped by dogma—which is living with the results of other people’s thinking. Don’t let the noise of others’ opinions drown out your own inner voice. And most important, have the courage to follow your heart and intuition.")
+    .fontWeight(.bold)
+    .font(.title)
+    .foregroundStyle(.gray)
+```
+
+你可以替换为自己的段落文本。设计画布会渲染多行文本标签。
+
+### 文本对齐{#text-alignment}
+
+要将文本居中对齐，可以使用`multilineTextAlignment`修饰符：
+
+```swift
+.multilineTextAlignment(.center)
+```
+
+### 限制行数{#limit-line-number}
+
+如果需要限制显示的行数，可以使用`lineLimit`修饰符。例如，限制为三行：
+
+```swift
+.lineLimit(3)
+```
+
+### 截断模式{#truncation-mode}
+
+`truncationMode`修饰符指定文本在视图内的截断位置。
+默认使用尾部截断（`.tail`），你可以设置为头部（`.head`）或中部（`.middle`）：
+
+```swift
+.truncationMode(.head)
+```
+
+如果不限制行数，可以将`lineLimit`设置为`nil`：
+
+```swift
+.lineLimit(nil)
+```
+
+## 设置内边距和行间距{#set-padding-and-line-spacing}
+
+默认情况下，行间距适用于大多数情况。但如果需要调整行间距，可以使用`lineSpacing`修饰符：
+
+```swift
+.lineSpacing(10)
+```
+
+为了增加文本左右两侧的空间，可以使用`padding`修饰符：
+
+```swift
+.padding()
+```
+
+组合后的代码示例：
+
+```swift
+Text("Your time is limited, so don’t waste it living someone else’s life...")
+    .fontWeight(.bold)
+    .font(.title)
+    .foregroundStyle(.gray)
+    .multilineTextAlignment(.center)
+    .lineLimit(3)
+    .truncationMode(.head)
+    .lineSpacing(10)
+    .padding()
+```
+
+## 旋转文本{#rotate-text}
+
+SwiftUI提供了`rotationEffect`修饰符，可以轻松旋转文本：
+
+```swift
+.rotationEffect(.degrees(45))
+```
+
+默认情况下，旋转是围绕文本视图的中心进行的。如果想围绕特定点旋转，例如左上角，可以指定`anchor`参数：
+
+```swift
+.rotationEffect(.degrees(20), anchor: UnitPoint(x: 0, y: 0))
+```
+
+### 3D旋转效果{#3d-rotation-effect}
+
+除了二维旋转，SwiftUI还提供了`rotation3DEffect`修饰符，允许创建3D旋转效果。
+
+例如，创建星球大战风格的透视文本：
+
+```swift
+.rotation3DEffect(.degrees(60), axis: (x: 1, y: 0, z: 0))
+```
+
+为了增加阴影效果，可以使用`shadow`修饰符：
+
+```swift
+.shadow(color: .gray, radius: 2, x: 0, y: 15)
+```
+
+完整示例：
+
+```swift
+Text("Stay Hungry. Stay Foolish.")
+    .fontWeight(.bold)
+    .font(.title)
+    .foregroundStyle(.green)
+    .rotation3DEffect(.degrees(60), axis: (x: 1, y: 0, z: 0))
+    .shadow(color: .gray, radius: 2, x: 0, y: 15)
+```
+
+## 使用自定义字体{#use-custom-font}
+
+默认情况下，所有文本都使用系统字体。
+如果想使用自定义字体（例如从[Google Fonts](https://fonts.google.com/specimen/Nunito)下载的Nunito字体），可以按照以下步骤操作：
+
+1. **添加字体文件到项目**：
+   - 将下载的字体文件（如`Nunito-Regular.ttf`）拖到项目导航器中的项目文件夹中。
+   - 在弹出的对话框中，选择**复制文件到目标**并勾选你的应用目标。
+
+2. **注册字体**：
+   - 选择项目导航器中的项目文件，点击目标（如`SwiftUIText`）。
+   - 转到**Info**标签，找到**Custom iOS Target Properties**部分。
+   - 点击**+**按钮，添加新的行，键名为`Fonts provided by application`。
+   - 展开该项，设置`Item 0`的值为`Nunito-Regular.ttf`。如果有多个字体文件，继续添加`Item 1`、`Item 2`等。
+
+3. **使用自定义字体**：
+   - 在`ContentView.swift`中，使用`.custom`修饰符指定字体名称和大小：
+
+   ```swift
+   .font(.custom("Nunito", size: 25))
+   ```
+
+字体名称可以在**字体册（Font Book）**应用中找到。打开**字体册**，查找刚添加的字体名称。
+
+完整示例：
+
+```swift
+Text("Stay Hungry. Stay Foolish.")
+    .font(.custom("Nunito", size: 25))
+    .fontWeight(.bold)
+    .foregroundStyle(.green)
+```
+
+## 显示Markdown文本{#display-markdown-text}
+
+:::tip
+Markdown是一种轻量级标记语言，可以为纯文本添加格式元素。
+由John Gruber于2004年创建，现已成为全球最流行的标记语言之一。
+:::
+
+SwiftUI内置支持Markdown渲染。Markdown是一种使用简单易读格式来美化纯文本的方法。
+如果你想了解更多关于Markdown的信息，可以参考[Markdown指南](https://www.markdownguide.org/getting-started/)。
+
+要在SwiftUI应用中使用Markdown渲染文本，只需将文本以Markdown格式编写。`Text`视图会自动渲染文本。
+
+例如：
+
+```swift
+Text("**这是加粗的文本** *这是斜体文本* 你可以 [点击这里](https://yuxuetr.com) 前往我的个人网站。")
+    .font(.title)
+```
+
+在`ContentView.swift`文件中编写上述代码，预览画布会显示格式化后的文本。
+要测试链接，需要在iOS模拟器中运行应用，点击链接会在Safari中打开指定的URL。
+
+## 总结{#summary}
+
+你喜欢使用SwiftUI创建用户界面吗？希望是的。SwiftUI的声明式语法使代码更具可读性和易于理解。
+正如你所见，在SwiftUI中只需几行代码即可创建华丽的3D风格文本。
+
+通过本教程，你学习了如何使用`Text`控件显示和定制文本，包括更改字体、颜色、处理多行文本、添加内边距和行间距、
+旋转文本、使用自定义字体以及渲染Markdown文本。掌握这些技巧后，你将能够在SwiftUI应用中灵活地展示和美化文本内容。
+
+继续探索SwiftUI的其他功能，打造更丰富、更具吸引力的iOS应用吧！

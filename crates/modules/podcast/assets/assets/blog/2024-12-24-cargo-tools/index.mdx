@@ -1,0 +1,344 @@
+---
+title: "Cargo 常用子命令与 features 的详细用法与注意事项"
+description: "一篇系统而全面的Cargo使用指南，涵盖cargo子命令的常见用法、注意事项以及与features相关的特殊用法。提供了大量示例，助你轻松掌握Cargo在Rust项目中的最佳实践。"
+authors: [yuxuetr]
+tags: [Rust, Cargo]
+keywords: [Rust, Cargo, Rust features, cargo tree, cargo update, cargo init, cargo add, cargo check, cargo new, cargo search, cargo uninstall, cargo info]
+---
+
+# Cargo 常用子命令及与 `features` 相关的用法详解
+
+作为 Rust 项目的包管理与构建工具，Cargo 提供了众多子命令（subcommand）用于完成**依赖管理、构建、测试、发布、文档生成、升级**等各种任务。
+本篇文章将通过对常用子命令的详细解读，带你系统、深入地掌握 Cargo 的使用。
+同时，文中会着重介绍与 `features`（特性）相关的用法及注意事项。
+
+## 目录
+1. [初识 Cargo 与常见工作流](#cargo-intro)
+2. [特性 `features` 与 Feature Unification](#features)
+3. [常用子命令详解](#cargo-tools)
+   - [1. `cargo init` 与 `cargo new`](#cargo-init-and-cargo-new)
+	 - [2. `cargo add`](#cargo-add)
+   - [3. `cargo tree`](#cargo-tree)
+   - [4. `cargo update`](#cargo-update)
+   - [5. `cargo check`](#cargo-check)
+   - [6. `cargo search` 与 `cargo info`](#cargo-search-and-cargo-info)
+   - [7. `cargo install`与`cargo uninstall`](#cargo-install-and-cargo-uninstall)
+   - [8. `cargo fix`](#cargo-fix)
+   - [9. `cargo doc`](#cargo-doc)
+   - [10. `cargo run`](#cargo-run)
+  - [11. `cargo rustc`](#cargo-rustc)
+4. [与 `features` 相关的命令及注意事项](#features-related)
+5. [总结](#summary)
+
+---
+
+## 初识 Cargo 与常见工作流{#cargo-intro}
+
+- **Cargo.toml**：项目的主配置文件，里面包含项目名、版本、依赖以及特性等信息。  
+- **Cargo.lock**：记录当前项目锁定的依赖版本信息，用于保证构建的可重现性。  
+- **常见流程**：
+  1. `cargo new myproject` 或 `cargo init`：初始化一个新的 Rust 项目。
+  2. `cargo build` / `cargo run` / `cargo check`：进行构建、运行或仅做语义检查。
+  3. `cargo test`：运行测试用例。
+  4. `cargo doc`：生成文档。
+  5. `cargo publish`：发布到 crates.io（或私有 Registry）。
+
+---
+
+## 特性 `features` 与 Feature Unification{#features}
+
+`features` 是 Cargo 中的一种可选依赖机制，用于按需启用或禁用代码的某些部分。  
+- **默认特性**：`default` feature 会在没有指定其他 feature 时被自动启用。  
+- **依赖特性**：有时一个 Crate 内部的某些特性在另一个 Crate 里会被依赖并合并启用（也称为[特性统一](https://doc.rust-lang.org/cargo/reference/features.html#feature-unification)，Feature Unification）。简单来说，只要有一个地方启用了某个特性，最终编译时就会被全部启用。
+
+在使用 `features` 时需要注意：
+1. 有时不同依赖会对同一个 Crate 启用不同特性，最终编译时将把所有特性汇合。
+2. 可以通过命令行参数 `--features`、`--no-default-features`、`--all-features` 等来控制启用哪些特性。
+
+---
+
+## 常用子命令详解{#cargo-tools}
+
+### 1. `cargo init` 与 `cargo new`{#cargo-init-and-cargo-new}
+- **作用**：用来初始化或创建全新的 Rust 项目目录。  
+- **区别**：
+  - `cargo init`: 在一个已存在的空目录里初始化一个 Cargo 项目（生成 `Cargo.toml` 和 `src` 目录）。
+  - `cargo new`: 在一个不存在或为空的目录中新建项目。
+
+**常用参数**：
+  - `--bin`：创建可执行项目（包含 `src/main.rs`）。
+  - `--lib`：创建类库项目（包含 `src/lib.rs`）。
+  - `--edition <year>`：指定 Rust Edition，如 `2015`, `2018`, `2021`, `2024` 等。
+
+**示例**：  
+```bash
+# 在当前目录初始化项目
+cargo init
+
+# 新建一个名为 my_cli 的二进制项目
+cargo new my_cli --bin
+
+# 新建一个库项目，并指定为 2021 edition
+cargo new my_lib --lib --edition 2021
+```
+
+### 2. `cargo add`{#cargo-add}
+- **作用**：向当前项目的 `Cargo.toml` 中添加或修改依赖。该命令在 nightly 之外也通常通过 [cargo-edit](https://github.com/killercup/cargo-edit) 插件提供。
+- **常用参数**：
+  - `cargo add crate_name`：添加一个依赖（默认加到 `[dependencies]`）。
+  - `--dev`: 添加到 `[dev-dependencies]` 中。
+  - `--build`: 添加到 `[build-dependencies]` 中。
+  - `--path <path>`：以本地路径添加依赖。
+  - `--git <url>`：从 git 仓库添加依赖。
+  - `--features` / `-F`：指定要启用的 feature；可以用 `crate_name/feature_name` 启用子特性。
+  - `--no-default-features`：关闭默认特性。
+
+**示例**：  
+```bash
+# 添加 regex 到 dependencies
+cargo add regex
+
+# 添加 trybuild 到 dev-dependencies
+cargo add --dev trybuild
+
+# 添加 serde & serde_json 并启用 serde/derive 特性
+cargo add serde serde_json -F serde/derive
+
+# 从 git 仓库添加依赖
+cargo add --git https://github.com/user/repo crate_name
+```
+
+### 3. `cargo tree`{#cargo-tree}
+- **作用**：可视化查看依赖关系树，帮助分析依赖层级、重复依赖和特性启用情况等。  
+- **常用参数**：
+  - `cargo tree`：查看默认依赖树。
+  - `cargo tree --no-dedupe`：不去重，重复出现的依赖也全部显示。
+  - `cargo tree -d` / `--duplicates`：只显示被多次依赖、可能存在重复版本的依赖。
+  - `cargo tree -i <package>` / `--invert <package>`：查看哪些包依赖了 `<package>`。
+  - `cargo tree -e features`：可视化显示各依赖所启用的特性。
+  - `cargo tree -e features -i <crate>`：倒置依赖树并查看该包及其特性被如何启用。
+
+**示例**：  
+```bash
+# 基础用法
+cargo tree
+
+# 查看启用的 features
+cargo tree -e features
+
+# 查看 crate "syn" 被谁依赖、启用了哪些特性
+cargo tree -e features -i syn
+```
+
+### 4. `cargo update`{#cargo-update}
+- **作用**：更新 Cargo.lock 中的依赖到最新的可用版本。如果没有 `Cargo.lock` 文件，则会创建一个新的锁文件。  
+- **常用参数**：
+  - `cargo update`：更新所有依赖到兼容的最新版本。
+  - `cargo update <crate1> <crate2>`：仅更新指定的依赖包。
+  - `--precise <version>`：将指定的依赖更新到一个明确版本（或 git SHA）。
+  - `--dry-run`：只显示将要更新的结果，不实际写入 `Cargo.lock`。
+
+**示例**：  
+```bash
+# 更新全部依赖
+cargo update
+
+# 更新特定依赖
+cargo update foo bar
+
+# 更新 foo 到指定版本
+cargo update foo --precise 1.2.3
+```
+
+### 5. `cargo check`{#cargo-check}
+- **作用**：仅做语义和类型检查，不会生成最终的可执行文件或库文件，速度比 `cargo build` 更快。
+- **常用参数**：
+  - `cargo check`：检查当前包。
+  - `--all-targets`：检查所有目标（包括测试、bench 等）。
+  - `-p <package>` / `--package <package>`：指定要检查的包。
+  - `--features <features>` / `--all-features` / `--no-default-features`：选择启用的特性。
+
+**示例**：  
+```bash
+# 对当前包进行语义和类型检查
+cargo check
+
+# 检查所有目标（包含测试目标、bench等）
+cargo check --all-targets --profile test
+```
+
+### 6. `cargo search` 与 `cargo info`{#cargo-search-and-cargo-info}
+- **cargo search**  
+  - **作用**：在 registry（默认 crates.io）上搜索 crate。  
+  - `--limit <n>`：限制搜索结果数。  
+  - `--registry <name>`：指定自定义 registry 进行搜索。
+
+  **示例**：  
+  ```bash
+  # 在 crates.io 搜索 "serde"
+  cargo search serde
+
+  # 限制返回结果数量
+  cargo search serde --limit 5
+  ```
+
+- **cargo info**  
+  - **作用**：查看（本地或远程） crate 的详细信息，如版本、依赖、README 等。  
+  - 可以结合 `--registry` 或直接查看本地 `Cargo.toml` 里指定的版本信息。
+
+  **示例**：  
+  ```bash
+  # 查看 crates.io 上的最新 serde 的信息
+  cargo info serde
+
+  # 查看特定版本
+  cargo info serde@1.0.0
+  ```
+
+### 7. `cargo install`与`cargo uninstall`{#cargo-install-and-cargo-uninstall}
+- **cargo install**  	
+  - **作用**：安装用 `cargo build` 构建的二进制包。  
+  - **常用参数**：
+    - `cargo install <crate_name>`：安装对应的二进制包。
+    - `--bin <bin_name>`：只安装特定的可执行文件。
+
+- **cargo uninstall**  
+  - **作用**：卸载用 `cargo install` 安装的二进制包。  
+  - **常用参数**：
+    - `cargo uninstall <crate_name>`：卸载对应的二进制包。
+  - `--bin <bin_name>`：只卸载特定的可执行文件。
+
+**示例**：  
+```bash
+# 安装 ripgrep
+cargo install ripgrep
+
+# 卸载 ripgrep
+cargo uninstall ripgrep
+
+# 只卸载 ripgrep 的可执行文件
+cargo uninstall --bin rg
+```
+
+### 8. `cargo fix`{#cargo-fix}
+- **作用**：自动根据编译器输出的建议修改源代码，通常用于修复警告，或进行 edition 升级等自动化操作。
+- **常用场景**：
+  - 升级 edition 时（比如从 2018 升到 2021）：`cargo fix --edition`
+  - 修复所有特性或风格相关的警告：`cargo fix --edition-idioms`
+- **常用参数**：
+  - `--broken-code`：即使源代码本身有编译错误也尝试修复。
+  - `--allow-dirty` / `--allow-staged`：在工作区不是干净状态或已经有 staged 修改时仍允许执行 fix。
+  - `--features` / `--all-features`：若想对特定 feature 下的代码进行 fix，需要手动指定特性启用。
+
+**示例**：  
+```bash
+# 在本项目中应用修复
+cargo fix
+
+# 帮助切换到下一版 edition（不会自动修改Cargo.toml）
+cargo fix --edition
+
+# 修复edition风格，并启用所有特性
+cargo fix --edition-idioms --all-features
+```
+
+### 9. `cargo doc`{#cargo-doc}
+- **作用**：生成当前项目及其依赖的文档，默认输出到 `target/doc`。  
+- **常用参数**：
+  - `--open`：生成完文档后自动在浏览器中打开。
+  - `--no-deps`：只生成当前项目的文档，不包含依赖。
+  - `--document-private-items`：包含非公有（private）项的文档（默认对二进制目标是开启的）。
+
+**示例**：  
+```bash
+# 生成当前项目及依赖的文档
+cargo doc
+
+# 生成完文档立即打开
+cargo doc --open
+
+# 只生成当前项目自身文档
+cargo doc --no-deps
+```
+
+### 10. `cargo run`{#cargo-run}
+- **作用**：构建并运行当前包或指定包的二进制。
+- **常用参数**：
+  - `--bin <bin_name>`：若有多个二进制目标，通过此选项指定要运行的目标。
+  - `--example <example_name>`：运行 example 目标。
+  - `--release`：使用 release 配置来构建并运行，启用优化。
+  - `--features <features>` / `--no-default-features` / `--all-features`：在运行时启用或禁用特性。
+
+**示例**：  
+```bash
+# 运行当前项目的主二进制
+cargo run
+
+# 运行名为server的可执行目标，并传递参数给它
+cargo run --bin server -- --port 8080 --debug
+
+# 运行 example 中的 exname
+cargo run --example exname -- --exoption exarg1 exarg2
+```
+
+### 11. `cargo rustc`{#cargo-rustc}
+- **作用**：编译当前包并向最终的 `rustc` 编译器传递额外参数。适合需要传递额外编译器选项或对编译过程做更精细控制。
+- **使用限制**：只能针对单一目标使用传递参数，若需要对多目标同时编译时请使用全局编译参数（如 `RUSTFLAGS` 环境变量）。
+- **常用参数**：
+  - `cargo rustc --lib -- -D warnings`：编译 library 并把所有 warning 当作错误处理。
+  - `--bin <bin_name>`：编译特定二进制目标。
+  - `--crate-type <types>`：手动指定 crate 类型（如 `lib,cdylib`）。
+  - 其余与 `cargo build` 类似的参数，如 `--release`、`--features`、`--all-features` 也通用。
+
+**示例**：  
+```bash
+# 对lib进行编译，并将所有warning视为错误
+cargo rustc --lib -- -D warnings
+
+# 覆盖 Cargo.toml 中 crate-type
+cargo rustc --lib --crate-type lib,cdylib
+
+# 使用 nightly 中的实验性命令行选项
+cargo rustc --lib -- -Z print-type-sizes
+```
+
+---
+
+## 与 `features` 相关的命令及注意事项{#features-related}
+
+1. **启用或禁用默认特性**  
+   - `--no-default-features`：完全禁用默认特性。
+   - `--features="foo,bar"`：显式启用某些特性。
+   - `--all-features`：启用所有可用特性。
+
+2. **常见在命令中的使用**  
+   - `cargo build --features="foo"`  
+   - `cargo check --no-default-features --features="bar"`  
+   - `cargo run --features="server_mode,logging"`  
+   - `cargo tree -e features`：可视化依赖树中的特性启用情况。  
+   - `cargo fix --features mycrate/async --edition`：自动修复在特定 feature 下的代码并进行 edition 修正。  
+
+3. **Feature Unification 特性合并**  
+   当多个依赖对同一个 crate 启用了不同的特性，Cargo 会将这些特性统一在一起，也就是说只要有一个依赖启用了某 feature，就会对编译起作用。若对依赖项的特性启用不一致，需要注意这可能引入更多的编译代码，甚至在极端情况下导致依赖冲突。
+
+4. **排查特性冲突**  
+   如果想知道某个 crate 的哪些特性是被哪些包或者自身项目启用的，可通过  
+   ```bash
+   cargo tree -e features -i <crate_name>
+   ```  
+   加上 `--no-dedupe` 进一步查看。
+
+---
+
+## 总结{#summary}
+
+在 Rust 的生态系统中，Cargo 几乎可以说是“万金油”般的存在——它负责管理项目结构、依赖、文档、编译、测试、发布的方方面面。
+熟练掌握各个常用子命令，尤其是明白 `features` 如何运作与合并，对于提升开发效率、优化项目结构而言至关重要。
+
+- **日常操作**如 `cargo build` / `cargo run` / `cargo check` / `cargo test` 构成了主要工作流。
+- **特性管理**是 Cargo 中的高级功能，需要对 “Feature Unification” 有所了解，以防止出现不一致或冲突。
+- 通过 `cargo tree`, `cargo update`, `cargo add` 以及 `cargo doc` 等命令，能够更好地管理依赖、生成文档、快速定位问题。
+- 遇到需要自动修复或 edition 升级时，`cargo fix` 也能帮我们省力不少。
+
+希望这篇文章能够帮助你在项目中轻松地掌握并运用 Cargo 的各种命令与特性，从而让 Rust 的开发体验更上一层楼！
+

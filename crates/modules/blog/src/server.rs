@@ -1,4 +1,4 @@
-use dioxus::fullstack::{post, ServerFnError};
+use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -11,7 +11,7 @@ pub struct Comment {
   pub date: String,
 }
 
-#[post("/api/comments")]
+#[server]
 pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError> {
   let path = "assets/data/comments.json";
   if !std::path::Path::new(path).exists() {
@@ -19,7 +19,7 @@ pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError
   }
 
   let content = fs::read_to_string(path)
-    .map_err(|e| ServerFnError::new(format!("Failed to read comments: {}", e)))?;
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
 
   let comments: Vec<Comment> = serde_json::from_str(&content).unwrap_or_default();
 
@@ -31,7 +31,7 @@ pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError
   Ok(filtered)
 }
 
-#[post("/api/comments/post")]
+#[server]
 pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Comment>, ServerFnError> {
   let db_dir = "assets/data";
   let db_path = "assets/data/comments.json";
@@ -58,15 +58,15 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
   comments.push(new_comment);
 
   let json = serde_json::to_string_pretty(&comments)
-    .map_err(|e| ServerFnError::new(format!("Failed to serialize comments: {}", e)))?;
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
 
   fs::write(db_path, json)
-    .map_err(|e| ServerFnError::new(format!("Failed to save comments: {}", e)))?;
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
 
   get_comments(blog_id).await
 }
 
-#[post("/api/content/blog")]
+#[server]
 pub async fn get_blog_content(id: String) -> Result<String, ServerFnError> {
   let filepath = match id.as_str() {
     "1" => "assets/content/welcome.md".to_string(),
@@ -75,5 +75,5 @@ pub async fn get_blog_content(id: String) -> Result<String, ServerFnError> {
   };
 
   fs::read_to_string(&filepath)
-    .map_err(|e| ServerFnError::new(format!("Failed to read post: {}", e)))
+    .map_err(|e| ServerFnError::new(e.to_string()))
 }

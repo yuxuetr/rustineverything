@@ -1,0 +1,135 @@
+---
+title: "三种 Unwrap 的类型"
+authors: [yuxuetr]
+description: 在 Rust 中，我编写了很多应用程序，因此发现自己经常使用 `.unwrap()`，这比我编写整洁的库时要多得多。本文提出新的unwrap的解决方式提案，以明确unwrap的语义。
+tags: [Rust]
+keywords: [Rust,unwrap,Rust项目承接,Rust外包]
+---
+
+import { RedText, BlueText, GreenText, YellowText } from '@site/src/components/ColorText'
+
+# 三种 Unwrap 的类型
+
+在 Rust 中，我编写了很多应用程序，因此发现自己经常使用 `.unwrap()`，这比我编写整洁的库时要多得多。
+
+我经常遇到的问题是，过了一天或一周后，我总是记不清当初为什么要使用 `.unwrap()`。我真的希望在这种情况下让应用程序崩溃吗？还是我只是匆忙证明我的其他代码有效，想要稍后再实现错误处理？
+
+我认为有三种不同的 unwrap，每种都有不同的语义，程序员应该以不同的方式对待它们。
+
+## 作为 panic!() 的 Unwrap
+
+第一种 unwrap 是显而易见的；我之所以 unwrap，是因为如果发生这种情况，我们就应该崩溃。
+
+一个很好的例子是在某些 Web 服务器代码中：
+
+```rust
+let app = Router::new().route("/", get(get_info));
+let address_str = format!("{address}:{port}");
+
+// 如果我们给出的地址或端口无效，我们无法做任何事情。就崩溃吧！
+let addr: SocketAddr = address_str.parse().unwrap();
+
+// 如果无法打开 tcp 套接字，我们无法做任何事情。就崩溃吧！
+let listener = TcpListener::bind(&addr).await.unwrap();
+
+// 如果我们的 Web 服务器意外崩溃，我们也应该崩溃！
+axum::serve(listener, app.into_make_service()).await.unwrap();
+```
+
+所有这些 `.unwrap()` 的目的是相同的。如果我们无法做到这一点，就崩溃。
+
+这些 unwrap 也是故意存在的。它们是为了处理真实的错误情况，而不是错误处理的占位符。此外，所有这些错误情况都是可能发生的，我们只是不想去考虑它们。
+
+## 作为 unreachable!() 的 Unwrap
+
+第二种 panic 不太明显，但尤其在编写大量静态变量时会出现。
+
+一个很好的例子是声明正则表达式：
+
+```rust
+// 我们在这里 unwrap 不是因为不关心错误情况，而是因为
+// 我们的错误情况是绝对无法到达的！
+static HEXADECIMAL_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new("^[0-9a-f]*$").unwrap());
+```
+
+这个 unwrap 的目的与我们 Web 服务器示例中的不同。我们 unwrap 是因为这个错误情况根本不可能发生。尽管如此，这个 `.unwrap()` 是故意的，并不是错误处理的占位符。
+
+## 作为 todo!() 的 Unwrap
+
+每个在 Rust 中编写过应用程序的人都犯过使用 `.unwrap()` 的错误，心想“我稍后会处理错误，我只是想看看我的代码在正常路径上是否有效。”
+
+实际上，任何在 Rust 中处理大型应用程序的人可能都花了大量时间追踪这些被遗忘的“临时”unwrap！
+
+一个不错的例子是在快速而肮脏的 Rust 代码中：
+
+```rust
+// 啊，我稍后会更好地处理这个
+let age: i32 = user_input.parse().unwrap();
+
+// 或者...啊，这个文件存在，但我稍后会更好地处理。
+let file: Vec<u8> = fs::read("data.txt").unwrap();
+```
+
+这段代码很肮脏，但在你只是想证明某些东西有效时，这种写法很常见。
+
+这个 unwrap 的目的与其他的截然不同。我们 unwrap 是因为我们尚未实现错误处理。
+
+## 那么，这有什么意义？
+
+我所要指出的是，`.unwrap()` 在代码中可以有三种不同的原因：
+
+1. 如果我们无法做到这一点，我们就应该崩溃（类似 panic!()）
+2. 这种情况是不可能的（类似 unreachable!()）
+3. 我需要稍后处理错误（类似 todo!()）
+
+但这里绝对关键的问题是，这些信息并没有存储在代码中，而是存储在你的脑海中。
+
+有些人会在周围写评论，比如 `// TODO` 或 `// cannot happen`。
+
+有些人使用 `.expect("todo")` 或 `.expect("must be valid regex")`。
+我认为这些都是肮脏的黑客行为，仍然无法准确保留我们为什么要 unwrap 的语义。
+
+我们已经有了类似的“语义崩溃”的先例，使用 `todo!()` 和 `unreachable!()` 宏。
+为什么不在这里也使用它们呢？
+
+## 你有什么建议？
+
+我写了一份 RFC，提出了两个新的方法用于 `Result` 和 `Option`，旨在明确这些语义，
+并防止对 `unwrap` 的混淆。
+
+你可以在这里阅读提案，简单来说就是：
+
+```rust
+// unwrap 仍然用于类似 panic!() 的情况
+TcpListener::bind(&addr).unwrap();
+
+// 我们崩溃是因为错误处理尚未实现。
+// 这种用例在原型应用程序中很常见。
+let int: i32 = input.parse().todo();
+let arg2 = std::env::args().nth(2).todo();
+let data: Vec<u8> = fs::read("data.txt").todo();
+
+// 这些错误状态是无法到达的。
+// 这种用例在静态声明中很常见。
+NonZeroU32::new(10).unreachable();
+Regex::new("^[a-f]{5}$").unreachable();
+```
+
+它提议了 `Option::todo`、`Option::unreachable`、`Result::todo` 和 `Result::unreachable` 函数。
+
+这些函数分别与 `todo!()` 和 `unreachable!()` 宏具有类似的目的。
+
+如果在标准库中实现了这些功能，`#[clippy::todo]` 和其他特性可以指出不应进入生产环境的临时 unwrap。
+
+如果这对你有用，或者这是你之前遇到过的问题，我很想在 RFC 中听听你的想法！对我个人来说，这些函数将带来很大的价值。
+
+## 命名的附注
+
+RFC 提到我们也可以将这些函数命名为 `unwrap_todo` 和 `unwrap_unreachable`。
+我对此有些怀疑，因为 `unwrap_todo` 输入字符较多，我不确定在懒惰的上下文中，函数是否会被忽略。
+
+我认为单独使用 `.todo()` 作为一个函数并不是特别令人困惑；它肯定没有比 `.expect()` 更令人困惑。
+
+## 链接
+
+- [原文链接](https://zkrising.com/writing/three-unwraps/)

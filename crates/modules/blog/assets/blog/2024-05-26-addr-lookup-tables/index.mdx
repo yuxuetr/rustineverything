@@ -1,0 +1,178 @@
+---
+title: "Solana高级概念: 地址查找表（Address Lookup Tables, ALTs）" 
+authors: [yuxuetr]
+description: 地址查找表（ALTs）允许开发者创建相关地址的集合，以便在单个交易中高效加载更多地址。Solana区块链的每个交易需要列出所有交互地址，默认限制为每个交易32个地址。使用ALTs，可以将此限制提升到256个地址。
+tags: [Solana]
+keywords: [Solana,地址查找表,交易,区块链,加密货币,代币,Web3,Web3 Development,Dapp]
+---
+import { RedText, BlueText, YellowText } from '@site/src/components/ColorText'
+
+# Solana高级概念: 地址查找表（Address Lookup Tables, ALTs）
+
+## 概述
+**地址查找表**（`ALTs`）<YellowText text="允许开发者创建相关地址的集合"/>，
+**以便在单个交易中高效加载更多地址**。
+
+<YellowText text="Solana区块链的每个交易需要列出所有交互地址"/>，默认限制为**每个交易**`32`个地址。
+使用`ALTs`，可以将此限制提升到`256`个地址。
+
+## 地址压缩
+在地址查找表中整理完所需的所有地址后，
+每个地址都可以通过表中的`1`字节索引（而不是完整的 `32` 字节地址）在交易中进行引用。 
+这种查找方法有效地将 `32` 字节地址“压缩”为 `1` 字节索引值。
+
+这种**压缩**方式使得可以在**单个查找表中存储多达**`256`个地址，以供在任何给定交易内使用。
+
+## 版本化交易
+为了在交易中使用**地址查找表**，开发者<YellowText text="必须使用新的版本化交易格式中的v0交易"/>。
+
+## 创建地址查找表
+使用 `@solana/web3.js` 库创建新的查找表类似于旧版遗留事务，但存在一些区别。
+
+使用 `@solana/web3.js` 库，您可以使用 `createLookupTable` 函数来构建创建新查找表所需的指令，
+以及确定其地址：
+
+```javascript
+const web3 = require("@solana/web3.js");
+
+// 连接到集群并获取当前`slot`
+const connection = new web3.Connection(web3.clusterApiUrl("devnet"));
+const slot = await connection.getSlot();
+
+// 假设：`payer`是一个有效的`Keypair`，有足够的SOL支付执行费用
+const [lookupTableInst, lookupTableAddress] =
+  web3.AddressLookupTableProgram.createLookupTable({
+    authority: payer.publicKey,
+    payer: payer.publicKey,
+    recentSlot: slot,
+  });
+
+console.log("查找表地址:", lookupTableAddress.toBase58());
+
+// 通过交易发送`lookupTableInst`指令以在链上创建地址查找表
+```
+
+:::note
+地址查找表可以使用 `v0` 交易或遗留交易创建。
+但 Solana 运行时只能在使用 `v0` 版本事务时检索和处理查找表中的额外地址。
+:::
+
+## 向查找表添加地址
+将**地址**添加到**查找表**称为**扩展**。
+
+使用 `@solana/web3.js` 库，
+您可以使用 `extendLookupTable` 方法**创建一个新的扩展指令**：
+
+```javascript
+const extendInstruction = web3.AddressLookupTableProgram.extendLookupTable({
+  payer: payer.publicKey,
+  authority: payer.publicKey,
+  lookupTable: lookupTableAddress,
+  addresses: [
+    payer.publicKey,
+    web3.SystemProgram.programId,
+    // 在此处列出更多`publicKey`地址
+  ],
+});
+
+// 通过交易将此`extendInstruction`发送到集群，以将`addresses`列表插入查找表
+```
+:::note
+注意：由于传统交易的相同内存限制，用于扩展地址查找表的任何交易在一次性添加的地址数量上也受限。
+因此，您需要使用多个交易来扩展任何包含更多地址（`~20`）的表，这些地址可以适应单个交易内存限制。
+:::
+
+**一旦这些地址已被插入到表中，并存储在链上**，您将能够在未来交易中利用**地址查找表**。
+
+在未来交易中最多可以启用 `256` 个地址。
+
+## 获取地址查找表
+就像从集群请求另一个帐户（或`PDA`）一样，
+
+您可以使用 `getAddressLookupTable` 方法获取完整的地址查找表：
+
+```javascript
+const lookupTableAddress = new web3.PublicKey("");
+const lookupTableAccount = (
+  await connection.getAddressLookupTable(lookupTableAddress)
+).value;
+
+console.log("集群中的查找表地址:", lookupTableAccount.key.toBase58());
+```
+
+我们的`lookupTableAccount`变量现在将是一个`AddressLookupTableAccount`对象，
+
+我们可以解析它以读取存储在查找表中的所有地址的列表：
+
+```javascript
+// 解析并读取表中存储的所有地址
+for (let i = 0; i < lookupTableAccount.state.addresses.length; i++) {
+  const address = lookupTableAccount.state.addresses[i];
+  console.log(i, address.toBase58());
+}
+```
+
+## 在交易中使用地址查找表
+创建了查找表，并将所需的地址存储在链上（通过扩展查找表）后，
+您可以创建一个`v0`交易来利用链上查找功能。
+
+就像旧版的传统(`legacy`)交易一样，您可以在链上创建您的交易将执行的所有指令。
+
+然后，您可以将这些指令数组提供给在 `v0` 交易中使用的 Message。
+
+:::info
+在 `v0` 交易中使用的指令可以使用过去用于创建指令的相同方法和函数来构建。
+
+与涉及地址查找表的指令无需更改。
+:::
+
+```javascript
+// 假设：
+// - `arrayOfInstructions` 已创建为 `TransactionInstruction` 的 `数组`
+// - 我们正在使用上面获取的 `lookupTableAccount`
+
+const messageV0 = new web3.TransactionMessage({
+  payerKey: payer.publicKey,
+  recentBlockhash: blockhash,
+  instructions: arrayOfInstructions, // 这是一个指令数组
+}).compileToV0Message([lookupTableAccount]);
+
+// 从`v0`消息创建一个`v0`交易
+const transactionV0 = new web3.VersionedTransaction(messageV0);
+// 使用我们创建的名为`payer`的文件系统钱包签署`v0`交易。
+transactionV0.sign([payer]);
+// 发送并确认交易
+//（注意：这里没有签名者数组；请参见下面的说明...）
+const txid = await web3.sendAndConfirmTransaction(connection, transactionV0);
+
+console.log(`Transaction: https://explorer.solana.com/tx/${txid}?cluster=devnet`);
+```
+
+## 总结
+### 功能与优势
+- **扩展地址数量限制**：默认情况下，每个交易最多只能包含`32`个地址。使用地址查找表，这一限制可以扩展到`256`个地址。
+- **地址压缩**：地址查找表将`32`字节的地址压缩为`1`字节的索引值，从而提高了交易中地址引用的效率。
+
+### 创建与使用
+1. 创建地址查找表：
+  - 使用`@solana/web3.js`库中的`createLookupTable`函数。
+  - 指定支付者和授权者的公钥，并获取当前的`slot`。
+  - 构建创建查找表的指令并发送交易以在链上创建查找表。
+
+2. 添加地址到查找表：
+  - 使用`extendLookupTable`方法创建扩展指令。
+  - 将所需的地址列表添加到查找表中。
+  - 由于内存限制，可能需要多次交易来扩展查找表。
+
+3. 获取地址查找表：
+  - 使用`getAddressLookupTable`方法从集群中获取完整的地址查找表。
+	- 解析并读取表中存储的所有地址。
+
+4. 在交易中使用地址查找表：
+  - 创建包含所需指令的`v0`交易消息。
+  - 将查找表账户包含在`v0`交易消息中。
+  - 签署并发送交易。
+
+### 版本化交易的必要性
+- 使用地址查找表需要使用`v0`版本化交易格式。
+- `v0`交易支持在交易中引用查找表中的地址。

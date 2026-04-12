@@ -1,0 +1,69 @@
+---
+title: "2025年的大与小：Burn的未来发展战略"
+description: "探索Burn在2024年的技术突破与2025年的发展规划，包括跨平台性能优化、量化技术和可扩展的分布式计算。了解如何通过CubeCL和多后端架构推动深度学习的边界。"
+authors: [yuxuetr]
+tags: [Rust, Burn, 深度学习, 跨平台性能, 分布式计算, 量化技术, CubeCL, 多后端架构, 硬件加速]
+keywords: [Rust, Burn, Rust AI,深度学习, 跨平台性能, 分布式计算, 量化技术, CubeCL, 多后端架构, 硬件加速, Rust深度学习框架]
+---
+
+# 2025年的大与小：Burn的未来发展战略
+
+2024年标志着Burn架构的重大演变。
+传统的深度学习框架常常要求开发者在性能、可移植性和灵活性之间做出妥协；而我们的目标是超越这些权衡。
+展望2025年，我们致力于将这一理念应用于整个计算栈，从嵌入式设备到数据中心，涵盖所有领域。
+
+## 2024年回顾：突破硬件限制
+
+### 重新定义内核开发
+
+今年之初，我们面临一个限制：我们的WGPU后端依赖于基础的WGSL模板，限制了我们的适应能力。这个挑战促使我们创建了CubeCL [1]，这是我们统一内核开发的解决方案。这项任务非常复杂——设计一个抽象层，适用于各种不同的硬件，同时保持顶级性能。我们的结果证明了这一策略的有效性，在大多数基准测试中，性能现在已匹配甚至超过LibTorch。
+
+### 多后端架构
+
+后端生态系统现已包括CUDA [2]、HIP/ROCm [3]以及支持WebGPU和Vulkan的先进WGPU实现 [4]。迄今为止最显著的成就是在相同硬件上实现不同后端的性能平衡。例如，无论是在CUDA还是Vulkan上执行矩阵乘法操作，性能几乎相同，这直接反映了我们平台无关优化的策略。
+
+我们还引入了新的Router和HTTP后端：Router后端支持多后端的动态混合，而HTTP后端则支持跨多台机器的分布式处理。为了解决内存管理挑战，我们实施了池化和检查点机制，即使在反向传播期间也能实现操作融合。
+
+### 硬件无关加速
+
+我们的硬件加速策略标志着一个重要的技术里程碑。我们并不依赖于特定平台的库，如cuBLAS [5]或rocBLAS [6]，而是开发了一套编译器栈，利用每个平台的最佳特性，同时确保跨平台的兼容性。这涉及克服代码生成和优化中的复杂挑战，尤其是对于矩阵乘法等操作，必须高效利用各种硬件架构的张量核心。
+
+## 2025年路线图：拥抱极端
+
+在2025年，我们将解决深度学习部署中的两个基本挑战。
+
+### 小规模：量化
+
+量化对于资源有限的计算至关重要。
+我们的方法使用复杂操作的融合，通过“读取时融合”功能，实现如归约等任务在计算管道中的无缝集成。
+这种融合策略自动处理操作的打包和解包，确保量化操作高效运行，无需手动调整。
+结果是什么？高性能的量化操作在保持精度的同时，降低了资源需求。
+
+### 大规模：可扩展的分布式计算
+
+在另一端，是分布式计算。
+通过利用我们的Router和HTTP后端构建强大的分布式训练基础设施，我们旨在创建一个流畅的分布式计算体验，
+使工作负载能够在不同硬件和后端配置之间轻松流动，同时优化异构计算环境中的资源利用。
+
+为了支持这种普遍兼容性的愿景，我们正在扩展我们的后端生态系统，包括：
+
+- 开发Metal后端，充分利用Apple Silicon的能力，超越当前WGPU的功能；
+- 在Rust中实现一个即时向量化的CPU后端，以增强CPU性能；
+- 开启新的后端可能性，如FPGA支持，确保Burn能够适应任何计算环境。
+
+我们还将大量投资于开发者体验，提供全面的CubeCL文档，并推动Burn API的稳定化。这些改进将使开发者更容易利用我们跨平台能力的全部潜力。
+
+在2024年，我们证明了跨平台性能不需要妥协。
+展望2025年，我们将这一原则扩展到整个计算领域——从微控制器到服务器农场。
+通过解决两个极端的技术挑战，我们致力于使深度学习在任何规模或硬件限制下都更加高效和易用。
+
+## 参考文献
+- [Going Big and Small for 2025](https://burn.dev/blog/going-big-and-small-for-2025/)
+- [CubeCL: Multi-platform high-performance compute language extension for Rust](https://github.com/tracel-ai/cubecl)
+- [CUDA Toolkit](https://developer.nvidia.com/cuda-toolkit)
+- [AMD ROCm Software](https://www.amd.com/en/products/software/rocm.html)
+- [Rust implementation of SPIR-V](https://github.com/gfx-rs/rspirv)
+- [cuBLAS: CUDA Basic Linear Algebra Subroutine Library](https://docs.nvidia.com/cuda/cublas/)
+- [rocBLAS: ROCm Basic Linear Algebra Subprograms Library](https://github.com/ROCm/rocBLAS)
+- [Integer Quantization for Deep Learning Inference: Principles and Empirical Evaluation](https://arxiv.org/abs/2004.09602)
+- [Rust Bindings for Metal](https://github.com/gfx-rs/metal-rs)
