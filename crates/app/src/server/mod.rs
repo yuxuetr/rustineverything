@@ -1,10 +1,39 @@
 use dioxus::fullstack::{post, ServerFnError};
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
+use rustineverything_core::auth::{AuthService, AuthConfig};
+
+#[post("/api/auth/login-url")]
+pub async fn get_login_url(provider: String) -> Result<String, ServerFnError> {
+    // In a real app, these would come from environment variables
+    let config = AuthConfig {
+        github_client_id: std::env::var("GITHUB_CLIENT_ID").unwrap_or_default(),
+        github_client_secret: std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_default(),
+        google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
+        google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
+        redirect_url: "http://localhost:8080/api/auth/callback".to_string(),
+    };
+
+    let auth_service = AuthService::new(config);
+
+    let (url, _csrf_token) = match provider.as_str() {
+        "github" => {
+            let client = auth_service.get_github_client();
+            client.authorize_url(oauth2::CsrfToken::new_random).url()
+        },
+        "google" => {
+            let client = auth_service.get_google_client();
+            client.authorize_url(oauth2::CsrfToken::new_random).url()
+        },
+        _ => return Err(ServerFnError::new("Unsupported provider")),
+    };
+
+    Ok(url.to_string())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Comment {
-  pub id: String,
+...
   pub blog_id: String,
   pub content: String,
   pub author: String,
