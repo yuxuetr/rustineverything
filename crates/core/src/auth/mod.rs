@@ -26,8 +26,6 @@ impl AuthService {
         Self { config }
     }
 
-    // 暂时禁用，待 OAuth2 兼容性修复
-    /*
     pub async fn sync_github_user(&self, db: &DatabaseConnection, code: String) -> Result<user::Model, Box<dyn std::error::Error>> {
         let client = BasicClient::new(ClientId::new(self.config.github_client_id.clone()))
             .set_client_secret(ClientSecret::new(self.config.github_client_secret.clone()))
@@ -35,6 +33,7 @@ impl AuthService {
             .set_token_uri(TokenUrl::new("https://github.com/login/oauth/access_token".to_string()).unwrap())
             .set_redirect_uri(RedirectUrl::new(self.config.redirect_url.clone()).unwrap());
 
+        // 使用 oauth2 5.0 推荐的异步请求方式
         let token_res = client
             .exchange_code(AuthorizationCode::new(code))
             .request_async(oauth2::reqwest::async_http_client)
@@ -50,15 +49,14 @@ impl AuthService {
             .json()
             .await?;
 
-        let uid = github_user["id"].as_i64().ok_or("Invalid ID")?.to_string();
-        let nickname = github_user["login"].as_str().ok_or("Invalid Login")?.to_string();
+        let uid = github_user["id"].as_i64().ok_or("Invalid GitHub User ID")?.to_string();
+        let nickname = github_user["login"].as_str().unwrap_or("GitHub User").to_string();
         let avatar_url = github_user["avatar_url"].as_str().map(|s| s.to_string());
 
         self.sync_user_to_db(db, "github", uid, nickname, avatar_url, token_res.access_token().secret().to_string()).await
     }
-    */
 
-    pub async fn sync_user_to_db(&self, db: &DatabaseConnection, provider: &str, uid: String, nickname: String, avatar_url: Option<String>, token: String) -> Result<user::Model, Box<dyn std::error::Error>> {
+    async fn sync_user_to_db(&self, db: &DatabaseConnection, provider: &str, uid: String, nickname: String, avatar_url: Option<String>, token: String) -> Result<user::Model, Box<dyn std::error::Error>> {
         let identity = user_identity::Entity::find()
             .filter(user_identity::Column::Provider.eq(provider))
             .filter(user_identity::Column::ProviderUid.eq(&uid))
@@ -69,7 +67,7 @@ impl AuthService {
             let user = user::Entity::find_by_id(ident.user_id)
                 .one(db)
                 .await?
-                .ok_or("User not found")?;
+                .ok_or("User not found for this identity")?;
             Ok(user)
         } else {
             let new_user = user::ActiveModel {
@@ -92,7 +90,11 @@ impl AuthService {
             };
             user_identity::Entity::insert(new_ident).exec(db).await?;
 
-            Ok(user::Entity::find_by_id(user_res.last_insert_id).one(db).await?.unwrap())
+            let user_final = user::Entity::find_by_id(user_res.last_insert_id)
+                .one(db)
+                .await?
+                .ok_or("Failed to retrieve newly created user")?;
+            Ok(user_final)
         }
     }
 }

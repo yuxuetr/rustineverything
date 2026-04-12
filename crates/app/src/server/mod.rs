@@ -62,6 +62,36 @@ pub async fn get_login_url(provider: String) -> Result<String, ServerFnError> {
     { Ok("".to_string()) }
 }
 
+#[post("/api/auth/callback")]
+pub async fn auth_callback(code: String, provider: String) -> Result<String, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use rustineverything_core::auth::{AuthService, AuthConfig};
+        use rustineverything_core::db::init_db;
+        
+        let config = AuthConfig {
+            github_client_id: std::env::var("GITHUB_CLIENT_ID").unwrap_or_default(),
+            github_client_secret: std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_default(),
+            google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
+            google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
+            redirect_url: "http://localhost:8080/api/auth/callback".to_string(),
+        };
+        
+        let db_url = std::env::var("DATABASE_URL").unwrap_or("postgres://postgres:password@localhost/rustineverything".to_string());
+        let db = init_db(&db_url).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        
+        let auth_service = AuthService::new(config);
+        let user = match provider.as_str() {
+            "github" => auth_service.sync_github_user(&db, code).await.map_err(|e| ServerFnError::new(e.to_string()))?,
+            _ => return Err(ServerFnError::new("Unsupported provider")),
+        };
+        
+        Ok(format!("Welcome, {}!", user.nickname))
+    }
+    #[cfg(not(feature = "server"))]
+    { Ok("".to_string()) }
+}
+
 #[post("/api/upload")]
 pub async fn upload_image(name: String, data_base64: String) -> Result<String, ServerFnError> {
   #[cfg(feature = "server")]
