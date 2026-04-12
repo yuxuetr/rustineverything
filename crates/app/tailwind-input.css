@@ -4,8 +4,18 @@
 /* Force Dark Mode to use class strategy instead of media strategy */
 @variant dark (&:where(.dark, .dark *));
 
-/* Map 'slate' classes to 'stone' colors for a warmer look */
 @theme {
+    /* === Theme Plugin Variable Defaults === */
+    /* These are overridden at runtime by the WASM theme plugin */
+    --color-primary: oklch(65% 0.15 250);
+    --color-bg: #ffffff;
+    --color-surface: #f8fafc;
+    --color-text: #0f172a;
+    --color-text-muted: #475569;
+    --color-border: #e2e8f0;
+
+    /* === Map Tailwind color scales to theme variables === */
+    /* 'slate' maps to stone for warmer tones */
     --color-slate-50: var(--color-stone-50);
     --color-slate-100: var(--color-stone-100);
     --color-slate-200: var(--color-stone-200);
@@ -18,7 +28,7 @@
     --color-slate-900: var(--color-stone-900);
     --color-slate-950: var(--color-stone-950);
 
-    /* Map 'blue' brand colors to 'orange' for a Rust-themed look */
+    /* 'blue' brand colors map to orange for Rust-themed look */
     --color-blue-50: var(--color-orange-50);
     --color-blue-100: var(--color-orange-100);
     --color-blue-200: var(--color-orange-200);

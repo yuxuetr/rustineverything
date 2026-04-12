@@ -13,7 +13,7 @@ use crate::server::get_aggregated_theme_css;
 /// Static assets used by the application.
 const FAVICON: Asset = asset!("/assets/images/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/css/main.css");
-const TAILWIND_CSS: Asset = asset!("/assets/css/tailwind.css");
+const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
 fn main() {
   dioxus::launch(App);
@@ -25,7 +25,32 @@ fn App() -> Element {
 
   // Fetch aggregated theme CSS from WASM plugins
   let theme_css = use_resource(move || async move {
-      get_aggregated_theme_css().await.unwrap_or_default()
+      let result = get_aggregated_theme_css().await;
+      match &result {
+          Ok(css) => println!("[Frontend] Fetched theme CSS (len: {})", css.len()),
+          Err(e) => println!("[Frontend] Failed to fetch theme: {:?}", e),
+      }
+      result.unwrap_or_default()
+  });
+
+  // 使用 eval 动态注入和更新样式
+  use_effect(move || {
+      if let Some(css) = theme_css.read().as_ref() {
+          let js = format!(
+              r#"
+              console.log("[Frontend] Injecting CSS into #wasm-theme-style");
+              let styleTag = document.getElementById('wasm-theme-style');
+              if (!styleTag) {{
+                  styleTag = document.createElement('style');
+                  styleTag.id = 'wasm-theme-style';
+                  document.head.appendChild(styleTag);
+              }}
+              styleTag.innerHTML = `{}`;
+              "#,
+              css
+          );
+          dioxus::document::eval(&js);
+      }
   });
 
   rsx! {
@@ -34,11 +59,6 @@ fn App() -> Element {
       document::Link { rel: "stylesheet", href: MAIN_CSS }
       document::Link { rel: "stylesheet", href: TAILWIND_CSS }
       
-      // Inject Dynamic Theme CSS from WASM Plugins
-      if let Some(css) = theme_css.read().as_ref() {
-          document::Style { "{css}" }
-      }
-
       // PrismJS for syntax highlighting
       document::Link { rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" }
       document::Script { src: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js" }

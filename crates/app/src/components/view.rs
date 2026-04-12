@@ -1,32 +1,19 @@
 use dioxus::prelude::*;
 
-#[derive(Clone, PartialEq, Props)]
-pub struct ContainerProps {
-  pub children: Element,
-}
-
-/// A simple max-width container used across pages.
 #[component]
-pub fn Container(props: ContainerProps) -> Element {
+pub fn Container(children: Element) -> Element {
   rsx! {
-      div { class: "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8", {props.children} }
+      div { class: "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8", {children} }
   }
 }
 
-#[derive(Clone, PartialEq, Props)]
-pub struct SectionTitleProps {
-  pub title: String,
-  #[props(optional)]
-  pub subtitle: Option<String>,
-}
-
 #[component]
-pub fn SectionTitle(props: SectionTitleProps) -> Element {
+pub fn SectionTitle(title: String, subtitle: Option<String>) -> Element {
   rsx! {
-      div { class: "mb-6",
-          h2 { class: "text-2xl md:text-3xl font-bold text-slate-900 dark:text-white", "{props.title}" }
-          if let Some(subtitle) = props.subtitle.clone() {
-              p { class: "mt-2 text-slate-600 dark:text-slate-300", "{subtitle}" }
+      div { class: "text-center mb-10",
+          h2 { class: "text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl", "{title}" }
+          if let Some(s) = subtitle {
+              p { class: "mt-4 text-lg leading-8 text-[var(--color-text-muted)]", "{s}" }
           }
       }
   }

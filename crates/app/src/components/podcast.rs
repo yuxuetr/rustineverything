@@ -44,7 +44,7 @@ pub fn PodcastPage() -> Element {
   let mut is_playing = use_signal(|| false);
 
   rsx! {
-      section { class: "py-12 bg-white dark:bg-slate-950 min-h-screen",
+      section { class: "py-12 min-h-screen bg-[var(--color-bg)] transition-colors duration-300",
           Container {
               SectionTitle {
                   title: "Rust 深度播客".to_string(),
@@ -52,32 +52,11 @@ pub fn PodcastPage() -> Element {
               }
 
               div { class: "grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8",
-                  // Main Player Area (Left/Top)
+                  // Main Player Area
                   div { class: "lg:col-span-2 space-y-6",
                       div { class: "sticky top-24",
-                          div { class: "relative overflow-hidden rounded-2xl bg-slate-900 shadow-xl ring-1 ring-slate-900/5",
-                              // Decorative background gradient
-                              div { class: "absolute -left-12 -top-12 h-64 w-64 rounded-full bg-blue-500/20 blur-3xl" }
-                              div { class: "absolute -bottom-12 -right-12 h-64 w-64 rounded-full bg-purple-500/20 blur-3xl" }
-
+                          div { class: "relative overflow-hidden rounded-2xl bg-slate-900 shadow-xl border border-[var(--color-border)]",
                               div { class: "relative p-8 md:p-10",
-                                  // Header
-                                  div { class: "flex items-center gap-4 text-slate-400 text-sm font-medium",
-                                      span { class: "flex items-center gap-1.5",
-                                          svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
-                                              path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" }
-                                          }
-                                          "{current_episode().date}"
-                                      }
-                                      span { class: "w-1 h-1 rounded-full bg-slate-600" }
-                                      span { class: "flex items-center gap-1.5",
-                                          svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
-                                              path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" }
-                                          }
-                                          "{current_episode().duration}"
-                                      }
-                                  }
-
                                   // Title
                                   h2 { class: "mt-6 text-2xl md:text-3xl font-bold tracking-tight text-white",
                                       "{current_episode().title}"
