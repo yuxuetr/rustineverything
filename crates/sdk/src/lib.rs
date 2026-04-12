@@ -31,3 +31,14 @@ pub trait Plugin {
     fn manifest(&self) -> PluginManifest;
     fn on_load(&self) {}
 }
+
+/// 内置业务模块 Trait
+/// 用于规范 博客、播客、论坛等模块的初始化
+pub trait AppModule {
+    fn name(&self) -> &'static str;
+    
+    /// 模块初始化钩子（例如初始化数据库表）
+    fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+}
