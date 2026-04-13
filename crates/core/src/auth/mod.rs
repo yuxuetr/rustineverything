@@ -1,7 +1,3 @@
-use oauth2::{
-    basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl,
-    AuthorizationCode, TokenResponse,
-};
 use serde::{Deserialize, Serialize};
 use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set};
 use crate::entities::{user, user_identity};
@@ -27,21 +23,42 @@ impl AuthService {
     }
 
     pub async fn sync_github_user(&self, db: &DatabaseConnection, code: String) -> Result<user::Model, Box<dyn std::error::Error>> {
-        let client = BasicClient::new(ClientId::new(self.config.github_client_id.clone()))
-            .set_client_secret(ClientSecret::new(self.config.github_client_secret.clone()))
-            .set_auth_uri(AuthUrl::new("https://github.com/login/oauth/authorize".to_string()).unwrap())
-            .set_token_uri(TokenUrl::new("https://github.com/login/oauth/access_token".to_string()).unwrap())
-            .set_redirect_uri(RedirectUrl::new(self.config.redirect_url.clone()).unwrap());
-
-        // 暂时注释掉报错行，以便项目运行
-        /*
-        let token_res = client
-            .exchange_code(AuthorizationCode::new(code))
-            .request_async(oauth2::reqwest::async_http_client)
-            .await?;
-        */
+        let http_client = reqwest::Client::new();
         
-        Err("OAuth2 sync temporarily disabled for migration verification".into())
+        // 1. 直接通过 reqwest 发送 Token 交换请求
+        let token_response: Value = http_client
+            .post("https://github.com/login/oauth/access_token")
+            .header("Accept", "application/json")
+            .form(&[
+                ("client_id", &self.config.github_client_id),
+                ("client_secret", &self.config.github_client_secret),
+                ("code", &code),
+                ("redirect_uri", &self.config.redirect_url),
+            ])
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        let access_token = token_response["access_token"]
+            .as_str()
+            .ok_or_else(|| format!("GitHub 认证失败: {:?}", token_response))?;
+
+        // 2. 获取用户信息
+        let github_user: Value = http_client
+            .get("https://api.github.com/user")
+            .header("Authorization", format!("Bearer {}", access_token))
+            .header("User-Agent", "rustineverything-app")
+            .send()
+            .await?
+            .json()
+            .await?;
+
+        let uid = github_user["id"].as_i64().ok_or("无效的 GitHub UID")?.to_string();
+        let nickname = github_user["login"].as_str().unwrap_or("GitHub用户").to_string();
+        let avatar_url = github_user["avatar_url"].as_str().map(|s| s.to_string());
+
+        self.sync_user_to_db(db, "github", uid, nickname, avatar_url, access_token.to_string()).await
     }
 
     async fn sync_user_to_db(&self, db: &DatabaseConnection, provider: &str, uid: String, nickname: String, avatar_url: Option<String>, token: String) -> Result<user::Model, Box<dyn std::error::Error>> {
@@ -55,7 +72,7 @@ impl AuthService {
             let user = user::Entity::find_by_id(ident.user_id)
                 .one(db)
                 .await?
-                .ok_or("User not found for this identity")?;
+                .ok_or("找不到关联用户")?;
             Ok(user)
         } else {
             let new_user = user::ActiveModel {
@@ -81,7 +98,7 @@ impl AuthService {
             let user_final = user::Entity::find_by_id(user_res.last_insert_id)
                 .one(db)
                 .await?
-                .ok_or("Failed to retrieve newly created user")?;
+                .ok_or("无法获取新用户")?;
             Ok(user_final)
         }
     }

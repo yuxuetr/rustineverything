@@ -4,6 +4,7 @@ pub mod entities;
 pub mod auth;
 #[cfg(feature = "server")]
 pub mod db;
+pub mod settings;
 
 use wasmi::{Engine, Linker, Module, Store};
 

@@ -11,6 +11,7 @@ use crate::routes::Route;
 use crate::server::get_aggregated_theme_css;
 
 /// Static assets used by the application.
+// Dioxus 0.7 默认在 crate root 的 assets 目录下寻找
 const FAVICON: Asset = asset!("/assets/images/favicon.ico");
 const MAIN_CSS: Asset = asset!("/assets/css/main.css");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
@@ -59,6 +60,19 @@ fn App() -> Element {
       document::Link { rel: "stylesheet", href: MAIN_CSS }
       document::Link { rel: "stylesheet", href: TAILWIND_CSS }
       
+      // Global Fixed Styles (Static)
+      document::Style { "
+        body {{ 
+          background-color: var(--color-bg, white); 
+          color: var(--color-text, #0f172a);
+          transition: background-color 0.3s ease, color 0.3s ease; 
+        }}
+        .dark body {{ 
+          background-color: var(--color-bg, #020617); 
+          color: var(--color-text, #f8fafc);
+        }}
+      " }
+
       // PrismJS for syntax highlighting
       document::Link { rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" }
       document::Script { src: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js" }
