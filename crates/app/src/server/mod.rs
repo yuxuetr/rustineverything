@@ -1,35 +1,18 @@
 use dioxus::fullstack::{post, ServerFnError};
 use dioxus::prelude::*;
-use serde::{Deserialize, Serialize};
-use std::fs;
 use rustineverything_core::settings::SiteConfig;
 use std::path::PathBuf;
+use std::fs;
 
-/// 自动探测资产根目录 (Native 端逻辑)
+/// 自动探测资产根目录
+/// 我们规定：代码在 crates/app，内容在 根目录/assets
 fn get_asset_root() -> PathBuf {
     let mut path = PathBuf::from("assets");
     if !path.exists() {
-        // 兼容开发环境路径
+        // 兼容本地运行和工作区运行
         path = PathBuf::from("../../assets");
     }
     path
-}
-
-/// [新增] 动态资产分发器：允许前端访问根目录 assets
-/// 使用场景：播客音频、用户上传的大图、插件 WASM
-#[post("/api/assets/stream")]
-pub async fn stream_asset(path: String) -> Result<Vec<u8>, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        let full_path = get_asset_root().join(path.trim_start_matches('/'));
-        if !full_path.exists() {
-            return Err(ServerFnError::new(format!("资产不存在: {:?}", full_path)));
-        }
-        
-        fs::read(&full_path).map_err(|e| ServerFnError::new(e.to_string()))
-    }
-    #[cfg(not(feature = "server"))]
-    { Err(ServerFnError::new("仅服务端可用")) }
 }
 
 #[post("/api/site/config")]
@@ -44,8 +27,9 @@ pub async fn translate_server(key: String, lang: String) -> Result<String, Serve
     #[cfg(feature = "server")]
     {
         use rustineverything_core::PluginManager;
-        let config = get_site_config().await.unwrap_or_default();
-        let wasm_path = get_asset_root().join("plugins/i18n_fluent_plugin.wasm");
+        let config = SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap()).unwrap_or_default();
+        let plugin_dir = get_asset_root().join("plugins");
+        let wasm_path = plugin_dir.join("i18n_fluent_plugin.wasm");
         
         if !wasm_path.exists() { return Ok(key); }
         let wasm_bytes = fs::read(wasm_path).map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -62,13 +46,76 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
     #[cfg(feature = "server")]
     {
         use rustineverything_core::PluginManager;
-        let config = get_site_config().await.unwrap_or_default();
-        let wasm_path = get_asset_root().join("plugins").join(&config.active_theme);
+        let config = SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap()).unwrap_or_default();
+        let plugin_dir = get_asset_root().join("plugins");
+        let wasm_path = plugin_dir.join(&config.active_theme);
         
         if !wasm_path.exists() { return Ok("".to_string()); }
         let wasm_bytes = fs::read(wasm_path).map_err(|e| ServerFnError::new(e.to_string()))?;
         let manager = PluginManager::new();
         Ok(manager.aggregate_theme_css(&[wasm_bytes]))
+    }
+    #[cfg(not(feature = "server"))]
+    { Ok("".to_string()) }
+}
+
+#[post("/api/auth/login-url")]
+pub async fn get_login_url(provider: String) -> Result<String, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl, CsrfToken};
+        use rustineverything_core::auth::AuthConfig;
+        
+        let config = AuthConfig {
+            github_client_id: std::env::var("GITHUB_CLIENT_ID").unwrap_or_default(),
+            github_client_secret: std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_default(),
+            google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
+            google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
+            redirect_url: "http://localhost:8080/api/auth/callback".to_string(),
+        };
+
+        let client_id = config.github_client_id;
+        let client_secret = config.github_client_secret;
+        let redirect_uri = config.redirect_url;
+
+        let (url, _) = match provider.as_str() {
+            "github" => {
+                let client = BasicClient::new(ClientId::new(client_id))
+                    .set_client_secret(ClientSecret::new(client_secret))
+                    .set_auth_uri(AuthUrl::new("https://github.com/login/oauth/authorize".to_string()).unwrap())
+                    .set_token_uri(TokenUrl::new("https://github.com/login/oauth/access_token".to_string()).unwrap())
+                    .set_redirect_uri(RedirectUrl::new(redirect_uri).unwrap());
+                client.authorize_url(CsrfToken::new_random).url()
+            },
+            _ => return Err(ServerFnError::new("不支持的登录平台")),
+        };
+        Ok(url.to_string())
+    }
+    #[cfg(not(feature = "server"))]
+    { Ok("".to_string()) }
+}
+
+#[post("/api/auth/callback")]
+pub async fn auth_callback(code: String, provider: String) -> Result<String, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use rustineverything_core::auth::{AuthService, AuthConfig};
+        use rustineverything_core::db::init_db;
+        let config = AuthConfig {
+            github_client_id: std::env::var("GITHUB_CLIENT_ID").unwrap_or_default(),
+            github_client_secret: std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_default(),
+            google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
+            google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
+            redirect_url: "http://localhost:8080/api/auth/callback".to_string(),
+        };
+        let db_url = std::env::var("DATABASE_URL").unwrap_or("postgres://postgres:password@localhost/rustineverything".to_string());
+        let db = init_db(&db_url).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        let auth_service = AuthService::new(config);
+        let user = match provider.as_str() {
+            "github" => auth_service.sync_github_user(&db, code).await.map_err(|e| ServerFnError::new(e.to_string()))?,
+            _ => return Err(ServerFnError::new("同步失败")),
+        };
+        Ok(format!("欢迎回来, {}!", user.nickname))
     }
     #[cfg(not(feature = "server"))]
     { Ok("".to_string()) }
@@ -89,24 +136,10 @@ pub async fn upload_image(name: String, data_base64: String) -> Result<String, S
       let path = dir_path.join(&filename);
       fs::write(&path, &data).map_err(|e| ServerFnError::new(format!("保存失败: {}", e)))?;
       
-      // 注意：这里返回的不再是标准 URL，而是给前端 stream_asset 用的路径
-      Ok(format!("uploads/{}", filename))
+      Ok(format!("/uploads/{}", filename))
   }
   #[cfg(not(feature = "server"))]
   { Ok("".to_string()) }
-}
-
-#[post("/api/content/blog")]
-pub async fn get_blog_content(id: String) -> Result<String, ServerFnError> {
-  let filename = match id.as_str() {
-    "1" => "content/welcome.md",
-    "2" => "blog/2026-01-10-python-struct/index.mdx",
-    _ => return Err(ServerFnError::new("文章未找到")),
-  };
-
-  let filepath = get_asset_root().join(filename);
-  fs::read_to_string(&filepath)
-    .map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))
 }
 
 #[post("/api/echo")]
