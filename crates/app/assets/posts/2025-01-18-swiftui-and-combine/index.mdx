@@ -1,0 +1,483 @@
+---
+title: "使用 Combine 与 SwiftUI 构建用户注册表单：从零开始的表单验证与 MVVM 实践"
+description: "在本文中，我们将详细演示如何借助 SwiftUI 和 Combine 框架构建一个实时验证的注册表单，并使用 MVVM 设计模式轻松维护和扩展表单逻辑。"
+authors: [yuxuetr]
+tags: [SwiftUI, Swift, iOS]
+keywords: ["SwiftUI教程","Combine","MVVM","iOS开发","表单验证","Reactive Programming","Apple","Swift","响应式编程"]
+---
+
+# 使用 Combine 与 SwiftUI 构建用户注册表单
+
+[上一章节](../2025-01-17-swiftui-data-sharing/index.mdx)我们
+介绍了如何通过 **Combine** 和 **@EnvironmentObject** 来实现数据共享，
+使我们的设置与主列表能够联动更新。
+
+本节我们将继续深入探讨如何在 SwiftUI 中使用 Combine 框架来实时验证用户注册表单，
+并基于 MVVM 架构进行代码的组织和管理。
+
+SwiftUI 与 Combine 的出现，彻底改变了我们开发 iOS 应用的方式。
+通过它们，我们可以以更加声明式、模块化的方式来编写代码，告别复杂的代理回调与冗长的闭包逻辑。
+在本文中，我们将深入探讨如何在 SwiftUI 中使用 Combine 框架来实时验证用户注册表单，并
+基于 MVVM 架构进行代码的组织和管理。
+
+
+在这篇博客中，你将学习：
+1. 如何使用 SwiftUI 搭建用户注册表单的基础布局
+2. 如何使用 Combine 的发布者（Publisher）和订阅者（Subscriber）模型进行表单实时验证
+3. 如何使用 MVVM（Model-View-ViewModel）设计模式组织应用程序的代码
+4. 如何让 SwiftUI 视图与 ViewModel 轻松交互，从而提升应用的可维护性和可扩展性
+
+{/* truncate */}
+---
+
+## 目录
+
+- [使用 SwiftUI 布局注册表单](#使用-swiftui-布局注册表单)
+- [为什么要使用单独的 View 封装 UI](#为什么要使用单独的-view-封装-ui)
+- [了解 Combine](#了解-combine)
+- [Combine 与 MVVM](#combine-与-mvvm)
+- [使用 Combine 验证用户名](#使用-combine-验证用户名)
+- [使用 Combine 验证密码](#使用-combine-验证密码)
+- [实现 UserRegistrationViewModel](#实现-userregistrationviewmodel)
+- [总结](#总结)
+
+---
+
+## 使用 SwiftUI 布局注册表单
+
+我们先从最直观的部分开始：如何使用 SwiftUI 来布局表单界面。
+假设你已经在工程中创建了一个 `ContentView.swift`，
+并配合 SwiftUI 的预览（Canvas）一边写代码一边查看效果。
+
+下面的示例会让你在界面上看到三个输入框：用户名、密码与确认密码。
+每个输入框下方展示需要满足的条件，并根据输入实时验证是否达成要求。
+当所有输入均正确时，“Sign Up” 按钮才可点击。
+
+### 创建可复用的输入栏（TextField / SecureField）
+
+SwiftUI 提供了 `TextField` 来输入普通文本，以及 `SecureField` 来输入密码。
+两者用法类似，不同在于 `SecureField` 会自动掩盖用户的输入。
+
+举例来说：
+
+```swift
+TextField("Username", text: $username)
+	.font(.system(size: 20, weight: .semibold, design: .rounded))
+	.padding(.horizontal)
+```
+
+而对密码输入框，只需换成 `SecureField`：
+
+```swift
+SecureField("Password", text: $password)
+	.font(.system(size: 20, weight: .semibold, design: .rounded))
+	.padding(.horizontal)
+```
+
+为了让代码更具复用性与可读性，我们提取出一个名为 `FormField` 的通用视图，用于统一样式：
+
+```swift
+struct FormField: View {
+	var fieldName = ""
+	@Binding var fieldValue: String
+	var isSecure = false
+
+	var body: some View {
+		VStack {
+			if isSecure {
+				SecureField(fieldName, text: $fieldValue)
+					.font(.system(size: 20, weight: .semibold, design: .rounded))
+					.padding(.horizontal)
+			} else {
+				TextField(fieldName, text: $fieldValue)
+					.font(.system(size: 20, weight: .semibold, design: .rounded))
+					.padding(.horizontal)
+			}
+			
+			Divider()
+				.frame(height: 1)
+				.background(Color(red: 240/255, green: 240/255, blue: 240/255))
+				.padding(.horizontal)
+		}
+	}
+}
+```
+
+这里使用了一个 `isSecure` 布尔值来动态决定使用 `TextField` 
+还是 `SecureField`，并在底部添加了一条浅色下划线（`Divider`）来做分隔。
+
+### 创建可复用的需求说明（RequirementText）
+
+在注册流程中通常会告诉用户：用户名和密码需要满足哪些具体条件。
+为了让需求说明的样式保持一致，我们提取出了 `RequirementText` 视图，
+
+如下所示：
+
+```swift
+struct RequirementText: View {
+	var iconName = "xmark.square"
+	var iconColor = Color(red: 251/255, green: 128/255, blue: 128/255)
+	var text = ""
+	var isStrikeThrough = false
+	
+	var body: some View {
+		HStack {
+			Image(systemName: iconName)
+				.foregroundColor(iconColor)
+			
+			Text(text)
+				.font(.system(.body, design: .rounded))
+				.foregroundColor(.secondary)
+				.strikethrough(isStrikeThrough)
+			
+			Spacer()
+		}
+	}
+}
+```
+
+通过自定义 `iconName`、`iconColor`、`isStrikeThrough` 等属性，
+你可以根据验证结果来动态改变图标或是否加删除线。
+
+### 完整的 SwiftUI 界面
+
+有了这两个复用组件后，我们就能在 `ContentView` 中迅速布局出表单界面：
+
+```swift
+struct ContentView: View {
+	@State private var username = ""
+	@State private var password = ""
+	@State private var passwordConfirm = ""
+
+	var body: some View {
+		VStack {
+			Text("Create an account")
+				.font(.system(.largeTitle, design: .rounded))
+				.bold()
+				.padding(.bottom, 30)
+			
+			FormField(fieldName: "Username", fieldValue: $username)
+
+			RequirementText(text: "A minimum of 4 characters")
+				.padding()
+
+			FormField(fieldName: "Password", fieldValue: $password, isSecure: true)
+
+			VStack {
+				RequirementText(iconName: "lock.open",
+								iconColor: Color.secondary,
+								text: "A minimum of 8 characters", 
+								isStrikeThrough: true)
+
+				RequirementText(iconName: "lock.open",
+								text: "One uppercase letter",
+								isStrikeThrough: false)
+			}
+			.padding()
+
+			FormField(fieldName: "Confirm Password", 
+					  fieldValue: $passwordConfirm, 
+					  isSecure: true)
+
+			RequirementText(
+				text: "Your confirm password should be the same as the password",
+				isStrikeThrough: false
+			)
+			.padding()
+			.padding(.bottom, 50)
+
+			Button(action: {
+				// Sign Up 操作（当前示例只演示验证逻辑）
+			}) {
+				Text("Sign Up")
+					.font(.system(.body, design: .rounded))
+					.foregroundColor(.white)
+					.bold()
+					.padding()
+					.frame(minWidth: 0, maxWidth: .infinity)
+					.background(
+						LinearGradient(
+							gradient: Gradient(colors: [
+								Color(red: 251/255, green: 128/255, blue: 128/255),
+								Color(red: 253/255, green: 193/255, blue: 104/255)
+							]),
+							startPoint: .leading,
+							endPoint: .trailing
+						)
+					)
+					.cornerRadius(10)
+					.padding(.horizontal)
+			}
+
+			HStack {
+				Text("Already have an account?")
+					.font(.system(.body, design: .rounded))
+					.bold()
+				
+				Button(action: {
+					// 跳转到 Sign in 界面
+				}) {
+					Text("Sign in")
+						.font(.system(.body, design: .rounded))
+						.bold()
+						.foregroundColor(
+							Color(red: 251/255, green: 128/255, blue: 128/255)
+						)
+				}
+			}
+			.padding(.top, 50)
+			
+			Spacer()
+		}
+		.padding()
+	}
+}
+```
+
+在这个界面中，Button 暂时还没有真正的注册逻辑，因为我们的核心要点是演示 **Combine** 实时验证。
+
+---
+
+## 为什么要使用单独的 View 封装 UI
+
+上文中你看到的 `RequirementText` 与 `FormField` 都是为复用和保持代码整洁而创建的。
+许多时候，这些小组件可以极大地简化我们的主视图结构，并且当你需要修改样式或逻辑时，
+只需在这些小组件内部进行集中修改即可，避免了在散落各处去修改多份类似代码。
+
+---
+
+## 了解 Combine
+
+苹果在 iOS 13（macOS 10.15、watchOS 6、tvOS 13）中发布了 Combine 框架，
+这是一个 **函数式响应式编程**（FRP）风格的框架，用于处理**随时间推移而产生的事件流**。
+对于一个输入框而言，每次用户敲下一个字符，都相当于发射了一个“事件”到管道中；
+而我们的校验逻辑则相当于“订阅者”，在事件流中对最新的数据进行计算或转化。
+
+> **Publisher**：事件的发布者，比如文本输入、网络请求等  
+> **Subscriber**：接收并处理事件，比如进行验证、更新 UI 等  
+
+在 SwiftUI + Combine 的体系下，数据流的变动不再依赖繁琐的 delegate 回调或通知，
+而是直接利用 Publisher-Subscriber 模型进行 **链式** 的值处理。
+
+---
+
+## Combine 与 MVVM
+
+MVVM 全称为 **Model-View-ViewModel**，是近年广受推崇的一种前端与客户端应用架构模式。
+它建议将数据层（Model）、界面层（View）与业务逻辑层（ViewModel）进行拆分，降低耦合度，
+也更加符合“关注点分离”的原则。
+
+在这个注册场景中，`ViewModel` 主要承担以下职责：  
+1. 存储用户输入的数据（用户名、密码、确认密码等）。  
+2. 执行表单验证逻辑，将验证结果实时发布给 SwiftUI 的视图层。  
+
+SwiftUI 视图只负责显示数据和响应用户交互，不用关心如何验证或者判断逻辑，
+这些都由 ViewModel 来完成。
+
+---
+
+## 使用 Combine 验证用户名
+
+让我们以用户名为例。我们想要求用户名必须**至少 4 个字符**。
+当用户在输入框中不断输入或删除字符时，对应的 `username` 值就会不断变化，
+这些变化会通过 `$username`（`@Published var username` 的投影属性）发布出来。
+
+我们再用一个订阅者对这个值进行处理，判断它的长度是否大于 4，并把结果（布尔值）
+赋给 `isUsernameLengthValid`。
+
+代码大致如下：
+
+```swift
+$username
+	.receive(on: RunLoop.main)
+	.map { username in
+		return username.count >= 4
+	}
+	.assign(to: \.isUsernameLengthValid, on: self)
+```
+
+- `$username` 是发布者（Publisher），每次用户输入产生的新值都会被发射出来。  
+- `receive(on: RunLoop.main)` 指定在主线程上接收事件并更新 UI（非常关键，不然 UI 更新需要手动切线程）。  
+- `map` 运算符会把字符串转化成布尔值，这里主要是判断字符串长度是否达到 4。  
+- `assign` 则会将 map 得到的结果赋值给 `self.isUsernameLengthValid`。
+
+最后，`isUsernameLengthValid` 也是一个被 `@Published` 装饰的属性，
+所以它也会向视图层广播最新的布尔值，用来控制界面中的 `RequirementText` 
+是否应当显示删除线或变灰等状态。
+
+---
+
+## 使用 Combine 验证密码
+
+密码的要求可以包含多项：  
+1. 至少 8 个字符  
+2. 至少包含一个大写字母  
+
+对应地，我们会有两个不同的订阅者来对字符串进行验证：
+
+```swift
+$password
+	.receive(on: RunLoop.main)
+	.map { password in
+		return password.count >= 8
+	}
+	.assign(to: \.isPasswordLengthValid, on: self)
+
+$password
+	.receive(on: RunLoop.main)
+	.map { password in
+		let pattern = "[A-Z]"
+		if let _ = password.range(of: pattern, options: .regularExpression) {
+			return true
+		} else {
+			return false
+		}
+	}
+	.assign(to: \.isPasswordCapitalLetter, on: self)
+```
+
+这里我们分别对**长度**和**至少含有一个大写字母**进行了判断，
+并将验证结果写到 `isPasswordLengthValid` 与 `isPasswordCapitalLetter`。
+
+---
+
+### 验证“确认密码”
+
+我们需要检查“确认密码”与“密码”是否一致，
+这时就要用到 Combine 中非常常用的 `combineLatest` 运算符来合并两个发布者的最新值，
+然后再进行比对：
+
+```swift
+Publishers.CombineLatest($password, $passwordConfirm)
+	.receive(on: RunLoop.main)
+	.map { (password, passwordConfirm) in
+		return !passwordConfirm.isEmpty && (passwordConfirm == password)
+	}
+	.assign(to: \.isPasswordConfirmValid, on: self)
+```
+
+---
+
+## 实现 UserRegistrationViewModel
+
+结合以上思路，我们可以写出一个 `UserRegistrationViewModel` 来管理所有关于用户注册的信息与验证逻辑。
+我们将其单独放到一个 `UserRegistrationViewModel.swift` 文件中。
+
+```swift
+import Foundation
+import Combine
+
+class UserRegistrationViewModel: ObservableObject {
+    // Input
+    @Published var username = ""
+    @Published var password = ""
+    @Published var passwordConfirm = ""
+    
+    // Output
+    @Published var isUsernameLengthValid = false
+    @Published var isPasswordLengthValid = false
+    @Published var isPasswordCapitalLetter = false
+    @Published var isPasswordConfirmValid = false
+
+    private var cancellableSet: Set<AnyCancellable> = []
+
+    init() {
+        $username
+            .receive(on: RunLoop.main)
+            .map { username in
+                return username.count >= 4
+            }
+            .assign(to: \.isUsernameLengthValid, on: self)
+            .store(in: &cancellableSet)
+        
+        $password
+            .receive(on: RunLoop.main)
+            .map { password in
+                return password.count >= 8
+            }
+            .assign(to: \.isPasswordLengthValid, on: self)
+            .store(in: &cancellableSet)
+        
+        $password
+            .receive(on: RunLoop.main)
+            .map { password in
+                let pattern = "[A-Z]"
+                if let _ = password.range(of: pattern, options: .regularExpression) {
+                    return true
+                } else {
+                    return false
+                }
+            }
+            .assign(to: \.isPasswordCapitalLetter, on: self)
+            .store(in: &cancellableSet)
+        
+        Publishers.CombineLatest($password, $passwordConfirm)
+            .receive(on: RunLoop.main)
+            .map { (password, passwordConfirm) in
+                return !passwordConfirm.isEmpty && (passwordConfirm == password)
+            }
+            .assign(to: \.isPasswordConfirmValid, on: self)
+            .store(in: &cancellableSet)
+    }
+}
+```
+
+- `ObservableObject`：让 SwiftUI 可以观察到该类的变化。  
+- `@Published`：修饰需要发布的属性，当它们发生变化时会自动通知视图进行更新。  
+- `cancellableSet`：存储所有的 `AnyCancellable`，负责在对象销毁时清理订阅，防止内存泄漏。  
+
+### 将 ViewModel 注入到 SwiftUI 视图
+
+我们需要让 `ContentView` 使用这个 ViewModel，而不是使用本地 `@State` 变量。只需将：
+
+```swift
+@State private var username = ""
+@State private var password = ""
+@State private var passwordConfirm = ""
+```
+
+替换成：
+
+```swift
+@ObservedObject private var userRegistrationViewModel = UserRegistrationViewModel()
+```
+
+然后在 `FormField` 及 `RequirementText` 中使用以下方式绑定：
+
+```swift
+FormField(fieldName: "Username", fieldValue: $userRegistrationViewModel.username)
+
+RequirementText(
+	iconColor: userRegistrationViewModel.isUsernameLengthValid
+		? Color.secondary 
+		: Color(red: 251/255, green: 128/255, blue: 128/255),
+	text: "A minimum of 4 characters",
+	isStrikeThrough: userRegistrationViewModel.isUsernameLengthValid
+)
+```
+
+同理，对密码与确认密码部分也做类似替换即可。
+当 `userRegistrationViewModel` 内部任何一个属性值（如 
+`username`、`isPasswordLengthValid`）改变时，界面会自动刷新。
+
+---
+
+## 总结
+
+在本篇文章中，我们从无到有地讲解了如何使用 **SwiftUI** 与 **Combine** 来构建一个具有实时表单验证功能的注册页面，
+并通过 **MVVM** 架构提升代码的组织性和可维护性。
+
+关键点包括：
+
+1. **MVVM**：使用 `UserRegistrationViewModel` 统一管理输入与逻辑，视图层（`ContentView`）只关心如何展示。  
+2. **Combine**：依赖 Publisher & Subscriber（发布者与订阅者）模型，在每次用户输入时实时进行验证，并将结果发布给界面。  
+3. **@Published** & `@ObservedObject`：让 SwiftUI 可以自动观察、订阅并刷新 UI。  
+
+伴随 Apple 强力推荐的 FRP（函数式响应式编程）风格，Combine 为我们带来了更优雅的事件处理方式，
+也让 SwiftUI 与业务逻辑之间的数据传递更为流畅。虽然需要一定的学习曲线，但一旦熟悉了这种模式，
+你就会感受到它在大型应用中的巨大优势，也能写出更简洁、可维护的代码。
+
+如果你对 SwiftUI 与 Combine 感兴趣，欢迎继续探索更多特性，
+比如网络请求的响应式处理、结合 `Async/Await` 等新特性，或者进一步优化表单校验的灵活度。
+祝你在 iOS 开发的学习之路上一切顺利！
+

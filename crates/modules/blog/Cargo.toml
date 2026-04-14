@@ -10,6 +10,8 @@ serde_json.workspace = true
 rustineverything-sdk = { path = "../../sdk" }
 rustineverything-module-podcast = { path = "../podcast" }
 pulldown-cmark = { version = "0.13.0", features = ["html"] }
+pulldown-latex = "0.7.1"
+serde_yaml = "0.9"
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
 

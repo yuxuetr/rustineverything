@@ -3,7 +3,6 @@ use rustineverything_module_blog::server::{get_comments, post_comment, Comment};
 use crate::server::upload_image;
 use dioxus::prelude::*;
 
-
 #[derive(PartialEq, Props, Clone)]
 pub struct CommentBoxProps {
   pub blog_id: String,
@@ -12,247 +11,147 @@ pub struct CommentBoxProps {
 #[component]
 pub fn CommentBox(props: CommentBoxProps) -> Element {
   let mut content = use_signal(|| String::new());
-  let mut preview_mode = use_signal(|| false);
+  let mut is_preview = use_signal(|| false);
   let mut is_submitting = use_signal(|| false);
+  
+  // Fetch comments
+  let blog_id_for_res = props.blog_id.clone();
+  let mut comments = use_resource(move || {
+      let id = blog_id_for_res.clone();
+      async move {
+          get_comments(id).await.unwrap_or_default()
+      }
+  });
 
-  // Make props reactive for the resource
-  let mut blog_id_signal = use_signal(|| props.blog_id.clone());
-  if blog_id_signal() != props.blog_id {
-    blog_id_signal.set(props.blog_id.clone());
-  }
+  let blog_id_for_submit = props.blog_id.clone();
+  let handle_submit = move |_| {
+    if content().trim().is_empty() || is_submitting() {
+      return;
+    }
 
-  let mut comments_resource =
-    use_resource(move || async move { get_comments(blog_id_signal()).await });
+    let id = blog_id_for_submit.clone();
+    let current_content = content();
+
+    spawn(async move {
+      is_submitting.set(true);
+      if let Ok(new_comments) = post_comment(id, current_content).await {
+        comments.set(Some(new_comments));
+        content.set(String::new());
+        is_preview.set(false);
+      }
+      is_submitting.set(false);
+    });
+  };
+
+  let handle_upload = move |evt: Event<FormData>| {
+      spawn(async move {
+          let files = evt.data().files();
+          for file in files {
+              if let Ok(data) = file.read_bytes().await {
+                  use base64::Engine as _;
+                  let base64_data = base64::engine::general_purpose::STANDARD.encode(data);
+                  let data_url = format!("data:image/png;base64,{}", base64_data);
+                  
+                  if let Ok(url) = upload_image(file.name(), data_url).await {
+                      let markdown_image = format!("\n![Image]({})", url);
+                      content.with_mut(|c| c.push_str(&markdown_image));
+                      // 触发预览更新
+                      content.set(content());
+                  }
+              }
+          }
+      });
+  };
 
   rsx! {
-      div { class: "mt-12 rounded-xl border border-slate-200 bg-slate-50 p-6 dark:bg-slate-900/50 dark:border-slate-800",
-          div { class: "mb-4 flex items-center justify-between",
-              h3 { class: "text-lg font-semibold text-slate-900 dark:text-white", "评论区" }
-              div { class: "flex space-x-2 bg-slate-200 dark:bg-slate-800 rounded-lg p-1",
-                  button {
-                      class: if !preview_mode() {
-                          "px-3 py-1 text-sm font-medium rounded-md bg-white text-slate-900 shadow dark:bg-slate-700 dark:text-white transition-all"
-                      } else {
-                          "px-3 py-1 text-sm font-medium rounded-md text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-all"
-                      },
-                      onclick: move |_| preview_mode.set(false),
-                      "编辑"
-                  }
-                  button {
-                      class: if preview_mode() {
-                          "px-3 py-1 text-sm font-medium rounded-md bg-white text-slate-900 shadow dark:bg-slate-700 dark:text-white transition-all"
-                      } else {
-                          "px-3 py-1 text-sm font-medium rounded-md text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-all"
-                      },
-                      onclick: move |_| preview_mode.set(true),
-                      "预览"
-                  }
-              }
-          }
+      div { class: "mt-16 border-t border-slate-200 dark:border-slate-800 pt-10",
+          h3 { class: "text-2xl font-bold text-slate-900 dark:text-white mb-8", "评论区" }
 
-          // Hidden file input for image upload
-          input {
-              type: "file",
-              id: "image-upload",
-              hidden: true,
-              accept: "image/*",
-              onchange: move |_| async move {
-                  let mut eval = document::eval(r#"
-                        const fileInput = document.getElementById('image-upload');
-                        const file = fileInput.files[0];
-                        if (!file) return;
-
-                        console.log("JS: File selected", file.name);
-                        // dioxus.send(JSON.stringify({ type: 'log', msg: 'File selected: ' + file.name }));
-
-                        const reader = new FileReader();
-                        reader.onload = async (e) => {
-                            const raw = e.target.result;
-                            // console.log("JS: Read complete", raw.length);
-                            // dioxus.send(JSON.stringify({ type: 'log', msg: 'Read complete, length: ' + raw.length }));
-                            
-                            // Send metadata
-                            await dioxus.send(JSON.stringify({ type: 'meta', name: file.name }));
-                            
-                            // Send chunks
-                            const chunkSize = 32 * 1024; // 32KB chunks
-                            let sent = 0;
-                            while (sent < raw.length) {
-                                const end = Math.min(sent + chunkSize, raw.length);
-                                const chunk = raw.substring(sent, end);
-                                await dioxus.send(JSON.stringify({ type: 'chunk', data: chunk }));
-                                sent = end;
-                            }
-                            
-                            await dioxus.send(JSON.stringify({ type: 'done' }));
-                        };
-                        reader.onerror = (e) => {
-                             dioxus.send(JSON.stringify({ type: 'error', msg: 'Read error' }));
-                        };
-                        reader.readAsDataURL(file);
-                    "#);
-
-                  let mut filename = String::new();
-                  let mut full_data = String::new();
-
-                  loop {
-                      match eval.recv::<String>().await {
-                          Ok(msg_str) => {
-                              if let Ok(val) = serde_json::from_str::<serde_json::Value>(&msg_str) {
-                                  match val["type"].as_str() {
-                                      Some("log") => println!("JS Log: {}", val["msg"].as_str().unwrap_or("")),
-                                      Some("meta") => {
-                                          filename = val["name"].as_str().unwrap_or("image.png").to_string();
-                                      }
-                                      Some("chunk") => {
-                                          if let Some(chunk) = val["data"].as_str() {
-                                              full_data.push_str(chunk);
-                                          }
-                                      }
-                                      Some("done") => {
-                                          println!("Rust: Reconstruction complete. Uploading {} ({} bytes)...", filename, full_data.len());
-                                          match upload_image(filename.clone(), full_data.clone()).await {
-                                               Ok(url) => {
-                                                   println!("Upload success: {}", url);
-                                                   let new_text = format!("\n![Image]({})", url);
-                                                   let current_val = content.peek().clone();
-                                                   content.set(format!("{}{}", current_val, new_text));
-                                               }
-                                               Err(e) => {
-                                                   println!("Upload failed: {}", e);
-                                                   let _ = document::eval(&format!("alert('上传失败: {}')", e));
-                                               },
-                                          }
-                                          break;
-                                      }
-                                      Some("error") => {
-                                          println!("JS Error: {}", val["msg"].as_str().unwrap_or("Unknown"));
-                                          break;
-                                      }
-                                      _ => {}
-                                  }
-                              }
-                          }
-                          Err(e) => {
-                              println!("Eval channel closed or error: {}", e);
-                              break;
-                          }
+          // Input Area
+          div { class: "bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden",
+              // Toolbar
+              div { class: "flex items-center justify-between px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50",
+                  div { class: "flex gap-4 text-xs font-medium text-slate-500",
+                      button { 
+                          class: format_args!("pb-2 border-b-2 transition-all {}", if !is_preview() { "text-blue-600 border-blue-600" } else { "border-transparent hover:text-slate-700" }),
+                          onclick: move |_| is_preview.set(false),
+                          "编辑" 
+                      }
+                      button { 
+                          class: format_args!("pb-2 border-b-2 transition-all {}", if is_preview() { "text-blue-600 border-blue-600" } else { "border-transparent hover:text-slate-700" }),
+                          onclick: move |_| is_preview.set(true),
+                          "预览" 
                       }
                   }
-
-                  // Reset input
-                  let _ = document::eval("document.getElementById('image-upload').value = '';");
+                  
+                  label { class: "cursor-pointer p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 transition-colors",
+                      input { 
+                          r#type: "file", 
+                          class: "hidden", 
+                          accept: "image/*",
+                          onchange: handle_upload 
+                      }
+                      svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
+                          path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" }
+                      }
+                  }
               }
-          }
 
-          if preview_mode() {
-              div { class: "min-h-[150px] p-4 bg-white dark:bg-slate-950 rounded-lg border border-slate-300 dark:border-slate-700 prose dark:prose-invert max-w-none",
-                  if content().trim().is_empty() {
-                      span { class: "text-slate-400 italic", "Nothing to preview" }
+              // Body
+              div { class: "px-5 py-4",
+                  if !is_preview() {
+                      textarea {
+                          class: "w-full h-36 bg-transparent border-0 focus:ring-0 text-sm text-slate-700 dark:text-slate-300 placeholder-slate-400 resize-vertical",
+                          value: "{content}",
+                          placeholder: "写下你的评论 (支持 Markdown, 图片)...",
+                          oninput: move |evt| content.set(evt.value())
+                      }
                   } else {
-                      Markdown { content: content() }
+                      div { class: "min-h-[8rem] py-2",
+                          Markdown { content: content(), blog_id: props.blog_id.clone() }
+                      }
                   }
               }
-          } else {
-              div { class: "space-y-2",
-                  // Toolbar
-                  div { class: "flex gap-2 text-sm text-slate-600 dark:text-slate-400",
-                      button {
-                          class: "hover:text-blue-600 dark:hover:text-blue-400",
-                          onclick: move |_| {
-                              let current = content();
-                              content.set(format!("{}**bold**", current));
-                          },
-                          "Bold"
-                      }
-                      button {
-                          class: "hover:text-blue-600 dark:hover:text-blue-400",
-                          onclick: move |_| {
-                              let current = content();
-                              content.set(format!("{}*italic*", current));
-                          },
-                          "Italic"
-                      }
-                      button {
-                          class: "hover:text-blue-600 dark:hover:text-blue-400",
-                          onclick: move |_| {
-                              let current = content();
-                              content.set(format!("{} [Link text](url)", current));
-                          },
-                          "Link"
-                      }
-                      button {
-                          class: "hover:text-blue-600 dark:hover:text-blue-400",
-                          onclick: move |_| {
-                              let _ = document::eval("document.getElementById('image-upload').click()");
-                          },
-                          "Image"
-                      }
-                  }
-                  textarea {
-                      class: "w-full min-h-[150px] p-4 rounded-lg border border-slate-300 bg-white text-slate-900 focus:border-blue-500 focus:ring-blue-500 dark:bg-slate-950 dark:border-slate-700 dark:text-white",
-                      placeholder: "写下你的评论 (支持 Markdown, 图片)...",
-                      value: "{content}",
-                      oninput: move |e| content.set(e.value())
+
+              // Footer
+              div { class: "px-5 py-3 bg-slate-50/50 dark:bg-slate-800/50 flex justify-end border-t border-slate-100 dark:border-slate-800",
+                  button {
+                      class: format_args!("px-5 py-2 rounded-lg font-semibold text-sm transition-all {}", 
+                          if is_submitting() { "bg-slate-200 text-slate-400 cursor-not-allowed" } 
+                          else { "bg-blue-600 text-white hover:bg-blue-700 shadow-sm" }
+                      ),
+                      onclick: handle_submit,
+                      if is_submitting() { "提交中..." } else { "发布评论" }
                   }
               }
           }
 
-          div { class: "mt-4 flex justify-end",
-              button {
-                  class: "rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50 disabled:cursor-not-allowed",
-                  disabled: content().trim().is_empty() || is_submitting(),
-                  onclick: move |_| {
-                      let blog_id = props.blog_id.clone();
-                      async move {
-                          is_submitting.set(true);
-                          match post_comment(blog_id, content()).await {
-                              Ok(_) => {
-                                  content.set(String::new());
-                                  preview_mode.set(false);
-                                  comments_resource.restart();
+          // List of comments
+          div { class: "mt-12 space-y-8",
+              if let Some(comment_list) = comments.read().as_ref() {
+                  for comment in comment_list.iter() {
+                      div { key: "{comment.id}", class: "flex gap-4",
+                          // Avatar
+                          div { class: "flex-none",
+                              div { class: "w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-500",
+                                  svg { class: "w-6 h-6", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" } }
                               }
-                              Err(e) => println!("Error posting comment: {}", e),
                           }
-                          is_submitting.set(false);
-                      }
-                  },
-                  if is_submitting() { "提交中..." } else { "发布评论" }
-              }
-          }
-      }
-
-      // Comments List
-      div { class: "mt-8 space-y-6",
-          match &*comments_resource.read_unchecked() {
-              Some(Ok(comments)) => {
-                  if comments.is_empty() {
-                       rsx! {
-                           div { class: "text-center text-slate-500 py-8", "暂无评论，快来抢沙发吧！" }
-                       }
-                  } else {
-                      rsx! {
-                          for comment in comments {
-                              div { class: "flex gap-4", key: "{comment.id}",
-                                  div { class: "flex-none w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-500 font-bold",
-                                      "{comment.author.chars().next().unwrap_or('?')}"
-                                  }
-                                  div { class: "flex-1 space-y-1",
-                                      div { class: "flex items-center justify-between",
-                                          h3 { class: "text-sm font-semibold text-slate-900 dark:text-white", "{comment.author}" }
-                                          span { class: "text-xs text-slate-500", "{comment.date}" }
-                                      }
-                                      div { class: "prose prose-sm dark:prose-invert max-w-none text-slate-700 dark:text-slate-300",
-                                          Markdown { content: comment.content.clone() }
-                                      }
-                                  }
+                          // Content
+                          div { class: "flex-1 space-y-1",
+                              div { class: "flex items-center justify-between",
+                                  h4 { class: "text-sm font-bold text-slate-900 dark:text-white", "{comment.author}" }
+                                  span { class: "text-xs text-slate-500", "{comment.date}" }
+                              }
+                              div { class: "text-sm text-slate-700 dark:text-slate-300 prose-comment",
+                                  Markdown { content: comment.content.clone(), blog_id: props.blog_id.clone() }
                               }
                           }
                       }
                   }
-              },
-              Some(Err(e)) => rsx! { div { class: "text-red-500", "加载评论失败: {e}" } },
-              None => rsx! { div { class: "text-slate-500", "加载中..." } }
+              } else {
+                  div { class: "text-center text-slate-500 py-10", "加载评论中..." }
+              }
           }
       }
   }

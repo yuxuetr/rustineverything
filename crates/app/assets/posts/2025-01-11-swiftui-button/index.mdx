@@ -1,0 +1,376 @@
+---
+title: "SwiftUI 按钮设计详解：从基础到高级样式应用"
+description: "深入探讨 SwiftUI 按钮的创建与自定义，从基础按钮到高级样式应用，全面提升你的 iOS 应用界面设计。"
+authors: [yuxuetr]
+tags: [SwiftUI, iOS, Swift]
+keywords: [SwiftUI, iOS, Swift, 按钮, 设计, 样式, 自定义, 渐变, 阴影, 全宽, 按钮样式, 按钮角色]
+---
+
+# SwiftUI 按钮设计详解：从基础到高级样式应用
+
+[上一篇](../2025-01-10-swiftui-scrollview/index.mdx)博客我们介绍了 SwiftUI 中的 `ScrollView` 控件，
+
+今天我们来介绍 SwiftUI 中的 `Button` 控件。
+
+:::info
+按钮是启动应用特定操作的核心控件，具有可自定义的背景，并可以包含标题或图标。系统提供了多种预定义按钮样式，
+适用于大多数使用场景。同时，你也可以设计完全自定义的按钮。
+
+- 参考文档：[Apple 人机界面指南 - 按钮](https://developer.apple.com/design/human-interface-guidelines/ios/controls/buttons/)
+:::
+
+按钮作为所有应用中基本的用户界面控件，负责处理用户的触摸操作并触发特定的动作。
+对于熟悉 iOS 编程的开发者来说，SwiftUI 中的 `Button` 与 UIKit 中的 `UIButton` 
+有着显著的相似之处，但 SwiftUI 的 `Button` 提供了更大的灵活性和定制选项。
+
+在本篇博客中，我们将深入探讨 SwiftUI 按钮的各种功能和自定义技巧，帮助你打造出色的应用界面。
+
+{/* truncate */}
+
+## 目录
+
+- [创建一个启用 SwiftUI 的新项目](#create-a-new-swiftui-project)
+- [自定义按钮的字体和背景](#customize-the-font-and-background-of-the-button)
+- [修饰符顺序的重要性](#the-importance-of-modifier-order)
+- [为按钮添加边框](#add-a-border-to-the-button)
+- [结合图像和文本创建按钮](#create-a-button-with-text-and-image)
+- [创建具有渐变背景和阴影的按钮](#create-a-button-with-a-gradient-background-and-shadow)
+- [创建全宽按钮](#create-a-full-width-button)
+- [使用 ButtonStyle 定义可重用的按钮样式](#use-the-buttonstyle-protocol-to-define-reusable-button-styles)
+- [按钮角色的使用](#use-the-button-role-to-describe-the-semantic-role-of-the-button)
+- [总结](#conclusion)
+
+## 创建一个启用 SwiftUI 的新项目{#create-a-new-swiftui-project}
+
+首先，让我们使用 SwiftUI 创建一个基本按钮。打开 Xcode，选择 **App** 模板创建一个新项目。在后续的屏幕中，输入你期望的项目名称，例如 `SwiftUIButton`。确保在 **Interface** 选项中选择 **SwiftUI**。
+
+保存项目后，Xcode 会加载 `ContentView.swift` 文件并显示预览。
+
+创建按钮非常简单。使用以下代码片段即可创建一个按钮：
+
+```swift
+Button {
+  // 执行的动作
+} label: {
+  // 按钮的外观
+}
+```
+
+创建按钮时，需要提供两个代码块：
+1. **执行的动作** - 按钮被点击后要执行的代码。
+2. **按钮的外观** - 描述按钮外观的代码块。
+
+例如，将一个简单的 "Hello World" 标签转变为按钮：
+
+```swift
+struct ContentView: View {
+	var body: some View {
+		Button {
+			print("Hello World tapped!")
+		} label: {
+			Text("Hello World")
+		}
+	}
+}
+```
+
+另一种写法如下，功能相同但风格不同：
+
+```swift
+struct ContentView: View {
+  var body: some View {
+    Button(
+      action: {
+      	print("Button tapped")
+      },
+      label: {
+      	Text("Tap me")
+      }
+    )
+  }
+}
+```
+
+```swift
+struct ContentView: View {
+  var body: some View {
+    Button(action: {
+      print("Button tapped")
+    }, label: {
+      Text("Tap me")
+    })
+  }
+}
+```
+
+在本博客中，我们推荐使用第一种写法。
+
+实现按钮后，"Hello World" 文本会变成可点击的按钮。如需查看控制台输出，点击 Xcode 界面右下角的按钮，或通过菜单选择 **View > Debug Area > Activate Console**。
+
+## 自定义按钮的字体和背景{#customize-the-font-and-background-of-the-button}
+
+在创建了基本按钮后，接下来我们将通过内置修饰符来自定义按钮的外观。使用 `background` 和 `foregroundStyle` 修饰符可以修改按钮的背景和文字颜色：
+
+```swift
+Text("Hello World")
+.background(.purple)
+.foregroundStyle(.white)
+```
+
+若要更改字体类型，使用 `font` 修饰符指定字体类型（如 `.title`）：
+
+```swift
+Text("Hello World")
+	.background(.purple)
+	.foregroundStyle(.white)
+	.font(.title)
+```
+
+为了让按钮更具美观，可以添加一些间距，使用 `padding` 修饰符：
+
+```swift
+Text("Hello World")
+	.padding()
+	.background(.purple)
+	.foregroundStyle(.white)
+	.font(.title)
+```
+
+此时，按钮的外观将更加整洁，文本周围有了适当的空白。
+
+## 修饰符顺序的重要性{#the-importance-of-modifier-order}
+
+值得注意的是，`padding` 修饰符应放在 `background` 修饰符之前。如果将 `padding` 放在 `background` 之后，按钮将不会如预期显示背景颜色。例如：
+
+```swift
+Text("Hello World")
+.background(.purple)
+.foregroundStyle(.white)
+.font(.title)
+.padding()
+```
+
+上述代码中，`padding` 会应用于文本，但背景颜色不会覆盖填充区域。正确的顺序应为：
+
+```swift
+Text("Hello World")
+.padding()
+.background(.purple)
+.foregroundStyle(.white)
+.font(.title)
+```
+
+## 为按钮添加边框{#add-a-border-to-the-button}
+
+有时候，按钮的设计需要边框。可以通过 `border` 修饰符来实现：
+
+```swift
+Text("Hello World")
+.foregroundStyle(.purple)
+.font(.title)
+.padding()
+.border(.purple, width: 5)
+```
+
+如果需要圆角边框，可以使用 `cornerRadius` 和 `overlay` 修饰符：
+
+```swift
+Text("Hello World")
+	.fontWeight(.bold)
+	.font(.title)
+	.padding()
+	.background(.purple)
+	.cornerRadius(40)
+	.foregroundStyle(.white)
+	.padding(10)
+	.overlay {
+		RoundedRectangle(cornerRadius: 40)
+			.stroke(.purple, lineWidth: 5)
+	}
+```
+
+## 结合图像和文本创建按钮{#create-a-button-with-text-and-image}
+
+除了文本按钮，实际项目中还常需要图像按钮。创建图像按钮的语法与文本按钮类似，只需使用 `Image` 控件：
+
+```swift
+Button(action: {
+	print("Delete button tapped!")
+}) {
+	Image(systemName: "trash")
+		.font(.largeTitle)
+		.foregroundColor(.red)	
+}
+```
+
+若要在按钮中同时显示图像和文本，可以使用 `HStack` 或 `Label`：
+
+```swift
+Button {
+	print("Delete button tapped")
+} label: {
+	HStack {
+		Image(systemName: "trash")
+			.font(.title)
+		Text("Delete")
+			.fontWeight(.semibold)
+			.font(.title)
+	}
+	.padding()
+	.foregroundStyle(.white)
+	.background(.red)
+	.cornerRadius(40)
+}
+```
+
+### 使用 Label
+
+SwiftUI 提供了 `Label` 视图，可以更简洁地将图像和文本并排显示：
+
+```swift
+Button {
+	print("Delete button tapped")
+} label: {
+	Label(
+		title: {
+			Text("Delete")
+				.fontWeight(.semibold)
+				.font(.title)
+		},
+		icon: {
+			Image(systemName: "trash")
+				.font(.title)
+		}
+	)
+	.padding()
+	.foregroundStyle(.white)
+	.background(.red)
+	.cornerRadius(40)
+}
+```
+
+## 创建具有渐变背景和阴影的按钮{#create-a-button-with-a-gradient-background-and-shadow}
+
+通过 `LinearGradient`，可以为按钮添加渐变背景：
+
+```swift
+.background(LinearGradient(gradient: Gradient(colors: [.red, .blue]), startPoint: .leading, endPoint: .trailing))
+```
+
+若需自定义颜色，可以在资产目录中添加颜色集：
+
+1. 在项目导航器中选择 **Assets**。
+2. 右击空白区域，选择 **New Color Set**。
+3. 命名颜色集，如 `DarkGreen` 和 `LightGreen`，并输入相应的十六进制颜色值（如 `#11998e` 和 `#38ef7d`）。
+
+使用自定义颜色创建渐变背景：
+
+```swift
+.background(LinearGradient(gradient: Gradient(colors: [Color("DarkGreen"), Color("LightGreen")]), startPoint: .leading, endPoint: .trailing))
+```
+
+添加阴影效果：
+
+```swift
+.shadow(color: .gray, radius: 20.0, x: 20, y: 10)
+```
+
+## 创建全宽按钮{#create-a-full-width-button}
+
+使用 `frame` 修饰符可以控制按钮的宽度，使其占满整个屏幕宽度：
+
+```swift
+.frame(minWidth: 0, maxWidth: .infinity)
+```
+
+完整示例：
+
+```swift
+Button {
+	print("Delete tapped!")
+} label: {
+	Label(
+		title: {
+			Text("Delete")
+				.fontWeight(.semibold)
+				.font(.title)
+		},
+		icon: {
+			Image(systemName: "trash")
+				.font(.title)
+		}
+	)
+	.frame(minWidth: 0, maxWidth: .infinity)
+	.padding()
+	.foregroundStyle(.white)
+	.background(LinearGradient(gradient: Gradient(colors: [Color("DarkGreen"), Color("LightGreen")]), startPoint: .leading, endPoint: .trailing))
+	.cornerRadius(40)
+}
+.padding(.horizontal, 20)
+```
+
+## 使用 ButtonStyle 定义可重用的按钮样式{#use-the-buttonstyle-protocol-to-define-reusable-button-styles}
+
+当应用中存在多个样式相同的按钮时，使用 `ButtonStyle` 协议可以提高代码的可维护性：
+
+```swift
+struct GradientBackgroundStyle: ButtonStyle {
+	func makeBody(configuration: Self.Configuration) -> some View {
+		configuration.label
+			.frame(minWidth: 0, maxWidth: .infinity)
+			.padding()
+			.foregroundStyle(.white)
+			.background(LinearGradient(gradient: Gradient(colors: [Color("DarkGreen"), Color("LightGreen")]), startPoint: .leading, endPoint: .trailing))
+			.cornerRadius(40)
+			.padding(.horizontal, 20)
+			.scaleEffect(configuration.isPressed ? 0.9 : 1.0)
+	}
+}
+```
+
+应用自定义样式：
+
+```swift
+Button {
+	print("Delete button tapped")
+} label: {
+	Label(
+		title: {
+			Text("Delete")
+				.fontWeight(.semibold)
+				.font(.title)
+		},
+		icon: {
+			Image(systemName: "trash")
+				.font(.title)
+		}
+	)
+}
+.buttonStyle(GradientBackgroundStyle())
+```
+
+## 按钮角色的使用{#use-the-button-role-to-describe-the-semantic-role-of-the-button}
+
+从 iOS 15 开始，SwiftUI 引入了 `role` 选项，用于描述按钮的语义角色。例如，定义一个删除按钮：
+
+```swift
+Button("Delete", role: .destructive) {
+	print("Delete")
+}
+.buttonStyle(.borderedProminent)
+.controlSize(.large)
+```
+
+系统会根据角色自动调整按钮的外观，如 `.destructive` 角色的按钮会自动显示为红色。
+
+
+## 总结{#conclusion}
+
+在本文中，我们全面探讨了 SwiftUI 中按钮的创建与自定义方法。
+从基础按钮的构建，到字体、背景、边框的自定义，再到渐变背景、阴影效果和全宽按钮的实现。
+通过 `ButtonStyle` 协议，我们学会了如何定义可重用的按钮样式，提升代码的简洁性与可维护性。
+此外，了解按钮角色的使用，能够让按钮更符合语义化设计，提升用户体验。
+
+通过结合 SF Symbols、渐变效果和动画，SwiftUI 让按钮的设计变得更加直观和强大。
+希望本篇博客能帮助你在 SwiftUI 中创建出既美观又功能强大的按钮，进一步提升你的 iOS 
+应用界面的用户体验。
