@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use pulldown_cmark::{Options, Parser, Event, Tag, CodeBlockKind};
+use pulldown_cmark::{Options, Parser, Event, Tag, CodeBlockKind, BlockQuoteKind};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use rustineverything_module_podcast::podcast::{Episode, EPISODES};
@@ -41,7 +41,10 @@ pub fn Markdown(props: MarkdownProps) -> Element {
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_MATH);
+    options.insert(Options::ENABLE_GFM);
 
+    // 预处理：将 :::type 语法转换为 GFM alert 语法
+    let body = convert_admonitions(&body);
     let parser = Parser::new_ext(&body, options);
     let mut it = parser.peekable();
     
@@ -173,7 +176,7 @@ fn render_tag(tag: Tag, children: Vec<Element>, blog_id: &str) -> Element {
                 }
             }
         }
-        Tag::BlockQuote(_) => rsx! { blockquote { class: "border-l-4 border-blue-500 bg-blue-50/50 dark:bg-blue-900/10 py-2 pl-6 pr-4 italic my-6 rounded-r-lg", {children.into_iter()} } },
+        Tag::BlockQuote(kind) => render_blockquote(kind, children),
         _ => rsx! { span { {children.into_iter()} } },
     }
 }
@@ -212,6 +215,97 @@ fn render_mdx_registry(html: &str) -> Option<Element> {
         });
     }
     None
+}
+
+/// 将 :::type 语法转换为 GFM alert 语法
+fn convert_admonitions(body: &str) -> String {
+    let mut result = String::with_capacity(body.len());
+    let mut in_block = false;
+
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if !in_block {
+            if let Some(kind) = trimmed.strip_prefix(":::").and_then(|rest| {
+                let word = rest.trim().split_whitespace().next().unwrap_or("");
+                match word.to_lowercase().as_str() {
+                    "note" | "info" => Some("NOTE"),
+                    "tip" | "success" => Some("TIP"),
+                    "important" => Some("IMPORTANT"),
+                    "warning" | "warn" => Some("WARNING"),
+                    "caution" | "danger" | "error" => Some("CAUTION"),
+                    _ if !word.is_empty() => Some("NOTE"), // 未知类型默认为 NOTE
+                    _ => None,
+                }
+            }) {
+                result.push_str(&format!("> [!{}]\n", kind));
+                in_block = true;
+                continue;
+            }
+        } else if trimmed == ":::" {
+            in_block = false;
+            result.push('\n');
+            continue;
+        }
+
+        if in_block {
+            result.push_str("> ");
+            result.push_str(line);
+        } else {
+            result.push_str(line);
+        }
+        result.push('\n');
+    }
+    result
+}
+
+fn render_blockquote(kind: Option<BlockQuoteKind>, children: Vec<Element>) -> Element {
+    match kind {
+        Some(k) => {
+            let (icon, label, left_color, border_color, bg_color, text_color) = match k {
+                BlockQuoteKind::Note => (
+                    "\u{1f4dd}", "NOTE",
+                    "border-l-blue-500", "border-blue-200 dark:border-blue-800/60",
+                    "bg-blue-50 dark:bg-blue-950/30", "text-blue-600 dark:text-blue-400",
+                ),
+                BlockQuoteKind::Tip => (
+                    "\u{1f4a1}", "TIP",
+                    "border-l-green-500", "border-green-200 dark:border-green-800/60",
+                    "bg-green-50 dark:bg-green-950/30", "text-green-600 dark:text-green-400",
+                ),
+                BlockQuoteKind::Important => (
+                    "\u{2757}", "IMPORTANT",
+                    "border-l-purple-500", "border-purple-200 dark:border-purple-800/60",
+                    "bg-purple-50 dark:bg-purple-950/30", "text-purple-600 dark:text-purple-400",
+                ),
+                BlockQuoteKind::Warning => (
+                    "\u{26a0}\u{fe0f}", "WARNING",
+                    "border-l-yellow-500", "border-yellow-200 dark:border-yellow-800/60",
+                    "bg-yellow-50 dark:bg-yellow-950/30", "text-yellow-600 dark:text-yellow-400",
+                ),
+                BlockQuoteKind::Caution => (
+                    "\u{1f6d1}", "CAUTION",
+                    "border-l-red-500", "border-red-200 dark:border-red-800/60",
+                    "bg-red-50 dark:bg-red-950/30", "text-red-600 dark:text-red-400",
+                ),
+            };
+            rsx! {
+                div { class: "not-prose my-6 rounded-lg border {border_color} border-l-4 {left_color} {bg_color} shadow-sm overflow-hidden",
+                    div { class: "px-4 pt-3 pb-1 flex items-center gap-2",
+                        span { class: "text-base", "{icon}" }
+                        span { class: "text-xs font-bold tracking-wide uppercase {text_color}", "{label}" }
+                    }
+                    div { class: "px-4 pb-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed",
+                        {children.into_iter()}
+                    }
+                }
+            }
+        }
+        None => rsx! {
+            blockquote { class: "border-l-4 border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30 py-2 pl-6 pr-4 italic my-6 rounded-r-lg",
+                {children.into_iter()}
+            }
+        },
+    }
 }
 
 fn render_code_block(lang: String, code_text: String) -> Element {
