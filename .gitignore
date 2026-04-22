@@ -10,3 +10,4 @@ assets/data/
 assets/uploads/
 public/uploads/
 public/data/
+.env

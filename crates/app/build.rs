@@ -47,9 +47,8 @@ fn sync_dir(src: &Path, dst: &Path) {
                 }
             }
             
-            if !dest_path.exists() {
-                let _ = fs::copy(&path, &dest_path);
-            }
+            // 始终执行拷贝，确保插件更新能实时反映
+            let _ = fs::copy(&path, &dest_path);
         }
     }
 }
