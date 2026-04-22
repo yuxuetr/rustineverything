@@ -12,8 +12,11 @@ wasmi.workspace = true
 sea-orm = { workspace = true, optional = true, features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-chrono"] }
 chrono = { workspace = true, features = ["serde"] }
 rustineverything-sdk = { path = "../sdk" }
-oauth2 = { version = "5.0.0", optional = true, features = ["reqwest"] }
+oauth2 = { workspace = true, optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }
+sha2 = { version = "0.10", optional = true }
+base64 = { version = "0.22", optional = true }
+rand = { version = "0.9", optional = true }
 
 [features]
-server = ["dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest"]
+server = ["dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest", "dep:sha2", "dep:base64", "dep:rand"]

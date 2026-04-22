@@ -50,6 +50,14 @@ pub fn t(lang: Language, key: &str) -> String {
     (Language::En, "nav.podcast") => "Podcast".to_string(),
     (Language::Zh, "nav.start") => "开始学习".to_string(),
     (Language::En, "nav.start") => "Get Started".to_string(),
+    (Language::Zh, "auth.sign_in") => "登录".to_string(),
+    (Language::En, "auth.sign_in") => "Sign In".to_string(),
+    (Language::Zh, "auth.sign_in_desc") => "选择一种方式继续".to_string(),
+    (Language::En, "auth.sign_in_desc") => "Choose a method to continue".to_string(),
+    (Language::Zh, "auth.continue_with") => "继续".to_string(),
+    (Language::En, "auth.continue_with") => "Continue with".to_string(),
+    (Language::Zh, "auth.terms") => "登录即表示你同意我们的服务条款和隐私政策".to_string(),
+    (Language::En, "auth.terms") => "By signing in, you agree to our Terms and Privacy Policy".to_string(),
     (_, k) => k.to_string(),
   }
 }

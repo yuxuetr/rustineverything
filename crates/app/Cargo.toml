@@ -3,9 +3,10 @@ name = "rustineverything-app"
 version = "0.1.0"
 authors = ["yuxuetr <54.yeying@gmail.com>"]
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
-dioxus = { workspace = true, features = ["router", "fullstack"] }
+dioxus = { workspace = true, features = ["router", "fullstack", "html"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 # 核心库在前端不需要 server 特性
@@ -17,8 +18,11 @@ chrono = { workspace = true, features = ["serde"] }
 
 # 将以下依赖设为可选，仅供后端使用
 tokio = { workspace = true, features = ["full"], optional = true }
-base64 = { version = "0.22", optional = true }
-oauth2 = { version = "5.0.0", optional = true }
+axum = { version = "0.8", optional = true }
+dotenvy = { version = "0.15", optional = true }
+base64 = "0.22"
+oauth2 = { workspace = true, optional = true }
+tower-http = { version = "0.6", features = ["fs"], optional = true }
 
 [features]
 default = ["web"]
@@ -31,6 +35,8 @@ server = [
     "rustineverything-core/server",
     "rustineverything-module-blog/server",
     "dep:tokio",
-    "dep:base64",
+    "dep:axum",
+    "dep:dotenvy",
     "dep:oauth2",
+    "dep:tower-http",
 ]

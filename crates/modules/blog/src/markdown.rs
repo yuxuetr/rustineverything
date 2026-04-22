@@ -1,97 +1,367 @@
 use dioxus::prelude::*;
-use pulldown_cmark::{Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Options, Parser, Event, Tag, CodeBlockKind, BlockQuoteKind};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use rustineverything_module_podcast::podcast::{Episode, EPISODES};
+use pulldown_latex::{Parser as LatexParser, Storage, push_mathml};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct PostMetadata {
+    pub title: String,
+    pub description: Option<String>,
+    pub keywords: Option<String>,
+}
 
 #[derive(Props, Clone, PartialEq)]
 pub struct MarkdownProps {
-  content: String,
+    pub content: String,
+    pub blog_id: String, // 传入当前文章 ID，用于处理相对路径
 }
 
-pub fn parse_markdown_metadata(content: &str) -> (std::collections::HashMap<String, String>, String) {
-  let mut metadata = std::collections::HashMap::new();
-  let mut body = String::new();
-  let mut in_metadata = false;
-
-  for line in content.lines() {
-    if line == "---" {
-      in_metadata = !in_metadata;
-      continue;
+pub fn parse_mdx(content: &str) -> (PostMetadata, String) {
+    if !content.starts_with("---") {
+        return (PostMetadata::default(), content.to_string());
     }
-
-    if in_metadata {
-      if let Some((key, value)) = line.split_once(':') {
-        metadata.insert(key.trim().to_string(), value.trim().to_string());
-      }
-    } else {
-      body.push_str(line);
-      body.push('\n');
+    let parts: Vec<&str> = content.splitn(3, "---").collect();
+    if parts.len() < 3 {
+        return (PostMetadata::default(), content.to_string());
     }
-  }
-
-  (metadata, body)
+    let metadata: PostMetadata = serde_yaml::from_str(parts[1]).unwrap_or_default();
+    let body = parts[2].trim().to_string();
+    (metadata, body)
 }
 
 #[component]
 pub fn Markdown(props: MarkdownProps) -> Element {
-  let (_, body) = parse_markdown_metadata(&props.content);
+    let (metadata, body) = parse_mdx(&props.content);
 
-  let mut options = Options::empty();
-  options.insert(Options::ENABLE_TABLES);
-  options.insert(Options::ENABLE_FOOTNOTES);
-  options.insert(Options::ENABLE_STRIKETHROUGH);
-  options.insert(Options::ENABLE_TASKLISTS);
+    let mut options = Options::empty();
+    options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_FOOTNOTES);
+    options.insert(Options::ENABLE_STRIKETHROUGH);
+    options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_MATH);
+    options.insert(Options::ENABLE_GFM);
 
-  let parser = Parser::new_ext(&body, options);
+    // 预处理：将 :::type 语法转换为 GFM alert 语法
+    let body = convert_admonitions(&body);
+    let parser = Parser::new_ext(&body, options);
+    let mut it = parser.peekable();
+    
+    // 渲染流，传入 blog_id
+    let elements = render_stream(&mut it, &props.blog_id);
 
-  let mut current_block = Vec::new();
-  let mut elements = Vec::new();
+    use_effect(move || {
+        // 轮询等待 Prism 和语言包加载完成
+        dioxus::document::eval(r#"(function check(){if(window.Prism&&Prism.languages.rust){Prism.highlightAll()}else{setTimeout(check,100)}})()"#);
+    });
 
-  for event in parser {
-    match event {
-      pulldown_cmark::Event::Start(tag) => {
-        current_block.push(tag);
-      }
-      pulldown_cmark::Event::End(tag_end) => {
-        let tag = current_block.pop().unwrap();
-        let element = render_tag(tag, tag_end, &mut elements);
-        if current_block.is_empty() {
-          elements.push(element);
+    rsx! {
+        document::Title { "{metadata.title}" }
+        document::Style { "
+            math {{ font-size: 1.1em; }}
+            .math-display math {{ font-size: 1.4em; }}
+            .prose code::before, .prose code::after {{ content: none !important; }}
+        " }
+        
+        div { class: "prose prose-slate dark:prose-invert max-w-none",
+            {elements.into_iter()}
         }
-      }
-      pulldown_cmark::Event::Text(text) => {
-        if current_block.is_empty() {
-          elements.push(rsx! { "{text}" });
-        }
-      }
-      pulldown_cmark::Event::Code(code) => {
-        elements.push(rsx! {
-            code { class: "bg-slate-100 dark:bg-slate-800 px-1 rounded", "{code}" }
-        });
-      }
-      _ => {}
     }
-  }
-
-  rsx! {
-      div { class: "prose prose-slate dark:prose-invert max-w-none",
-          {elements.into_iter()}
-      }
-  }
 }
 
-fn render_tag(tag: Tag, _tag_end: TagEnd, _children: &mut Vec<Element>) -> Element {
-  match tag {
-    Tag::Heading { level, .. } => {
-      let level_num = level as u32;
-      match level_num {
-        1 => rsx! { h1 { "Heading 1" } },
-        2 => rsx! { h2 { "Heading 2" } },
-        _ => rsx! { h3 { "Heading" } },
-      }
+fn render_stream<'a>(it: &mut std::iter::Peekable<Parser<'a>>, blog_id: &str) -> Vec<Element> {
+    let mut nodes = Vec::new();
+
+    while let Some(event) = it.next() {
+        match event {
+            Event::Start(Tag::CodeBlock(kind)) => {
+                // 特殊处理代码块：收集原始文本用于 Copy 按钮
+                let lang = match &kind {
+                    CodeBlockKind::Fenced(lang) => lang.to_string(),
+                    _ => "text".to_string(),
+                };
+                let mut code_text = String::new();
+                loop {
+                    match it.next() {
+                        Some(Event::Text(t)) => code_text.push_str(&t),
+                        Some(Event::End(_)) => break,
+                        None => break,
+                        _ => {}
+                    }
+                }
+                nodes.push(render_code_block(lang, code_text));
+            }
+            Event::Start(tag) => {
+                let children = render_stream(it, blog_id);
+                nodes.push(render_tag(tag, children, blog_id));
+            }
+            Event::End(_) => break,
+            Event::Text(text) => nodes.push(rsx! { "{text}" }),
+            Event::Code(code) => nodes.push(rsx! {
+                code { class: "bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono text-pink-600 dark:text-pink-400", "{code}" }
+            }),
+            Event::InlineMath(math) => {
+                let mathml = latex_to_mathml_string(&math, false);
+                nodes.push(rsx! { span { class: "math-inline mx-1", dangerous_inner_html: "{mathml}" } });
+            },
+            Event::DisplayMath(math) => {
+                let mathml = latex_to_mathml_string(&math, true);
+                nodes.push(rsx! { 
+                    div { class: "math-display flex justify-center my-10 overflow-x-auto py-4 bg-slate-50/50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800", 
+                        div { class: "px-6", dangerous_inner_html: "{mathml}" }
+                    } 
+                });
+            },
+            Event::SoftBreak => nodes.push(rsx! { " " }),
+            Event::HardBreak => nodes.push(rsx! { br {} }),
+            Event::Rule => nodes.push(rsx! { hr { class: "my-8 border-slate-200 dark:border-slate-800" } }),
+            Event::Html(html) | Event::InlineHtml(html) => {
+                let h = html.trim();
+                if h.starts_with("<") {
+                    if let Some(component) = render_mdx_registry(h) {
+                        nodes.push(component);
+                        continue;
+                    }
+                }
+                nodes.push(rsx! { span { dangerous_inner_html: "{h}" } });
+            }
+            _ => {}
+        }
     }
-    Tag::Paragraph => rsx! { p { "Paragraph" } },
-    Tag::Link { dest_url, .. } => rsx! { a { href: "{dest_url}", "Link" } },
-    Tag::Image { dest_url, .. } => rsx! { img { src: "{dest_url}" } },
-    _ => rsx! { div { "Other" } },
-  }
+    nodes
+}
+
+fn render_tag(tag: Tag, children: Vec<Element>, blog_id: &str) -> Element {
+    match tag {
+        Tag::Heading { level, .. } => {
+            let l = level as u32;
+            match l {
+                1 => rsx! { h1 { {children.into_iter()} } },
+                2 => rsx! { h2 { {children.into_iter()} } },
+                _ => rsx! { h3 { {children.into_iter()} } },
+            }
+        }
+        Tag::Paragraph => {
+            if children.len() == 1 {
+                return children.into_iter().next().unwrap();
+            }
+            rsx! { p { {children.into_iter()} } }
+        },
+        Tag::List(None) => rsx! { ul { class: "list-disc ml-6 my-4", {children.into_iter()} } },
+        Tag::List(Some(start)) => rsx! { ol { start: "{start}", class: "list-decimal ml-6 my-4", {children.into_iter()} } },
+        Tag::Item => rsx! { li { class: "mb-1", {children.into_iter()} } },
+        Tag::CodeBlock(_) => {
+            // 已在 render_stream 中特殊处理，此分支不应触达
+            rsx! { pre { {children.into_iter()} } }
+        }
+        Tag::Link { dest_url, .. } => rsx! { a { href: "{dest_url}", class: "text-blue-600 dark:text-blue-400 underline decoration-blue-500/30 hover:decoration-blue-500 transition-all", {children.into_iter()} } },
+        
+        // --- 核心：处理图片相对路径 ---
+        Tag::Image { dest_url, title, .. } => {
+            let url = dest_url.to_string();
+            let src = if url.starts_with("http") || url.starts_with("/") {
+                url 
+            } else {
+                // 处理 ID 为 "1" 的特殊情况，映射到 welcome 目录
+                let folder = if blog_id == "1" { "welcome" } else { blog_id };
+                format!("/posts/{}/{}", folder, url)
+            };
+            rsx! {
+                figure { class: "my-8",
+                    img { src: "{src}", class: "rounded-2xl shadow-xl mx-auto border border-slate-200 dark:border-slate-800" }
+                    if !title.is_empty() {
+                        figcaption { class: "text-center text-sm text-slate-500 mt-3 italic", "{title}" }
+                    }
+                }
+            }
+        }
+        Tag::BlockQuote(kind) => render_blockquote(kind, children),
+        _ => rsx! { span { {children.into_iter()} } },
+    }
+}
+
+fn render_mdx_registry(html: &str) -> Option<Element> {
+    let clean_html = html.trim();
+    if clean_html.contains("<PodcastCard") {
+        let id = extract_attr(clean_html, "id")?.parse::<i32>().ok()?;
+        if let Some(episode) = EPISODES.iter().find(|e| e.id == id) {
+            return Some(rsx! {
+                div { class: "not-prose my-8 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm flex flex-col md:flex-row gap-6 items-center",
+                    div { class: "flex-1 w-full",
+                        div { class: "text-xs font-bold text-blue-600 uppercase tracking-widest mb-2", "Featured Podcast" }
+                        h4 { class: "text-xl font-extrabold text-slate-900 dark:text-white mb-2", "{episode.title}" }
+                        div { class: "text-sm text-slate-500 mb-4", "{episode.date} · {episode.duration}" }
+                        audio { class: "w-full h-10", controls: true, src: "{episode.url}" }
+                    }
+                }
+            });
+        }
+    }
+    if clean_html.contains("<YouTube") {
+        let id = extract_attr(clean_html, "id")?;
+        return Some(rsx! {
+            div { class: "not-prose aspect-video my-8 overflow-hidden rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800",
+                iframe { class: "w-full h-full", src: "https://www.youtube.com/embed/{id}", allowfullscreen: true }
+            }
+        });
+    }
+    if clean_html.contains("<Bilibili") {
+        let id = extract_attr(clean_html, "id")?;
+        return Some(rsx! {
+            div { class: "not-prose aspect-video my-8 overflow-hidden rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800",
+                iframe { class: "w-full h-full border-0", src: "//player.bilibili.com/player.html?bvid={id}&page=1&high_quality=1", allowfullscreen: true }
+            }
+        });
+    }
+    None
+}
+
+/// 将 :::type 语法转换为 GFM alert 语法
+fn convert_admonitions(body: &str) -> String {
+    let mut result = String::with_capacity(body.len());
+    let mut in_block = false;
+
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if !in_block {
+            if let Some(kind) = trimmed.strip_prefix(":::").and_then(|rest| {
+                let word = rest.trim().split_whitespace().next().unwrap_or("");
+                match word.to_lowercase().as_str() {
+                    "note" | "info" => Some("NOTE"),
+                    "tip" | "success" => Some("TIP"),
+                    "important" => Some("IMPORTANT"),
+                    "warning" | "warn" => Some("WARNING"),
+                    "caution" | "danger" | "error" => Some("CAUTION"),
+                    _ if !word.is_empty() => Some("NOTE"), // 未知类型默认为 NOTE
+                    _ => None,
+                }
+            }) {
+                result.push_str(&format!("> [!{}]\n", kind));
+                in_block = true;
+                continue;
+            }
+        } else if trimmed == ":::" {
+            in_block = false;
+            result.push('\n');
+            continue;
+        }
+
+        if in_block {
+            result.push_str("> ");
+            result.push_str(line);
+        } else {
+            result.push_str(line);
+        }
+        result.push('\n');
+    }
+    result
+}
+
+fn render_blockquote(kind: Option<BlockQuoteKind>, children: Vec<Element>) -> Element {
+    match kind {
+        Some(k) => {
+            let (icon, label, left_color, border_color, bg_color, text_color) = match k {
+                BlockQuoteKind::Note => (
+                    "\u{1f4dd}", "NOTE",
+                    "border-l-blue-500", "border-blue-200 dark:border-blue-800/60",
+                    "bg-blue-50 dark:bg-blue-950/30", "text-blue-600 dark:text-blue-400",
+                ),
+                BlockQuoteKind::Tip => (
+                    "\u{1f4a1}", "TIP",
+                    "border-l-green-500", "border-green-200 dark:border-green-800/60",
+                    "bg-green-50 dark:bg-green-950/30", "text-green-600 dark:text-green-400",
+                ),
+                BlockQuoteKind::Important => (
+                    "\u{2757}", "IMPORTANT",
+                    "border-l-purple-500", "border-purple-200 dark:border-purple-800/60",
+                    "bg-purple-50 dark:bg-purple-950/30", "text-purple-600 dark:text-purple-400",
+                ),
+                BlockQuoteKind::Warning => (
+                    "\u{26a0}\u{fe0f}", "WARNING",
+                    "border-l-yellow-500", "border-yellow-200 dark:border-yellow-800/60",
+                    "bg-yellow-50 dark:bg-yellow-950/30", "text-yellow-600 dark:text-yellow-400",
+                ),
+                BlockQuoteKind::Caution => (
+                    "\u{1f6d1}", "CAUTION",
+                    "border-l-red-500", "border-red-200 dark:border-red-800/60",
+                    "bg-red-50 dark:bg-red-950/30", "text-red-600 dark:text-red-400",
+                ),
+            };
+            rsx! {
+                div { class: "not-prose my-6 rounded-lg border {border_color} border-l-4 {left_color} {bg_color} shadow-sm overflow-hidden",
+                    div { class: "px-4 pt-3 pb-1 flex items-center gap-2",
+                        span { class: "text-base", "{icon}" }
+                        span { class: "text-xs font-bold tracking-wide uppercase {text_color}", "{label}" }
+                    }
+                    div { class: "px-4 pb-3 text-sm text-slate-700 dark:text-slate-300 leading-relaxed",
+                        {children.into_iter()}
+                    }
+                }
+            }
+        }
+        None => rsx! {
+            blockquote { class: "border-l-4 border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30 py-2 pl-6 pr-4 italic my-6 rounded-r-lg",
+                {children.into_iter()}
+            }
+        },
+    }
+}
+
+fn render_code_block(lang: String, code_text: String) -> Element {
+    let code_for_copy = code_text.clone();
+    // 对代码文本进行 HTML 转义，用于 dangerous_inner_html
+    let escaped = code_text
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;");
+
+    rsx! {
+        div {
+            class: "not-prose relative my-6",
+            style: "position:relative",
+            button {
+                class: "absolute z-10 px-2.5 py-1 text-xs font-medium text-slate-400 bg-slate-800/80 border border-slate-700 rounded-md hover:text-white hover:bg-slate-700 transition-all cursor-pointer",
+                style: "position:absolute;right:0.75rem;top:0.75rem",
+                onclick: move |_| {
+                    let json_str = serde_json::to_string(&code_for_copy).unwrap_or_default();
+                    let js = format!("navigator.clipboard.writeText({json}).then(()=>{{let b=document.activeElement;if(b){{b.textContent='Copied!';setTimeout(()=>b.textContent='Copy',1500)}}}})" , json = json_str);
+                    dioxus::document::eval(&js);
+                },
+                "Copy"
+            }
+            pre { class: "rounded-xl p-4 bg-slate-900 overflow-x-auto shadow-inner",
+                code { class: "language-{lang} text-sm text-slate-200", dangerous_inner_html: "{escaped}" }
+            }
+        }
+    }
+}
+
+/// 使用 pulldown-latex 将 LaTeX 转换为 MathML
+fn latex_to_mathml_string(latex: &str, display: bool) -> String {
+    let storage = Storage::new();
+    let parser = LatexParser::new(latex, &storage);
+    let mut mathml = String::new();
+    let config = pulldown_latex::RenderConfig {
+        display_mode: if display {
+            pulldown_latex::config::DisplayMode::Block
+        } else {
+            pulldown_latex::config::DisplayMode::Inline
+        },
+        ..Default::default()
+    };
+    match push_mathml(&mut mathml, parser, config) {
+        Ok(()) => mathml,
+        Err(e) => {
+            eprintln!("[Math] LaTeX render error: {e}");
+            format!("<code>{}</code>", latex.replace('<', "&lt;").replace('>', "&gt;"))
+        }
+    }
+}
+
+fn extract_attr(html: &str, attr: &str) -> Option<String> {
+    let pattern = format!("{}=\"", attr);
+    let start = html.find(&pattern)? + pattern.len();
+    let end = html[start..].find("\"")?;
+    Some(html[start..start + end].to_string())
 }

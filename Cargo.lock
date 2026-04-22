@@ -1669,6 +1669,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "discord-auth-plugin"
+version = "0.1.0"
+dependencies = [
+ "rustineverything-sdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dispatch2"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2337,6 +2346,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "github-auth-plugin"
+version = "0.1.0"
+dependencies = [
+ "rustineverything-sdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "glib"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2455,6 +2473,15 @@ dependencies = [
  "glib-sys",
  "libc",
  "system-deps",
+]
+
+[[package]]
+name = "google-auth-plugin"
+version = "0.1.0"
+dependencies = [
+ "rustineverything-sdk",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -4454,6 +4481,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
 
 [[package]]
+name = "pulldown-latex"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b8bc0583825170e3f560701d966dc2f0e3a16946da371e37d30d3ad7207fb7e"
+dependencies = [
+ "bumpalo",
+]
+
+[[package]]
 name = "quinn"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4891,9 +4927,11 @@ dependencies = [
 name = "rustineverything-app"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "base64",
  "chrono",
  "dioxus",
+ "dotenvy",
  "oauth2",
  "pulldown-cmark",
  "rustineverything-core",
@@ -4902,19 +4940,23 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tower-http",
 ]
 
 [[package]]
 name = "rustineverything-core"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "oauth2",
+ "rand 0.9.3",
  "reqwest",
  "rustineverything-sdk",
  "sea-orm",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
  "wasmi",
 ]
@@ -4926,10 +4968,12 @@ dependencies = [
  "chrono",
  "dioxus",
  "pulldown-cmark",
+ "pulldown-latex",
  "rustineverything-module-podcast",
  "rustineverything-sdk",
  "serde",
  "serde_json",
+ "serde_yaml",
  "tokio",
 ]
 
@@ -5300,6 +5344,19 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
 ]
 
 [[package]]
@@ -6454,6 +6511,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "twitter-auth-plugin"
+version = "0.1.0"
+dependencies = [
+ "rustineverything-sdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "type-map"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6561,6 +6627,12 @@ name = "unicode-xid"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"

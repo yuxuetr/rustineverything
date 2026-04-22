@@ -8,6 +8,10 @@ members = [
     "crates/plugins/prefix-plugin",
     "crates/plugins/i18n-fluent",
     "crates/plugins/theme-ocean",
+    "crates/plugins/github-auth",
+    "crates/plugins/google-auth",
+    "crates/plugins/discord-auth",
+    "crates/plugins/twitter-auth",
 ]
 resolver = "2"
 
@@ -18,4 +22,5 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 wasmi = "0.40.0"
 sea-orm = { version = "1.1.4", features = [ "sqlx-postgres", "runtime-tokio-rustls", "macros" ] }
+oauth2 = { version = "5.0.0", features = ["reqwest"] }
 chrono = { version = "0.4", features = ["serde"] }

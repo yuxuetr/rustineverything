@@ -1,3 +1,4 @@
+pub mod auth_modal;
 pub mod comment;
 pub mod echo;
 pub mod hero;
