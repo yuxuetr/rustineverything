@@ -109,9 +109,15 @@ fn render_provider_button(provider: &AuthProviderDisplay, lang: Language) -> Ele
         "white"
     };
 
+    let border = if is_light_color(&brand_color) {
+        "border: 1px solid #d1d5db;"
+    } else {
+        ""
+    };
+
     let btn_style = format!(
-        "background-color: {}; color: {};",
-        brand_color, text_color
+        "background-color: {}; color: {}; {}",
+        brand_color, text_color, border
     );
 
     let label = if lang == Language::En {
