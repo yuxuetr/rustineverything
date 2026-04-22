@@ -5,8 +5,14 @@ use chrono::Utc;
 use serde_json::Value;
 use rustineverything_sdk::{StandardUser, AuthProviderConfig, AuthProviderDisplay};
 use crate::PluginManager;
-use crate::settings::{SiteConfig, AuthProviderEntry};
+use crate::settings::SiteConfig;
 use std::path::PathBuf;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+/// 全局存储 PKCE code_verifier，key 为 state 参数
+static PKCE_STORE: std::sync::LazyLock<Mutex<HashMap<String, String>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// 动态认证配置，不再硬编码单个 provider
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -109,20 +115,52 @@ impl AuthService {
 
         let (client_id, _) = AuthConfig::get_credentials(provider)?;
         let redirect_url = self.config.redirect_url(provider);
-
         let scopes = provider_config.scopes.join(" ");
-        let url = format!(
-            "{}?client_id={}&redirect_uri={}&scope={}&response_type=code&state=TODO_STATE",
+
+        // 生成随机 state
+        use rand::Rng;
+        let state: String = rand::rng()
+            .sample_iter(&rand::distr::Alphanumeric)
+            .take(32)
+            .map(|b| b as char)
+            .collect();
+
+        let mut url = format!(
+            "{}?client_id={}&redirect_uri={}&scope={}&response_type=code&state={}",
             provider_config.auth_url,
             client_id,
             redirect_url,
-            scopes
+            scopes,
+            state
         );
+
+        // PKCE: 生成 code_verifier 和 code_challenge
+        if provider_config.requires_pkce {
+            use sha2::Digest;
+            use base64::Engine;
+
+            let code_verifier: String = rand::rng()
+                .sample_iter(&rand::distr::Alphanumeric)
+                .take(64)
+                .map(|b| b as char)
+                .collect();
+
+            let digest = sha2::Sha256::digest(code_verifier.as_bytes());
+            let code_challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest);
+
+            url.push_str(&format!("&code_challenge={}&code_challenge_method=S256", code_challenge));
+
+            // 存储 code_verifier，回调时使用
+            if let Ok(mut store) = PKCE_STORE.lock() {
+                store.insert(state.clone(), code_verifier);
+            }
+            println!("[Auth] PKCE enabled for provider={}, state={}", provider, state);
+        }
 
         Ok(url)
     }
 
-    pub async fn handle_callback(&self, db: &DatabaseConnection, provider: &str, plugin_filename: &str, code: String) -> Result<user::Model, Box<dyn std::error::Error>> {
+    pub async fn handle_callback(&self, db: &DatabaseConnection, provider: &str, plugin_filename: &str, code: String, state: Option<String>) -> Result<user::Model, Box<dyn std::error::Error>> {
         let plugin_path = self.plugin_dir.join(plugin_filename);
         let wasm_bytes = std::fs::read(&plugin_path)?;
 
@@ -133,23 +171,51 @@ impl AuthService {
         let (client_id, client_secret) = AuthConfig::get_credentials(provider)?;
         let redirect_url = self.config.redirect_url(provider);
 
-        // 2. Token 交换
+        // 2. 构建 Token 交换请求
         let http_client = reqwest::Client::new();
-        println!("[Auth] Token exchange: url={}, client_id={}, redirect_uri={}", provider_config.token_url, client_id, redirect_url);
-        let token_response: Value = http_client
-            .post(&provider_config.token_url)
-            .header("Accept", "application/json")
-            .form(&[
-                ("client_id", client_id.as_str()),
-                ("client_secret", client_secret.as_str()),
-                ("code", &code),
-                ("redirect_uri", redirect_url.as_str()),
-                ("grant_type", "authorization_code"),
-            ])
-            .send()
-            .await?
-            .json()
-            .await?;
+        println!("[Auth] Token exchange: url={}, client_id={}, redirect_uri={}, auth_method={}", provider_config.token_url, client_id, redirect_url, provider_config.token_auth_method);
+
+        let mut form_params: Vec<(&str, String)> = vec![
+            ("code", code),
+            ("redirect_uri", redirect_url),
+            ("grant_type", "authorization_code".to_string()),
+        ];
+
+        // PKCE: 添加 code_verifier
+        let code_verifier = if provider_config.requires_pkce {
+            let verifier = state.as_ref().and_then(|s| {
+                PKCE_STORE.lock().ok().and_then(|mut store| store.remove(s))
+            }).ok_or("PKCE code_verifier not found for this state")?;
+            println!("[Auth] PKCE code_verifier found (len={})", verifier.len());
+            Some(verifier)
+        } else {
+            None
+        };
+
+        if let Some(ref cv) = code_verifier {
+            form_params.push(("code_verifier", cv.clone()));
+        }
+
+        // 根据认证方式构建请求
+        let request = if provider_config.token_auth_method == "basic_auth" {
+            // Basic Auth: client_id:client_secret in Authorization header
+            http_client
+                .post(&provider_config.token_url)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .basic_auth(&client_id, Some(&client_secret))
+                .form(&form_params)
+        } else {
+            // Form body (default): client_id/secret in form data
+            form_params.push(("client_id", client_id.clone()));
+            form_params.push(("client_secret", client_secret.clone()));
+            http_client
+                .post(&provider_config.token_url)
+                .header("Accept", "application/json")
+                .form(&form_params)
+        };
+
+        let token_response: Value = request.send().await?.json().await?;
         println!("[Auth] Token response: {:?}", token_response);
 
         let access_token = token_response["access_token"]

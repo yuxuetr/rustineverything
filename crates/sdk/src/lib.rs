@@ -50,6 +50,14 @@ pub struct AuthProviderConfig {
     pub token_url: String,        // 获取 Token 的 API 地址
     pub profile_url: String,      // 获取用户信息的 API 地址
     pub scopes: Vec<String>,      // 需要申请的权限列表
+    #[serde(default)]
+    pub requires_pkce: bool,      // 是否需要 PKCE (Twitter 等)
+    #[serde(default = "default_token_auth_method")]
+    pub token_auth_method: String, // Token 交换认证方式: "form" (default) 或 "basic_auth"
+}
+
+fn default_token_auth_method() -> String {
+    "form".to_string()
 }
 
 /// 插件展示信息 (由插件通过 get_display_info 导出)

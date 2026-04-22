@@ -46,11 +46,11 @@ fn main() {
                   Redirect::temporary("/")
               }
           }))
-          // 2. 处理回调：GET /api/auth/callback/github?code=...
+          // 2. 处理回调：GET /api/auth/callback/github?code=...&state=...
           .route("/api/auth/callback/{provider}", get(|Path(provider): Path<String>, Query(params): Query<std::collections::HashMap<String, String>>| async move {
               let code = params.get("code").cloned().unwrap_or_default();
-              if let Ok(msg) = crate::server::auth_callback(code, provider).await {
-                  // 登录成功后跳回首页或显示成功信息
+              let state = params.get("state").cloned();
+              if let Ok(msg) = crate::server::auth_callback(code, provider, state).await {
                   Redirect::temporary(&format!("/?message={}", msg))
               } else {
                   Redirect::temporary("/?error=auth_failed")

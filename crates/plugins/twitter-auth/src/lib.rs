@@ -10,6 +10,8 @@ pub unsafe extern "C" fn get_provider_config(_ptr: *mut u8, _len: usize) -> u64 
         token_url: "https://api.x.com/2/oauth2/token".to_string(),
         profile_url: "https://api.x.com/2/users/me?user.fields=profile_image_url,name,username".to_string(),
         scopes: vec!["users.read".to_string(), "tweet.read".to_string()],
+        requires_pkce: true,
+        token_auth_method: "basic_auth".to_string(),
     };
 
     let result_str = serde_json::to_string(&config).unwrap_or_default();

@@ -105,7 +105,7 @@ pub async fn get_login_url(provider: String) -> Result<String, ServerFnError> {
 }
 
 #[post("/api/auth/callback")]
-pub async fn auth_callback(code: String, provider: String) -> Result<String, ServerFnError> {
+pub async fn auth_callback(code: String, provider: String, state: Option<String>) -> Result<String, ServerFnError> {
     #[cfg(feature = "server")]
     {
         use rustineverything_core::db::init_db;
@@ -114,7 +114,7 @@ pub async fn auth_callback(code: String, provider: String) -> Result<String, Ser
         let plugin_filename = find_plugin_filename(&site_config, &provider)
             .ok_or_else(|| ServerFnError::new(format!("未在 site.json 中配置 provider: {}", provider)))?;
 
-        println!("[Auth Callback] provider={}, code_len={}", provider, code.len());
+        println!("[Auth Callback] provider={}, code_len={}, state={:?}", provider, code.len(), state);
 
         let db_url = std::env::var("DATABASE_URL").unwrap_or("postgres://postgres:password@localhost/rustineverything".to_string());
         let db = init_db(&db_url).await.map_err(|e| {
@@ -122,7 +122,7 @@ pub async fn auth_callback(code: String, provider: String) -> Result<String, Ser
             ServerFnError::new(e.to_string())
         })?;
 
-        let user = auth_service.handle_callback(&db, &provider, &plugin_filename, code).await.map_err(|e| {
+        let user = auth_service.handle_callback(&db, &provider, &plugin_filename, code, state).await.map_err(|e| {
             eprintln!("[Auth Callback] handle_callback failed: {}", e);
             ServerFnError::new(e.to_string())
         })?;

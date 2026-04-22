@@ -4947,13 +4947,16 @@ dependencies = [
 name = "rustineverything-core"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "oauth2",
+ "rand 0.9.3",
  "reqwest",
  "rustineverything-sdk",
  "sea-orm",
  "serde",
  "serde_json",
+ "sha2",
  "tokio",
  "wasmi",
 ]
