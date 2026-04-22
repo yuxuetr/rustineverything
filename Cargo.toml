@@ -11,6 +11,7 @@ members = [
     "crates/plugins/github-auth",
     "crates/plugins/google-auth",
     "crates/plugins/discord-auth",
+    "crates/plugins/twitter-auth",
 ]
 resolver = "2"
 
