@@ -1,49 +1,26 @@
 # Rust in Everything
 
-Rust in Everything is a comprehensive full-stack application built with [Dioxus 0.7](https://dioxuslabs.com/), showcasing the power of Rust in various domains including Web, Wasm, AI, and more.
+专注 Rust 技术栈的学习与实战的 Dioxus 跨端应用。
 
-## Tech Stack
+## 核心特性
 
-- **Frontend/Fullstack**: Dioxus 0.7
-- **Styling**: Tailwind CSS v4.0+
-- **Router**: Dioxus Router
+- **插件化架构**：支持动态加载 WASM 插件（身份认证、主题、i18n 等）。
+- **多端支持**：基于 Dioxus 0.6，支持 Web、Desktop 和 Server。
+- **现代化 UI**：Vanilla CSS 驱动的深色模式优先设计。
+- **全栈集成**：集成 Axum 后端、PKCE OAuth 2.0 流程。
 
-## Modules
+## 快速开始
 
-### Blog Details
-- **Description**: A fully functional blog system rendering Markdown content.
-- **Features**:
-  - Blog index page with article listing.
-  - Detailed blog view with Markdown rendering.
-  - Navigation between articles (Previous/Next).
-  - Server-side content fetching (`get_blog_content`).
+1. 安装 Dioxus CLI: `cargo install dioxus-cli`
+2. 运行开发服务器: `dx serve`
+3. 构建 Release: `dx build --release`
 
-### Podcast
-- **Description**: An immersive podcast player experience.
-- **Features**:
-  - Episode listing with duration and date.
-  - Interactive audio player with play/pause controls.
-  - Episode selection and playback.
-  - Responsive design with a modern UI.
+## 文档
 
-## Getting Started
+- [开发者指南](docs/DEVELOPER.md)
+- [认证系统说明](docs/AUTH_SPEC.md)
+- [认证配置指南](docs/AUTH_GUIDE.md)
 
-1.  **Install Prerequisites**:
-    -   Rust toolchain
-    -   Dioxus CLI: `cargo install dioxus-cli`
+## 开源协议
 
-2.  **Run the Application**:
-    ```bash
-    dx serve
-    ```
-
-## Development
-
-This project follows a modular architecture.
-- `src/components`: Reusable UI components.
-- `src/routes`: Route definitions and page components.
-- `src/server`: Server-side logic and functions.
-
-## Documentation
-
-- See `tailwind.md` for Tailwind CSS best practices and rules used in this project.
+MIT
