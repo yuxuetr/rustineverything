@@ -10,12 +10,37 @@ pub struct SiteConfig {
     pub author: String,
     pub paths: HashMap<String, String>,
     pub navigation: Vec<NavItem>,
+    #[serde(default)]
+    pub auth: AuthSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NavItem {
     pub key: String,
     pub route: String,
+}
+
+/// 授权登录配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthSettings {
+    pub enabled: bool,
+    pub providers: Vec<AuthProviderEntry>,
+}
+
+impl Default for AuthSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            providers: vec![],
+        }
+    }
+}
+
+/// 单个授权提供者配置项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthProviderEntry {
+    pub id: String,               // provider 标识，如 "github"
+    pub plugin: String,           // 插件文件名，如 "github_auth_plugin.wasm"
 }
 
 impl SiteConfig {
@@ -39,6 +64,7 @@ impl Default for SiteConfig {
             author: "".to_string(),
             paths,
             navigation: vec![],
+            auth: AuthSettings::default(),
         }
     }
 }

@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use dioxus::router::{Link, Outlet};
 
+use crate::components::auth_modal::AuthModal;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n, use_t, Language};
 use crate::routes::Route;
@@ -12,6 +13,7 @@ pub fn Navbar() -> Element {
   let route = use_route::<Route>();
   let mut lang = use_i18n();
   let mut is_dark = use_signal(|| false);
+  let mut show_auth_modal = use_signal(|| false);
 
   // Dynamic Translations from WASM Plugins
   let t_blog = use_t("nav-blog");
@@ -109,18 +111,14 @@ pub fn Navbar() -> Element {
                           }
                       }
 
+                      // Sign In button
                       button {
-                          onclick: move |_| {
-                              spawn(async move {
-                                  if let Ok(url) = crate::server::get_login_url("github".to_string()).await {
-                                      let _ = eval(&format!("window.location.href = '{}'", url));
-                                  }
-                              });
-                          },
-                          class: "p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors",
-                          svg { class: "w-5 h-5", fill: "currentColor", view_box: "0 0 24 24",
-                              path { d: "M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.042-1.416-4.042-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.744.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.44-1.304.806-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" }
+                          onclick: move |_| show_auth_modal.set(true),
+                          class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800 transition-colors",
+                          svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
+                              path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" }
                           }
+                          "{t(lang(), \"auth.sign_in\")}"
                       }
 
                       Link {
@@ -132,6 +130,9 @@ pub fn Navbar() -> Element {
               }
           }
       }
+
+      // Auth modal
+      AuthModal { show: show_auth_modal }
 
       main { class: "min-h-[calc(100vh-3.5rem)]",
           Outlet::<Route> {}

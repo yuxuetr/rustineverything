@@ -6,6 +6,9 @@ pub mod auth;
 pub mod db;
 pub mod settings;
 
+// Re-export SDK types needed by the app crate
+pub use rustineverything_sdk::AuthProviderDisplay;
+
 use wasmi::{Engine, Linker, Module, Store};
 
 pub struct PluginManager {

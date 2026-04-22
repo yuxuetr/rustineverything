@@ -23,6 +23,12 @@ fn main() {
   #[cfg(feature = "server")]
   dioxus::serve(|| async move {
       use tower_http::services::ServeDir;
+      use axum::routing::get;
+      use axum::extract::{Path, Query};
+      use axum::response::Redirect;
+
+      // 加载 .env 环境变量
+      dotenvy::dotenv().ok();
 
       // Detect the assets root (same logic as server/mod.rs)
       let assets_root = if std::path::Path::new("assets").exists() {
@@ -32,6 +38,24 @@ fn main() {
       };
 
       let router = dioxus::server::router(App)
+          // 1. 处理登录跳转：GET /api/auth/login/github -> Redirect to GitHub
+          .route("/api/auth/login/{provider}", get(|Path(provider): Path<String>| async move {
+              if let Ok(url) = crate::server::get_login_url(provider).await {
+                  Redirect::temporary(&url)
+              } else {
+                  Redirect::temporary("/")
+              }
+          }))
+          // 2. 处理回调：GET /api/auth/callback/github?code=...
+          .route("/api/auth/callback/{provider}", get(|Path(provider): Path<String>, Query(params): Query<std::collections::HashMap<String, String>>| async move {
+              let code = params.get("code").cloned().unwrap_or_default();
+              if let Ok(msg) = crate::server::auth_callback(code, provider).await {
+                  // 登录成功后跳回首页或显示成功信息
+                  Redirect::temporary(&format!("/?message={}", msg))
+              } else {
+                  Redirect::temporary("/?error=auth_failed")
+              }
+          }))
           .nest_service("/images", ServeDir::new(format!("{}/images", assets_root)))
           .nest_service("/posts", ServeDir::new(format!("{}/posts", assets_root)))
           .nest_service("/js", ServeDir::new(format!("{}/js", assets_root)))

@@ -59,37 +59,46 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
     { Ok("".to_string()) }
 }
 
+/// 加载 site.json 配置并构建 AuthService 的辅助函数 (server-only)
+#[cfg(feature = "server")]
+fn build_auth_service() -> (rustineverything_core::auth::AuthService, SiteConfig) {
+    use rustineverything_core::auth::{AuthService, AuthConfig};
+
+    let base_url = std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let config = AuthConfig { base_url };
+    let site_config = SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap()).unwrap_or_default();
+    let auth_service = AuthService::new(config, get_asset_root().join("plugins"));
+    (auth_service, site_config)
+}
+
+/// 根据 provider id 从 site.json 查找对应的插件文件名
+#[cfg(feature = "server")]
+fn find_plugin_filename(site_config: &SiteConfig, provider: &str) -> Option<String> {
+    site_config.auth.providers.iter()
+        .find(|p| p.id == provider)
+        .map(|p| p.plugin.clone())
+}
+
+#[post("/api/auth/providers")]
+pub async fn get_auth_providers() -> Result<Vec<rustineverything_core::AuthProviderDisplay>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        let (auth_service, site_config) = build_auth_service();
+        Ok(auth_service.list_available_providers(&site_config))
+    }
+    #[cfg(not(feature = "server"))]
+    { Ok(vec![]) }
+}
+
 #[post("/api/auth/login-url")]
 pub async fn get_login_url(provider: String) -> Result<String, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl, CsrfToken};
-        use rustineverything_core::auth::AuthConfig;
-        
-        let config = AuthConfig {
-            github_client_id: std::env::var("GITHUB_CLIENT_ID").unwrap_or_default(),
-            github_client_secret: std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_default(),
-            google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
-            google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
-            redirect_url: "http://localhost:8080/api/auth/callback".to_string(),
-        };
-
-        let client_id = config.github_client_id;
-        let client_secret = config.github_client_secret;
-        let redirect_uri = config.redirect_url;
-
-        let (url, _) = match provider.as_str() {
-            "github" => {
-                let client = BasicClient::new(ClientId::new(client_id))
-                    .set_client_secret(ClientSecret::new(client_secret))
-                    .set_auth_uri(AuthUrl::new("https://github.com/login/oauth/authorize".to_string()).unwrap())
-                    .set_token_uri(TokenUrl::new("https://github.com/login/oauth/access_token".to_string()).unwrap())
-                    .set_redirect_uri(RedirectUrl::new(redirect_uri).unwrap());
-                client.authorize_url(CsrfToken::new_random).url()
-            },
-            _ => return Err(ServerFnError::new("不支持的登录平台")),
-        };
-        Ok(url.to_string())
+        let (auth_service, site_config) = build_auth_service();
+        let plugin_filename = find_plugin_filename(&site_config, &provider)
+            .ok_or_else(|| ServerFnError::new(format!("未在 site.json 中配置 provider: {}", provider)))?;
+        auth_service.get_auth_url(&provider, &plugin_filename)
+            .map_err(|e| ServerFnError::new(e.to_string()))
     }
     #[cfg(not(feature = "server"))]
     { Ok("".to_string()) }
@@ -99,22 +108,25 @@ pub async fn get_login_url(provider: String) -> Result<String, ServerFnError> {
 pub async fn auth_callback(code: String, provider: String) -> Result<String, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use rustineverything_core::auth::{AuthService, AuthConfig};
         use rustineverything_core::db::init_db;
-        let config = AuthConfig {
-            github_client_id: std::env::var("GITHUB_CLIENT_ID").unwrap_or_default(),
-            github_client_secret: std::env::var("GITHUB_CLIENT_SECRET").unwrap_or_default(),
-            google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
-            google_client_secret: std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default(),
-            redirect_url: "http://localhost:8080/api/auth/callback".to_string(),
-        };
+
+        let (auth_service, site_config) = build_auth_service();
+        let plugin_filename = find_plugin_filename(&site_config, &provider)
+            .ok_or_else(|| ServerFnError::new(format!("未在 site.json 中配置 provider: {}", provider)))?;
+
+        println!("[Auth Callback] provider={}, code_len={}", provider, code.len());
+
         let db_url = std::env::var("DATABASE_URL").unwrap_or("postgres://postgres:password@localhost/rustineverything".to_string());
-        let db = init_db(&db_url).await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        let auth_service = AuthService::new(config);
-        let user = match provider.as_str() {
-            "github" => auth_service.sync_github_user(&db, code).await.map_err(|e| ServerFnError::new(e.to_string()))?,
-            _ => return Err(ServerFnError::new("同步失败")),
-        };
+        let db = init_db(&db_url).await.map_err(|e| {
+            eprintln!("[Auth Callback] DB connection failed: {}", e);
+            ServerFnError::new(e.to_string())
+        })?;
+
+        let user = auth_service.handle_callback(&db, &provider, &plugin_filename, code).await.map_err(|e| {
+            eprintln!("[Auth Callback] handle_callback failed: {}", e);
+            ServerFnError::new(e.to_string())
+        })?;
+        println!("[Auth Callback] Login success: user={}", user.nickname);
         Ok(format!("欢迎回来, {}!", user.nickname))
     }
     #[cfg(not(feature = "server"))]

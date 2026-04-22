@@ -1,0 +1,21 @@
+{
+  "site_name": "Rust in Everything",
+  "site_description": "专注 Rust 技术栈的学习与实战",
+  "active_theme": "theme_ocean_plugin.wasm",
+  "default_language": "zh",
+  "author": "yuxuetr",
+  "paths": {
+    "plugins": "assets/plugins"
+  },
+  "navigation": [
+    { "key": "nav-blog", "route": "/blog" },
+    { "key": "nav-podcast", "route": "/podcast" },
+    { "key": "nav-forum", "route": "/topics" }
+  ],
+  "auth": {
+    "enabled": true,
+    "providers": [
+      { "id": "github", "plugin": "github_auth_plugin.wasm" }
+    ]
+  }
+}
