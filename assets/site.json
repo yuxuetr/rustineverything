@@ -16,7 +16,8 @@
     "enabled": true,
     "providers": [
       { "id": "github", "plugin": "github_auth_plugin.wasm" },
-      { "id": "google", "plugin": "google_auth_plugin.wasm" }
+      { "id": "google", "plugin": "google_auth_plugin.wasm" },
+      { "id": "discord", "plugin": "discord_auth_plugin.wasm" }
     ]
   }
 }

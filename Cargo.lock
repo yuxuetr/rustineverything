@@ -1669,6 +1669,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "discord-auth-plugin"
+version = "0.1.0"
+dependencies = [
+ "rustineverything-sdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "dispatch2"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

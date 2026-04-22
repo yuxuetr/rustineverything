@@ -10,6 +10,7 @@ members = [
     "crates/plugins/theme-ocean",
     "crates/plugins/github-auth",
     "crates/plugins/google-auth",
+    "crates/plugins/discord-auth",
 ]
 resolver = "2"
 
