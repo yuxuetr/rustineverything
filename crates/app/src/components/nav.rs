@@ -1,7 +1,6 @@
 use dioxus::prelude::*;
 use dioxus::router::{Link, Outlet};
 
-use crate::components::auth_modal::AuthModal;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n, use_t, Language};
 use crate::routes::Route;
@@ -13,7 +12,7 @@ pub fn Navbar() -> Element {
   let route = use_route::<Route>();
   let mut lang = use_i18n();
   let mut is_dark = use_signal(|| false);
-  let mut show_auth_modal = use_signal(|| false);
+  let mut show_auth_modal = crate::use_auth_modal();
 
   // Dynamic Translations from WASM Plugins
   let t_blog = use_t("nav-blog");
@@ -131,10 +130,7 @@ pub fn Navbar() -> Element {
           }
       }
 
-      // Auth modal
-      AuthModal { show: show_auth_modal }
-
-      main { class: "min-h-[calc(100vh-3.5rem)]",
+      main {
           Outlet::<Route> {}
       }
 

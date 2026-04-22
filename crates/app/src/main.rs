@@ -70,9 +70,16 @@ fn main() {
   dioxus::launch(App);
 }
 
+/// 全局登录模态框状态，通过 Context 共享
+pub fn use_auth_modal() -> Signal<bool> {
+  use_context::<Signal<bool>>()
+}
+
 #[component]
 fn App() -> Element {
   init_i18n();
+  let show_auth = use_signal(|| false);
+  use_context_provider(|| show_auth);
 
   // Fetch aggregated theme CSS from WASM plugins
   let theme_css = use_resource(move || async move {
@@ -144,5 +151,8 @@ fn App() -> Element {
 
       // Main router entry
       Router::<Route> {}
+
+      // Auth modal (rendered at root level to avoid stacking context issues)
+      crate::components::auth_modal::AuthModal { show: show_auth }
   }
 }

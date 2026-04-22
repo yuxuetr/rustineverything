@@ -30,19 +30,16 @@ pub fn AuthModal(show: Signal<bool>) -> Element {
     let provider_list = provider_list.as_ref().cloned().unwrap_or_default();
 
     rsx! {
-        // Backdrop (separate element)
+        // Full-screen overlay: backdrop + centered flex container
         div {
-            class: "fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm",
-            onclick: close_modal,
-        }
-
-        // Modal panel (separately positioned to avoid stacking context issues)
-        div {
-            class: "fixed z-[101] top-1/2 left-1/2 w-full max-w-md -translate-x-1/2 -translate-y-1/2 px-4",
+            class: "fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4",
+            style: "margin:0; top:0; left:0; width:100vw; height:100vh;",
             onclick: close_modal,
 
+            // Modal panel
             div {
-                class: "relative rounded-2xl bg-white dark:bg-slate-900 shadow-2xl p-8 animate-[fadeInUp_0.2s_ease-out]",
+                class: "relative w-full rounded-2xl bg-white dark:bg-slate-900 shadow-2xl p-8 animate-[fadeInUp_0.2s_ease-out]",
+                style: "max-width: 28rem;",
                 onclick: stop_propagation,
 
                 // Close button
