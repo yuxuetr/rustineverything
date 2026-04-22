@@ -8,6 +8,8 @@ members = [
     "crates/plugins/prefix-plugin",
     "crates/plugins/i18n-fluent",
     "crates/plugins/theme-ocean",
+    "crates/plugins/github-auth",
+    "crates/plugins/google-auth",
 ]
 resolver = "2"
 
