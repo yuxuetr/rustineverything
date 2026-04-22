@@ -11,3 +11,4 @@ assets/uploads/
 public/uploads/
 public/data/
 .env
+crates/app/assets/site.json
