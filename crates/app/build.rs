@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -39,7 +39,7 @@ fn sync_dir(src: &Path, dst: &Path) {
             sync_dir(&path, &dest_path);
         } else {
             // 拷贝小文件
-            let file_name = path.file_name().unwrap().to_str().unwrap();
+            let _file_name = path.file_name().unwrap().to_str().unwrap();
             // 过滤掉超大文件
             if let Ok(metadata) = fs::metadata(&path) {
                 if metadata.len() > 10 * 1024 * 1024 { // > 10MB

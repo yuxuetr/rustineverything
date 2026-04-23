@@ -139,16 +139,54 @@ $$
 \nabla \times \mathbf{B} &= \mu_0\mathbf{J} + \mu_0\varepsilon_0\frac{\partial \mathbf{E}}{\partial t}
 \end{aligned}
 $$
-### 7. 视频嵌入 (Video Embedding)
+
+
+### 7. 文字样式组件 (Text Style Components)
+
+支持 Mac Preview 风格的彩色文字和文本装饰：
+
+- 这里有 <Yellow text="黄色重点" /> 需要注意
+- 测试结果：<Green text="全部通过" />，零失败
+- 更多详情请参考 <Blue text="官方文档" />
+- <Pink text="性能警告" />：请避免在热路径中使用
+- 这是一个 <Purple text="实验性功能" />，API 可能变化
+- 这段内容非常 <Underline text="重要" />，请务必阅读
+- 该接口已 <Strikethrough text="废弃" />，请使用新版本
+
+组合使用：Rust 的 <Green text="内存安全" /> 和 <Blue text="零成本抽象" /> 是其 <Yellow text="核心优势" />。
+
+### 8. Mermaid 图表支持 (Mermaid Diagrams)
+我们还支持 Mermaid 图表了！
+
+以下是一个流程图示例：
+```mermaid
+flowchart RL
+    A@{ shape: manual-file, label: "File Handling"}
+    B@{ shape: manual-input, label: "User Input"}
+    C@{ shape: docs, label: "Multiple Documents"}
+    D@{ shape: procs, label: "Process Automation"}
+    E@{ shape: paper-tape, label: "Paper Records"}
+```
+
+时间线图：
+```mermaid
+timeline
+    title History of Social Media Platform
+    2002 : LinkedIn
+    2004 : Facebook
+         : Google
+    2005 : YouTube
+    2006 : Twitter
+```
+
+### 9. 视频嵌入 (Video Embedding)
 
 我们还可以嵌入 YouTube 视频：
 
 <YouTube id="PdSHny0_6VY" />
 
-### 8. Bilibili 视频嵌入
+### 10. Bilibili 视频嵌入
 
 B站视频演示：
 
 <Bilibili id="BV1fDSoBEEXb" />
-
-

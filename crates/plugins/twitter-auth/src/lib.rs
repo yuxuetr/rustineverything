@@ -60,7 +60,7 @@ pub unsafe extern "C" fn map_profile(ptr: *mut u8, len: usize) -> u64 {
 unsafe fn pack_result(s: String) -> u64 {
     let result_bytes = s.into_bytes();
     let res_len = result_bytes.len();
-    let res_ptr = unsafe { alloc(res_len) };
+    let res_ptr = alloc(res_len);
 
     let res_slice = unsafe { slice::from_raw_parts_mut(res_ptr, res_len) };
     res_slice.copy_from_slice(&result_bytes);

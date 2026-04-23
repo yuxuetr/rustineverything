@@ -1,8 +1,7 @@
 use dioxus::prelude::*;
 use pulldown_cmark::{Options, Parser, Event, Tag, CodeBlockKind, BlockQuoteKind};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use rustineverything_module_podcast::podcast::{Episode, EPISODES};
+use rustineverything_module_podcast::podcast::EPISODES;
 use pulldown_latex::{Parser as LatexParser, Storage, push_mathml};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -52,8 +51,9 @@ pub fn Markdown(props: MarkdownProps) -> Element {
     let elements = render_stream(&mut it, &props.blog_id);
 
     use_effect(move || {
-        // 轮询等待 Prism 和语言包加载完成
+        // 轮询等待 Prism 和语言包加载完成，同时触发 Mermaid 渲染
         dioxus::document::eval(r#"(function check(){if(window.Prism&&Prism.languages.rust){Prism.highlightAll()}else{setTimeout(check,100)}})()"#);
+        dioxus::document::eval(r#"(function renderMermaid(){if(window.mermaid){mermaid.run({querySelector:'.mermaid'})}else{setTimeout(renderMermaid,200)}})()"#);
     });
 
     rsx! {
@@ -90,7 +90,11 @@ fn render_stream<'a>(it: &mut std::iter::Peekable<Parser<'a>>, blog_id: &str) ->
                         _ => {}
                     }
                 }
-                nodes.push(render_code_block(lang, code_text));
+                if lang == "mermaid" {
+                    nodes.push(render_mermaid_block(code_text));
+                } else {
+                    nodes.push(render_code_block(lang, code_text));
+                }
             }
             Event::Start(Tag::TableHead) => {
                 // TableHead 内的 cell 需要渲染为 <th> 而非 <td>
@@ -252,6 +256,12 @@ fn render_mdx_registry(html: &str) -> Option<Element> {
             }
         });
     }
+
+    // ── 文字样式组件：<Yellow text="..." /> 等 ──
+    if let Some(el) = render_text_style_component(clean_html) {
+        return Some(el);
+    }
+
     None
 }
 
@@ -346,6 +356,14 @@ fn render_blockquote(kind: Option<BlockQuoteKind>, children: Vec<Element>) -> El
     }
 }
 
+fn render_mermaid_block(code_text: String) -> Element {
+    rsx! {
+        div { class: "not-prose my-6 flex justify-center overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6",
+            pre { class: "mermaid", "{code_text}" }
+        }
+    }
+}
+
 fn render_code_block(lang: String, code_text: String) -> Element {
     let code_for_copy = code_text.clone();
 
@@ -390,6 +408,47 @@ fn latex_to_mathml_string(latex: &str, display: bool) -> String {
             format!("<code>{}</code>", latex.replace('<', "&lt;").replace('>', "&gt;"))
         }
     }
+}
+
+/// 文字样式 MDX 组件
+/// 用法：<Yellow text="高亮" /> <Green text="通过" /> <Underline text="重点" /> 等
+fn render_text_style_component(html: &str) -> Option<Element> {
+    // 颜色组件映射 (Mac Preview 标注色系)
+    let color_map: &[(&str, &str)] = &[
+        ("Yellow",  "#EAB308"),  // yellow-500
+        ("Green",   "#22C55E"),  // green-500
+        ("Blue",    "#3B82F6"),  // blue-500
+        ("Pink",    "#EC4899"),  // pink-500
+        ("Purple",  "#A855F7"),  // purple-500
+    ];
+
+    for (name, color) in color_map {
+        if html.contains(&format!("<{}", name)) {
+            let text = extract_attr(html, "text")?;
+            let style = format!("color: {}; font-weight: 600", color);
+            return Some(rsx! {
+                span { style: "{style}", "{text}" }
+            });
+        }
+    }
+
+    // 下划线
+    if html.contains("<Underline") {
+        let text = extract_attr(html, "text")?;
+        return Some(rsx! {
+            span { style: "text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px", "{text}" }
+        });
+    }
+
+    // 删除线
+    if html.contains("<Strikethrough") {
+        let text = extract_attr(html, "text")?;
+        return Some(rsx! {
+            span { style: "text-decoration: line-through; text-decoration-thickness: 2px", "{text}" }
+        });
+    }
+
+    None
 }
 
 fn extract_attr(html: &str, attr: &str) -> Option<String> {

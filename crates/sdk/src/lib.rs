@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::mem;
-use std::slice;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginManifest {

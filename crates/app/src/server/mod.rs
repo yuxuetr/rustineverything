@@ -1,11 +1,14 @@
 use dioxus::fullstack::{post, ServerFnError};
 use dioxus::prelude::*;
 use rustineverything_core::settings::SiteConfig;
+#[allow(unused_imports)]
 use std::path::PathBuf;
+#[allow(unused_imports)]
 use std::fs;
 
 /// 自动探测资产根目录
 /// 我们规定：代码在 crates/app，内容在 根目录/assets
+#[allow(dead_code)]
 fn get_asset_root() -> PathBuf {
     let mut path = PathBuf::from("assets");
     if !path.exists() {

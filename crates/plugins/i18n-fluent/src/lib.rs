@@ -1,7 +1,7 @@
 use fluent_bundle::{FluentBundle, FluentResource};
 use unic_langid::langid;
 use std::slice;
-use rustineverything_sdk::{alloc, dealloc};
+use rustineverything_sdk::alloc;
 
 /// 静态加载 FTL 资源
 const FTL_ZH: &str = "nav-blog = 博客\nnav-podcast = 播客\nnav-forum = 论坛";

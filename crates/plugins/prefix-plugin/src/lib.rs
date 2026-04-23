@@ -1,9 +1,8 @@
 use std::slice;
-use std::mem;
 
 /// We need the memory helpers from our SDK
 /// Since the SDK's alloc/dealloc are #[no_mangle], they will be exported by this crate too
-use rustineverything_sdk::{alloc, dealloc};
+use rustineverything_sdk::alloc;
 
 /// The main entry point for processing text.
 /// Signature: (ptr, len) -> u64 (packed ptr and len)

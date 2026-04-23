@@ -1,7 +1,9 @@
+#[allow(unused_imports)]
+use std::fs;
+#[allow(unused_imports)]
+use std::path::PathBuf;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Comment {
@@ -13,6 +15,7 @@ pub struct Comment {
 }
 
 /// 自动探测资产根目录
+#[allow(dead_code)]
 fn get_asset_root() -> PathBuf {
     let mut path = PathBuf::from("assets");
     if !path.exists() {
@@ -128,6 +131,7 @@ pub async fn list_blog_posts() -> Result<Vec<BlogPostSummary>, ServerFnError> {
     Ok(posts)
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize, Default)]
 struct FrontMatter {
     #[serde(default)]
@@ -140,6 +144,7 @@ struct FrontMatter {
     tags: Vec<String>,
 }
 
+#[allow(dead_code)]
 fn parse_frontmatter(content: &str) -> FrontMatter {
     if !content.starts_with("---") {
         return FrontMatter::default();

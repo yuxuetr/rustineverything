@@ -149,6 +149,10 @@ fn App() -> Element {
       document::Script { src: "/js/prism-yaml.min.js" }
       document::Script { src: "/js/prism-python.min.js" }
 
+      // Mermaid.js for diagram rendering
+      document::Script { src: "/js/mermaid.min.js" }
+      document::Script { "mermaid.initialize({{ startOnLoad: true, theme: 'default' }});" }
+
       // Main router entry
       Router::<Route> {}
 
