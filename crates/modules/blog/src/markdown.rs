@@ -92,6 +92,29 @@ fn render_stream<'a>(it: &mut std::iter::Peekable<Parser<'a>>, blog_id: &str) ->
                 }
                 nodes.push(render_code_block(lang, code_text));
             }
+            Event::Start(Tag::TableHead) => {
+                // TableHead 内的 cell 需要渲染为 <th> 而非 <td>
+                let mut header_cells = Vec::new();
+                while let Some(event) = it.next() {
+                    match event {
+                        Event::Start(Tag::TableCell) => {
+                            let cell_children = render_stream(it, blog_id);
+                            header_cells.push(rsx! {
+                                th { class: "px-4 py-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-300",
+                                    {cell_children.into_iter()}
+                                }
+                            });
+                        }
+                        Event::End(_) => break,
+                        _ => {}
+                    }
+                }
+                nodes.push(rsx! {
+                    thead { class: "bg-slate-50 dark:bg-slate-800/50",
+                        tr { {header_cells.into_iter()} }
+                    }
+                });
+            }
             Event::Start(tag) => {
                 let children = render_stream(it, blog_id);
                 nodes.push(render_tag(tag, children, blog_id));
@@ -124,7 +147,7 @@ fn render_stream<'a>(it: &mut std::iter::Peekable<Parser<'a>>, blog_id: &str) ->
                         continue;
                     }
                 }
-                nodes.push(rsx! { span { dangerous_inner_html: "{h}" } });
+                nodes.push(rsx! { span { "{h}" } });
             }
             _ => {}
         }
@@ -177,6 +200,21 @@ fn render_tag(tag: Tag, children: Vec<Element>, blog_id: &str) -> Element {
             }
         }
         Tag::BlockQuote(kind) => render_blockquote(kind, children),
+        Tag::Table(_) => rsx! {
+            div { class: "overflow-x-auto my-6",
+                table { class: "min-w-full border-collapse",
+                    {children.into_iter()}
+                }
+            }
+        },
+        Tag::TableRow => rsx! {
+            tr { class: "border-b border-slate-200 dark:border-slate-800",
+                {children.into_iter()}
+            }
+        },
+        Tag::TableCell => rsx! {
+            td { class: "px-4 py-3 text-sm", {children.into_iter()} }
+        },
         _ => rsx! { span { {children.into_iter()} } },
     }
 }
@@ -310,11 +348,6 @@ fn render_blockquote(kind: Option<BlockQuoteKind>, children: Vec<Element>) -> El
 
 fn render_code_block(lang: String, code_text: String) -> Element {
     let code_for_copy = code_text.clone();
-    // 对代码文本进行 HTML 转义，用于 dangerous_inner_html
-    let escaped = code_text
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;");
 
     rsx! {
         div {
@@ -331,7 +364,7 @@ fn render_code_block(lang: String, code_text: String) -> Element {
                 "Copy"
             }
             pre { class: "rounded-xl p-4 bg-slate-900 overflow-x-auto shadow-inner",
-                code { class: "language-{lang} text-sm text-slate-200", dangerous_inner_html: "{escaped}" }
+                code { class: "language-{lang} text-sm text-slate-200", "{code_text}" }
             }
         }
     }
