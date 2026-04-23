@@ -9,6 +9,8 @@ pub unsafe extern "C" fn get_provider_config(_ptr: *mut u8, _len: usize) -> u64 
         token_url: "https://discord.com/api/oauth2/token".to_string(),
         profile_url: "https://discord.com/api/users/@me".to_string(),
         scopes: vec!["identify".to_string(), "email".to_string()],
+        requires_pkce: false,
+        token_auth_method: "form".to_string(),
     };
 
     let result_str = serde_json::to_string(&config).unwrap_or_default();

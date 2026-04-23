@@ -13,6 +13,8 @@ pub unsafe extern "C" fn get_provider_config(_ptr: *mut u8, _len: usize) -> u64 
             "email".to_string(),
             "profile".to_string(),
         ],
+        requires_pkce: false,
+        token_auth_method: "form".to_string(),
     };
 
     let result_str = serde_json::to_string(&config).unwrap_or_default();

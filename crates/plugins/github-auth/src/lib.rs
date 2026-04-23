@@ -9,6 +9,8 @@ pub unsafe extern "C" fn get_provider_config(_ptr: *mut u8, _len: usize) -> u64 
         token_url: "https://github.com/login/oauth/access_token".to_string(),
         profile_url: "https://api.github.com/user".to_string(),
         scopes: vec!["read:user".to_string(), "user:email".to_string()],
+        requires_pkce: false,
+        token_auth_method: "form".to_string(),
     };
 
     let result_str = serde_json::to_string(&config).unwrap_or_default();
