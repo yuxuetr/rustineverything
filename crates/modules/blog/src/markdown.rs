@@ -135,7 +135,7 @@ fn render_stream<'a>(it: &mut std::iter::Peekable<Parser<'a>>, blog_id: &str) ->
             Event::DisplayMath(math) => {
                 let mathml = latex_to_mathml_string(&math, true);
                 nodes.push(rsx! { 
-                    div { class: "math-display flex justify-center my-10 overflow-x-auto py-4 bg-slate-50/50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800", 
+                    div { class: "math-display flex justify-center my-10 overflow-x-auto py-8 bg-slate-50/50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800", 
                         div { class: "px-6", dangerous_inner_html: "{mathml}" }
                     } 
                 });
