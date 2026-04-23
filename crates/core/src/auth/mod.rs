@@ -1,16 +1,23 @@
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "server")]
 use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set};
+#[cfg(feature = "server")]
 use crate::entities::{user, user_identity};
+#[cfg(feature = "server")]
 use chrono::Utc;
 use serde_json::Value;
 use rustineverything_sdk::{StandardUser, AuthProviderConfig, AuthProviderDisplay};
+#[cfg(feature = "server")]
 use crate::PluginManager;
 use crate::settings::SiteConfig;
 use std::path::PathBuf;
+#[cfg(feature = "server")]
 use std::collections::HashMap;
+#[cfg(feature = "server")]
 use std::sync::Mutex;
 
 /// 全局存储 PKCE code_verifier，key 为 state 参数
+#[cfg(feature = "server")]
 static PKCE_STORE: std::sync::LazyLock<Mutex<HashMap<String, String>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -23,6 +30,7 @@ pub struct AuthConfig {
 impl AuthConfig {
     /// 从环境变量动态读取 provider 的 client_id 和 client_secret
     /// 约定：{PROVIDER}_CLIENT_ID, {PROVIDER}_CLIENT_SECRET (全大写)
+    #[cfg(feature = "server")]
     pub fn get_credentials(provider: &str) -> Result<(String, String), Box<dyn std::error::Error>> {
         let upper = provider.to_uppercase();
         let client_id = std::env::var(format!("{}_CLIENT_ID", upper))
@@ -33,6 +41,7 @@ impl AuthConfig {
     }
 
     /// 检查 provider 是否已配置凭据
+    #[cfg(feature = "server")]
     pub fn has_credentials(provider: &str) -> bool {
         let upper = provider.to_uppercase();
         std::env::var(format!("{}_CLIENT_ID", upper)).is_ok()
@@ -45,12 +54,14 @@ impl AuthConfig {
     }
 }
 
+#[cfg(feature = "server")]
 pub struct AuthService {
     pub config: AuthConfig,
     pub plugin_manager: PluginManager,
     pub plugin_dir: PathBuf,
 }
 
+#[cfg(feature = "server")]
 impl AuthService {
     pub fn new(config: AuthConfig, plugin_dir: PathBuf) -> Self {
         Self {
@@ -296,7 +307,7 @@ impl AuthService {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
     use std::fs;
