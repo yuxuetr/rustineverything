@@ -58,6 +58,8 @@ pub fn t(lang: Language, key: &str) -> String {
     (Language::En, "auth.continue_with") => "Continue with".to_string(),
     (Language::Zh, "auth.terms") => "登录即表示你同意我们的服务条款和隐私政策".to_string(),
     (Language::En, "auth.terms") => "By signing in, you agree to our Terms and Privacy Policy".to_string(),
+    (Language::Zh, "auth.logout") => "退出登录".to_string(),
+    (Language::En, "auth.logout") => "Sign Out".to_string(),
     (_, k) => k.to_string(),
   }
 }

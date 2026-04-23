@@ -13,6 +13,8 @@ pub fn Navbar() -> Element {
   let mut lang = use_i18n();
   let mut is_dark = use_signal(|| false);
   let mut show_auth_modal = crate::use_auth_modal();
+  let session_user = crate::use_session_user();
+  let mut show_user_menu = use_signal(|| false);
 
   // Dynamic Translations from WASM Plugins
   let t_blog = use_t("nav-blog");
@@ -110,14 +112,52 @@ pub fn Navbar() -> Element {
                           }
                       }
 
-                      // Sign In button
-                      button {
-                          onclick: move |_| show_auth_modal.set(true),
-                          class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800 transition-colors",
-                          svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
-                              path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" }
+                      // User avatar / Sign In
+                      if let Some(ref u) = session_user() {
+                          // 已登录：头像 + 昵称 + 下拉菜单
+                          div { class: "relative",
+                              button {
+                                  onclick: move |_| show_user_menu.set(!show_user_menu()),
+                                  class: "flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
+                                  if let Some(ref avatar) = u.avatar_url {
+                                      img {
+                                          src: "{avatar}",
+                                          class: "w-7 h-7 shrink-0 rounded-full object-cover",
+                                          width: "28",
+                                          height: "28",
+                                          alt: "{u.nickname}"
+                                      }
+                                  } else {
+                                      div { class: "w-7 h-7 shrink-0 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold",
+                                          "{u.nickname.chars().next().unwrap_or('U')}"
+                                      }
+                                  }
+                                  span { class: "hidden sm:inline text-sm font-medium text-slate-700 dark:text-slate-200", "{u.nickname}" }
+                              }
+                              // 下拉菜单
+                              if show_user_menu() {
+                                  div { class: "absolute right-0 top-full mt-1 w-40 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg py-1 z-50",
+                                      div { class: "px-3 py-2 text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800",
+                                          "{u.nickname}"
+                                      }
+                                      a {
+                                          href: "/api/auth/logout",
+                                          class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
+                                          "{t(lang(), \"auth.logout\")}"
+                                      }
+                                  }
+                              }
                           }
-                          "{t(lang(), \"auth.sign_in\")}"
+                      } else {
+                          // 未登录：登录按钮
+                          button {
+                              onclick: move |_| show_auth_modal.set(true),
+                              class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800 transition-colors",
+                              svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
+                                  path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" }
+                              }
+                              "{t(lang(), \"auth.sign_in\")}"
+                          }
                       }
 
                       Link {

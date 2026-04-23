@@ -5,15 +5,6 @@ use std::path::PathBuf;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Comment {
-  pub id: String,
-  pub blog_id: String,
-  pub content: String,
-  pub author: String,
-  pub date: String,
-}
-
 /// 自动探测资产根目录
 #[allow(dead_code)]
 fn get_asset_root() -> PathBuf {
@@ -22,61 +13,6 @@ fn get_asset_root() -> PathBuf {
         path = PathBuf::from("../../assets");
     }
     path
-}
-
-#[server]
-pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError> {
-  let path = get_asset_root().join("data/comments.json");
-  if !path.exists() {
-    return Ok(Vec::new());
-  }
-
-  let content = fs::read_to_string(path)
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-  let comments: Vec<Comment> = serde_json::from_str(&content).unwrap_or_default();
-
-  let mut filtered: Vec<Comment> = comments
-    .into_iter()
-    .filter(|c| c.blog_id == blog_id)
-    .collect();
-  filtered.reverse();
-  Ok(filtered)
-}
-
-#[server]
-pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Comment>, ServerFnError> {
-  let db_dir = get_asset_root().join("data");
-  let db_path = db_dir.join("comments.json");
-  
-  if !db_dir.exists() {
-      fs::create_dir_all(&db_dir).map_err(|e| ServerFnError::new(e.to_string()))?;
-  }
-
-  let mut comments: Vec<Comment> = if db_path.exists() {
-    let c = fs::read_to_string(&db_path).unwrap_or_else(|_| "[]".to_string());
-    serde_json::from_str(&c).unwrap_or_default()
-  } else {
-    Vec::new()
-  };
-
-  let new_comment = Comment {
-    id: chrono::Utc::now().timestamp_micros().to_string(),
-    blog_id: blog_id.clone(),
-    content,
-    author: "访客".to_string(),
-    date: chrono::Local::now().format("%Y-%m-%d %H:%M").to_string(),
-  };
-
-  comments.push(new_comment);
-
-  let json = serde_json::to_string_pretty(&comments)
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-  fs::write(db_path, json)
-    .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-  get_comments(blog_id).await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -23,6 +23,7 @@ dotenvy = { version = "0.15", optional = true }
 base64 = "0.22"
 oauth2 = { workspace = true, optional = true }
 tower-http = { version = "0.6", features = ["fs"], optional = true }
+sea-orm = { workspace = true, optional = true }
 
 [features]
 default = ["web"]
@@ -39,4 +40,5 @@ server = [
     "dep:dotenvy",
     "dep:oauth2",
     "dep:tower-http",
+    "dep:sea-orm",
 ]

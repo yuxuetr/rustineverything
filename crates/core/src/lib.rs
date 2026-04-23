@@ -4,6 +4,7 @@ pub mod entities;
 pub mod auth;
 #[cfg(feature = "server")]
 pub mod db;
+pub mod session;
 pub mod settings;
 
 // Re-export SDK types needed by the app crate

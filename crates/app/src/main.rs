@@ -8,7 +8,8 @@ mod server;
 
 use crate::i18n::init_i18n;
 use crate::routes::Route;
-use crate::server::get_aggregated_theme_css;
+use crate::server::{get_aggregated_theme_css, get_current_user};
+use rustineverything_core::session::SessionUser;
 
 /// Static assets used by the application.
 // Dioxus 0.7 默认在 crate root 的 assets 目录下寻找
@@ -25,7 +26,7 @@ fn main() {
       use tower_http::services::ServeDir;
       use axum::routing::get;
       use axum::extract::{Path, Query};
-      use axum::response::Redirect;
+      use axum::response::{IntoResponse, Redirect};
 
       // 加载 .env 环境变量
       dotenvy::dotenv().ok();
@@ -38,23 +39,49 @@ fn main() {
       };
 
       let router = dioxus::server::router(App)
-          // 1. 处理登录跳转：GET /api/auth/login/github -> Redirect to GitHub
+          // 1. 处理登录跳转
           .route("/api/auth/login/{provider}", get(|Path(provider): Path<String>| async move {
               if let Ok(url) = crate::server::get_login_url(provider).await {
-                  Redirect::temporary(&url)
+                  Redirect::temporary(&url).into_response()
               } else {
-                  Redirect::temporary("/")
+                  Redirect::temporary("/").into_response()
               }
           }))
-          // 2. 处理回调：GET /api/auth/callback/github?code=...&state=...
+          // 2. 处理 OAuth 回调：验证 + 签发 JWT Cookie + 跳转
           .route("/api/auth/callback/{provider}", get(|Path(provider): Path<String>, Query(params): Query<std::collections::HashMap<String, String>>| async move {
               let code = params.get("code").cloned().unwrap_or_default();
               let state = params.get("state").cloned();
-              if let Ok(msg) = crate::server::auth_callback(code, provider, state).await {
-                  Redirect::temporary(&format!("/?message={}", msg))
-              } else {
-                  Redirect::temporary("/?error=auth_failed")
+              match crate::server::auth_callback_internal(code, provider, state).await {
+                  Ok((_message, jwt_token)) => {
+                      let cookie = format!(
+                          "session={}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax",
+                          jwt_token
+                      );
+                      let mut response = Redirect::temporary("/").into_response();
+                      if let Ok(cookie_val) = cookie.parse() {
+                          response.headers_mut().insert(
+                              axum::http::header::SET_COOKIE,
+                              cookie_val,
+                          );
+                      }
+                      response
+                  }
+                  Err(e) => {
+                      eprintln!("[Auth Callback] Error: {}", e);
+                      Redirect::temporary("/?error=auth_failed").into_response()
+                  }
               }
+          }))
+          // 3. 登出：清除 Cookie
+          .route("/api/auth/logout", get(|| async {
+              let mut response = Redirect::temporary("/").into_response();
+              if let Ok(cookie_val) = "session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax".parse() {
+                  response.headers_mut().insert(
+                      axum::http::header::SET_COOKIE,
+                      cookie_val,
+                  );
+              }
+              response
           }))
           .nest_service("/images", ServeDir::new(format!("{}/images", assets_root)))
           .nest_service("/posts", ServeDir::new(format!("{}/posts", assets_root)))
@@ -70,9 +97,14 @@ fn main() {
   dioxus::launch(App);
 }
 
-/// 全局登录模态框状态，通过 Context 共享
+/// 全局登录模态框状态
 pub fn use_auth_modal() -> Signal<bool> {
   use_context::<Signal<bool>>()
+}
+
+/// 全局用户会话状态
+pub fn use_session_user() -> Signal<Option<SessionUser>> {
+  use_context::<Signal<Option<SessionUser>>>()
 }
 
 #[component]
@@ -80,6 +112,20 @@ fn App() -> Element {
   init_i18n();
   let show_auth = use_signal(|| false);
   use_context_provider(|| show_auth);
+
+  // 全局用户会话
+  let user: Signal<Option<SessionUser>> = use_signal(|| None);
+  use_context_provider(|| user);
+
+  // 加载当前用户
+  let mut user_signal = user;
+  use_effect(move || {
+      spawn(async move {
+          if let Ok(Some(u)) = get_current_user().await {
+              user_signal.set(Some(u));
+          }
+      });
+  });
 
   // Fetch aggregated theme CSS from WASM plugins
   let theme_css = use_resource(move || async move {
