@@ -1,4 +1,5 @@
 pub mod podcast;
+pub mod server;
 
 use rustineverything_sdk::AppModule;
 

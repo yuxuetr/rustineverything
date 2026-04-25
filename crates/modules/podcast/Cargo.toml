@@ -4,5 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dioxus = { workspace = true }
+dioxus = { workspace = true, features = ["fullstack"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+serde_yaml = { workspace = true, optional = true }
+chrono = { workspace = true, features = ["serde"] }
+tokio = { workspace = true, features = ["full"], optional = true }
 rustineverything-sdk = { path = "../../sdk" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+server = ["dioxus/server", "dep:tokio", "dep:serde_yaml"]

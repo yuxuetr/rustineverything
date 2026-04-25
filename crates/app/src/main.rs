@@ -88,6 +88,7 @@ fn main() {
           .nest_service("/js", ServeDir::new(format!("{}/js", assets_root)))
           .nest_service("/uploads", ServeDir::new(format!("{}/uploads", assets_root)))
           .nest_service("/audio", ServeDir::new(format!("{}/audio", assets_root)))
+          .nest_service("/podcasts", ServeDir::new(format!("{}/podcasts", assets_root)))
           .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)));
 
       Ok(router)

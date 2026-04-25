@@ -13,23 +13,39 @@
 
 ## 阶段二：内容模块补全
 
-### 2.1 文档系统 `/docs`
-- [ ] `assets/docs/` 下按目录组织 Markdown 文件
-- [ ] server function `list_doc_tree()` 和 `get_doc_content(path)`
-- [ ] 前端：左侧树形导航 + 右侧 Markdown 内容（复用 blog 的 Markdown 组件）
+### ✅ 2.1 文档系统 `/docs`（已完成）
+- [x] `assets/docs/` 按目录组织 Markdown，支持三级嵌套
+- [x] server function `list_doc_tree()` 和 `get_doc_content(path)`
+- [x] 自动扫描，从 `index.md` 提取标题，无需 `_meta.json`
+- [x] frontmatter 支持 SEO（title/description/keywords/image）
+- [x] `sidebar_label` / `sidebar_position` 侧栏控制
+- [x] `sort_children: asc/desc` 可逆序排序（周报场景）
+- [x] 前端布局：/docs 着陆页 + /docs/:path 树形导航 + Markdown 内容
+- [x] DocPage 注入 SEO meta 标签
+- [x] 15 个单元测试覆盖排序/嵌套/frontmatter 场景
 
-### 2.2 Podcast 动态化
-- [ ] 将 `const EPISODES` 迁移到 `assets/podcasts/`（YAML/JSON 元数据 + 音频文件）
-- [ ] server function `list_episodes()` 和 `get_episode(id)`
+### ✅ 2.2 Podcast 动态化（已完成）
+- [x] `assets/podcasts/<slug>/episode.yaml` 元数据格式（id/title/description/duration/date/audio_url/guest/tags）
+- [x] `crates/modules/podcast/src/server.rs` 新增 Episode 结构 + scan_episodes
+- [x] server function `list_episodes()` 和 `get_episode_by_id(id)`
+- [x] PodcastPage 重构为 use_resource 动态加载，加上嘉宾/标签显示
+- [x] `<PodcastCard id="...">` MDX 组件重构为独立组件（不再依赖 EPISODES const）
+- [x] `/podcasts` 静态路由使音频文件可访问
+- [x] audio_url 支持三种格式：绝对路径 / http URL / 相对路径（自动拼接）
+- [x] **自动检测音频文件**：YAML 中未填 audio_url 时扫描目录，支持 m4a/mp3/wav/ogg/flac/aac/opus/mpeg
+- [x] **零配置模式**：仅需放音频文件，无需 YAML 即可生成节目（title 从文件名推断、id 由 slug 哈希生成、date 从文件 mtime 读取）
+- [x] 默认按日期降序排序（同日期 id 大的在前）
+- [x] 18 个单元测试覆盖 YAML 解析、排序、URL 处理、音频检测、边界场景
 
 ### 2.3 课程系统 `/courses`
 - [ ] 新建 `crates/modules/course` crate
 - [ ] 定义 Course 数据模型（title, description, chapters, progress）
+- [ ] 数据库表 `course_progress` 记录用户学习进度
 - [ ] 章节列表展开、进度追踪（需登录）
 
 ### 2.4 论坛/话题系统 `/topics`
 - [ ] 新建 `crates/modules/forum` crate
-- [ ] 数据库表：topics, replies
+- [ ] 数据库表：`topics`(id, title, tag, content, user_id, created_at), `replies`
 - [ ] 发帖和回复需登录，浏览公开
 - [ ] 按 tag 分类 `/topics/:tag`
 
@@ -45,9 +61,21 @@
 - [ ] 方案选型：tantivy-wasm 或 PostgreSQL 全文检索
 
 ### 3.3 AI 与 Web3 页面
-- [ ] `/ai`：Rust AI 生态内容
+- [ ] `/ai`：Rust AI 生态内容（可复用文档系统为可选方案）
 - [ ] `/web3`：区块链教程与案例
 
 ### 3.4 Cases 案例展示
 - [ ] 真实 Rust 项目案例展示
 - [ ] GitHub 仓库嵌入和代码片段展示
+
+---
+
+## 下一步建议
+推荐进入 **2.3 课程系统**：
+- 进入需要数据库交互的阶段（记录学习进度）
+- 与 2.1 文档系统可复用扫描 + frontmatter 思路（课程元数据从目录生成）
+- 需要为进度追踪新建 `course_progress` 数据表。
+
+或者 **2.4 论坛系统**：
+- 与 2.3 复杂度相当，数据库驱动。
+- 需要使用阶段一的会话体系。

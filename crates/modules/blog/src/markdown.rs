@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 use pulldown_cmark::{Options, Parser, Event, Tag, CodeBlockKind, BlockQuoteKind};
 use serde::{Deserialize, Serialize};
-use rustineverything_module_podcast::podcast::EPISODES;
+use rustineverything_module_podcast::podcast::PodcastCard;
 use pulldown_latex::{Parser as LatexParser, Storage, push_mathml};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -227,18 +227,7 @@ fn render_mdx_registry(html: &str) -> Option<Element> {
     let clean_html = html.trim();
     if clean_html.contains("<PodcastCard") {
         let id = extract_attr(clean_html, "id")?.parse::<i32>().ok()?;
-        if let Some(episode) = EPISODES.iter().find(|e| e.id == id) {
-            return Some(rsx! {
-                div { class: "not-prose my-8 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm flex flex-col md:flex-row gap-6 items-center",
-                    div { class: "flex-1 w-full",
-                        div { class: "text-xs font-bold text-blue-600 uppercase tracking-widest mb-2", "Featured Podcast" }
-                        h4 { class: "text-xl font-extrabold text-slate-900 dark:text-white mb-2", "{episode.title}" }
-                        div { class: "text-sm text-slate-500 mb-4", "{episode.date} · {episode.duration}" }
-                        audio { class: "w-full h-10", controls: true, src: "{episode.url}" }
-                    }
-                }
-            });
-        }
+        return Some(rsx! { PodcastCard { id: id } });
     }
     if clean_html.contains("<YouTube") {
         let id = extract_attr(clean_html, "id")?;
