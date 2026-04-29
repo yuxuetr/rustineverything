@@ -44,6 +44,15 @@ body.no-anno .rie-anno {
 .rie-anno-toolbar .rie-style-underline,
 .rie-anno-toolbar .rie-style-wavy,
 .rie-anno-toolbar .rie-style-strike { background: #475569; font-weight: 700; }
+/* 从 /me/annotations 跳回原文时的闪烁高亮 */
+.rie-anno-flash {
+  animation: rie-anno-flash-kf 1.6s ease-out 0s 2;
+  border-radius: 4px;
+}
+@keyframes rie-anno-flash-kf {
+  0%   { background-color: rgba(59, 130, 246, 0.35); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25); }
+  100% { background-color: transparent; box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
 `;
   function ensureStyles() {
     if (document.getElementById('rie-anno-styles')) return;
@@ -257,6 +266,23 @@ body.no-anno .rie-anno {
     else document.addEventListener('DOMContentLoaded', () => setVisible(isVisible()), { once: true });
   }
 
+  // ---------- hash flash (从个人标注列表跳回原文时闪烁目标块) ----------
+  function flashTargetFromHash() {
+    const raw = (location.hash || '').replace(/^#/, '');
+    if (!raw) return;
+    const el = findBlock(raw) || document.getElementById(raw);
+    if (!el) return;
+    try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+    el.classList.remove('rie-anno-flash');
+    // 重启动画
+    void el.offsetWidth;
+    el.classList.add('rie-anno-flash');
+    setTimeout(() => el.classList.remove('rie-anno-flash'), 4000);
+  }
+  // 首次加载、路由 hash 变化、apply 完成后都重试一次
+  function tryFlashLater() { setTimeout(flashTargetFromHash, 50); }
+  window.addEventListener('hashchange', tryFlashLater);
+
   ensureStyles();
   applyInitialVisibility();
   window.RIE_ANNO = {
@@ -264,12 +290,17 @@ body.no-anno .rie-anno {
       window.RIE_ANNO_CTX = { kind: data.kind, path: data.path };
       window.__rieAnnoLast = data;
       apply(data);
+      // 标注渲染完后试着闪烁一下（此时 DOM 类名可能已包裹，闪烁背景更明显）
+      tryFlashLater();
     },
     captureSelection: captureSelection,
     isVisible: isVisible,
     setVisible: setVisible,
     toggleVisible: toggleVisible,
+    flashTargetFromHash: flashTargetFromHash,
   };
+  // 如果打开页面时已带 hash（所有 anno 资源准备好之前也允许先闪一下原生 block）
+  if (location.hash) tryFlashLater();
 
   // 处理之前存进 pending 的数据
   if (window.__rieAnnoPending) {

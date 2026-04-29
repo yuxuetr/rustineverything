@@ -1237,6 +1237,33 @@ fn model_to_annotation(m: rustineverything_core::entities::annotation::Model) ->
     }
 }
 
+/// 列出当前登录用户的全部标注（不受资源过滤，供个人标注列表页使用）。
+/// 未登录返回空。
+#[post("/api/annotations/list_my")]
+pub async fn list_my_annotations() -> Result<Vec<Annotation>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use rustineverything_core::entities::annotation;
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+        let user = match current_session_user() {
+            Some(u) => u,
+            None => return Ok(vec![]),
+        };
+        let db = open_db().await?;
+        let rows = annotation::Entity::find()
+            .filter(annotation::Column::UserId.eq(user.id))
+            .order_by_desc(annotation::Column::CreatedAt)
+            .all(&db)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(rows.into_iter().map(model_to_annotation).collect())
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        Ok(vec![])
+    }
+}
+
 #[post("/api/annotations/list")]
 pub async fn list_annotations(
     resource_kind: String,

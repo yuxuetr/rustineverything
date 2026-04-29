@@ -1,7 +1,8 @@
 use crate::server::{
-    get_annotations_config, get_course, get_last_lesson, get_lesson, get_progress, list_annotations,
-    list_courses, mark_lesson_complete, Annotation, AnnotationsConfig, Chapter, CodeFile, Course,
-    CourseSummary, DownloadFile, Lesson, LessonKind, LessonProgress, LessonSummary, MediaRef,
+    get_annotations_config, get_course, get_last_lesson, get_lesson, get_progress,
+    list_annotations, list_courses, list_my_annotations, mark_lesson_complete, Annotation,
+    AnnotationsConfig, Chapter, CodeFile, Course, CourseSummary, DownloadFile, Lesson, LessonKind,
+    LessonProgress, LessonSummary, MediaRef,
 };
 use dioxus::prelude::*;
 use rustineverything_module_blog::markdown::Markdown;
@@ -993,5 +994,197 @@ fn format_size(bytes: u64) -> String {
         format!("{:.1} KB", bytes as f64 / KB as f64)
     } else {
         format!("{} B", bytes)
+    }
+}
+
+// ============================================================
+// /me/annotations　个人标注列表页（Feature 3）
+// ============================================================
+
+/// 个人标注列表页：拉取当前用户全部标注，按 (resource_kind, resource_path) 分组。
+/// 点击可跳回原文位置（附带 #b{block_id}，由 annotations.js 负责闪烁高亮）。
+#[component]
+pub fn MyAnnotationsPage() -> Element {
+    let res = use_resource(|| async move { list_my_annotations().await.unwrap_or_default() });
+    let state = res.read().as_ref().cloned();
+    rsx! {
+        section { class: "py-12 min-h-screen bg-[var(--color-bg)] transition-colors duration-300",
+            LocalContainer {
+                LocalSectionTitle {
+                    title: "我的标注".to_string(),
+                    subtitle: Some("按资源分组、按创建时间倒序".to_string())
+                }
+                match state {
+                    None => rsx! {
+                        div { class: "flex items-center justify-center py-20",
+                            div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                        }
+                    },
+                    Some(list) if list.is_empty() => rsx! {
+                        div { class: "text-center text-slate-500 py-20",
+                            p { class: "mb-2", "还没有任何标注。" }
+                            p { class: "text-sm", "在文档 / 课程 / 博客页选中文本即可创建标注；如未登录请先登录。" }
+                        }
+                    },
+                    Some(list) => rsx! {
+                        div { class: "space-y-8 max-w-4xl mx-auto",
+                            for group in group_annotations(list).into_iter() {
+                                AnnotationGroupCard { group: group }
+                            }
+                        }
+                    },
+                }
+            }
+        }
+    }
+}
+
+/// 一组 (kind, path) 下的标注
+#[derive(Clone, PartialEq)]
+struct AnnoGroup {
+    kind: String,
+    path: String,
+    items: Vec<Annotation>,
+}
+
+/// 按 (kind, path) 分组，组内保持输入序。输入已按 created_at desc，因此输出也是。
+fn group_annotations(list: Vec<Annotation>) -> Vec<AnnoGroup> {
+    let mut groups: Vec<AnnoGroup> = Vec::new();
+    for a in list {
+        let key = (a.resource_kind.clone(), a.resource_path.clone());
+        if let Some(g) = groups
+            .iter_mut()
+            .find(|g| g.kind == key.0 && g.path == key.1)
+        {
+            g.items.push(a);
+        } else {
+            groups.push(AnnoGroup {
+                kind: key.0,
+                path: key.1,
+                items: vec![a],
+            });
+        }
+    }
+    groups
+}
+
+/// 根据 (kind, path, block_id) 拼接原文跳转链接
+fn build_jump_url(kind: &str, path: &str, block_id: &str) -> String {
+    let hash = if block_id.is_empty() {
+        String::new()
+    } else {
+        format!("#{}", block_id)
+    };
+    match kind {
+        "course" => format!("/course/{}{}", path, hash),
+        "doc" => format!("/docs/{}{}", path, hash),
+        "blog" => format!("/blog/{}{}", path, hash),
+        _ => format!("/{}{}", path, hash),
+    }
+}
+
+fn kind_badge(kind: &str) -> (&'static str, &'static str) {
+    match kind {
+        "course" => ("📚", "课程"),
+        "doc" => ("📄", "文档"),
+        "blog" => ("✍️", "博客"),
+        _ => ("🔖", kind_label_fallback(kind)),
+    }
+}
+
+fn kind_label_fallback(kind: &str) -> &'static str {
+    match kind {
+        "course" => "课程",
+        "doc" => "文档",
+        "blog" => "博客",
+        _ => "资源",
+    }
+}
+
+fn style_swatch_class(style: &str) -> &'static str {
+    match style {
+        "yellow" => "bg-yellow-300/60",
+        "green" => "bg-green-400/60",
+        "blue" => "bg-blue-400/60",
+        "pink" => "bg-pink-400/60",
+        "purple" => "bg-purple-400/60",
+        "underline" => "underline decoration-2 underline-offset-2",
+        "wavy" => "underline decoration-wavy decoration-2 underline-offset-2",
+        "strikethrough" => "line-through decoration-2",
+        _ => "bg-yellow-300/60",
+    }
+}
+
+#[component]
+fn AnnotationGroupCard(group: AnnoGroup) -> Element {
+    let (icon, label) = kind_badge(&group.kind);
+    let header_url = build_jump_url(&group.kind, &group.path, "");
+    rsx! {
+        div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden",
+            // 资源头
+            a { href: "{header_url}",
+                class: "flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors",
+                div { class: "flex items-center gap-2 min-w-0",
+                    span { class: "text-base", "{icon}" }
+                    span { class: "text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500",
+                        "{label}"
+                    }
+                    span { class: "text-sm font-medium text-slate-700 dark:text-slate-200 truncate",
+                        "{group.path}"
+                    }
+                }
+                span { class: "text-xs text-slate-400 dark:text-slate-500 flex-shrink-0",
+                    "{group.items.len()} 条"
+                }
+            }
+            // 标注条目
+            ul {
+                for anno in group.items.iter() {
+                    AnnotationListItem {
+                        kind: group.kind.clone(),
+                        path: group.path.clone(),
+                        anno: anno.clone(),
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn AnnotationListItem(kind: String, path: String, anno: Annotation) -> Element {
+    let url = build_jump_url(&kind, &path, &anno.block_id);
+    let swatch = style_swatch_class(&anno.style);
+    rsx! {
+        li { class: "border-b last:border-b-0 border-slate-100 dark:border-slate-800/60",
+            a { href: "{url}",
+                class: "flex items-start gap-3 px-5 py-4 hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors",
+                // 颜色/样式快识
+                span { class: "flex-shrink-0 w-2.5 h-2.5 rounded-full mt-1.5 {swatch}" }
+                div { class: "flex-1 min-w-0",
+                    // 选中文本快照
+                    blockquote { class: "text-sm text-slate-800 dark:text-slate-100 leading-relaxed line-clamp-3 border-l-2 border-slate-300 dark:border-slate-700 pl-3",
+                        "{anno.exact_text}"
+                    }
+                    if let Some(note) = anno.note.as_ref() {
+                        if !note.is_empty() {
+                            p { class: "mt-2 text-xs text-slate-500 dark:text-slate-400 italic",
+                                "📝 {note}"
+                            }
+                        }
+                    }
+                    div { class: "mt-2 flex items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500",
+                        span { "{anno.created_at}" }
+                        span { "·" }
+                        span { "{anno.style}" }
+                        span { "·" }
+                        span { class: "truncate", "#{anno.block_id}" }
+                    }
+                }
+                span { class: "flex-shrink-0 self-center text-blue-600 dark:text-blue-400 text-sm",
+                    "跳转 →"
+                }
+            }
+        }
     }
 }

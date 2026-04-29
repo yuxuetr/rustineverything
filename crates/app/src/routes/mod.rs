@@ -9,7 +9,7 @@ use crate::server::{list_doc_tree, get_doc_content, DocTreeNode};
 use rustineverything_module_blog::markdown::Markdown;
 use rustineverything_module_blog::server::{get_blog_content, list_blog_posts};
 use rustineverything_module_course::course::{
-    AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage,
+    AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
 };
 use rustineverything_module_podcast::podcast::PodcastPage;
 
@@ -55,6 +55,10 @@ pub enum Route {
         TopicsIndex {},
         #[route("/topics/:tag")]
         Topic { tag: String },
+
+        // 个人中心：标注管理
+        #[route("/me/annotations")]
+        MyAnnotations {},
 }
 
 /// Home page
@@ -637,4 +641,10 @@ pub fn Podcast() -> Element {
   rsx! {
       PodcastPage {}
   }
+}
+
+/// /me/annotations 个人标注列表页
+#[component]
+pub fn MyAnnotations() -> Element {
+  rsx! { MyAnnotationsPage {} }
 }
