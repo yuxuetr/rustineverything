@@ -111,13 +111,15 @@ echo "→ [3] list_annotations 应包含 baseline + 5 条新数据"
 RESP=$(post_json /api/annotations/list "{\"resource_kind\":\"$KIND\",\"resource_path\":\"$PATHV\"}")
 EXPECT=$((BASE_COUNT + 5))
 GOT=$(echo "$RESP" | count_items)
-echo "    期望 $EXPECT，实际 $GOT"
-[[ "$GOT" == "$EXPECT" ]] || { echo "    ✗ 数量不一致" >&2; exit 1; }
+echo "    期望 ${EXPECT}，实际 ${GOT}"
+[[ "${GOT}" == "${EXPECT}" ]] || { echo "    ✗ 数量不一致" >&2; exit 1; }
 
 # 校验每条 style 与 visibility 都被原样存下
-echo "$RESP" | python3 - <<PY
+# 注：不能同时用管道 + heredoc 作为 stdin——heredoc 会抢占 stdin。
+# 改用 argv 传 JSON。
+python3 - "$RESP" <<'PY'
 import json, sys
-d = json.load(sys.stdin)
+d = json.loads(sys.argv[1])
 seen = {(a["style"], a["visibility"]) for a in d}
 need = {("yellow","private"),("blue","course-public"),("underline","doc-public"),
         ("wavy","public"),("strikethrough","private")}
@@ -131,17 +133,17 @@ PY
 echo "→ [4] list_my_annotations 应该至少包含本次的 5 条"
 RESP=$(post_json /api/annotations/list_my "{}")
 TOTAL=$(echo "$RESP" | count_items)
-echo "    个人列表总数：$TOTAL（≥ 5 即可）"
-[[ "$TOTAL" -ge 5 ]] || { echo "    ✗ 数量不足" >&2; exit 1; }
+echo "    个人列表总数：${TOTAL}（≥ 5 即可）"
+[[ "${TOTAL}" -ge 5 ]] || { echo "    ✗ 数量不足" >&2; exit 1; }
 
 # -- 5. update one annotation -------------------------------------------
 TARGET="${IDS[0]}"   # 第一条 yellow/private
-echo "→ [5] 更新 id=$TARGET：style=yellow→pink, visibility=private→public"
+echo "→ [5] 更新 id=${TARGET}：style=yellow→pink, visibility=private→public"
 R=$(post_json /api/annotations/update \
-  "{\"id\":$TARGET,\"style\":\"pink\",\"note\":null,\"visibility\":\"public\"}")
+  "{\"id\":${TARGET},\"style\":\"pink\",\"note\":null,\"visibility\":\"public\"}")
 NEW_STYLE=$(echo "$R" | python3 -c "import json,sys; print(json.load(sys.stdin)['style'])")
 NEW_VIS=$(echo "$R" | python3 -c "import json,sys; print(json.load(sys.stdin)['visibility'])")
-echo "    服务端返回 style=$NEW_STYLE visibility=$NEW_VIS"
+echo "    服务端返回 style=${NEW_STYLE} visibility=${NEW_VIS}"
 [[ "$NEW_STYLE" == "pink" && "$NEW_VIS" == "public" ]] \
   || { echo "    ✗ 更新未持久化" >&2; exit 1; }
 
@@ -158,12 +160,12 @@ print('OK' if a and a['style']=='pink' and a['visibility']=='public' else 'FAIL'
 
 # -- 6. delete one ------------------------------------------------------
 DEL="${IDS[1]}"
-echo "→ [6] 删除 id=$DEL，list 应少 1 条"
-post_json /api/annotations/delete "{\"id\":$DEL}" >/dev/null
+echo "→ [6] 删除 id=${DEL}，list 应少 1 条"
+post_json /api/annotations/delete "{\"id\":${DEL}}" >/dev/null
 RESP=$(post_json /api/annotations/list "{\"resource_kind\":\"$KIND\",\"resource_path\":\"$PATHV\"}")
 GOT=$(echo "$RESP" | count_items)
-[[ "$GOT" == $((EXPECT - 1)) ]] && echo "    ✓ 数量正确 ($GOT)" \
-  || { echo "    ✗ 数量异常 $GOT，期望 $((EXPECT - 1))" >&2; exit 1; }
+[[ "${GOT}" == $((EXPECT - 1)) ]] && echo "    ✓ 数量正确 (${GOT})" \
+  || { echo "    ✗ 数量异常 ${GOT}，期望 $((EXPECT - 1))" >&2; exit 1; }
 
 # -- 7. cleanup ---------------------------------------------------------
 echo "→ [7] 清理剩余测试数据"
@@ -173,8 +175,8 @@ for id in "${IDS[@]}"; do
 done
 RESP=$(post_json /api/annotations/list "{\"resource_kind\":\"$KIND\",\"resource_path\":\"$PATHV\"}")
 FINAL=$(echo "$RESP" | count_items)
-[[ "$FINAL" == "$BASE_COUNT" ]] && echo "    ✓ 已恢复 baseline=$BASE_COUNT" \
-  || echo "    ⚠ 清理后剩余 $FINAL（期望 $BASE_COUNT）"
+[[ "${FINAL}" == "${BASE_COUNT}" ]] && echo "    ✓ 已恢复 baseline=${BASE_COUNT}" \
+  || echo "    ⚠ 清理后剩余 ${FINAL}（期望 ${BASE_COUNT}）"
 
 echo ""
 echo "✅ 全流程通过：5 条 (style, visibility) 入库 / 更新生效 / 删除生效"
