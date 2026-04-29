@@ -63,6 +63,23 @@ body.no-anno .rie-anno {
   0%   { background-color: rgba(59, 130, 246, 0.35); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25); }
   100% { background-color: transparent; box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
 }
+/* 可见性 toggle：右上角固定小点。Tailwind 在项目中是预编译的，仅收录已使用的类，所以这里手写原样式以保证定位生效。 */
+.rie-anno-toggle {
+  position: fixed; top: 80px; right: 16px; z-index: 50;
+  width: 32px; height: 32px; padding: 0; border: 1px solid rgba(148, 163, 184, 0.4);
+  border-radius: 999px; background: rgba(255, 255, 255, 0.85);
+  color: #475569; cursor: pointer; backdrop-filter: blur(6px);
+  display: inline-flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.rie-anno-toggle:hover { background: rgba(255, 255, 255, 1); color: #0f172a; }
+.rie-anno-toggle.is-off { color: #94a3b8; }
+.rie-anno-toggle svg { width: 16px; height: 16px; }
+@media (prefers-color-scheme: dark) {
+  .rie-anno-toggle { background: rgba(15, 23, 42, 0.8); color: #cbd5e1; border-color: rgba(71, 85, 105, 0.5); }
+  .rie-anno-toggle:hover { background: rgba(15, 23, 42, 1); color: #f8fafc; }
+}
 `;
   function ensureStyles() {
     if (document.getElementById('rie-anno-styles')) return;
@@ -91,20 +108,47 @@ body.no-anno .rie-anno {
     return null;
   }
 
-  /** 用 Range 包裹 [start,end) 文本，加 class */
+  /** 收集 root 下与字符区间 [start,end) 重叠的 text node 段 */
+  function collectSegments(root, start, end) {
+    const segs = [];
+    if (end <= start) return segs;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    let acc = 0;
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const len = node.nodeValue.length;
+      const ns = acc, ne = acc + len;
+      const os = Math.max(start, ns);
+      const oe = Math.min(end, ne);
+      if (os < oe) segs.push({ node, localStart: os - ns, localEnd: oe - ns });
+      acc = ne;
+      if (acc >= end) break;
+    }
+    return segs;
+  }
+
+  /** 用一个或多个 span 包裹 [start,end) 文本，加 class。
+   *  如果范围跨越已有的 <span class="rie-anno">，会拆成多段逐个包裹，
+   *  避免 Range.surroundContents 跨节点报错。返回是否至少包裹了一段。 */
   function wrapRange(root, start, end, klass, dataAnnoId) {
-    if (end <= start) return false;
-    const a = locateOffset(root, start);
-    const b = locateOffset(root, end);
-    if (!a || !b) return false;
-    const range = document.createRange();
-    range.setStart(a.node, a.idx);
-    range.setEnd(b.node, b.idx);
-    const span = document.createElement('span');
-    span.className = `rie-anno ${klass}`;
-    if (dataAnnoId != null) span.setAttribute('data-anno-id', dataAnnoId);
-    try { range.surroundContents(span); return true; }
-    catch (_) { return false; } // 跨多个父节点时 surroundContents 会失败 — v1 忽略
+    const segs = collectSegments(root, start, end);
+    if (segs.length === 0) return false;
+    let any = false;
+    for (const seg of segs) {
+      try {
+        const range = document.createRange();
+        range.setStart(seg.node, seg.localStart);
+        range.setEnd(seg.node, seg.localEnd);
+        const span = document.createElement('span');
+        span.className = `rie-anno ${klass}`;
+        if (dataAnnoId != null) span.setAttribute('data-anno-id', dataAnnoId);
+        range.surroundContents(span);
+        any = true;
+      } catch (_) {
+        // 某段包裹失败（极少见）不中断其他段
+      }
+    }
+    return any;
   }
 
   function styleClass(style) {
@@ -132,12 +176,11 @@ body.no-anno .rie-anno {
       if (item.author_nickname) cls += ' rie-anno-by-other';
       const ok = wrapRange(block, item.start_offset, item.end_offset, cls, item.id);
       if (ok && item.author_nickname) {
-        // 在刚创建的 span 上补 title（鼠标悬停显示作者）
-        const span = block.querySelector(`span.rie-anno[data-anno-id="${cssEscape(item.id)}"]`);
-        if (span) {
-          const note = item.note ? ` · 备注: ${item.note}` : '';
-          span.setAttribute('title', `作者: ${item.author_nickname}${note}`);
-        }
+        // 可能跨 text node 产生多个 span，统一补 title
+        const note = item.note ? ` · 备注: ${item.note}` : '';
+        block
+          .querySelectorAll(`span.rie-anno[data-anno-id="${cssEscape(item.id)}"]`)
+          .forEach(s => s.setAttribute('title', `作者: ${item.author_nickname}${note}`));
       }
     });
   }
