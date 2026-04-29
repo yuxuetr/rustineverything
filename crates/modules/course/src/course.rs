@@ -625,7 +625,46 @@ pub fn AnnotationLayer(resource_kind: String, resource_path: String) -> Element 
         });
     });
 
-    rsx! { div { class: "hidden" } }
+    rsx! { AnnotationToggle {} }
+}
+
+/// 浮动"眼睛"按钮：切换 body.no-anno 类以隐藏/显示标注样式（仅视图层，数据不动）
+#[component]
+fn AnnotationToggle() -> Element {
+    // 初始读取当前 localStorage 状态，保持按钮图标与实际可见性一致
+    let mut visible = use_signal(|| true);
+    use_effect(move || {
+        spawn(async move {
+            let js = "return (window.RIE_ANNO && window.RIE_ANNO.isVisible) ? !!window.RIE_ANNO.isVisible() : true;";
+            if let Ok(v) = dioxus::document::eval(js).recv::<bool>().await {
+                visible.set(v);
+            }
+        });
+    });
+
+    rsx! {
+        button {
+            r#type: "button",
+            title: if visible() { "隐藏标注" } else { "显示标注" },
+            "aria-label": if visible() { "隐藏标注" } else { "显示标注" },
+            class: "fixed bottom-6 right-6 z-40 w-11 h-11 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 bg-white/90 dark:bg-slate-900/90 backdrop-blur hover:bg-white dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-colors",
+            onclick: move |_| {
+                spawn(async move {
+                    let js = "return (window.RIE_ANNO && window.RIE_ANNO.toggleVisible) ? !!window.RIE_ANNO.toggleVisible() : true;";
+                    if let Ok(v) = dioxus::document::eval(js).recv::<bool>().await {
+                        visible.set(v);
+                    }
+                });
+            },
+            if visible() {
+                // 睁眼
+                span { class: "text-lg", "👁" }
+            } else {
+                // 闭眼
+                span { class: "text-lg opacity-60", "🚫" }
+            }
+        }
+    }
 }
 
 /// 把标注数据交给 `assets/js/annotations.js` 来在 DOM 上包裹 span

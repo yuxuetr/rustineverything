@@ -22,6 +22,11 @@
 .rie-anno-underline { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .rie-anno-wavy { text-decoration: underline wavy; text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .rie-anno-strikethrough { text-decoration: line-through; text-decoration-thickness: 2px; }
+/* 隐藏标注视图层（仅 CSS，不影响数据） */
+body.no-anno .rie-anno {
+  background: transparent !important;
+  text-decoration: none !important;
+}
 .rie-anno-toolbar {
   position: absolute; z-index: 9999; display: flex; gap: 4px;
   padding: 4px 6px; border-radius: 8px; background: #0f172a; color: #fff;
@@ -230,7 +235,30 @@
     hideToolbar();
   });
 
+  // ---------- visibility toggle ----------
+  const VIS_KEY = 'rie-anno-visible';
+  function isVisible() {
+    try { return localStorage.getItem(VIS_KEY) !== '0'; }
+    catch (_) { return true; }
+  }
+  function setVisible(v) {
+    try { localStorage.setItem(VIS_KEY, v ? '1' : '0'); } catch (_) {}
+    if (v) document.body.classList.remove('no-anno');
+    else document.body.classList.add('no-anno');
+  }
+  function toggleVisible() {
+    const next = !isVisible();
+    setVisible(next);
+    return next;
+  }
+  // 初始同步 body class。document.body 可能在脚本加载时尚不存在，延迟一下。
+  function applyInitialVisibility() {
+    if (document.body) setVisible(isVisible());
+    else document.addEventListener('DOMContentLoaded', () => setVisible(isVisible()), { once: true });
+  }
+
   ensureStyles();
+  applyInitialVisibility();
   window.RIE_ANNO = {
     apply: function (data) {
       window.RIE_ANNO_CTX = { kind: data.kind, path: data.path };
@@ -238,6 +266,9 @@
       apply(data);
     },
     captureSelection: captureSelection,
+    isVisible: isVisible,
+    setVisible: setVisible,
+    toggleVisible: toggleVisible,
   };
 
   // 处理之前存进 pending 的数据
