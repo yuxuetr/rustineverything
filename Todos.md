@@ -45,9 +45,19 @@
 - [x] `/courses` 列表页 + `/courses/:slug` Hero+手风琴+进度条 + `/courses/:slug/:chapter/:lesson` 课节页
 - [x] 数据库表 `course_progress`（lesson 粒度）+ SeaORM Entity + 4 个 server fn（list/get/get_lesson/get_progress/mark_lesson_complete/get_last_lesson）
 - [x] Hero "继续学习" + Lesson "完成本节" 按钮 + 完成勾选
-- [x] **标注系统**：`annotations` 表 + 4 个 server fn + `assets/js/annotations.js` 运行时（5 色 / 下划线 / 波浪线 / 删除线）+ `site.json` 全局开关
-- [x] 文档：`docs/COURSE_SPEC.md`、`docs/ANNOTATION_SPEC.md`
-- 遗留待实施：Markdown 渲染层注入 `data-block-id`（启用标注可视回放）、标注 visibility 选择 UI、孤儿标注修复面板
+- [x] **标注系统 v1**：`annotations` 表 + 4 个 server fn + `assets/js/annotations.js` 运行时（5 色 / 下划线 / 波浪线 / 删除线）+ `site.json` 全局开关
+- [x] **标注系统 v2**（PR-D 继续）：
+  - [x] Markdown 渲染层注入 `data-block-id`（`crates/modules/blog/src/markdown.rs`）启用可视回放
+  - [x] 博客页接入标注 + `site.json.annotations.blog=true`
+  - [x] 顶部隐藏/显示标注的眼睛 toggle（右下角浮动按钮 + body.no-anno）
+  - [x] `/me/annotations` 个人标注列表页：按资源分组 + #bN 跳转闪烁高亮
+  - [x] visibility 面板：工具条加 4 选项（private / course-public / doc-public / public），`list_annotations` 考虑他人公开标注并回填 `author_nickname`
+  - [x] `normalize_visibility` 对未知/恶意值兵底为 `private`
+  - [x] 标注 DOM 包裹重写：跨已有 span 的选区拆多段逐个 `surroundContents`；create 后仅增量包裹不全量重画（修复多样式交替漏画）
+  - [x] 39 个单元测试（24 已有 + 15 标注专项）+ `scripts/test_annotations.sh` 端到端冒烟脚本
+  - [x] 4 项边界用例验证（visibility 注入 / 缺省 / 未启用 kind / update 注入）
+- [x] 文档：`docs/COURSE_SPEC.md`、`docs/ANNOTATION_SPEC.md`（v2 重写）
+- 遗留待实施：跨块选区拆分、孤儿标注修复面板、页面级 frontmatter `annotations: false` 读取
 
 ### 2.4 论坛/话题系统 `/topics`
 - [ ] 新建 `crates/modules/forum` crate
@@ -77,11 +87,11 @@
 ---
 
 ## 下一步建议
-推荐进入 **2.3 课程系统**：
-- 进入需要数据库交互的阶段（记录学习进度）
-- 与 2.1 文档系统可复用扫描 + frontmatter 思路（课程元数据从目录生成）
-- 需要为进度追踪新建 `course_progress` 数据表。
+推荐进入 **2.4 论坛系统**：
+- 2.1 / 2.2 / 2.3 都已闭环，论坛是阶段二最后一块
+- 复杂度与 2.3 相当：数据库驱动 + 阶段一会话体系
+- 可复用：评论系统的 `comments` 表设计模式、课程的三级扫描思路、标注系统的资源鉴权
 
-或者 **2.4 论坛系统**：
-- 与 2.3 复杂度相当，数据库驱动。
-- 需要使用阶段一的会话体系。
+或者补齐 **2.3 遗留**：
+- 跨块选区拆分（如果实际使用中发现跨块需求高）
+- 孤儿标注修复面板（课程正文发生较大修改后才会需要）
