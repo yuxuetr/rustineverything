@@ -13,6 +13,7 @@ serde_json.workspace = true
 rustineverything-core = { path = "../core" }
 rustineverything-module-blog = { path = "../modules/blog" }
 rustineverything-module-podcast = { path = "../modules/podcast" }
+rustineverything-module-course = { path = "../modules/course" }
 pulldown-cmark = "0.13.0"
 chrono = { workspace = true, features = ["serde"] }
 
@@ -37,6 +38,7 @@ server = [
     "rustineverything-core/server",
     "rustineverything-module-blog/server",
     "rustineverything-module-podcast/server",
+    "rustineverything-module-course/server",
     "dep:tokio",
     "dep:axum",
     "dep:dotenvy",

@@ -37,11 +37,17 @@
 - [x] 默认按日期降序排序（同日期 id 大的在前）
 - [x] 18 个单元测试覆盖 YAML 解析、排序、URL 处理、音频检测、边界场景
 
-### 2.3 课程系统 `/courses`
-- [ ] 新建 `crates/modules/course` crate
-- [ ] 定义 Course 数据模型（title, description, chapters, progress）
-- [ ] 数据库表 `course_progress` 记录用户学习进度
-- [ ] 章节列表展开、进度追踪（需登录）
+### ✅ 2.3 课程系统 `/courses`（已完成）
+- [x] 新建 `crates/modules/course` crate
+- [x] Course → Chapter → Lesson 三级模型（`Doc | Video | Audio | Code` 自适应布局）
+- [x] `assets/courses/` 约定目录 + `course.yaml` / `_chapter.yaml` / Markdown frontmatter
+- [x] LessonKind 推断 + 媒体/代码/附件/图片自动扫描
+- [x] `/courses` 列表页 + `/courses/:slug` Hero+手风琴+进度条 + `/courses/:slug/:chapter/:lesson` 课节页
+- [x] 数据库表 `course_progress`（lesson 粒度）+ SeaORM Entity + 4 个 server fn（list/get/get_lesson/get_progress/mark_lesson_complete/get_last_lesson）
+- [x] Hero "继续学习" + Lesson "完成本节" 按钮 + 完成勾选
+- [x] **标注系统**：`annotations` 表 + 4 个 server fn + `assets/js/annotations.js` 运行时（5 色 / 下划线 / 波浪线 / 删除线）+ `site.json` 全局开关
+- [x] 文档：`docs/COURSE_SPEC.md`、`docs/ANNOTATION_SPEC.md`
+- 遗留待实施：Markdown 渲染层注入 `data-block-id`（启用标注可视回放）、标注 visibility 选择 UI、孤儿标注修复面板
 
 ### 2.4 论坛/话题系统 `/topics`
 - [ ] 新建 `crates/modules/forum` crate

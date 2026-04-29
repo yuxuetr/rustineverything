@@ -89,6 +89,7 @@ fn main() {
           .nest_service("/uploads", ServeDir::new(format!("{}/uploads", assets_root)))
           .nest_service("/audio", ServeDir::new(format!("{}/audio", assets_root)))
           .nest_service("/podcasts", ServeDir::new(format!("{}/podcasts", assets_root)))
+          .nest_service("/courses", ServeDir::new(format!("{}/courses", assets_root)))
           .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)));
 
       Ok(router)
@@ -200,6 +201,9 @@ fn App() -> Element {
       // Mermaid.js for diagram rendering
       document::Script { src: "/js/mermaid.min.js" }
       document::Script { "mermaid.initialize({{ startOnLoad: true, theme: 'default' }});" }
+
+      // 运行时标注运行时（PR-D）
+      document::Script { src: "/js/annotations.js" }
 
       // Main router entry
       Router::<Route> {}

@@ -5,9 +5,10 @@ use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
 use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
-use crate::server::{list_doc_tree, get_doc_content, DocTreeNode, DocContentResponse};
+use crate::server::{list_doc_tree, get_doc_content, DocTreeNode};
 use rustineverything_module_blog::markdown::Markdown;
 use rustineverything_module_blog::server::{get_blog_content, list_blog_posts};
+use rustineverything_module_course::course::{CourseDetailPage, CoursesIndexPage, LessonPage};
 use rustineverything_module_podcast::podcast::PodcastPage;
 
 /// Application routes
@@ -31,8 +32,13 @@ pub enum Route {
         #[route("/podcast")]
         Podcast {},
 
-        #[route("/courses")]
+        // 注意：SPA 路由使用单数 /course，避免与静态 ServeDir(/courses) 冲突
+        #[route("/course")]
         Courses {},
+        #[route("/course/:slug")]
+        CourseDetail { slug: String },
+        #[route("/course/:slug/:chapter/:lesson")]
+        Lesson { slug: String, chapter: String, lesson: String },
 
         #[route("/cases")]
         Cases {},
@@ -533,32 +539,17 @@ pub fn Blog(id: String) -> Element {
 
 #[component]
 pub fn Courses() -> Element {
-  rsx! {
-      section { class: "py-12 bg-white dark:bg-slate-950",
-          Container {
-              SectionTitle { title: "课程".to_string(), subtitle: Some("系统化学习路径".to_string()) }
-              div { class: "max-w-3xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6",
-                  CourseItem { name: "Rust 基础与所有权", progress: "100%" }
-                  CourseItem { name: "异步与 Tokio 实战", progress: "0%" }
-                  CourseItem { name: "全栈：Dioxus + ServerFn", progress: "0%" }
-                  CourseItem { name: "Wasm：前端与性能", progress: "0%" }
-              }
-          }
-      }
-  }
+  rsx! { CoursesIndexPage {} }
 }
 
 #[component]
-fn CourseItem(name: &'static str, progress: &'static str) -> Element {
-    rsx! {
-        div { class: "p-6 rounded-xl border border-slate-200 dark:border-slate-800",
-            h4 { class: "font-bold text-slate-900 dark:text-white mb-2", "{name}" }
-            div { class: "w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden",
-                div { class: "bg-blue-600 h-full", style: "width: {progress}" }
-            }
-            div { class: "mt-2 text-right text-xs text-slate-500", "{progress}" }
-        }
-    }
+pub fn CourseDetail(slug: String) -> Element {
+  rsx! { CourseDetailPage { slug: slug } }
+}
+
+#[component]
+pub fn Lesson(slug: String, chapter: String, lesson: String) -> Element {
+  rsx! { LessonPage { slug: slug, chapter: chapter, lesson: lesson } }
 }
 
 #[component]

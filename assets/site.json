@@ -20,5 +20,10 @@
       { "id": "discord", "plugin": "discord_auth_plugin.wasm" },
       { "id": "twitter", "plugin": "twitter_auth_plugin.wasm" }
     ]
+  },
+  "annotations": {
+    "course": true,
+    "doc": true,
+    "blog": false
   }
 }

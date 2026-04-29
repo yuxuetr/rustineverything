@@ -47,8 +47,9 @@ pub fn Markdown(props: MarkdownProps) -> Element {
     let parser = Parser::new_ext(&body, options);
     let mut it = parser.peekable();
     
-    // 渲染流，传入 blog_id
-    let elements = render_stream(&mut it, &props.blog_id);
+    // 渲染流，传入 blog_id；同时按顶层块编号注入 data-block-id 供标注定错
+    let mut block_idx: usize = 1;
+    let elements = render_stream(&mut it, &props.blog_id, &mut block_idx, true);
 
     use_effect(move || {
         // 轮询等待 Prism 和语言包加载完成，同时触发 Mermaid 渲染
@@ -70,7 +71,12 @@ pub fn Markdown(props: MarkdownProps) -> Element {
     }
 }
 
-fn render_stream<'a>(it: &mut std::iter::Peekable<Parser<'a>>, blog_id: &str) -> Vec<Element> {
+fn render_stream<'a>(
+    it: &mut std::iter::Peekable<Parser<'a>>,
+    blog_id: &str,
+    block_idx: &mut usize,
+    top: bool,
+) -> Vec<Element> {
     let mut nodes = Vec::new();
 
     while let Some(event) = it.next() {
@@ -90,10 +96,11 @@ fn render_stream<'a>(it: &mut std::iter::Peekable<Parser<'a>>, blog_id: &str) ->
                         _ => {}
                     }
                 }
+                let id = mint_block_id(top, block_idx);
                 if lang == "mermaid" {
-                    nodes.push(render_mermaid_block(code_text));
+                    nodes.push(render_mermaid_block(code_text, id));
                 } else {
-                    nodes.push(render_code_block(lang, code_text));
+                    nodes.push(render_code_block(lang, code_text, id));
                 }
             }
             Event::Start(Tag::TableHead) => {
@@ -102,7 +109,7 @@ fn render_stream<'a>(it: &mut std::iter::Peekable<Parser<'a>>, blog_id: &str) ->
                 while let Some(event) = it.next() {
                     match event {
                         Event::Start(Tag::TableCell) => {
-                            let cell_children = render_stream(it, blog_id);
+                            let cell_children = render_stream(it, blog_id, block_idx, false);
                             header_cells.push(rsx! {
                                 th { class: "px-4 py-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-300",
                                     {cell_children.into_iter()}
@@ -120,8 +127,9 @@ fn render_stream<'a>(it: &mut std::iter::Peekable<Parser<'a>>, blog_id: &str) ->
                 });
             }
             Event::Start(tag) => {
-                let children = render_stream(it, blog_id);
-                nodes.push(render_tag(tag, children, blog_id));
+                let id = mint_block_id(top, block_idx);
+                let children = render_stream(it, blog_id, block_idx, false);
+                nodes.push(render_tag(tag, children, blog_id, id));
             }
             Event::End(_) => break,
             Event::Text(text) => nodes.push(rsx! { "{text}" }),
@@ -159,24 +167,64 @@ fn render_stream<'a>(it: &mut std::iter::Peekable<Parser<'a>>, blog_id: &str) ->
     nodes
 }
 
-fn render_tag(tag: Tag, children: Vec<Element>, blog_id: &str) -> Element {
+/// 在顶层块上递增生成 "b{N}" 序号；不在顶层返回 None
+fn mint_block_id(top: bool, block_idx: &mut usize) -> Option<String> {
+    if !top {
+        return None;
+    }
+    let n = *block_idx;
+    *block_idx += 1;
+    Some(format!("b{}", n))
+}
+
+fn render_tag(tag: Tag, children: Vec<Element>, blog_id: &str, block_id: Option<String>) -> Element {
+    let bid = block_id.unwrap_or_default();
+    let has_bid = !bid.is_empty();
     match tag {
         Tag::Heading { level, .. } => {
             let l = level as u32;
             match l {
-                1 => rsx! { h1 { {children.into_iter()} } },
-                2 => rsx! { h2 { {children.into_iter()} } },
-                _ => rsx! { h3 { {children.into_iter()} } },
+                1 => rsx! { h1 {
+                    id: if has_bid { "{bid}" },
+                    "data-block-id": if has_bid { "{bid}" },
+                    {children.into_iter()}
+                } },
+                2 => rsx! { h2 {
+                    id: if has_bid { "{bid}" },
+                    "data-block-id": if has_bid { "{bid}" },
+                    {children.into_iter()}
+                } },
+                _ => rsx! { h3 {
+                    id: if has_bid { "{bid}" },
+                    "data-block-id": if has_bid { "{bid}" },
+                    {children.into_iter()}
+                } },
             }
         }
         Tag::Paragraph => {
-            if children.len() == 1 {
+            // 顶层 paragraph 始终包 <p>以保证块锁点；非顶层且单子节点时保持原优化。
+            if !has_bid && children.len() == 1 {
                 return children.into_iter().next().unwrap();
             }
-            rsx! { p { {children.into_iter()} } }
+            rsx! { p {
+                id: if has_bid { "{bid}" },
+                "data-block-id": if has_bid { "{bid}" },
+                {children.into_iter()}
+            } }
         },
-        Tag::List(None) => rsx! { ul { class: "list-disc ml-6 my-4", {children.into_iter()} } },
-        Tag::List(Some(start)) => rsx! { ol { start: "{start}", class: "list-decimal ml-6 my-4", {children.into_iter()} } },
+        Tag::List(None) => rsx! { ul {
+            id: if has_bid { "{bid}" },
+            "data-block-id": if has_bid { "{bid}" },
+            class: "list-disc ml-6 my-4",
+            {children.into_iter()}
+        } },
+        Tag::List(Some(start)) => rsx! { ol {
+            id: if has_bid { "{bid}" },
+            "data-block-id": if has_bid { "{bid}" },
+            start: "{start}",
+            class: "list-decimal ml-6 my-4",
+            {children.into_iter()}
+        } },
         Tag::Item => rsx! { li { class: "mb-1", {children.into_iter()} } },
         Tag::CodeBlock(_) => {
             // 已在 render_stream 中特殊处理，此分支不应触达
@@ -203,10 +251,13 @@ fn render_tag(tag: Tag, children: Vec<Element>, blog_id: &str) -> Element {
                 }
             }
         }
-        Tag::BlockQuote(kind) => render_blockquote(kind, children),
+        Tag::BlockQuote(kind) => render_blockquote(kind, children, if has_bid { Some(bid.clone()) } else { None }),
         Tag::Table(_) => rsx! {
             div { class: "overflow-x-auto my-6",
-                table { class: "min-w-full border-collapse",
+                table {
+                    id: if has_bid { "{bid}" },
+                    "data-block-id": if has_bid { "{bid}" },
+                    class: "min-w-full border-collapse",
                     {children.into_iter()}
                 }
             }
@@ -295,7 +346,13 @@ fn convert_admonitions(body: &str) -> String {
     result
 }
 
-fn render_blockquote(kind: Option<BlockQuoteKind>, children: Vec<Element>) -> Element {
+fn render_blockquote(
+    kind: Option<BlockQuoteKind>,
+    children: Vec<Element>,
+    block_id: Option<String>,
+) -> Element {
+    let bid = block_id.unwrap_or_default();
+    let has_bid = !bid.is_empty();
     match kind {
         Some(k) => {
             let (icon, label, left_color, border_color, bg_color, text_color) = match k {
@@ -326,7 +383,10 @@ fn render_blockquote(kind: Option<BlockQuoteKind>, children: Vec<Element>) -> El
                 ),
             };
             rsx! {
-                div { class: "not-prose my-6 rounded-lg border {border_color} border-l-4 {left_color} {bg_color} shadow-sm overflow-hidden",
+                div {
+                    id: if has_bid { "{bid}" },
+                    "data-block-id": if has_bid { "{bid}" },
+                    class: "not-prose my-6 rounded-lg border {border_color} border-l-4 {left_color} {bg_color} shadow-sm overflow-hidden",
                     div { class: "px-4 pt-3 pb-1 flex items-center gap-2",
                         span { class: "text-base", "{icon}" }
                         span { class: "text-xs font-bold tracking-wide uppercase {text_color}", "{label}" }
@@ -338,26 +398,38 @@ fn render_blockquote(kind: Option<BlockQuoteKind>, children: Vec<Element>) -> El
             }
         }
         None => rsx! {
-            blockquote { class: "border-l-4 border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30 py-2 pl-6 pr-4 italic my-6 rounded-r-lg",
+            blockquote {
+                id: if has_bid { "{bid}" },
+                "data-block-id": if has_bid { "{bid}" },
+                class: "border-l-4 border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30 py-2 pl-6 pr-4 italic my-6 rounded-r-lg",
                 {children.into_iter()}
             }
         },
     }
 }
 
-fn render_mermaid_block(code_text: String) -> Element {
+fn render_mermaid_block(code_text: String, block_id: Option<String>) -> Element {
+    let bid = block_id.unwrap_or_default();
+    let has_bid = !bid.is_empty();
     rsx! {
-        div { class: "not-prose my-6 flex justify-center overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6",
+        div {
+            id: if has_bid { "{bid}" },
+            "data-block-id": if has_bid { "{bid}" },
+            class: "not-prose my-6 flex justify-center overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6",
             pre { class: "mermaid", "{code_text}" }
         }
     }
 }
 
-fn render_code_block(lang: String, code_text: String) -> Element {
+fn render_code_block(lang: String, code_text: String, block_id: Option<String>) -> Element {
     let code_for_copy = code_text.clone();
+    let bid = block_id.unwrap_or_default();
+    let has_bid = !bid.is_empty();
 
     rsx! {
         div {
+            id: if has_bid { "{bid}" },
+            "data-block-id": if has_bid { "{bid}" },
             class: "not-prose relative my-6",
             style: "position:relative",
             button {

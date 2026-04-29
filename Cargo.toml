@@ -4,6 +4,7 @@ members = [
     "crates/sdk",
     "crates/modules/blog",
     "crates/modules/podcast",
+    "crates/modules/course",
     "crates/app",
     "crates/plugins/prefix-plugin",
     "crates/plugins/i18n-fluent",

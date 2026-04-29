@@ -4961,6 +4961,7 @@ dependencies = [
  "pulldown-cmark",
  "rustineverything-core",
  "rustineverything-module-blog",
+ "rustineverything-module-course",
  "rustineverything-module-podcast",
  "sea-orm",
  "serde",
@@ -5003,6 +5004,23 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "tokio",
+]
+
+[[package]]
+name = "rustineverything-module-course"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "rustineverything-core",
+ "rustineverything-module-blog",
+ "rustineverything-sdk",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
  "tokio",
 ]
 
