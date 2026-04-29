@@ -24,6 +24,6 @@
   "annotations": {
     "course": true,
     "doc": true,
-    "blog": false
+    "blog": true
   }
 }

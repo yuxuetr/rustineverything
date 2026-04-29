@@ -520,6 +520,9 @@ pub fn Blog(id: String) -> Element {
       let inner_id = id_for_res.clone();
       async move { get_blog_content(inner_id).await }
   });
+  // 标注资源路径：resource_kind="blog"，resource_path = 博客 id
+  let anno_path = id.clone();
+  let anno_blog_id = format!("blog:{}", id);
 
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950",
@@ -527,7 +530,14 @@ pub fn Blog(id: String) -> Element {
               div { class: "max-w-4xl mx-auto",
                   div { class: "text-slate-700 dark:text-slate-200 mb-12",
                       match blog_content() {
-                          Some(Ok(content)) => rsx! { Markdown { content: content.clone(), blog_id: id.clone() } },
+                          Some(Ok(content)) => rsx! {
+                              Markdown { content: content.clone(), blog_id: anno_blog_id.clone() }
+                              // 标注层（resource_kind="blog"，path = 博客 id）
+                              AnnotationLayer {
+                                  resource_kind: "blog".to_string(),
+                                  resource_path: anno_path.clone(),
+                              }
+                          },
                           Some(Err(e)) => rsx! { 
                               div { class: "p-4 bg-red-50 text-red-700 rounded-lg", "Error loading post: {e}" }
                           },
