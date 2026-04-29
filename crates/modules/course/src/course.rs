@@ -1115,6 +1115,15 @@ fn style_swatch_class(style: &str) -> &'static str {
     }
 }
 
+fn visibility_label(v: &str) -> (&'static str, &'static str) {
+    match v {
+        "public" => ("🌐", "公开"),
+        "course-public" => ("📚", "课程内公开"),
+        "doc-public" => ("📄", "文档内公开"),
+        _ => ("🔒", "私密"),
+    }
+}
+
 #[component]
 fn AnnotationGroupCard(group: AnnoGroup) -> Element {
     let (icon, label) = kind_badge(&group.kind);
@@ -1173,12 +1182,27 @@ fn AnnotationListItem(kind: String, path: String, anno: Annotation) -> Element {
                             }
                         }
                     }
-                    div { class: "mt-2 flex items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500",
+                    div { class: "mt-2 flex items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500 flex-wrap",
                         span { "{anno.created_at}" }
                         span { "·" }
                         span { "{anno.style}" }
                         span { "·" }
                         span { class: "truncate", "#{anno.block_id}" }
+                        {
+                            let (icon, label) = visibility_label(&anno.visibility);
+                            rsx! {
+                                span { "·" }
+                                span { class: "px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
+                                    "{icon} {label}"
+                                }
+                            }
+                        }
+                        if let Some(name) = anno.author_nickname.as_ref() {
+                            span { "·" }
+                            span { class: "text-slate-500 dark:text-slate-400",
+                                "作者: {name}"
+                            }
+                        }
                     }
                 }
                 span { class: "flex-shrink-0 self-center text-blue-600 dark:text-blue-400 text-sm",

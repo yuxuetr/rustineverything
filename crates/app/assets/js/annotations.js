@@ -44,6 +44,16 @@ body.no-anno .rie-anno {
 .rie-anno-toolbar .rie-style-underline,
 .rie-anno-toolbar .rie-style-wavy,
 .rie-anno-toolbar .rie-style-strike { background: #475569; font-weight: 700; }
+.rie-anno-toolbar .rie-vis-select {
+  height: 22px; border-radius: 4px; border: 0; padding: 0 4px;
+  background: #1e293b; color: #fff; font-size: 11px; cursor: pointer;
+}
+.rie-anno-toolbar .rie-vis-select:focus { outline: 1px solid #60a5fa; }
+/* 他人公开标注的轻量边框提示 */
+.rie-anno.rie-anno-by-other {
+  outline: 1px dashed rgba(100, 116, 139, 0.5);
+  outline-offset: 1px;
+}
 /* 从 /me/annotations 跳回原文时的闪烁高亮 */
 .rie-anno-flash {
   animation: rie-anno-flash-kf 1.6s ease-out 0s 2;
@@ -117,8 +127,18 @@ body.no-anno .rie-anno {
     data.items.forEach(item => {
       const block = findBlock(item.block_id);
       if (!block) return;
-      wrapRange(block, item.start_offset, item.end_offset,
-                styleClass(item.style), item.id);
+      let cls = styleClass(item.style);
+      // 他人公开标注额外加个轻量样式标记
+      if (item.author_nickname) cls += ' rie-anno-by-other';
+      const ok = wrapRange(block, item.start_offset, item.end_offset, cls, item.id);
+      if (ok && item.author_nickname) {
+        // 在刚创建的 span 上补 title（鼠标悬停显示作者）
+        const span = block.querySelector(`span.rie-anno[data-anno-id="${cssEscape(item.id)}"]`);
+        if (span) {
+          const note = item.note ? ` · 备注: ${item.note}` : '';
+          span.setAttribute('title', `作者: ${item.author_nickname}${note}`);
+        }
+      }
     });
   }
 
@@ -174,34 +194,65 @@ body.no-anno .rie-anno {
 
   // ---------- toolbar ----------
   let toolbar = null;
+  // 最后一次选择的 visibility，跨选区记忆
+  const VIS_PERSIST_KEY = 'rie-anno-last-visibility';
+  function lastVisibility() {
+    try { return localStorage.getItem(VIS_PERSIST_KEY) || 'private'; }
+    catch (_) { return 'private'; }
+  }
+  function rememberVisibility(v) {
+    try { localStorage.setItem(VIS_PERSIST_KEY, v); } catch (_) {}
+  }
   function showToolbar(sel) {
     hideToolbar();
     toolbar = document.createElement('div');
     toolbar.className = 'rie-anno-toolbar';
     toolbar.style.top = (window.scrollY + sel.rect.top - 36) + 'px';
     toolbar.style.left = (window.scrollX + sel.rect.left) + 'px';
+    // visibility 选择器
+    const visSel = document.createElement('select');
+    visSel.className = 'rie-vis-select';
+    visSel.title = '可见范围';
+    [
+      ['private',       '🔒 私密'],
+      ['course-public', '📚 本课程公开'],
+      ['doc-public',    '📄 本文档公开'],
+      ['public',        '🌐 全站公开'],
+    ].forEach(([val, label]) => {
+      const o = document.createElement('option');
+      o.value = val; o.textContent = label;
+      visSel.appendChild(o);
+    });
+    visSel.value = lastVisibility();
+    visSel.addEventListener('change', () => rememberVisibility(visSel.value));
+    // 避免点击 select 时被 mousedown 全局监听隐藏
+    visSel.addEventListener('mousedown', (e) => e.stopPropagation());
+    toolbar.appendChild(visSel);
+
     const colors = ['yellow','green','blue','pink','purple'];
     colors.forEach(c => {
       const b = document.createElement('button');
       b.className = `rie-swatch-${c}`;
       b.title = c;
-      b.onclick = () => create(sel, c);
+      b.onclick = () => create(sel, c, visSel.value);
       toolbar.appendChild(b);
     });
     [['underline','U'], ['wavy','~'], ['strikethrough','S']].forEach(([s, label]) => {
       const b = document.createElement('button');
       b.className = `rie-style-${s === 'strikethrough' ? 'strike' : s}`;
       b.title = s; b.textContent = label;
-      b.onclick = () => create(sel, s);
+      b.onclick = () => create(sel, s, visSel.value);
       toolbar.appendChild(b);
     });
     document.body.appendChild(toolbar);
   }
   function hideToolbar() { if (toolbar) { toolbar.remove(); toolbar = null; } }
 
-  function create(sel, style) {
+  function create(sel, style, visibility) {
     hideToolbar();
     const ctx = window.RIE_ANNO_CTX || {};
+    const vis = visibility || 'private';
+    rememberVisibility(vis);
     const payload = {
       payload: {
         resource_kind: ctx.kind || 'course',
@@ -214,6 +265,7 @@ body.no-anno .rie-anno {
         suffix_text: sel.suffix_text,
         style: style,
         note: null,
+        visibility: vis,
       },
     };
     fetch('/api/annotations/create', {

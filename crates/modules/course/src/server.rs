@@ -1147,6 +1147,9 @@ pub struct Annotation {
     pub note: Option<String>,
     pub visibility: String,
     pub created_at: String,
+    /// 仅在该标注为"他人公开标注"时填充，帮助 UI 显示作者。本人标注为 None。
+    #[serde(default)]
+    pub author_nickname: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1161,6 +1164,20 @@ pub struct AnnotationCreate {
     pub suffix_text: Option<String>,
     pub style: String,
     pub note: Option<String>,
+    /// 'private' | 'course-public' | 'doc-public' | 'public'。缺省 'private'。
+    #[serde(default)]
+    pub visibility: Option<String>,
+}
+
+/// 表示合法的 visibility 取值
+#[cfg(feature = "server")]
+fn normalize_visibility(v: Option<&str>) -> String {
+    match v.unwrap_or("private") {
+        "public" => "public".to_string(),
+        "course-public" => "course-public".to_string(),
+        "doc-public" => "doc-public".to_string(),
+        _ => "private".to_string(),
+    }
 }
 
 /// 读 site.json 中 annotations 开关
@@ -1234,6 +1251,7 @@ fn model_to_annotation(m: rustineverything_core::entities::annotation::Model) ->
         note: m.note,
         visibility: m.visibility,
         created_at: m.created_at.format("%Y-%m-%d %H:%M").to_string(),
+        author_nickname: None,
     }
 }
 
@@ -1274,22 +1292,61 @@ pub async fn list_annotations(
         if !read_annotations_switch(&resource_kind) {
             return Ok(vec![]);
         }
-        use rustineverything_core::entities::annotation;
-        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
-        let user = match current_session_user() {
-            Some(u) => u,
-            None => return Ok(vec![]),
+        use rustineverything_core::entities::{annotation, user as user_entity};
+        use sea_orm::{
+            sea_query::Expr, ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder,
         };
+        let me = current_session_user();
         let db = open_db().await?;
+
+        // 同资源路径下：本人全部标注 + 他人不为 private 的标注。
+        // 未登录只能看他人公开标注。
+        let me_id = me.as_ref().map(|u| u.id).unwrap_or(-1);
+        let visible_cond = Condition::any()
+            .add(Expr::col(annotation::Column::UserId).eq(me_id))
+            .add(Expr::col(annotation::Column::Visibility).ne("private"));
+
         let rows = annotation::Entity::find()
-            .filter(annotation::Column::UserId.eq(user.id))
             .filter(annotation::Column::ResourceKind.eq(&resource_kind))
             .filter(annotation::Column::ResourcePath.eq(&resource_path))
+            .filter(visible_cond)
             .order_by_asc(annotation::Column::CreatedAt)
             .all(&db)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-        Ok(rows.into_iter().map(model_to_annotation).collect())
+
+        // 收集需要查询 nickname 的 user_id（仅他人标注需要增量查询）
+        let mut other_ids: Vec<i32> = rows
+            .iter()
+            .filter(|r| r.user_id != me_id)
+            .map(|r| r.user_id)
+            .collect();
+        other_ids.sort();
+        other_ids.dedup();
+
+        let mut nick_map: std::collections::HashMap<i32, String> =
+            std::collections::HashMap::new();
+        if !other_ids.is_empty() {
+            let users = user_entity::Entity::find()
+                .filter(user_entity::Column::Id.is_in(other_ids))
+                .all(&db)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            for u in users {
+                nick_map.insert(u.id, u.nickname);
+            }
+        }
+
+        Ok(rows
+            .into_iter()
+            .map(|m| {
+                let mut a = model_to_annotation(m);
+                if a.user_id != me_id {
+                    a.author_nickname = nick_map.get(&a.user_id).cloned();
+                }
+                a
+            })
+            .collect())
     }
     #[cfg(not(feature = "server"))]
     {
@@ -1315,6 +1372,7 @@ pub async fn create_annotation(
         let user = require_writer()?;
         let db = open_db().await?;
         let now = Utc::now().fixed_offset();
+        let visibility = normalize_visibility(payload.visibility.as_deref());
         let am = annotation::ActiveModel {
             user_id: Set(user.id),
             resource_kind: Set(payload.resource_kind),
@@ -1327,7 +1385,7 @@ pub async fn create_annotation(
             suffix_text: Set(payload.suffix_text),
             style: Set(payload.style),
             note: Set(payload.note),
-            visibility: Set("private".to_string()),
+            visibility: Set(visibility),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()
@@ -1373,6 +1431,7 @@ pub async fn update_annotation(
     id: i64,
     style: Option<String>,
     note: Option<String>,
+    visibility: Option<String>,
 ) -> Result<Annotation, ServerFnError> {
     #[cfg(feature = "server")]
     {
@@ -1394,6 +1453,9 @@ pub async fn update_annotation(
         if let Some(n) = note {
             am.note = Set(Some(n));
         }
+        if let Some(v) = visibility {
+            am.visibility = Set(normalize_visibility(Some(&v)));
+        }
         am.updated_at = Set(Utc::now().fixed_offset());
         let updated = annotation::Entity::update(am)
             .exec(&db)
@@ -1403,7 +1465,7 @@ pub async fn update_annotation(
     }
     #[cfg(not(feature = "server"))]
     {
-        let _ = (id, style, note);
+        let _ = (id, style, note, visibility);
         Err(ServerFnError::new("server only".to_string()))
     }
 }
