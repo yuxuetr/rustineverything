@@ -1755,6 +1755,32 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_visibility_known_values() {
+        assert_eq!(normalize_visibility(Some("public")), "public");
+        assert_eq!(normalize_visibility(Some("course-public")), "course-public");
+        assert_eq!(normalize_visibility(Some("doc-public")), "doc-public");
+        assert_eq!(normalize_visibility(Some("private")), "private");
+    }
+
+    #[test]
+    fn test_normalize_visibility_fallback() {
+        // 未知值 → private
+        assert_eq!(normalize_visibility(Some("")), "private");
+        assert_eq!(normalize_visibility(Some("PUBLIC")), "private");
+        assert_eq!(normalize_visibility(Some("hacker-attempt")), "private");
+        // None → private
+        assert_eq!(normalize_visibility(None), "private");
+    }
+
+    #[test]
+    fn test_default_annotation_enabled() {
+        assert!(default_annotation_enabled("course"));
+        assert!(default_annotation_enabled("doc"));
+        assert!(!default_annotation_enabled("blog"));
+        assert!(!default_annotation_enabled("unknown"));
+    }
+
+    #[test]
     fn test_scan_skips_courses_without_lessons() {
         let tmp = TempDir::new().unwrap();
         let cwd = std::env::current_dir().unwrap();

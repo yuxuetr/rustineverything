@@ -1160,6 +1160,173 @@ fn visibility_label(v: &str) -> (&'static str, &'static str) {
     }
 }
 
+// ============================================================
+// Tests — 纯函数单元测试（不需要 Dioxus 运行时 / DB）
+// ============================================================
+
+#[cfg(test)]
+mod course_helpers_tests {
+    use super::*;
+
+    fn mk_anno(
+        id: i64,
+        kind: &str,
+        path: &str,
+        block_id: &str,
+        style: &str,
+        visibility: &str,
+        author: Option<&str>,
+    ) -> Annotation {
+        Annotation {
+            id,
+            user_id: 1,
+            resource_kind: kind.to_string(),
+            resource_path: path.to_string(),
+            block_id: block_id.to_string(),
+            start_offset: 0,
+            end_offset: 5,
+            exact_text: "abcde".to_string(),
+            prefix_text: None,
+            suffix_text: None,
+            style: style.to_string(),
+            note: None,
+            visibility: visibility.to_string(),
+            created_at: "2026-01-01 00:00".to_string(),
+            author_nickname: author.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_build_jump_url_per_kind() {
+        assert_eq!(
+            build_jump_url("course", "rust-basics/01-foo/02-bar", "b3"),
+            "/course/rust-basics/01-foo/02-bar#b3"
+        );
+        assert_eq!(
+            build_jump_url("doc", "axum/basic/router", "b1"),
+            "/docs/axum/basic/router#b1"
+        );
+        assert_eq!(
+            build_jump_url("blog", "welcome", "b2"),
+            "/blog/welcome#b2"
+        );
+    }
+
+    #[test]
+    fn test_build_jump_url_empty_block_id_no_hash() {
+        assert_eq!(
+            build_jump_url("course", "a/b/c", ""),
+            "/course/a/b/c"
+        );
+        assert_eq!(build_jump_url("doc", "foo", ""), "/docs/foo");
+    }
+
+    #[test]
+    fn test_build_jump_url_unknown_kind_falls_back() {
+        assert_eq!(build_jump_url("weird", "x/y", "b9"), "/x/y#b9");
+    }
+
+    #[test]
+    fn test_kind_badge_known_kinds() {
+        let (icon, label) = kind_badge("course");
+        assert_eq!(label, "课程");
+        assert!(!icon.is_empty());
+        assert_eq!(kind_badge("doc").1, "文档");
+        assert_eq!(kind_badge("blog").1, "博客");
+    }
+
+    #[test]
+    fn test_kind_badge_fallback() {
+        let (_, label) = kind_badge("unknown");
+        assert_eq!(label, "资源");
+    }
+
+    #[test]
+    fn test_visibility_label_all_variants() {
+        assert_eq!(visibility_label("public").1, "公开");
+        assert_eq!(visibility_label("course-public").1, "课程内公开");
+        assert_eq!(visibility_label("doc-public").1, "文档内公开");
+        assert_eq!(visibility_label("private").1, "私密");
+        // 未知取值归为私密
+        assert_eq!(visibility_label("hacker-attempt").1, "私密");
+    }
+
+    #[test]
+    fn test_style_swatch_class_known_styles() {
+        assert_eq!(style_swatch_class("yellow"), "bg-yellow-300/60");
+        assert_eq!(style_swatch_class("green"), "bg-green-400/60");
+        assert_eq!(style_swatch_class("blue"), "bg-blue-400/60");
+        assert_eq!(style_swatch_class("pink"), "bg-pink-400/60");
+        assert_eq!(style_swatch_class("purple"), "bg-purple-400/60");
+        assert!(style_swatch_class("underline").contains("underline"));
+        assert!(style_swatch_class("wavy").contains("decoration-wavy"));
+        assert!(style_swatch_class("strikethrough").contains("line-through"));
+    }
+
+    #[test]
+    fn test_style_swatch_class_unknown_falls_back_to_yellow() {
+        assert_eq!(style_swatch_class(""), "bg-yellow-300/60");
+        assert_eq!(style_swatch_class("rainbow"), "bg-yellow-300/60");
+    }
+
+    #[test]
+    fn test_group_annotations_preserves_input_order_within_group() {
+        // 输入中同一资源的多条按 created_at desc 出现（这里用 id 递增模拟）
+        let list = vec![
+            mk_anno(3, "course", "a/01/01", "b3", "yellow", "private", None),
+            mk_anno(2, "course", "a/01/01", "b1", "underline", "public", None),
+            mk_anno(1, "doc", "axum/basic", "b1", "blue", "private", None),
+        ];
+        let groups = group_annotations(list);
+        assert_eq!(groups.len(), 2);
+        // 分组顺序：首次出现顺序 — course 在前
+        assert_eq!(groups[0].kind, "course");
+        assert_eq!(groups[0].path, "a/01/01");
+        assert_eq!(groups[0].items.len(), 2);
+        // 组内保持输入顺序
+        assert_eq!(groups[0].items[0].id, 3);
+        assert_eq!(groups[0].items[1].id, 2);
+        assert_eq!(groups[1].kind, "doc");
+        assert_eq!(groups[1].items[0].id, 1);
+    }
+
+    #[test]
+    fn test_group_annotations_empty() {
+        let groups = group_annotations(vec![]);
+        assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn test_group_annotations_separates_different_paths_same_kind() {
+        let list = vec![
+            mk_anno(1, "doc", "a/x", "b1", "yellow", "private", None),
+            mk_anno(2, "doc", "b/y", "b1", "yellow", "private", None),
+            mk_anno(3, "doc", "a/x", "b2", "yellow", "private", None),
+        ];
+        let groups = group_annotations(list);
+        assert_eq!(groups.len(), 2);
+        // a/x 先出现，收集了 id 1 与 3
+        let ax = groups.iter().find(|g| g.path == "a/x").unwrap();
+        assert_eq!(ax.items.len(), 2);
+        assert_eq!(ax.items[0].id, 1);
+        assert_eq!(ax.items[1].id, 3);
+        let by = groups.iter().find(|g| g.path == "b/y").unwrap();
+        assert_eq!(by.items.len(), 1);
+    }
+
+    #[test]
+    fn test_group_annotations_distinguishes_kind_when_path_collides() {
+        // 同 path 但 kind 不同要分别在两个组里
+        let list = vec![
+            mk_anno(1, "course", "foo", "b1", "yellow", "private", None),
+            mk_anno(2, "doc", "foo", "b1", "yellow", "private", None),
+        ];
+        let groups = group_annotations(list);
+        assert_eq!(groups.len(), 2);
+        assert_ne!(groups[0].kind, groups[1].kind);
+    }
+}
+
 #[component]
 fn AnnotationGroupCard(group: AnnoGroup) -> Element {
     let (icon, label) = kind_badge(&group.kind);
