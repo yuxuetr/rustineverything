@@ -630,32 +630,39 @@ pub fn AnnotationLayer(resource_kind: String, resource_path: String) -> Element 
 }
 
 /// 浮动眼睛按钮：切换 body.no-anno 类以隐藏/显示标注样式（仅视图层，数据不动）。
-/// 使用 `.rie-anno-toggle` （在 annotations.js 中写进 stylesheet）以避开 Tailwind
-/// 预编译未收录「项目代码中未出现」类名导致定位丢失的问题。
+/// 状态本地管理，JS 仅接收 setVisible(v) 指令（不靠 recv 取返回值，
+/// 避免 Dioxus 0.7 下「脚本 return 不会路由到 recv」导致 await 挂住、点击似乎无响应。
 #[component]
 fn AnnotationToggle() -> Element {
-    // 初始读取当前 localStorage 状态，保持按钮图标与实际可见性一致
+    // 初始从 localStorage 同步一下状态，后续完全本地主导
     let mut visible = use_signal(|| true);
     use_effect(move || {
+        let js = "\
+            try { \
+              var v = localStorage.getItem('rie-anno-visible'); \
+              if (v === '0') document.body.classList.add('no-anno'); \
+              else document.body.classList.remove('no-anno'); \
+            } catch(_) {}";
+        dioxus::document::eval(js);
         spawn(async move {
-            let js = "return (window.RIE_ANNO && window.RIE_ANNO.isVisible) ? !!window.RIE_ANNO.isVisible() : true;";
+            // 读一下初始状态以同步图标
+            let js = "dioxus.send(localStorage.getItem('rie-anno-visible') !== '0');";
             if let Ok(v) = dioxus::document::eval(js).recv::<bool>().await {
                 visible.set(v);
             }
         });
     });
 
-    // 使用内联 style：避免依赖 Tailwind 预编译 / annotations.js 样式表的加载顺序，
-    // 保证任何页面、任何加载阶段下按钮都能被看到。
+    // 内联 style：避免 Tailwind / annotations.js 样式表的加载顺序依赖。
+    // 位置改为右下角，与顶部 nav 有明显间距，不会贴着边缘。
     let icon_color = if visible() { "#0f172a" } else { "#94a3b8" };
     let btn_style = format!(
-        "position:fixed;top:80px;right:16px;z-index:9999;\
-         width:36px;height:36px;padding:0;\
+        "position:fixed;bottom:32px;right:32px;z-index:9999;\
+         width:40px;height:40px;padding:0;\
          display:inline-flex;align-items:center;justify-content:center;\
-         border:1px solid rgba(15,23,42,0.15);border-radius:9999px;\
+         border:1px solid rgba(15,23,42,0.18);border-radius:9999px;\
          background:#ffffff;color:{icon_color};cursor:pointer;\
-         box-shadow:0 4px 12px rgba(15,23,42,0.12);\
-         transition:transform 120ms ease, box-shadow 120ms ease;"
+         box-shadow:0 6px 16px rgba(15,23,42,0.14);"
     );
     rsx! {
         button {
@@ -664,17 +671,23 @@ fn AnnotationToggle() -> Element {
             "aria-label": if visible() { "隐藏标注" } else { "显示标注" },
             style: "{btn_style}",
             onclick: move |_| {
-                spawn(async move {
-                    let js = "return (window.RIE_ANNO && window.RIE_ANNO.toggleVisible) ? !!window.RIE_ANNO.toggleVisible() : true;";
-                    if let Ok(v) = dioxus::document::eval(js).recv::<bool>().await {
-                        visible.set(v);
-                    }
-                });
+                let next = !visible();
+                visible.set(next);
+                // 直接在脚本里切换 body class 与 localStorage，不靠 RIE_ANNO。
+                let js = format!(
+                    "(function(v){{\
+                        try {{ localStorage.setItem('rie-anno-visible', v ? '1' : '0'); }} catch(_) {{}}\
+                        if (v) document.body.classList.remove('no-anno');\
+                        else document.body.classList.add('no-anno');\
+                    }})({});",
+                    if next { "true" } else { "false" }
+                );
+                dioxus::document::eval(&js);
             },
             // 单一 SVG 眼睛图标，隐藏状态多一道斜线
             svg {
-                width: "18",
-                height: "18",
+                width: "20",
+                height: "20",
                 view_box: "0 0 24 24",
                 fill: "none",
                 stroke: "currentColor",

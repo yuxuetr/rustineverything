@@ -157,32 +157,44 @@ body.no-anno .rie-anno {
     return known.includes(style) ? `rie-anno-${style}` : 'rie-anno-yellow';
   }
 
-  // ---------- apply existing annotations ----------
+  // 记录已经被包裹过的 annotation id，避免重复 wrap
+  function appliedSet() {
+    if (!window.__rieAppliedIds) window.__rieAppliedIds = new Set();
+    return window.__rieAppliedIds;
+  }
+
+  // ---------- apply a single annotation — 增量包裹，不动现有 DOM ----------
+  function applyOne(item) {
+    if (!item || appliedSet().has(item.id)) return false;
+    const block = findBlock(item.block_id);
+    if (!block) return false;
+    let cls = styleClass(item.style);
+    if (item.author_nickname) cls += ' rie-anno-by-other';
+    const ok = wrapRange(block, item.start_offset, item.end_offset, cls, item.id);
+    if (!ok) return false;
+    appliedSet().add(item.id);
+    if (item.author_nickname) {
+      const note = item.note ? ` · 备注: ${item.note}` : '';
+      block
+        .querySelectorAll(`span.rie-anno[data-anno-id="${cssEscape(item.id)}"]`)
+        .forEach(s => s.setAttribute('title', `作者: ${item.author_nickname}${note}`));
+    }
+    return true;
+  }
+
+  // ---------- apply existing annotations (首次加载页面时才 unwrap+rewrap) ----------
   function apply(data) {
     if (!data || !Array.isArray(data.items)) return;
     ensureStyles();
-    // 清除上一次注入的 anno（仅清除当前页 main 区域）
+    // 首次 apply 时才全量重画；后续在 create() 后只增量调 applyOne。
     document.querySelectorAll('span.rie-anno').forEach(el => {
       const parent = el.parentNode;
       while (el.firstChild) parent.insertBefore(el.firstChild, el);
       parent.removeChild(el);
       parent.normalize();
     });
-    data.items.forEach(item => {
-      const block = findBlock(item.block_id);
-      if (!block) return;
-      let cls = styleClass(item.style);
-      // 他人公开标注额外加个轻量样式标记
-      if (item.author_nickname) cls += ' rie-anno-by-other';
-      const ok = wrapRange(block, item.start_offset, item.end_offset, cls, item.id);
-      if (ok && item.author_nickname) {
-        // 可能跨 text node 产生多个 span，统一补 title
-        const note = item.note ? ` · 备注: ${item.note}` : '';
-        block
-          .querySelectorAll(`span.rie-anno[data-anno-id="${cssEscape(item.id)}"]`)
-          .forEach(s => s.setAttribute('title', `作者: ${item.author_nickname}${note}`));
-      }
-    });
+    appliedSet().clear();
+    data.items.forEach(item => applyOne(item));
   }
 
   // ---------- selection capture ----------
@@ -318,11 +330,12 @@ body.no-anno .rie-anno {
       body: JSON.stringify(payload),
     }).then(r => r.ok ? r.json() : null).then(item => {
       if (!item) return;
-      // 拼接到现有列表后再次 apply
+      // 只增量包裹新创建的这一条，不重画现有标注。
+      // （原先是每次 unwrap-all + rewrap-all，在多样式交替高亮时可能出现另一个样式漏画的问题。）
       const data = window.__rieAnnoLast || { kind: ctx.kind, path: ctx.path, items: [] };
       data.items = (data.items || []).concat([item]);
-      apply(data);
       window.__rieAnnoLast = data;
+      applyOne(item);
     }).catch(() => {});
   }
 
