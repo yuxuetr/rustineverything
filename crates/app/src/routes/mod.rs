@@ -8,7 +8,9 @@ use crate::components::view::{Container, SectionTitle};
 use crate::server::{list_doc_tree, get_doc_content, DocTreeNode};
 use rustineverything_module_blog::markdown::Markdown;
 use rustineverything_module_blog::server::{get_blog_content, list_blog_posts};
-use rustineverything_module_course::course::{CourseDetailPage, CoursesIndexPage, LessonPage};
+use rustineverything_module_course::course::{
+    AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage,
+};
 use rustineverything_module_podcast::podcast::PodcastPage;
 
 /// Application routes
@@ -250,6 +252,10 @@ pub fn DocPage(path: Vec<String>) -> Element {
   let doc_path = path.join("/");
   let doc_path_for_tree = doc_path.clone();
   let doc_path_for_content = doc_path.clone();
+  // 标注资源路径：resource_kind="doc"，resource_path = 叶子路径
+  let anno_path = doc_path.clone();
+  // Markdown blog_id 携带 "doc:<path>" 前缀，JS 运行时以此识别资源归属
+  let anno_blog_id = format!("doc:{}", doc_path);
 
   let tree = use_resource(move || async move {
       list_doc_tree().await.unwrap_or_default()
@@ -293,7 +299,12 @@ pub fn DocPage(path: Vec<String>) -> Element {
                                   document::Meta { property: "og:image", content: "{img}" }
                               }
                               div { class: "text-slate-700 dark:text-slate-200",
-                                  Markdown { content: resp.content.clone(), blog_id: "docs".to_string() }
+                                  Markdown { content: resp.content.clone(), blog_id: anno_blog_id.clone() }
+                              }
+                              // 标注层（resource_kind="doc"，path 为叶子路径）
+                              AnnotationLayer {
+                                  resource_kind: "doc".to_string(),
+                                  resource_path: anno_path.clone(),
                               }
                           },
                           Some(Err(e)) => rsx! {

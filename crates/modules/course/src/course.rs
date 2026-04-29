@@ -584,10 +584,11 @@ fn CompleteLessonButton(
 
 // ============================================================
 // Annotation layer (PR-D)
+// 导出供其它资源页（doc / blog）复用
 // ============================================================
 
 #[component]
-fn AnnotationLayer(resource_kind: String, resource_path: String) -> Element {
+pub fn AnnotationLayer(resource_kind: String, resource_path: String) -> Element {
     let cfg_res = use_resource(|| async move {
         get_annotations_config().await.unwrap_or_default()
     });
