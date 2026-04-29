@@ -645,13 +645,24 @@ fn AnnotationToggle() -> Element {
         });
     });
 
-    let off_class = if visible() { "" } else { " is-off" };
+    // 使用内联 style：避免依赖 Tailwind 预编译 / annotations.js 样式表的加载顺序，
+    // 保证任何页面、任何加载阶段下按钮都能被看到。
+    let icon_color = if visible() { "#0f172a" } else { "#94a3b8" };
+    let btn_style = format!(
+        "position:fixed;top:80px;right:16px;z-index:9999;\
+         width:36px;height:36px;padding:0;\
+         display:inline-flex;align-items:center;justify-content:center;\
+         border:1px solid rgba(15,23,42,0.15);border-radius:9999px;\
+         background:#ffffff;color:{icon_color};cursor:pointer;\
+         box-shadow:0 4px 12px rgba(15,23,42,0.12);\
+         transition:transform 120ms ease, box-shadow 120ms ease;"
+    );
     rsx! {
         button {
             r#type: "button",
             title: if visible() { "隐藏标注" } else { "显示标注" },
             "aria-label": if visible() { "隐藏标注" } else { "显示标注" },
-            class: "rie-anno-toggle{off_class}",
+            style: "{btn_style}",
             onclick: move |_| {
                 spawn(async move {
                     let js = "return (window.RIE_ANNO && window.RIE_ANNO.toggleVisible) ? !!window.RIE_ANNO.toggleVisible() : true;";
@@ -662,6 +673,8 @@ fn AnnotationToggle() -> Element {
             },
             // 单一 SVG 眼睛图标，隐藏状态多一道斜线
             svg {
+                width: "18",
+                height: "18",
                 view_box: "0 0 24 24",
                 fill: "none",
                 stroke: "currentColor",
