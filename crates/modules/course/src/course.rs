@@ -654,10 +654,10 @@ fn AnnotationToggle() -> Element {
     });
 
     // 内联 style：避免 Tailwind / annotations.js 样式表的加载顺序依赖。
-    // 位置改为右下角，与顶部 nav 有明显间距，不会贴着边缘。
+    // 位置改为顶部右侧（navbar 正下方），与页面标题几乎同水平，更易被发现。
     let icon_color = if visible() { "#0f172a" } else { "#94a3b8" };
     let btn_style = format!(
-        "position:fixed;bottom:32px;right:32px;z-index:9999;\
+        "position:fixed;top:80px;right:24px;z-index:9999;\
          width:40px;height:40px;padding:0;\
          display:inline-flex;align-items:center;justify-content:center;\
          border:1px solid rgba(15,23,42,0.18);border-radius:9999px;\
@@ -673,12 +673,28 @@ fn AnnotationToggle() -> Element {
             onclick: move |_| {
                 let next = !visible();
                 visible.set(next);
-                // 直接在脚本里切换 body class 与 localStorage，不靠 RIE_ANNO。
+                // 防御性：同时走 CSS 类（未来新创建的 span）+ 逐个 inline style。
+                // 原因：!important 的 CSS 规则在某些热重载 / 幂等拦截场景下可能
+                // 未被重新注入的样式表覆盖，直接写 inline style 最保险。
                 let js = format!(
                     "(function(v){{\
                         try {{ localStorage.setItem('rie-anno-visible', v ? '1' : '0'); }} catch(_) {{}}\
-                        if (v) document.body.classList.remove('no-anno');\
-                        else document.body.classList.add('no-anno');\
+                        var spans = document.querySelectorAll('span.rie-anno');\
+                        if (v) {{\
+                            document.body.classList.remove('no-anno');\
+                            spans.forEach(function(el){{\
+                                el.style.removeProperty('background');\
+                                el.style.removeProperty('text-decoration');\
+                                el.style.removeProperty('outline');\
+                            }});\
+                        }} else {{\
+                            document.body.classList.add('no-anno');\
+                            spans.forEach(function(el){{\
+                                el.style.setProperty('background', 'transparent', 'important');\
+                                el.style.setProperty('text-decoration', 'none', 'important');\
+                                el.style.setProperty('outline', 'none', 'important');\
+                            }});\
+                        }}\
                     }})({});",
                     if next { "true" } else { "false" }
                 );
