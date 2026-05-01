@@ -11,7 +11,15 @@ use rustineverything_module_blog::server::{get_blog_content, list_blog_posts};
 use rustineverything_module_course::course::{
     AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
 };
+use rustineverything_module_admin::admin::{
+    AdminCommentsPage, AdminDashboardPage, AdminPluginsPage, AdminTopicsPage, AdminUsersPage,
+};
+use rustineverything_module_forum::forum::{
+    DiscussionPanel, MyTopicsPage, NewTopicPage, TopicDetailPage, TopicsByTagPage,
+    TopicsIndexPage,
+};
 use rustineverything_module_podcast::podcast::PodcastPage;
+use rustineverything_module_cases::cases::{CaseDetailPage, CasesIndexPage};
 
 /// Application routes
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -42,8 +50,11 @@ pub enum Route {
         #[route("/course/:slug/:chapter/:lesson")]
         Lesson { slug: String, chapter: String, lesson: String },
 
-        #[route("/cases")]
+        // SPA 路由使用单数 /case，避免与静态 ServeDir(/cases) 冲突
+        #[route("/case")]
         Cases {},
+        #[route("/case/:slug")]
+        CaseDetail { slug: String },
 
         #[route("/ai")]
         Ai {},
@@ -51,14 +62,33 @@ pub enum Route {
         #[route("/web3")]
         Web3 {},
 
+        // 论坛：注意路由顺序，静态路径优先于 i32 动态参数
         #[route("/topics")]
         TopicsIndex {},
-        #[route("/topics/:tag")]
-        Topic { tag: String },
+        #[route("/topics/new")]
+        TopicsNew {},
+        #[route("/topics/tag/:tag")]
+        TopicsByTag { tag: String },
+        #[route("/topics/:id")]
+        TopicDetail { id: i32 },
 
-        // 个人中心：标注管理
+        // 个人中心：标注管理 / 我的话题
         #[route("/me/annotations")]
         MyAnnotations {},
+        #[route("/me/topics")]
+        MyTopics {},
+
+        // Admin 后台（页面内部判断 role，非 admin 渲染 403 占位）
+        #[route("/admin")]
+        AdminDashboard {},
+        #[route("/admin/users")]
+        AdminUsers {},
+        #[route("/admin/comments")]
+        AdminComments {},
+        #[route("/admin/topics")]
+        AdminTopics {},
+        #[route("/admin/plugins")]
+        AdminPlugins {},
 }
 
 /// Home page
@@ -310,6 +340,11 @@ pub fn DocPage(path: Vec<String>) -> Element {
                                   resource_kind: "doc".to_string(),
                                   resource_path: anno_path.clone(),
                               }
+                              // 资源讨论面板：关联论坛话题
+                              DiscussionPanel {
+                                  resource_kind: "doc".to_string(),
+                                  resource_path: anno_path.clone(),
+                              }
                           },
                           Some(Err(e)) => rsx! {
                               div { class: "p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg",
@@ -554,7 +589,13 @@ pub fn Blog(id: String) -> Element {
                   }
 
                   div { class: "border-t border-slate-200 dark:border-slate-800 pt-8 mt-12",
-                      CommentBox { blog_id: id }
+                      CommentBox { blog_id: id.clone() }
+                  }
+
+                  // 资源讨论面板：关联论坛话题
+                  DiscussionPanel {
+                      resource_kind: "blog".to_string(),
+                      resource_path: id,
                   }
               }
           }
@@ -574,19 +615,27 @@ pub fn CourseDetail(slug: String) -> Element {
 
 #[component]
 pub fn Lesson(slug: String, chapter: String, lesson: String) -> Element {
-  rsx! { LessonPage { slug: slug, chapter: chapter, lesson: lesson } }
+  let lesson_path = format!("{}/{}/{}", slug, chapter, lesson);
+  rsx! {
+      LessonPage { slug: slug.clone(), chapter: chapter.clone(), lesson: lesson.clone() }
+      // 资源讨论面板：关联论坛话题（以 lesson kind 记录）
+      Container {
+          DiscussionPanel {
+              resource_kind: "lesson".to_string(),
+              resource_path: lesson_path,
+          }
+      }
+  }
 }
 
 #[component]
 pub fn Cases() -> Element {
-  rsx! {
-      section { class: "py-12 bg-white dark:bg-slate-950",
-          Container {
-              SectionTitle { title: "案例".to_string(), subtitle: Some("真实世界中的 Rust 应用".to_string()) }
-              div { class: "text-center text-slate-500 py-20", "Case studies are coming soon..." }
-          }
-      }
-  }
+  rsx! { CasesIndexPage {} }
+}
+
+#[component]
+pub fn CaseDetail(slug: String) -> Element {
+  rsx! { CaseDetailPage { slug } }
 }
 
 #[component]
@@ -615,25 +664,27 @@ pub fn Web3() -> Element {
 
 #[component]
 pub fn TopicsIndex() -> Element {
-  rsx! {
-      section { class: "py-12 bg-white dark:bg-slate-950",
-          Container {
-              SectionTitle { title: "论坛".to_string(), subtitle: Some("交流、分享、共同进步".to_string()) }
-              div { class: "text-center text-slate-500 py-20", "Forum is under development..." }
-          }
-      }
-  }
+  rsx! { TopicsIndexPage {} }
 }
 
 #[component]
-pub fn Topic(tag: String) -> Element {
-  rsx! {
-      section { class: "py-12 bg-white dark:bg-slate-950",
-          Container {
-              div { "Topic: {tag}" }
-          }
-      }
-  }
+pub fn TopicsNew() -> Element {
+  rsx! { NewTopicPage {} }
+}
+
+#[component]
+pub fn TopicsByTag(tag: String) -> Element {
+  rsx! { TopicsByTagPage { tag } }
+}
+
+#[component]
+pub fn TopicDetail(id: i32) -> Element {
+  rsx! { TopicDetailPage { id } }
+}
+
+#[component]
+pub fn MyTopics() -> Element {
+  rsx! { MyTopicsPage {} }
 }
 
 #[component]
@@ -647,4 +698,29 @@ pub fn Podcast() -> Element {
 #[component]
 pub fn MyAnnotations() -> Element {
   rsx! { MyAnnotationsPage {} }
+}
+
+#[component]
+pub fn AdminDashboard() -> Element {
+  rsx! { AdminDashboardPage {} }
+}
+
+#[component]
+pub fn AdminUsers() -> Element {
+  rsx! { AdminUsersPage {} }
+}
+
+#[component]
+pub fn AdminComments() -> Element {
+  rsx! { AdminCommentsPage {} }
+}
+
+#[component]
+pub fn AdminTopics() -> Element {
+  rsx! { AdminTopicsPage {} }
+}
+
+#[component]
+pub fn AdminPlugins() -> Element {
+  rsx! { AdminPluginsPage {} }
 }

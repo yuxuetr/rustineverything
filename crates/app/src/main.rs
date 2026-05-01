@@ -10,6 +10,7 @@ use crate::i18n::init_i18n;
 use crate::routes::Route;
 use crate::server::{get_aggregated_theme_css, get_current_user};
 use rustineverything_core::session::SessionUser;
+use rustineverything_module_search::search::{use_search_open_provider, SearchModal};
 
 /// Static assets used by the application.
 // Dioxus 0.7 默认在 crate root 的 assets 目录下寻找
@@ -90,6 +91,7 @@ fn main() {
           .nest_service("/audio", ServeDir::new(format!("{}/audio", assets_root)))
           .nest_service("/podcasts", ServeDir::new(format!("{}/podcasts", assets_root)))
           .nest_service("/courses", ServeDir::new(format!("{}/courses", assets_root)))
+          .nest_service("/cases", ServeDir::new(format!("{}/cases", assets_root)))
           .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)));
 
       Ok(router)
@@ -115,6 +117,9 @@ fn App() -> Element {
   init_i18n();
   let show_auth = use_signal(|| false);
   use_context_provider(|| show_auth);
+
+  // 搜索 modal 全局状态(Cmd+K 快捷键 + 导航栏按钮共享)
+  let _ = use_search_open_provider();
 
   // 全局用户会话
   let user: Signal<Option<SessionUser>> = use_signal(|| None);
@@ -210,5 +215,8 @@ fn App() -> Element {
 
       // Auth modal (rendered at root level to avoid stacking context issues)
       crate::components::auth_modal::AuthModal { show: show_auth }
+
+      // 全局搜索模态框(在根挂一次,任意页面都可 Cmd+K 拉起)
+      SearchModal {}
   }
 }

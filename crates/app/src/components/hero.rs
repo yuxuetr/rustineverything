@@ -28,6 +28,11 @@ pub fn Hero() -> Element {
                           class: "inline-flex justify-center rounded-md border border-white/20 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10",
                           "浏览博客"
                       }
+                      Link {
+                          to: Route::Cases {},
+                          class: "inline-flex justify-center rounded-md border border-white/20 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10",
+                          "查看案例"
+                      }
                   }
 
                   div { class: "mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm",

@@ -1,0 +1,16 @@
+name: Axum RealWorld
+description: 基于 Axum 的 RealWorld 后端示例，展示路由、鉴权、数据库访问和分层工程组织。
+category: backend
+tags:
+  - axum
+  - tokio
+  - sea-orm
+  - opensource
+repo: https://github.com/launchbadge/realworld-axum-sqlx
+website:
+author: Rust Community
+author_url: https://github.com/launchbadge
+language: rust
+stars: 0
+favorite: true
+date_added: 2026-05-01

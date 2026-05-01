@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Ensure Tailwind scans all module source files for dynamic class names */
+@source "../../crates/modules/cases/src/";
+
 /* Force Dark Mode to use class strategy instead of media strategy */
 @variant dark (&:where(.dark, .dark *));
 

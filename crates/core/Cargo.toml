@@ -5,6 +5,7 @@ authors = ["yuxuetr <54.yeying@gmail.com>"]
 edition = "2021"
 
 [dependencies]
+dioxus = { workspace = true, optional = true, features = ["fullstack"] }
 tokio = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
@@ -20,4 +21,4 @@ rand = { workspace = true, optional = true }
 jsonwebtoken = { workspace = true, optional = true }
 
 [features]
-server = ["dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest", "dep:sha2", "dep:base64", "dep:rand", "dep:jsonwebtoken"]
+server = ["dep:dioxus", "dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest", "dep:sha2", "dep:base64", "dep:rand", "dep:jsonwebtoken"]

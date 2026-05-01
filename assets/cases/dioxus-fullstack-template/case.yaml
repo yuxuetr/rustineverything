@@ -1,0 +1,16 @@
+name: Dioxus Fullstack Template
+description: Dioxus 0.7 全栈模板，展示同构 UI、server function、路由、样式和项目组织方式。
+category: fullstack
+tags:
+  - dioxus
+  - fullstack
+  - wasm
+  - opensource
+repo: https://github.com/DioxusLabs/dioxus
+website: https://dioxuslabs.com
+author: Dioxus Labs
+author_url: https://github.com/DioxusLabs
+language: mixed
+stars: 0
+favorite: true
+date_added: 2026-05-01

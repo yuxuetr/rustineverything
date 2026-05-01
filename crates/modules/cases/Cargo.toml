@@ -1,0 +1,23 @@
+[package]
+name = "rustineverything-module-cases"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dioxus = { workspace = true, features = ["fullstack", "router"] }
+serde = { workspace = true, features = ["derive"] }
+serde_yaml = { workspace = true, optional = true }
+chrono = { workspace = true, features = ["serde"] }
+rustineverything-sdk = { path = "../../sdk" }
+rustineverything-module-blog = { path = "../blog" }
+rustineverything-module-forum = { path = "../forum" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+server = [
+    "dioxus/server",
+    "dep:serde_yaml",
+    "rustineverything-module-forum/server",
+]

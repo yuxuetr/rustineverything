@@ -5,6 +5,7 @@ use crate::components::view::Container;
 use crate::i18n::{t, use_i18n, use_t, Language};
 use crate::routes::Route;
 use dioxus::document::eval;
+use rustineverything_module_search::search::SearchButton;
 
 /// Shared navbar layout.
 #[component]
@@ -24,7 +25,10 @@ pub fn Navbar() -> Element {
   let link_class = move |target: Route| {
     let is_active = match (&route, &target) {
       (Route::Blog { .. }, Route::BlogIndex {}) => true,
-      (Route::Topic { .. }, Route::TopicsIndex {}) => true,
+      (Route::TopicsByTag { .. }, Route::TopicsIndex {}) => true,
+      (Route::TopicDetail { .. }, Route::TopicsIndex {}) => true,
+      (Route::TopicsNew {}, Route::TopicsIndex {}) => true,
+      (Route::CaseDetail { .. }, Route::Cases {}) => true,
       (current, target) => current == target,
     };
 
@@ -83,11 +87,15 @@ pub fn Navbar() -> Element {
                       nav { class: "hidden md:flex items-center gap-4 text-sm font-medium",
                           Link { to: Route::BlogIndex {}, class: link_class(Route::BlogIndex {}), "{t_blog}" }
                           Link { to: Route::Podcast {}, class: link_class(Route::Podcast {}), "{t_podcast}" }
+                          Link { to: Route::Cases {}, class: link_class(Route::Cases {}), "案例" }
                           Link { to: Route::TopicsIndex {}, class: link_class(Route::TopicsIndex {}), "{t_forum}" }
                       }
                   }
 
                   div { class: "flex items-center gap-3",
+                      // Search
+                      SearchButton {}
+
                       // Language Toggle
                       button {
                           onclick: toggle_lang,
@@ -136,10 +144,29 @@ pub fn Navbar() -> Element {
                               }
                               // 下拉菜单
                               if show_user_menu() {
-                                  div { class: "absolute right-0 top-full mt-1 w-40 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg py-1 z-50",
+                                  div { class: "absolute right-0 top-full mt-1 w-44 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg py-1 z-50",
                                       div { class: "px-3 py-2 text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800",
                                           "{u.nickname}"
                                       }
+                                      Link {
+                                          to: Route::MyTopics {},
+                                          class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
+                                          "我的话题"
+                                      }
+                                      Link {
+                                          to: Route::MyAnnotations {},
+                                          class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
+                                          "我的标注"
+                                      }
+                                      if u.is_admin() {
+                                          div { class: "my-1 border-t border-slate-100 dark:border-slate-800" }
+                                          Link {
+                                              to: Route::AdminDashboard {},
+                                              class: "block px-3 py-2 text-sm font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors",
+                                              "🛡️ 管理后台"
+                                          }
+                                      }
+                                      div { class: "my-1 border-t border-slate-100 dark:border-slate-800" }
                                       a {
                                           href: "/api/auth/logout",
                                           class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",

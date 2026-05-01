@@ -30,3 +30,45 @@ body {
 a {
     transition: color 0.2s ease;
 }
+
+/* === Flowing Gradient Button === */
+@keyframes gradient-flow {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+.btn-flow {
+    background: linear-gradient(90deg, #000000, #64748b, #000000, #64748b);
+    background-size: 300% 100%;
+    animation: gradient-flow 3s ease infinite;
+    color: #fff;
+}
+.btn-flow:hover {
+    animation-duration: 1.5s;
+}
+
+.dark .btn-flow {
+    background: linear-gradient(90deg, #ffffff, #64748b, #ffffff, #64748b);
+    background-size: 300% 100%;
+    animation: gradient-flow 3s ease infinite;
+    color: #0f172a;
+}
+
+/* Flowing text accent */
+.text-flow {
+    background: linear-gradient(90deg, #000000, #94a3b8, #000000, #94a3b8);
+    background-size: 300% 100%;
+    animation: gradient-flow 3s ease infinite;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.dark .text-flow {
+    background: linear-gradient(90deg, #ffffff, #64748b, #ffffff, #64748b);
+    background-size: 300% 100%;
+    animation: gradient-flow 3s ease infinite;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}

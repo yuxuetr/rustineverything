@@ -1,0 +1,26 @@
+[package]
+name = "rustineverything-module-forum"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dioxus = { workspace = true, features = ["fullstack", "router"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+tokio = { workspace = true, features = ["full"], optional = true }
+rustineverything-sdk = { path = "../../sdk" }
+rustineverything-module-blog = { path = "../blog" }
+rustineverything-module-course = { path = "../course" }
+rustineverything-core = { path = "../../core" }
+sea-orm = { workspace = true, optional = true }
+
+[features]
+server = [
+    "dioxus/server",
+    "dep:tokio",
+    "dep:sea-orm",
+    "rustineverything-module-blog/server",
+    "rustineverything-module-course/server",
+    "rustineverything-core/server",
+]

@@ -1,0 +1,84 @@
+name: Submit a Rust case
+description: Recommend a Rust project for the Cases showcase
+title: "[Case] "
+labels:
+  - case
+  - showcase
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Project name
+      placeholder: Axum RealWorld
+    validations:
+      required: true
+  - type: input
+    id: repo
+    attributes:
+      label: Repository URL
+      placeholder: https://github.com/owner/repo
+    validations:
+      required: true
+  - type: input
+    id: website
+    attributes:
+      label: Website URL
+      placeholder: https://example.com
+    validations:
+      required: false
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - frontend
+        - backend
+        - fullstack
+        - cli
+        - embedded
+        - ai
+        - web3
+        - library
+        - tool
+        - desktop
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Short description
+      description: One or two sentences describing what this project demonstrates.
+    validations:
+      required: true
+  - type: input
+    id: tags
+    attributes:
+      label: Tags
+      description: Comma-separated tags such as axum, dioxus, tokio, ai.
+      placeholder: axum, tokio, opensource
+    validations:
+      required: true
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - rust
+        - wasm
+        - mixed
+    validations:
+      required: true
+  - type: input
+    id: author
+    attributes:
+      label: Author or organization
+      placeholder: Dioxus Labs
+    validations:
+      required: true
+  - type: textarea
+    id: cover
+    attributes:
+      label: Cover image
+      description: Optional. Paste a URL or describe where to find the cover. Prefer WebP, <= 200KB, <= 1200px wide.
+    validations:
+      required: false

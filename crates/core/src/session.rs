@@ -1,5 +1,18 @@
 use serde::{Deserialize, Serialize};
 
+/// 已知角色取值（与 `init.sql` 默认值保持一致）
+pub const ROLE_ADMIN: &str = "admin";
+pub const ROLE_MEMBER: &str = "member";
+pub const ROLE_GUEST: &str = "guest";
+
+/// 系统支持的全部角色（顺序与 UI 下拉一致）
+pub const ALL_ROLES: &[&str] = &[ROLE_ADMIN, ROLE_MEMBER, ROLE_GUEST];
+
+/// 校验任意字符串是否是合法的角色取值
+pub fn is_known_role(role: &str) -> bool {
+    ALL_ROLES.iter().any(|r| *r == role)
+}
+
 /// 会话用户信息，前后端共享
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SessionUser {
@@ -7,6 +20,12 @@ pub struct SessionUser {
     pub nickname: String,
     pub avatar_url: Option<String>,
     pub role: String,
+}
+
+impl SessionUser {
+    pub fn is_admin(&self) -> bool {
+        self.role == ROLE_ADMIN
+    }
 }
 
 // ---- 以下为 server-only JWT 工具 ----
@@ -95,4 +114,76 @@ pub fn parse_session_from_cookie_header(cookie_header: Option<&str>) -> Option<S
     let cookie_str = cookie_header?;
     let token = extract_session_cookie(cookie_str)?;
     verify_jwt(&token).ok()
+}
+
+/// 从当前 Dioxus FullstackContext 的 Cookie 中解析 SessionUser。
+/// 上层 server fn 可统一调用此函数，避免每个模块复制 cookie 解析逻辑。
+#[cfg(feature = "server")]
+pub fn current_session_user() -> Option<SessionUser> {
+    use dioxus::fullstack::FullstackContext;
+
+    let ctx = FullstackContext::current()?;
+    let parts = ctx.parts_mut();
+    let cookie_str = parts
+        .headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    drop(parts);
+    parse_session_from_cookie_header(cookie_str.as_deref())
+}
+
+/// 要求当前请求带有合法 SessionUser；否则返回中文错误。
+#[cfg(feature = "server")]
+pub fn require_session() -> Result<SessionUser, dioxus::fullstack::ServerFnError> {
+    current_session_user()
+        .ok_or_else(|| dioxus::fullstack::ServerFnError::new("请先登录".to_string()))
+}
+
+/// 要求当前请求带有 admin 角色；非 admin 返回 403 风格错误。
+#[cfg(feature = "server")]
+pub fn require_admin() -> Result<SessionUser, dioxus::fullstack::ServerFnError> {
+    let user = require_session()?;
+    if !user.is_admin() {
+        return Err(dioxus::fullstack::ServerFnError::new(
+            "需要管理员权限".to_string(),
+        ));
+    }
+    Ok(user)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn user_with_role(role: &str) -> SessionUser {
+        SessionUser {
+            id: 1,
+            nickname: "tester".to_string(),
+            avatar_url: None,
+            role: role.to_string(),
+        }
+    }
+
+    #[test]
+    fn role_constants_are_known() {
+        for r in ALL_ROLES {
+            assert!(is_known_role(r));
+        }
+    }
+
+    #[test]
+    fn unknown_role_rejected() {
+        assert!(!is_known_role(""));
+        assert!(!is_known_role("super"));
+        assert!(!is_known_role("Admin")); // 大小写敏感
+    }
+
+    #[test]
+    fn is_admin_flag() {
+        assert!(user_with_role(ROLE_ADMIN).is_admin());
+        assert!(!user_with_role(ROLE_MEMBER).is_admin());
+        assert!(!user_with_role(ROLE_GUEST).is_admin());
+        assert!(!user_with_role("unknown").is_admin());
+    }
 }

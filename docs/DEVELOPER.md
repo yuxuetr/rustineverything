@@ -9,6 +9,9 @@
 *   **全栈内容管理**：
     *   **Blog 模块**：支持 MDX 语法，具备 Frontmatter 解析、LaTeX 数学公式、代码高亮（Prism.js）、GFM Alert (Admonitions) 支持。
     *   **Podcast 模块**：内置音频播放系统，支持列表切换与元数据管理。
+    *   **Doc 模块**：以目录为单位的三级文档树，支持 frontmatter SEO、`sidebar_position` / `sort_children` 控制侧栏。
+    *   **Course 模块**： `Course → Chapter → Lesson` 三级模型，适配 Doc / Video / Audio / Code 四种课节布局，含进度与标注系统。
+    *   **Forum 模块**：话题 / 回复 / Tag；支持从博客、文档、课节页面直接发起讨论并建立资源引用关联（详见 `docs/FORUM_SPEC.md`）。
 *   **WASM 插件系统**：
     *   **动态主题**：通过 WASM 插件实时注入 CSS 变量，支持多主题切换。
     *   **多语言 (i18n)**：基于 Fluent 引擎的 WASM 插件，实现后端驱动的动态翻译。
@@ -27,13 +30,13 @@
 ### 2.1 目录结构
 
 ```text
-├── assets/                 # 静态资源 (posts, images, audio, plugins)
+├── assets/                 # 静态资源 (posts, docs, courses, podcasts, images, plugins)
 ├── crates/
 │   ├── app/                # 前端入口 (Dioxus App + Axum Server 路由)
-│   ├── core/               # 核心逻辑 (插件加载器、数据库、认证)
+│   ├── core/               # 核心逻辑 (插件加载器、SeaORM Entities、认证、会话)
 │   ├── sdk/                # 共享接口 (Plugin & AppModule Trait 定义)
-│   ├── modules/            # 业务领域模块 (blog, podcast)
-│   └── plugins/            # WASM 插件源码 (i18n, theme)
+│   ├── modules/            # 业务领域模块 (blog, podcast, course, forum)
+│   └── plugins/            # WASM 插件源码 (i18n, theme, *-auth)
 └── docs/                   # 开发者文档
 ```
 
@@ -173,7 +176,7 @@ pub unsafe extern "C" fn your_custom_function(ptr: *mut u8, len: usize) -> u64 {
 
 
 *   **调试插件**：可以利用 `crates/core/src/lib.rs` 中的测试用例进行 WASM 插件的单元测试。
-*   **Tailwind 编译**：修改样式后，需确保运行 `npx tailwindcss -i ./tailwind-input.css -o ./assets/tailwind.css`（或通过 `dx build` 触发）。
+*   **Tailwind 编译**：修改样式后，在 `crates/app/` 目录下运行 `npm run build`（或 `npm run dev` 开启 watch 模式）。详细流程、主题映射、动态类名处理和 FAQ 请参考 [`docs/TAILWIND_GUIDE.md`](TAILWIND_GUIDE.md)。
 *   **后端驱动**：尽量通过 `assets/site.json` 配置应用行为，避免硬编码，以便通过插件系统进行扩展。
 
 ---

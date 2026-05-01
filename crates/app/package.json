@@ -4,8 +4,8 @@
   "description": "Your new bare-bones project includes minimal organization with a single `main.rs` file and a few assets.",
   "main": "index.js",
   "scripts": {
-    "dev": "npx @tailwindcss/cli -i tailwind.css -o assets/css/tailwind.css --watch",
-    "build": "npx @tailwindcss/cli -i tailwind.css -o assets/css/tailwind.css"
+    "dev": "npx @tailwindcss/cli -i tailwind-input.css -o assets/tailwind.css --watch",
+    "build": "npx @tailwindcss/cli -i tailwind-input.css -o assets/tailwind.css"
   },
   "keywords": [],
   "author": "",

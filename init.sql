@@ -61,3 +61,32 @@ CREATE TABLE IF NOT EXISTS annotations (
 );
 CREATE INDEX IF NOT EXISTS idx_annotations_resource ON annotations(resource_kind, resource_path);
 CREATE INDEX IF NOT EXISTS idx_annotations_user ON annotations(user_id);
+
+-- 论坛话题（2.4）
+CREATE TABLE IF NOT EXISTS topics (
+    id             SERIAL PRIMARY KEY,
+    title          VARCHAR(255) NOT NULL,
+    tag            VARCHAR(64)  NOT NULL,
+    content        TEXT         NOT NULL,
+    user_id        INTEGER      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reply_count    INTEGER      NOT NULL DEFAULT 0,
+    last_reply_at  TIMESTAMPTZ,
+    ref_kind       VARCHAR(32),                    -- 'blog' | 'doc' | 'course' | 'lesson'
+    ref_path       TEXT,                           -- 资源叶子路径
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_topics_tag      ON topics(tag);
+CREATE INDEX IF NOT EXISTS idx_topics_user     ON topics(user_id);
+CREATE INDEX IF NOT EXISTS idx_topics_recency  ON topics(last_reply_at DESC NULLS LAST, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_topics_ref      ON topics(ref_kind, ref_path);
+
+-- 论坛回复
+CREATE TABLE IF NOT EXISTS topic_replies (
+    id          SERIAL      PRIMARY KEY,
+    topic_id    INTEGER     NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    user_id     INTEGER     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content     TEXT        NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_topic_replies_topic ON topic_replies(topic_id, created_at);

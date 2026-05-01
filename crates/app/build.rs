@@ -15,8 +15,28 @@ fn main() {
             let _ = fs::create_dir_all(&app_assets);
         }
 
-        // 同步 UI 必需的静态文件
+        // 同步 UI 必需的静态文件：root/assets → crates/app/assets
         sync_dir(&root_assets, &app_assets);
+    }
+
+    // Reverse sync: if crates/app/assets/tailwind.css is newer (Tailwind compile output),
+    // copy it back to root/assets/tailwind.css so the SoT stays up-to-date.
+    let app_tw = app_assets.join("tailwind.css");
+    let root_tw = root_assets.join("tailwind.css");
+    if app_tw.exists() {
+        let should_copy = if root_tw.exists() {
+            let app_mod = fs::metadata(&app_tw).and_then(|m| m.modified()).ok();
+            let root_mod = fs::metadata(&root_tw).and_then(|m| m.modified()).ok();
+            match (app_mod, root_mod) {
+                (Some(a), Some(r)) => a > r,
+                _ => true,
+            }
+        } else {
+            true
+        };
+        if should_copy {
+            let _ = fs::copy(&app_tw, &root_tw);
+        }
     }
 }
 

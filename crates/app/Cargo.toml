@@ -14,6 +14,10 @@ rustineverything-core = { path = "../core" }
 rustineverything-module-blog = { path = "../modules/blog" }
 rustineverything-module-podcast = { path = "../modules/podcast" }
 rustineverything-module-course = { path = "../modules/course" }
+rustineverything-module-forum = { path = "../modules/forum" }
+rustineverything-module-admin = { path = "../modules/admin" }
+rustineverything-module-search = { path = "../modules/search" }
+rustineverything-module-cases = { path = "../modules/cases" }
 pulldown-cmark = "0.13.0"
 chrono = { workspace = true, features = ["serde"] }
 
@@ -39,6 +43,10 @@ server = [
     "rustineverything-module-blog/server",
     "rustineverything-module-podcast/server",
     "rustineverything-module-course/server",
+    "rustineverything-module-forum/server",
+    "rustineverything-module-admin/server",
+    "rustineverything-module-search/server",
+    "rustineverything-module-cases/server",
     "dep:tokio",
     "dep:axum",
     "dep:dotenvy",

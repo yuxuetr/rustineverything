@@ -1,0 +1,33 @@
+[package]
+name = "rustineverything-module-search"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dioxus = { workspace = true, features = ["fullstack", "router"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+tokio = { workspace = true, features = ["full"], optional = true }
+rustineverything-sdk = { path = "../../sdk" }
+rustineverything-core = { path = "../../core" }
+rustineverything-module-cases = { path = "../cases" }
+sea-orm = { workspace = true, optional = true }
+serde_yaml = { workspace = true, optional = true }
+tantivy = { workspace = true, optional = true }
+tantivy-jieba = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+server = [
+    "dioxus/server",
+    "dep:tokio",
+    "dep:sea-orm",
+    "dep:serde_yaml",
+    "dep:tantivy",
+    "dep:tantivy-jieba",
+    "rustineverything-core/server",
+    "rustineverything-module-cases/server",
+]
