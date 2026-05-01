@@ -1,12 +1,7 @@
 use dioxus::prelude::*;
 use crate::server::translate_server;
-use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum Language {
-  En,
-  Zh,
-}
+pub use rustineverything_core::i18n::Language;
 
 pub fn use_i18n() -> Signal<Language> {
   use_context::<Signal<Language>>()
