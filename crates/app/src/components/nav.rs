@@ -79,6 +79,7 @@ pub fn Navbar() -> Element {
   };
 
   rsx! {
+    div { class: "min-h-screen flex flex-col",
       header { class: "sticky top-0 z-50 border-b border-slate-200/70 bg-white/80 backdrop-blur dark:bg-slate-950/70 dark:border-slate-800",
           Container {
               div { class: "h-14 flex items-center justify-between",
@@ -87,7 +88,7 @@ pub fn Navbar() -> Element {
                       nav { class: "hidden md:flex items-center gap-4 text-sm font-medium",
                           Link { to: Route::BlogIndex {}, class: link_class(Route::BlogIndex {}), "{t_blog}" }
                           Link { to: Route::Podcast {}, class: link_class(Route::Podcast {}), "{t_podcast}" }
-                          Link { to: Route::Cases {}, class: link_class(Route::Cases {}), "案例" }
+                          Link { to: Route::Cases {}, class: link_class(Route::Cases {}), "{t(lang(), \"nav.cases\")}" }
                           Link { to: Route::TopicsIndex {}, class: link_class(Route::TopicsIndex {}), "{t_forum}" }
                       }
                   }
@@ -197,13 +198,13 @@ pub fn Navbar() -> Element {
           }
       }
 
-      main {
+      main { class: "flex-1",
           Outlet::<Route> {}
       }
 
-      footer { class: "border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950",
+      footer { class: "border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shrink-0",
           Container {
-              div { class: "py-10 text-sm text-slate-600 dark:text-slate-300 flex flex-col md:flex-row gap-3 md:items-center md:justify-between",
+              div { class: "py-5 text-sm text-slate-600 dark:text-slate-300 flex flex-col md:flex-row gap-3 md:items-center md:justify-between",
                   div {
                       span { class: "font-semibold text-slate-900 dark:text-white", "Rust in Everything" }
                       span { class: "mx-2", "·" }
@@ -217,5 +218,6 @@ pub fn Navbar() -> Element {
               }
           }
       }
+    } // end min-h-screen flex-col
   }
 }

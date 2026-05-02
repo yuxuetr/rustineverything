@@ -39,8 +39,10 @@ pub fn use_t(key: &str) -> Signal<String> {
 
 pub fn t(lang: Language, key: &str) -> String {
   match (lang, key) {
-    (Language::Zh, "nav.blog") => "博客".to_string(),
-    (Language::En, "nav.blog") => "Blog".to_string(),
+    (Language::Zh, "nav.blog")   => "博客".to_string(),
+    (Language::En, "nav.blog")   => "Blog".to_string(),
+    (Language::Zh, "nav.cases")  => "案例".to_string(),
+    (Language::En, "nav.cases")  => "Cases".to_string(),
     (Language::Zh, "nav.podcast") => "播客".to_string(),
     (Language::En, "nav.podcast") => "Podcast".to_string(),
     (Language::Zh, "nav.start") => "开始学习".to_string(),
@@ -55,6 +57,21 @@ pub fn t(lang: Language, key: &str) -> String {
     (Language::En, "auth.terms") => "By signing in, you agree to our Terms and Privacy Policy".to_string(),
     (Language::Zh, "auth.logout") => "退出登录".to_string(),
     (Language::En, "auth.logout") => "Sign Out".to_string(),
+    // ── 博客页 ──
+    (Language::Zh, "blog.title")      => "博客".to_string(),
+    (Language::En, "blog.title")      => "Blog".to_string(),
+    (Language::Zh, "blog.subtitle")   => "探索 Rust 的无限可能".to_string(),
+    (Language::En, "blog.subtitle")   => "Explore the boundless possibilities of Rust".to_string(),
+    (Language::Zh, "blog.filter")     => "标签筛选".to_string(),
+    (Language::En, "blog.filter")     => "Filter by Tag".to_string(),
+    (Language::Zh, "blog.all")        => "全部".to_string(),
+    (Language::En, "blog.all")        => "All".to_string(),
+    (Language::Zh, "blog.empty")      => "暂无文章".to_string(),
+    (Language::En, "blog.empty")      => "No articles yet".to_string(),
+    (Language::Zh, "blog.articles")   => "文章".to_string(),
+    (Language::En, "blog.articles")   => "Articles".to_string(),
+    (Language::Zh, "blog.no_results") => "没有匹配该标签的文章".to_string(),
+    (Language::En, "blog.no_results") => "No articles match this tag".to_string(),
     (_, k) => k.to_string(),
   }
 }

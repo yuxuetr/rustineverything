@@ -5431,6 +5431,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dioxus",
+ "rustineverything-core",
  "rustineverything-module-blog",
  "rustineverything-module-forum",
  "rustineverything-sdk",
@@ -5478,6 +5479,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dioxus",
+ "rustineverything-core",
  "rustineverything-sdk",
  "serde",
  "serde_json",

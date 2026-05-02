@@ -11,6 +11,7 @@ serde_yaml = { workspace = true, optional = true }
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
 rustineverything-sdk = { path = "../../sdk" }
+rustineverything-core = { path = "../../core" }
 
 [dev-dependencies]
 tempfile = "3"

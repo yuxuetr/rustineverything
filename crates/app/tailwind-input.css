@@ -3,6 +3,12 @@
 
 /* Ensure Tailwind scans all module source files for dynamic class names */
 @source "../../crates/modules/cases/src/";
+@source "../../crates/modules/podcast/src/";
+@source "../../crates/modules/blog/src/";
+@source "../../crates/modules/forum/src/";
+@source "../../crates/modules/course/src/";
+@source "../../crates/modules/admin/src/";
+@source "../../crates/app/src/";
 
 /* Force Dark Mode to use class strategy instead of media strategy */
 @variant dark (&:where(.dark, .dark *));

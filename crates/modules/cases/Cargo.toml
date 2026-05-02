@@ -9,6 +9,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_yaml = { workspace = true, optional = true }
 chrono = { workspace = true, features = ["serde"] }
 rustineverything-sdk = { path = "../../sdk" }
+rustineverything-core = { path = "../../core" }
 rustineverything-module-blog = { path = "../blog" }
 rustineverything-module-forum = { path = "../forum" }
 

@@ -5,6 +5,7 @@ use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
 use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
+use crate::i18n::{t, use_i18n};
 use crate::server::{list_doc_tree, get_doc_content, DocTreeNode};
 use rustineverything_module_blog::markdown::Markdown;
 use rustineverything_module_blog::server::{get_blog_content, list_blog_posts};
@@ -500,51 +501,180 @@ fn TreeSection(node: DocTreeNode, active_path: String, depth: u32) -> Element {
 
 #[component]
 pub fn BlogIndex() -> Element {
-  let posts = use_resource(move || async move {
+  let lang = use_i18n();
+
+  let posts_res = use_resource(move || async move {
       list_blog_posts().await.unwrap_or_default()
   });
+  let posts = posts_res.read().as_ref().cloned().unwrap_or_default();
+
+  let mut active_tag = use_signal::<Option<String>>(|| None);
+  let mut current_page = use_signal(|| 0usize);
+  const PAGE_SIZE: usize = 10;
+
+  // 汇总全部标签
+  let all_tags: Vec<String> = {
+      let mut seen = std::collections::BTreeSet::new();
+      for post in posts.iter() {
+          for t in post.tags.iter() { seen.insert(t.clone()); }
+      }
+      seen.into_iter().collect()
+  };
+
+  // 按标签过滤
+  let filtered: Vec<_> = match active_tag() {
+      Some(ref tag) => posts.iter().filter(|p| p.tags.contains(tag)).cloned().collect(),
+      None => posts.clone(),
+  };
+
+  // 分页
+  let total_pages = ((filtered.len() + PAGE_SIZE - 1) / PAGE_SIZE).max(1);
+  let safe_page = current_page().min(total_pages - 1);
+  let paged: Vec<_> = filtered.iter().skip(safe_page * PAGE_SIZE).take(PAGE_SIZE).cloned().collect();
 
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950",
-          Container {
-              SectionTitle { title: "博客".to_string(), subtitle: Some("探索 Rust 的无限可能".to_string()) }
-              div { class: "space-y-4 max-w-3xl mx-auto",
-                  match posts() {
-                      Some(list) => rsx! {
-                          for post in list.iter() {
-                              Link {
-                                  key: "{post.slug}",
-                                  to: Route::Blog { id: post.slug.clone() },
-                                  class: "group block rounded-xl border border-slate-200 dark:border-slate-800 p-6 hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-all",
-                                  div { class: "flex justify-between items-start mb-2",
-                                      h3 { class: "text-lg font-bold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors",
-                                          "{post.title}"
-                                      }
-                                      if !post.date.is_empty() {
-                                          span { class: "text-xs text-slate-500 whitespace-nowrap ml-4", "{post.date}" }
-                                      }
+          div { class: "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8",
+              // 页面标题
+              div { class: "text-center mb-10",
+                  h2 { class: "text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl", "{t(lang(), \"blog.title\")}" }
+                  p { class: "mt-4 text-lg text-slate-500 dark:text-slate-400", "{t(lang(), \"blog.subtitle\")}" }
+              }
+
+              match posts_res.read().as_ref() {
+                  None => rsx! {
+                      div { class: "flex items-center justify-center py-20",
+                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                      }
+                  },
+                  Some(_) => rsx! {
+                      // 4列网格：标签(1列=25%) | 文章列表(3列=75%)
+                      div { class: "grid grid-cols-1 lg:grid-cols-4 gap-6 lg:items-start",
+
+                          // ── 左列：标签筛选 (sticky, 辅助内容) ──
+                          div { class: "lg:sticky lg:top-20",
+                              if all_tags.is_empty() {
+                                  div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-8 text-center",
+                                      p { class: "text-slate-400 text-sm", "{t(lang(), \"blog.empty\")}" }
                                   }
-                                  if !post.description.is_empty() {
-                                      p { class: "text-sm text-slate-600 dark:text-slate-400 line-clamp-2", "{post.description}" }
-                                  }
-                                  if !post.tags.is_empty() {
-                                      div { class: "flex flex-wrap gap-2 mt-3",
-                                          for tag in post.tags.iter() {
-                                              span { class: "text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400",
-                                                  "{tag}"
+                              } else {
+                                  div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-5",
+                                      p { class: "text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-4", "{t(lang(), \"blog.filter\")}" }
+                                      div { class: "flex flex-wrap gap-2",
+                                          // 全部 chip
+                                          {
+                                              let is_all = active_tag().is_none();
+                                              let label_all = t(lang(), "blog.all");
+                                              rsx! {
+                                                  button {
+                                                      onclick: move |_| { active_tag.set(None); current_page.set(0); },
+                                                      class: format_args!(
+                                                          "inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full font-medium transition-colors {}",
+                                                          if is_all { "bg-blue-600 text-white" }
+                                                          else { "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:text-blue-600" }
+                                                      ),
+                                                      "{label_all}"
+                                                      span { class: "opacity-60", "{posts.len()}" }
+                                                  }
+                                              }
+                                          }
+                                          // 各 tag chip
+                                          for tag in all_tags.iter() {
+                                              {
+                                                  let t = tag.clone();
+                                                  let t2 = tag.clone();
+                                                  let count = posts.iter().filter(|p| p.tags.contains(&t)).count();
+                                                  let is_active = active_tag().as_deref() == Some(tag.as_str());
+                                                  rsx! {
+                                                      button {
+                                                          key: "{t}",
+                                                          onclick: move |_| { active_tag.set(Some(t.clone())); current_page.set(0); },
+                                                          class: format_args!(
+                                                              "inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full font-medium transition-colors {}",
+                                                              if is_active { "bg-blue-600 text-white" }
+                                                              else { "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:text-blue-600" }
+                                                          ),
+                                                          "{t2}"
+                                                          span { class: "opacity-60", "{count}" }
+                                                      }
+                                                  }
                                               }
                                           }
                                       }
                                   }
                               }
                           }
-                      },
-                      None => rsx! {
-                          div { class: "flex items-center justify-center py-20",
-                              div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+
+                          // ── 右列：文章列表 + 分页 (3/4 宽度, 主内容) ──
+                          div { class: "lg:col-span-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-col",
+                              // 头部：标题 + 计数
+                              div { class: "flex items-center justify-between px-5 pt-5 pb-3",
+                                  h3 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200", "{t(lang(), \"blog.articles\")}" }
+                                  span { class: "text-xs text-slate-400 tabular-nums", "{filtered.len()} / {posts.len()}" }
+                              }
+                              div { class: "border-t border-slate-200 dark:border-slate-800" }
+
+                              // 文章列表
+                              div { class: "divide-y divide-slate-200 dark:divide-slate-800",
+                                  if paged.is_empty() {
+                                      div { class: "text-center text-slate-400 text-sm py-10", "{t(lang(), \"blog.no_results\")}" }
+                                  }
+                                  for post in paged.iter() {
+                                      Link {
+                                          key: "{post.slug}",
+                                          to: Route::Blog { id: post.slug.clone() },
+                                          class: "group block px-5 py-4 hover:bg-white dark:hover:bg-slate-800/60 transition-all",
+                                          div { class: "flex justify-between items-start gap-3",
+                                              h3 { class: "text-sm font-semibold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors leading-snug flex-1",
+                                                  "{post.title}"
+                                              }
+                                              if !post.date.is_empty() {
+                                                  span { class: "text-xs text-slate-400 whitespace-nowrap shrink-0 mt-0.5", "{post.date}" }
+                                              }
+                                          }
+                                          if !post.description.is_empty() {
+                                              p { class: "text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-1", "{post.description}" }
+                                          }
+                                          if !post.tags.is_empty() {
+                                              div { class: "flex flex-wrap gap-1.5 mt-2",
+                                                  for tag in post.tags.iter() {
+                                                      span { class: "text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
+                                                          "{tag}"
+                                                      }
+                                                  }
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+
+                              // 分页栏
+                              if total_pages > 1 {
+                                  div { class: "flex items-center justify-between px-5 py-3 border-t border-slate-200 dark:border-slate-800",
+                                      button {
+                                          disabled: safe_page == 0,
+                                          onclick: move |_| { if current_page() > 0 { current_page.set(current_page() - 1); } },
+                                          class: format_args!("px-3 py-1 rounded-lg text-sm transition-colors {}",
+                                              if safe_page == 0 { "text-slate-300 dark:text-slate-600 cursor-not-allowed" }
+                                              else { "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800" }
+                                          ),
+                                          "←"
+                                      }
+                                      span { class: "text-xs text-slate-400 tabular-nums", "{safe_page + 1} / {total_pages}" }
+                                      button {
+                                          disabled: safe_page + 1 >= total_pages,
+                                          onclick: move |_| { if current_page() + 1 < total_pages { current_page.set(current_page() + 1); } },
+                                          class: format_args!("px-3 py-1 rounded-lg text-sm transition-colors {}",
+                                              if safe_page + 1 >= total_pages { "text-slate-300 dark:text-slate-600 cursor-not-allowed" }
+                                              else { "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800" }
+                                          ),
+                                          "→"
+                                      }
+                                  }
+                              }
                           }
-                      },
-                  }
+                      }
+                  },
               }
           }
       }
