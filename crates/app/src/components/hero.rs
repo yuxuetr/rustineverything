@@ -10,7 +10,7 @@ pub fn Hero() -> Element {
       section { class: "w-full py-16 sm:py-20 bg-gradient-to-b from-slate-950 to-slate-900",
           div { class: "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8",
               div { class: "max-w-3xl",
-                  h1 { class: "text-4xl md:text-5xl font-extrabold tracking-tight text-white",
+                  h1 { class: "text-4xl md:text-5xl font-extrabold tracking-tight text-flow-light",
                       "专注 Rust 技术栈的学习与实战"
                   }
                   p { class: "mt-5 text-lg md:text-xl text-slate-300",

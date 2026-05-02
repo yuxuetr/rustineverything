@@ -72,3 +72,13 @@ a {
     -webkit-text-fill-color: transparent;
     background-clip: text;
 }
+
+/* Always-light flowing text (for use on dark backgrounds like hero) */
+.text-flow-light {
+    background: linear-gradient(90deg, #ffffff, #64748b, #ffffff, #64748b);
+    background-size: 300% 100%;
+    animation: gradient-flow 3s ease infinite;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}

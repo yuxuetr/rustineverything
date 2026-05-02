@@ -269,7 +269,7 @@ pub fn TopicsIndexPage() -> Element {
                             }
                         }
                         a { href: "/topics/new",
-                            class: "inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-colors",
+                            class: "inline-flex items-center rounded-md btn-flow px-4 py-2 text-sm font-semibold transition-all",
                             "{tf(lang, \"forum.post_topic\")}"
                         }
                     }
@@ -402,7 +402,7 @@ pub fn MyTopicsPage() -> Element {
                         div { class: "text-center py-16",
                             p { class: "text-slate-500 dark:text-slate-400 mb-4", "{tf(lang, \"forum.my_topics_empty\")}" }
                             a { href: "/topics/new",
-                                class: "inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors",
+                                class: "inline-flex items-center px-4 py-2 rounded-lg btn-flow text-sm font-semibold transition-all",
                                 "{tf(lang, \"forum.post_first\")}"
                             }
                         }
@@ -635,7 +635,7 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
                 button {
                     class: format_args!("px-5 py-2 rounded-lg font-semibold text-sm transition-all {}",
                         if submitting() { "bg-slate-200 text-slate-400 cursor-not-allowed" }
-                        else { "bg-blue-600 text-white hover:bg-blue-700" }
+                        else { "btn-flow" }
                     ),
                     disabled: submitting(),
                     onclick: move |evt| handle_submit(evt),
@@ -846,7 +846,7 @@ pub fn NewTopicPage() -> Element {
                     button {
                         class: format_args!("px-5 py-2 rounded-lg font-semibold text-sm transition-all {}",
                             if submitting() { "bg-slate-200 text-slate-400 cursor-not-allowed" }
-                            else { "bg-blue-600 text-white hover:bg-blue-700" }),
+                            else { "btn-flow" }),
                         disabled: submitting(),
                         onclick: move |evt| handle_submit(evt),
                         if submitting() { "{tf(lang, \"forum.publishing\")}" } else { "{tf(lang, \"forum.publish_topic\")}" }
@@ -883,7 +883,7 @@ pub fn DiscussionPanel(resource_kind: String, resource_path: String) -> Element 
             div { class: "flex items-center justify-between mb-5",
                 h3 { class: "text-lg font-bold text-slate-900 dark:text-white", "💬 关联讨论" }
                 a { href: "{new_href}",
-                    class: "inline-flex items-center px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 transition-colors",
+                    class: "inline-flex items-center px-3 py-1.5 rounded-lg btn-flow text-xs font-semibold transition-all",
                     "发起讨论"
                 }
             }
