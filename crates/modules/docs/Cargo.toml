@@ -11,6 +11,7 @@ serde_yaml = { workspace = true, optional = true }
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
 rustineverything-sdk = { path = "../../sdk" }
+rustineverything-widgets = { path = "../../widgets" }
 rustineverything-core = { path = "../../core" }
 rustineverything-module-blog = { path = "../blog" }
 rustineverything-module-course = { path = "../course" }
@@ -24,6 +25,7 @@ server = [
     "dioxus/server",
     "dep:tokio",
     "dep:serde_yaml",
+    "rustineverything-widgets/server",
     "rustineverything-core/server",
     "rustineverything-module-blog/server",
     "rustineverything-module-course/server",

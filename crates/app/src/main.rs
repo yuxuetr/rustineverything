@@ -21,6 +21,10 @@ const MATH_CSS: Asset = asset!("/assets/css/math.css");
 const PRISM_CSS: Asset = asset!("/assets/css/prism-tomorrow.min.css");
 
 fn main() {
+  // Phase 2.1: 启动期一次性注册各模块提供的 MDX 嵌入组件。
+  // 在 server 和 client 两边都调用，用于 SSR + hydration 双边 registry 一致。
+  rustineverything_module_podcast::register_components();
+
   // Server: customize the Axum router to serve blog post static assets
   #[cfg(feature = "server")]
   dioxus::serve(|| async move {

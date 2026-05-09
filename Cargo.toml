@@ -2,6 +2,7 @@
 members = [
     "crates/core",
     "crates/sdk",
+    "crates/widgets",
     "crates/modules/blog",
     "crates/modules/podcast",
     "crates/modules/course",

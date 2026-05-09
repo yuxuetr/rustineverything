@@ -6,8 +6,8 @@ use crate::components::hero::Hero;
 use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
 use crate::i18n::{t, use_i18n};
-use rustineverything_module_blog::markdown::Markdown;
 use rustineverything_module_blog::server::{get_blog_content, list_blog_posts};
+use rustineverything_widgets::Markdown;
 use rustineverything_module_course::course::{
     AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
 };

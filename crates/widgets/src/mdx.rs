@@ -1,8 +1,16 @@
+//! MDX 渲染管道（Phase 2.1 从 `crates/modules/blog/src/markdown.rs` 迁移过来）。
+//!
+//! 与原版的差异：
+//! 1. 不再直接 `use rustineverything_module_podcast::podcast::PodcastCard`，
+//!    改为通过 [`crate::registry`] 查表渲染，避免 widgets crate 依赖具体业务模块。
+//! 2. 其余渲染逻辑（GFM / 数学 / Mermaid / 代码块 + Copy / 颜色组件 / 标注 block-id）
+//!    保持与原版一致，welcome 示例和现有快照仍可像素级回归。
+
 use dioxus::prelude::*;
-use pulldown_cmark::{Options, Parser, Event, Tag, CodeBlockKind, BlockQuoteKind};
+use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, Options, Parser, Tag};
+use pulldown_latex::{push_mathml, Parser as LatexParser, Storage};
 use serde::{Deserialize, Serialize};
-use rustineverything_module_podcast::podcast::PodcastCard;
-use pulldown_latex::{Parser as LatexParser, Storage, push_mathml};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct PostMetadata {
@@ -14,9 +22,11 @@ pub struct PostMetadata {
 #[derive(Props, Clone, PartialEq)]
 pub struct MarkdownProps {
     pub content: String,
-    pub blog_id: String, // 传入当前文章 ID，用于处理相对路径
+    /// 当前文章 / 章节 / 案例 ID，用于解析图片相对路径。
+    pub blog_id: String,
 }
 
+/// 解析 frontmatter + 正文。frontmatter 为可选 YAML（`---` 分隔）。
 pub fn parse_mdx(content: &str) -> (PostMetadata, String) {
     if !content.starts_with("---") {
         return (PostMetadata::default(), content.to_string());
@@ -46,8 +56,8 @@ pub fn Markdown(props: MarkdownProps) -> Element {
     let body = convert_admonitions(&body);
     let parser = Parser::new_ext(&body, options);
     let mut it = parser.peekable();
-    
-    // 渲染流，传入 blog_id；同时按顶层块编号注入 data-block-id 供标注定错
+
+    // 渲染流，传入 blog_id；同时按顶层块编号注入 data-block-id 供标注定位
     let mut block_idx: usize = 1;
     let elements = render_stream(&mut it, &props.blog_id, &mut block_idx, true);
 
@@ -64,7 +74,7 @@ pub fn Markdown(props: MarkdownProps) -> Element {
             .math-display math {{ font-size: 1.4em; }}
             .prose code::before, .prose code::after {{ content: none !important; }}
         " }
-        
+
         div { class: "prose prose-slate dark:prose-invert max-w-none",
             {elements.into_iter()}
         }
@@ -139,21 +149,21 @@ fn render_stream<'a>(
             Event::InlineMath(math) => {
                 let mathml = latex_to_mathml_string(&math, false);
                 nodes.push(rsx! { span { class: "math-inline mx-1", dangerous_inner_html: "{mathml}" } });
-            },
+            }
             Event::DisplayMath(math) => {
                 let mathml = latex_to_mathml_string(&math, true);
-                nodes.push(rsx! { 
-                    div { class: "math-display flex justify-center my-10 overflow-x-auto py-8 bg-slate-50/50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800", 
+                nodes.push(rsx! {
+                    div { class: "math-display flex justify-center my-10 overflow-x-auto py-8 bg-slate-50/50 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800",
                         div { class: "px-6", dangerous_inner_html: "{mathml}" }
-                    } 
+                    }
                 });
-            },
+            }
             Event::SoftBreak => nodes.push(rsx! { " " }),
             Event::HardBreak => nodes.push(rsx! { br {} }),
             Event::Rule => nodes.push(rsx! { hr { class: "my-8 border-slate-200 dark:border-slate-800" } }),
             Event::Html(html) | Event::InlineHtml(html) => {
                 let h = html.trim();
-                if h.starts_with("<") {
+                if h.starts_with('<') {
                     if let Some(component) = render_mdx_registry(h) {
                         nodes.push(component);
                         continue;
@@ -204,14 +214,14 @@ fn render_tag(tag: Tag, children: Vec<Element>, blog_id: &str, block_id: Option<
         Tag::Paragraph => {
             // 顶层 paragraph 始终包 <p>以保证块锁点；非顶层且单子节点时保持原优化。
             if !has_bid && children.len() == 1 {
-                return children.into_iter().next().unwrap();
+                return children.into_iter().next().unwrap_or_else(|| rsx! { span {} });
             }
             rsx! { p {
                 id: if has_bid { "{bid}" },
                 "data-block-id": if has_bid { "{bid}" },
                 {children.into_iter()}
             } }
-        },
+        }
         Tag::List(None) => rsx! { ul {
             id: if has_bid { "{bid}" },
             "data-block-id": if has_bid { "{bid}" },
@@ -231,12 +241,12 @@ fn render_tag(tag: Tag, children: Vec<Element>, blog_id: &str, block_id: Option<
             rsx! { pre { {children.into_iter()} } }
         }
         Tag::Link { dest_url, .. } => rsx! { a { href: "{dest_url}", class: "text-blue-600 dark:text-blue-400 underline decoration-blue-500/30 hover:decoration-blue-500 transition-all", {children.into_iter()} } },
-        
+
         // --- 核心：处理图片相对路径 ---
         Tag::Image { dest_url, title, .. } => {
             let url = dest_url.to_string();
-            let src = if url.starts_with("http") || url.starts_with("/") {
-                url 
+            let src = if url.starts_with("http") || url.starts_with('/') {
+                url
             } else {
                 // 处理 ID 为 "1" 的特殊情况，映射到 welcome 目录
                 let folder = if blog_id == "1" { "welcome" } else { blog_id };
@@ -276,10 +286,16 @@ fn render_tag(tag: Tag, children: Vec<Element>, blog_id: &str, block_id: Option<
 
 fn render_mdx_registry(html: &str) -> Option<Element> {
     let clean_html = html.trim();
-    if clean_html.contains("<PodcastCard") {
-        let id = extract_attr(clean_html, "id")?.parse::<i32>().ok()?;
-        return Some(rsx! { PodcastCard { id: id } });
+
+    // 1) 先查动态注册表（PodcastCard、Discussion、Annotation … 由各自模块注册）。
+    if let Some(name) = detect_registered_tag(clean_html) {
+        let attrs = parse_attrs(clean_html);
+        if let Some(el) = crate::registry::render(&name, &attrs) {
+            return Some(el);
+        }
     }
+
+    // 2) 内置静态嵌入：YouTube / Bilibili 视频框
     if clean_html.contains("<YouTube") {
         let id = extract_attr(clean_html, "id")?;
         return Some(rsx! {
@@ -297,12 +313,82 @@ fn render_mdx_registry(html: &str) -> Option<Element> {
         });
     }
 
-    // ── 文字样式组件：<Yellow text="..." /> 等 ──
+    // 3) 文字样式组件：<Yellow text="..." /> 等
     if let Some(el) = render_text_style_component(clean_html) {
         return Some(el);
     }
 
     None
+}
+
+/// 从 `<Tag ... />` 提取标签名（首个标签字符序列直到空白 / `/` / `>`）。
+fn detect_registered_tag(html: &str) -> Option<String> {
+    let after_lt = html.strip_prefix('<')?;
+    let end = after_lt
+        .find(|c: char| c.is_whitespace() || c == '/' || c == '>')
+        .unwrap_or(after_lt.len());
+    let name = &after_lt[..end];
+    if name.is_empty() || !name.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false) {
+        // 注册表只匹配大写开头的自定义组件，避免和原生 HTML 标签冲突。
+        return None;
+    }
+    Some(name.to_string())
+}
+
+/// 解析 `<Tag a="b" c='d' />` 形式中的属性。仅支持 `key="value"` / `key='value'`。
+fn parse_attrs(html: &str) -> HashMap<String, String> {
+    let mut attrs = HashMap::new();
+    let bytes = html.as_bytes();
+    let mut i = 0usize;
+    // 先跳过标签名
+    while i < bytes.len() && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'\n' {
+        i += 1;
+    }
+    while i < bytes.len() {
+        // skip whitespace
+        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t' || bytes[i] == b'\n') {
+            i += 1;
+        }
+        if i >= bytes.len() || bytes[i] == b'>' || bytes[i] == b'/' {
+            break;
+        }
+        // read key
+        let key_start = i;
+        while i < bytes.len() && bytes[i] != b'=' && bytes[i] != b' ' && bytes[i] != b'\t' && bytes[i] != b'/' && bytes[i] != b'>' {
+            i += 1;
+        }
+        let key = match std::str::from_utf8(&bytes[key_start..i]) {
+            Ok(s) => s.to_string(),
+            Err(_) => break,
+        };
+        if i >= bytes.len() || bytes[i] != b'=' {
+            // bare attribute (key without value) — skip
+            continue;
+        }
+        i += 1; // skip '='
+        if i >= bytes.len() {
+            break;
+        }
+        let quote = bytes[i];
+        if quote != b'"' && quote != b'\'' {
+            // 未闭合属性，整体放弃
+            break;
+        }
+        i += 1;
+        let val_start = i;
+        while i < bytes.len() && bytes[i] != quote {
+            i += 1;
+        }
+        let value = match std::str::from_utf8(&bytes[val_start..i]) {
+            Ok(s) => s.to_string(),
+            Err(_) => break,
+        };
+        if i < bytes.len() {
+            i += 1; // skip closing quote
+        }
+        attrs.insert(key, value);
+    }
+    attrs
 }
 
 /// 将 :::type 语法转换为 GFM alert 语法
@@ -515,6 +601,116 @@ fn render_text_style_component(html: &str) -> Option<Element> {
 fn extract_attr(html: &str, attr: &str) -> Option<String> {
     let pattern = format!("{}=\"", attr);
     let start = html.find(&pattern)? + pattern.len();
-    let end = html[start..].find("\"")?;
+    let end = html[start..].find('"')?;
     Some(html[start..start + end].to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_mdx_without_frontmatter() {
+        let (meta, body) = parse_mdx("# Hello\n\nworld");
+        assert_eq!(meta.title, "");
+        assert!(body.contains("Hello"));
+    }
+
+    #[test]
+    fn parse_mdx_with_frontmatter() {
+        let src = "---\ntitle: Hello\ndescription: A test\n---\n\nbody text";
+        let (meta, body) = parse_mdx(src);
+        assert_eq!(meta.title, "Hello");
+        assert_eq!(meta.description.as_deref(), Some("A test"));
+        assert_eq!(body.trim(), "body text");
+    }
+
+    #[test]
+    fn parse_mdx_partial_frontmatter_returns_default() {
+        // 只有一段 `---`，未关闭 → 视为无 frontmatter
+        let src = "---\ntitle: bad";
+        let (meta, body) = parse_mdx(src);
+        assert_eq!(meta, PostMetadata::default());
+        assert!(body.contains("title: bad"));
+    }
+
+    #[test]
+    fn convert_admonitions_note() {
+        let input = ":::note\nHello\n:::\n";
+        let out = convert_admonitions(input);
+        assert!(out.contains("> [!NOTE]"));
+        assert!(out.contains("> Hello"));
+    }
+
+    #[test]
+    fn convert_admonitions_warn_alias() {
+        let input = ":::warn\nbe careful\n:::\n";
+        let out = convert_admonitions(input);
+        assert!(out.contains("> [!WARNING]"));
+    }
+
+    #[test]
+    fn convert_admonitions_unknown_type_falls_back_to_note() {
+        let input = ":::random\ntext\n:::\n";
+        let out = convert_admonitions(input);
+        assert!(out.contains("> [!NOTE]"));
+    }
+
+    #[test]
+    fn convert_admonitions_no_block_passthrough() {
+        let input = "plain line\nanother\n";
+        let out = convert_admonitions(input);
+        assert_eq!(out, "plain line\nanother\n");
+    }
+
+    #[test]
+    fn detect_registered_tag_capital_only() {
+        assert_eq!(detect_registered_tag("<PodcastCard id=\"1\" />"), Some("PodcastCard".to_string()));
+        assert_eq!(detect_registered_tag("<YouTube id=\"abc\" />"), Some("YouTube".to_string()));
+        // 小写 HTML 标签不应被识别为注册组件
+        assert_eq!(detect_registered_tag("<span>x</span>"), None);
+        assert_eq!(detect_registered_tag("<div"), None);
+    }
+
+    #[test]
+    fn parse_attrs_basic() {
+        let attrs = parse_attrs("<PodcastCard id=\"3\" title=\"Hello\" />");
+        assert_eq!(attrs.get("id").map(|s| s.as_str()), Some("3"));
+        assert_eq!(attrs.get("title").map(|s| s.as_str()), Some("Hello"));
+        assert_eq!(attrs.len(), 2);
+    }
+
+    #[test]
+    fn parse_attrs_single_quotes() {
+        let attrs = parse_attrs("<Tag a='1' b='2' />");
+        assert_eq!(attrs.get("a").map(|s| s.as_str()), Some("1"));
+        assert_eq!(attrs.get("b").map(|s| s.as_str()), Some("2"));
+    }
+
+    #[test]
+    fn parse_attrs_no_attrs_is_empty() {
+        let attrs = parse_attrs("<NoAttrs />");
+        assert!(attrs.is_empty());
+    }
+
+    #[test]
+    fn extract_attr_basic() {
+        assert_eq!(extract_attr(r#"<X id="42" />"#, "id"), Some("42".to_string()));
+        assert_eq!(extract_attr(r#"<X id="42" />"#, "missing"), None);
+    }
+
+    #[test]
+    fn latex_to_mathml_inline_smoke() {
+        let mathml = latex_to_mathml_string("a + b", false);
+        // 不严格断言完整 XML，只校验非空且包含 math 元素
+        assert!(!mathml.is_empty());
+        assert!(mathml.contains("math"));
+    }
+
+    #[test]
+    fn latex_to_mathml_invalid_falls_back_to_code() {
+        // 故意用不闭合的 LaTeX，确认走 fallback 不 panic
+        let mathml = latex_to_mathml_string("\\frac{", false);
+        assert!(mathml.contains("<code>") || mathml.contains("math"));
+    }
 }

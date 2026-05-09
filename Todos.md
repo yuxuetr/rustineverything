@@ -183,10 +183,11 @@
 > 目标：MDX 解析器不重写，仅开放组件注册 + SEO 一次到位。
 
 ### 2.1 widgets crate 迁移
-- [ ] 新建 `crates/widgets/`，将 `modules/blog/src/markdown.rs` 搬到 `crates/widgets/src/mdx.rs`
-- [ ] 移除 `markdown.rs` 对 `rustineverything-module-podcast::PodcastCard` 的直接依赖
-- [ ] `Blog / DocPage / Lesson` 改为从 widgets 引入 `Markdown`
-- [ ] 单测保持现有覆盖
+- [x] 新建 `crates/widgets/`，将 `modules/blog/src/markdown.rs` 搬到 `crates/widgets/src/mdx.rs`（520 → 716 行，含 13 个新增单测）
+- [x] 移除 `markdown.rs` 对 `rustineverything-module-podcast::PodcastCard` 的直接依赖：引入 `MdxComponent` trait + 全局 `OnceLock<RwLock<ComponentRegistry>>`，podcast 模块在 `register_components()` 中注册自身
+- [x] `Blog / DocPage / Lesson / Cases / Forum / Comments` 改为从 widgets 引入 `Markdown`（6 处 import 全部迁移）
+- [x] 单测保持现有覆盖：`cargo test -p rustineverything-widgets` 全绿（19 单测：6 registry + 13 mdx），`cargo test --workspace` 全绿（278 tests passed; 0 failed）
+- [x] workspace + 6 处 Cargo.toml 注册 widgets 依赖（含 server feature 透传）；`crates/app/src/main.rs` 启动期调 `rustineverything_module_podcast::register_components()`
 
 ### 2.2 ComponentRegistry
 - [ ] `MdxComponent` trait：`name() -> &'static str` + `render(attrs) -> Element`
@@ -395,7 +396,7 @@
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
 | 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
-| 2 | ⏳ 待开始 | MDX 组件开放注册 + SEO 到位 |
+| 2 | 🔄 进行中 (2.1 ✅) | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
 | 5 | ⏳ 待开始 | 插件生态（Hot Reload + 内存回收验证 + 示例） |

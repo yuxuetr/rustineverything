@@ -11,6 +11,7 @@ serde_yaml = { workspace = true, optional = true }
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
 rustineverything-sdk = { path = "../../sdk" }
+rustineverything-widgets = { path = "../../widgets" }
 rustineverything-module-blog = { path = "../blog" }
 rustineverything-core = { path = "../../core" }
 sea-orm = { workspace = true, optional = true }
@@ -24,6 +25,7 @@ server = [
     "dep:tokio",
     "dep:serde_yaml",
     "dep:sea-orm",
+    "rustineverything-widgets/server",
     "rustineverything-module-blog/server",
     "rustineverything-core/server",
 ]

@@ -9,6 +9,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_yaml = { workspace = true, optional = true }
 chrono = { workspace = true, features = ["serde"] }
 rustineverything-sdk = { path = "../../sdk" }
+rustineverything-widgets = { path = "../../widgets" }
 rustineverything-core = { path = "../../core" }
 rustineverything-module-blog = { path = "../blog" }
 rustineverything-module-forum = { path = "../forum" }
@@ -20,5 +21,6 @@ tempfile = "3"
 server = [
     "dioxus/server",
     "dep:serde_yaml",
+    "rustineverything-widgets/server",
     "rustineverything-module-forum/server",
 ]

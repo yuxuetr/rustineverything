@@ -1,0 +1,23 @@
+[package]
+name = "rustineverything-widgets"
+version = "0.1.0"
+edition = "2021"
+
+# widgets crate：MDX 渲染管道 + 嵌入组件注册表
+#
+# 设计目标：
+# - 与所有内容模块 (blog / course / docs / forum / cases) 共用
+# - 不直接依赖任何 module crate（通过 ComponentRegistry 动态注册组件）
+# - 仍可在 server feature 下编译（与 dioxus fullstack 保持一致）
+
+[dependencies]
+dioxus = { workspace = true, features = ["fullstack", "router"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+serde_yaml = "0.9"
+chrono = { workspace = true, features = ["serde"] }
+pulldown-cmark = { version = "0.13.0", features = ["html"] }
+pulldown-latex = "0.7.1"
+
+[features]
+server = ["dioxus/server"]

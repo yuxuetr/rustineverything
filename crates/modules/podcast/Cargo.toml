@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+rustineverything-widgets = { path = "../../widgets" }
 dioxus = { workspace = true, features = ["fullstack"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
@@ -17,4 +18,9 @@ rustineverything-core = { path = "../../core" }
 tempfile = "3"
 
 [features]
-server = ["dioxus/server", "dep:tokio", "dep:serde_yaml"]
+server = [
+    "dioxus/server",
+    "dep:tokio",
+    "dep:serde_yaml",
+    "rustineverything-widgets/server",
+]

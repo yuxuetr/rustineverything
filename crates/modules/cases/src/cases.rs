@@ -5,7 +5,7 @@ use crate::server::{
 use dioxus::prelude::*;
 use dioxus::prelude::try_use_context;
 use rustineverything_core::i18n::Language;
-use rustineverything_module_blog::markdown::Markdown;
+use rustineverything_widgets::Markdown;
 use rustineverything_module_forum::forum::DiscussionPanel;
 
 fn use_language_ctx() -> Language {

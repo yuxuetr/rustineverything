@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::server::{get_doc_content, list_doc_tree, DocTreeNode};
-use rustineverything_module_blog::markdown::Markdown;
+use rustineverything_widgets::Markdown;
 use rustineverything_module_course::course::AnnotationLayer;
 use rustineverything_module_forum::forum::DiscussionPanel;
 

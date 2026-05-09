@@ -5,7 +5,7 @@ use crate::server::{
 use dioxus::prelude::*;
 use rustineverything_core::i18n::Language;
 use rustineverything_core::session::SessionUser;
-use rustineverything_module_blog::markdown::Markdown;
+use rustineverything_widgets::Markdown;
 
 // =============================================================
 // 共享上下文 hooks（与 app crate 的 use_session_user / use_auth_modal 桥接）

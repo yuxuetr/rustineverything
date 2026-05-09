@@ -11,6 +11,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 # 核心库在前端不需要 server 特性
 rustineverything-core = { path = "../core" }
+rustineverything-widgets = { path = "../widgets" }
 rustineverything-module-blog = { path = "../modules/blog" }
 rustineverything-module-podcast = { path = "../modules/podcast" }
 rustineverything-module-course = { path = "../modules/course" }
@@ -44,6 +45,7 @@ mobile = ["dioxus/mobile"]
 server = [
     "dioxus/server",
     "rustineverything-core/server",
+    "rustineverything-widgets/server",
     "rustineverything-module-blog/server",
     "rustineverything-module-podcast/server",
     "rustineverything-module-course/server",

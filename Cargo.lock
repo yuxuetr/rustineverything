@@ -5453,6 +5453,7 @@ dependencies = [
  "rustineverything-module-podcast",
  "rustineverything-module-search",
  "rustineverything-module-uploads",
+ "rustineverything-widgets",
  "sea-orm",
  "serde",
  "serde_json",
@@ -5504,9 +5505,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dioxus",
- "pulldown-cmark",
- "pulldown-latex",
- "rustineverything-module-podcast",
  "rustineverything-sdk",
  "serde",
  "serde_json",
@@ -5524,6 +5522,7 @@ dependencies = [
  "rustineverything-module-blog",
  "rustineverything-module-forum",
  "rustineverything-sdk",
+ "rustineverything-widgets",
  "serde",
  "serde_yaml",
  "tempfile",
@@ -5552,6 +5551,7 @@ dependencies = [
  "rustineverything-core",
  "rustineverything-module-blog",
  "rustineverything-sdk",
+ "rustineverything-widgets",
  "sea-orm",
  "serde",
  "serde_json",
@@ -5571,6 +5571,7 @@ dependencies = [
  "rustineverything-module-course",
  "rustineverything-module-forum",
  "rustineverything-sdk",
+ "rustineverything-widgets",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -5588,6 +5589,7 @@ dependencies = [
  "rustineverything-module-blog",
  "rustineverything-module-course",
  "rustineverything-sdk",
+ "rustineverything-widgets",
  "sea-orm",
  "serde",
  "serde_json",
@@ -5602,6 +5604,7 @@ dependencies = [
  "dioxus",
  "rustineverything-core",
  "rustineverything-sdk",
+ "rustineverything-widgets",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -5651,6 +5654,19 @@ dependencies = [
  "serde",
  "serde_json",
  "unic-langid",
+]
+
+[[package]]
+name = "rustineverything-widgets"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "pulldown-cmark",
+ "pulldown-latex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
 ]
 
 [[package]]
