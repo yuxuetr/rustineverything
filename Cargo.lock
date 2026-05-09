@@ -5452,6 +5452,7 @@ dependencies = [
  "rustineverything-module-forum",
  "rustineverything-module-podcast",
  "rustineverything-module-search",
+ "rustineverything-module-uploads",
  "sea-orm",
  "serde",
  "serde_json",
@@ -5623,6 +5624,20 @@ dependencies = [
  "tantivy",
  "tantivy-jieba",
  "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "rustineverything-module-uploads"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "chrono",
+ "dioxus",
+ "rand 0.9.3",
+ "rustineverything-sdk",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

@@ -1,0 +1,21 @@
+[package]
+name = "rustineverything-module-uploads"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dioxus = { workspace = true, features = ["fullstack", "router"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+base64 = { workspace = true }
+tokio = { workspace = true, features = ["full"], optional = true }
+rand = { workspace = true, optional = true }
+rustineverything-sdk = { path = "../../sdk" }
+
+[features]
+server = [
+    "dioxus/server",
+    "dep:tokio",
+    "dep:rand",
+]

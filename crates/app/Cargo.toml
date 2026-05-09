@@ -20,6 +20,7 @@ rustineverything-module-search = { path = "../modules/search" }
 rustineverything-module-cases = { path = "../modules/cases" }
 rustineverything-module-docs = { path = "../modules/docs" }
 rustineverything-module-comments = { path = "../modules/comments" }
+rustineverything-module-uploads = { path = "../modules/uploads" }
 pulldown-cmark = "0.13.0"
 chrono = { workspace = true, features = ["serde"] }
 
@@ -52,6 +53,7 @@ server = [
     "rustineverything-module-cases/server",
     "rustineverything-module-docs/server",
     "rustineverything-module-comments/server",
+    "rustineverything-module-uploads/server",
     "dep:tokio",
     "dep:axum",
     "dep:dotenvy",

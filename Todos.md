@@ -106,8 +106,10 @@
 - [x] 在工作区 Cargo.toml + app/Cargo.toml 注册
 
 ### 1B.3 上传模块独立
-- [ ] 新建 `crates/modules/uploads/`
-- [ ] 迁移：`upload_image` server fn
+- [x] 新建 `crates/modules/uploads/`（Cargo.toml + lib.rs + server.rs）
+- [x] 迁移：`upload_image` server fn + `sniff_image_mime` + `safe_upload_filename` + 9 个单测
+- [x] `CommentBox` 调用改为 `rustineverything_module_uploads::server::upload_image`
+- [x] 从 `app/src/server/mod.rs` 移除上传路由与上传测试，避免重复注册 `/api/upload`
 
 ### 1B.4 App server/mod.rs 精简
 - [ ] 仅保留：站点配置 / i18n / 主题 CSS / Auth 辅助 / echo（约 150 行）
