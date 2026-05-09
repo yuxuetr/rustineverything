@@ -162,13 +162,14 @@
 - [x] `ModuleEngine::enabled_ids()` 供搜索 / sitemap / feed 接入
 - [x] 单测 10 个：builder / 注册查询 / 重复 id 拒绝 / site.json 关闭 / nav 过滤 / 搜索源 / `ModuleSettings` 默认 enabled / Engine trait / with_specs / nav 同位置稳定
 
-### 1C.4 其余 5 引擎占位
-- [ ] `engines/theme.rs`：ThemeEngine 骨架（封装现有 `aggregate_theme_css`）
-- [ ] `engines/layout.rs`：LayoutEngine 骨架 + `LayoutPack` trait 定义
-- [ ] `engines/content.rs`：ContentEngine 骨架 + `ComponentRegistry` 签名
-- [ ] `engines/moderation.rs`：ModerationEngine 骨架 + `Verdict` 枚举 + `ModerationStage` trait
-- [ ] `engines/auth.rs`：AuthEngine（`AuthService` 重命名，实现 `Engine` trait）
-- [ ] `engines/search.rs`：SearchEngine 封装（`SearchSource` trait + 自注册取代硬编码 4 源）
+### 1C.4 其余 5 引擎占位 + AuthEngine
+- [x] `engines/theme.rs`：ThemeEngine 骨架包装 `PluginEngine`：register_theme/set_themes/aggregate_css；init 阶段从 `SiteConfig.active_theme` 读出默认主题路径（4 单测）
+- [x] `engines/layout.rs`：`LayoutPack` trait（name + label）+ `LayoutEngine` 注册中心 + active layout 记录（4 单测）
+- [x] `engines/content.rs`：`MdxComponent` trait（name + render(attrs)）+ `ComponentRegistry`（register / lookup / list / render）+ `ContentEngine`（5 单测，含未知组件降级占位）
+- [x] `engines/moderation.rs`：`ModerationLabel` (Allow/Flag/Block) + `Verdict { score, label, reason }` + `ModerationStage` trait + 串行流水线（8 单测，含早停 / Flag 取最高分 / score 夹估）
+- [x] `engines/auth.rs`：`AuthEngine` (server-only) 包装 `AuthService`，init 读 `site_config.auth.enabled`（4 单测）
+- [x] `engines/search.rs`：`SearchDocument` 数据 + `SearchSource` trait + `SearchEngine`（collect_all / collect_filtered 按 enabled 过滤）（4 单测）
+- [x] 小计：8 引擎全部实现 `Engine` trait，核心 (`plugin/module/auth`) 可接入现有 server fn；5 占位骨架 (`theme/layout/content/moderation/search`) 为后续 Phase 2/3/4 准备 trait 契约。全部 57 个 engines::* 单测通过
 
 ### 1C.5 验收门禁
 - [ ] `cargo test --features server --workspace` 全绿
@@ -393,7 +394,7 @@
 | 0 | ✅ 完成 | 基线（7 模块 + 6 插件 + MDX 稳定） |
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
-| 1C | 🟡 进行中 (1C.1 ✅ / 1C.2 ✅ / 1C.3 ✅) | 3 核心引擎 + WASM ABI 重构 + ModuleEngine 开关 + 5 占位 |
+| 1C | 🟡 进行中 (1C.1 ✅ / 1C.2 ✅ / 1C.3 ✅ / 1C.4 ✅) | 3 核心 + 5 占位 完成 (仅剩 1C.5 验收与文档) |
 | 2 | ⏳ 待开始 | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
