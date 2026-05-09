@@ -5349,6 +5349,7 @@ dependencies = [
  "dotenvy",
  "oauth2",
  "pulldown-cmark",
+ "rand 0.9.3",
  "rustineverything-core",
  "rustineverything-module-admin",
  "rustineverything-module-blog",

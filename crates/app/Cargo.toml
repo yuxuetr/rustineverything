@@ -30,6 +30,7 @@ oauth2 = { workspace = true, optional = true }
 tower-http = { version = "0.6", features = ["fs"], optional = true }
 sea-orm = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
 
 [features]
 default = ["web"]
@@ -54,6 +55,7 @@ server = [
     "dep:tower-http",
     "dep:sea-orm",
     "dep:serde_yaml",
+    "dep:rand",
 ]
 
 [dev-dependencies]
