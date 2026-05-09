@@ -67,7 +67,7 @@
 - [x] **用户创建事务化**：`sync_user_to_db` 中 `user::insert` + `user_identity::insert` 包入 SeaORM 事务（`db.begin().await?`），避免 identity 失败时残留孤儿 user
 - [ ] **图片上传校验**：`upload_image` 增加 MIME 嗅探（白名单 png/jpg/gif/webp）+ 文件大小上限（5MB）+ 安全文件名（移除 `..`、`/`、`\`，限制扩展名）
 - [ ] **`access_token` 加密存表**：`user_identities.access_token` 当前明文落库；用 `JWT_SECRET` 派生密钥做 AES-GCM 加密；解密失败时强制重新登录
-- [ ] **删除 dead code**：`crates/plugins/prefix-plugin/` 是 hello-world demo，未在 site.json 引用；移到 `examples/` 或直接删除
+- [x] **删除 dead code**：`crates/plugins/prefix-plugin/` 是 hello-world demo，未在 site.json 引用；移到 `examples/` 或直接删除
 - [ ] 单测：state 校验失败拒绝登录 / 大文件上传拒绝 / 非白名单 MIME 拒绝 / 加密 token 可解密回原值 / 事务回滚正确
 
 ### 1A.5 Dioxus 渲染原生化（去 JS 依赖）

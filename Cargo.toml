@@ -10,7 +10,6 @@ members = [
     "crates/modules/search",
     "crates/modules/cases",
     "crates/app",
-    "crates/plugins/prefix-plugin",
     "crates/plugins/i18n-fluent",
     "crates/plugins/theme-ocean",
     "crates/plugins/github-auth",
