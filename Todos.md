@@ -56,11 +56,11 @@
 - [ ] `docs/DEVELOPER.md` DB 章节更新
 
 ### 1A.3 PluginManager 缓存
-- [ ] `PluginManager` 增加 `Module` 缓存：`HashMap<PathBuf, (SystemTime, Module)>`
-- [ ] `call_with_string()` 先查缓存，mtime 不变则复用 `Module`
-- [ ] 避免每次 `fs::read()` + `Module::new()` 的开销（i18n / theme 高频调用）
-- [ ] `invalidate(path)` 方法供 admin 显式刷新
-- [ ] 单测：缓存命中 / mtime 变更失效 / invalidate 后重加载
+- [x] `PluginManager` 增加 `Module` 缓存：`HashMap<PathBuf, CachedModule { module, mtime }>`
+- [x] `call_path_with_string()` 先查缓存，mtime 不变则复用 `Module`（保留原 `call_with_string` 以兼容）
+- [x] 避免每次 `fs::read()` + `Module::new()` 的开销（i18n / theme 高频调用 → 全局 `shared_plugin_manager()`）
+- [x] `invalidate(path)` / `invalidate_all()` 供 admin 显式刷新
+- [x] 单测：缓存命中 / invalidate 中一 / invalidate_all
 
 ### 1A.4 高优先级安全补遗（评估补充发现）
 - [x] **OAuth `state` 参数 CSRF 校验**：当前 `auth/mod.rs` 生成 state 但回调路径**完全未验证**；新增 state store（HashMap + 5 分钟 TTL）+ 回调强校验，state 不匹配直接 401
@@ -386,7 +386,7 @@
 | Phase | 状态 | 关键能力解锁 |
 |---|---|---|
 | 0 | ✅ 完成 | 基线（7 模块 + 6 插件 + MDX 稳定） |
-| 1A | ⏳ 待开始 | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
+| 1A | 🟢 进行中 (90%) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ⏳ 待开始 | App crate 拆分（758行→≤200行）+ 统一错误类型 |
 | 1C | ⏳ 待开始 | 3 核心引擎 + WASM ABI 重构（Extism/wit-bindgen）+ 5 占位 |
 | 2 | ⏳ 待开始 | MDX 组件开放注册 + SEO 到位 |

@@ -52,19 +52,17 @@ pub async fn get_site_config() -> Result<SiteConfig, ServerFnError> {
 pub async fn translate_server(key: String, lang: String) -> Result<String, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use rustineverything_core::PluginManager;
-        let _config = SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap()).unwrap_or_default();
         let plugin_dir = get_asset_root().join("plugins");
         let wasm_path = plugin_dir.join("i18n_fluent_plugin.wasm");
 
         if !wasm_path.exists() { return Ok(key); }
-        let wasm_bytes = fs::read(wasm_path).map_err(|e| ServerFnError::new(e.to_string()))?;
-        let manager = PluginManager::new();
+        let manager = rustineverything_core::shared_plugin_manager();
         let input = serde_json::json!({ "key": key, "lang": lang }).to_string();
-        manager.call_with_string(&wasm_bytes, "translate", &input).map_err(|e| ServerFnError::new(e.to_string()))
+        manager.call_path_with_string(&wasm_path, "translate", &input)
+            .map_err(|e| ServerFnError::new(e.to_string()))
     }
     #[cfg(not(feature = "server"))]
-    { Ok(key) }
+    { let _ = (key, lang); Ok(String::new()) }
 }
 
 // ========== 主题 ==========
@@ -73,15 +71,13 @@ pub async fn translate_server(key: String, lang: String) -> Result<String, Serve
 pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use rustineverything_core::PluginManager;
         let config = SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap()).unwrap_or_default();
         let plugin_dir = get_asset_root().join("plugins");
         let wasm_path = plugin_dir.join(&config.active_theme);
 
         if !wasm_path.exists() { return Ok("".to_string()); }
-        let wasm_bytes = fs::read(wasm_path).map_err(|e| ServerFnError::new(e.to_string()))?;
-        let manager = PluginManager::new();
-        Ok(manager.aggregate_theme_css(&[wasm_bytes]))
+        let manager = rustineverything_core::shared_plugin_manager();
+        Ok(manager.aggregate_theme_css_paths(&[wasm_path]))
     }
     #[cfg(not(feature = "server"))]
     { Ok("".to_string()) }
