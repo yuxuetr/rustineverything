@@ -23,6 +23,7 @@
 //!   共享访问。
 
 // 子引擎模块在后续阶段（1C.2 / 1C.3 / 1C.4）逐步加入。
+pub mod module;
 pub mod plugin;
 
 use std::any::Any;

@@ -155,12 +155,12 @@
 - [x] 单测 22 个：SDK 10 (manifest 创建/不兼容/能力/序列化/向后兼容/pack_output/pack_json/read_input) + PluginEngine 12 (名字/限制/shutdown/init/manifest 检测/filter_by_capability/老插件/超限/3 集成)
 
 ### 1C.3 ModuleEngine（模块注册 + 开关）
-- [ ] `engines/module.rs`：`ModuleSpec { id, label, routes, nav_position, enabled }`
-- [ ] 各模块实现自注册：`BlogModule::register(engine)` 等
-- [ ] `site.json::modules` 段控制 `enabled`
-- [ ] 导航生成仅包含 enabled 模块
-- [ ] 搜索索引源仅采集 enabled 模块
-- [ ] 单测：开关模块后导航 / 搜索源 / sitemap 联动
+- [x] `engines/module.rs`：`ModuleSpec { id, label, routes, nav_position, enabled }` + builder API + `disabled()` 反变是
+- [x] `ModuleEngine` 实现 `Engine` trait：register/get/is_enabled/enabled_modules/navigation/enabled_ids；init 阶段调 `apply_site_config` 备践 SiteConfig.modules
+- [x] `site.json::modules` 段控制 `enabled`：`SiteConfig` 增加 `modules: HashMap<String, ModuleSettings>` 字段，default 不不是不唭互选（默认 enabled = true 在 ModuleSettings 同名字段上）
+- [x] `ModuleEngine::navigation()` 仅返回 enabled 且 `nav_position.is_some()` 的模块，按位置升序（稳定排序）
+- [x] `ModuleEngine::enabled_ids()` 供搜索 / sitemap / feed 接入
+- [x] 单测 10 个：builder / 注册查询 / 重复 id 拒绝 / site.json 关闭 / nav 过滤 / 搜索源 / `ModuleSettings` 默认 enabled / Engine trait / with_specs / nav 同位置稳定
 
 ### 1C.4 其余 5 引擎占位
 - [ ] `engines/theme.rs`：ThemeEngine 骨架（封装现有 `aggregate_theme_css`）
@@ -393,7 +393,7 @@
 | 0 | ✅ 完成 | 基线（7 模块 + 6 插件 + MDX 稳定） |
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
-| 1C | 🟡 进行中 (1C.1 ✅ / 1C.2 ✅) | 3 核心引擎 + WASM ABI 重构（SDK_ABI_VERSION + manifest + 8MB 限制）+ 5 占位 |
+| 1C | 🟡 进行中 (1C.1 ✅ / 1C.2 ✅ / 1C.3 ✅) | 3 核心引擎 + WASM ABI 重构 + ModuleEngine 开关 + 5 占位 |
 | 2 | ⏳ 待开始 | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |

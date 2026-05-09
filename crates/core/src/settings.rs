@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::engines::module::ModuleSettings;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteConfig {
     pub site_name: String,
@@ -12,6 +14,10 @@ pub struct SiteConfig {
     pub navigation: Vec<NavItem>,
     #[serde(default)]
     pub auth: AuthSettings,
+    /// 模块开关：key = ModuleSpec.id，value = `{ enabled: true|false }`。
+    /// `ModuleEngine::init` 读取该字段覆盖默认 enabled 状态。
+    #[serde(default)]
+    pub modules: HashMap<String, ModuleSettings>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,6 +75,7 @@ impl Default for SiteConfig {
             paths,
             navigation: vec![],
             auth: AuthSettings::default(),
+            modules: HashMap::new(),
         }
     }
 }
