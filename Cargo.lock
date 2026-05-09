@@ -5447,6 +5447,7 @@ dependencies = [
  "rustineverything-module-blog",
  "rustineverything-module-cases",
  "rustineverything-module-course",
+ "rustineverything-module-docs",
  "rustineverything-module-forum",
  "rustineverything-module-podcast",
  "rustineverything-module-search",
@@ -5535,6 +5536,24 @@ dependencies = [
  "rustineverything-module-blog",
  "rustineverything-sdk",
  "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "rustineverything-module-docs"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "rustineverything-core",
+ "rustineverything-module-blog",
+ "rustineverything-module-course",
+ "rustineverything-module-forum",
+ "rustineverything-sdk",
  "serde",
  "serde_json",
  "serde_yaml",

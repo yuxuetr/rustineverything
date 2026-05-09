@@ -18,6 +18,7 @@ rustineverything-module-forum = { path = "../modules/forum" }
 rustineverything-module-admin = { path = "../modules/admin" }
 rustineverything-module-search = { path = "../modules/search" }
 rustineverything-module-cases = { path = "../modules/cases" }
+rustineverything-module-docs = { path = "../modules/docs" }
 pulldown-cmark = "0.13.0"
 chrono = { workspace = true, features = ["serde"] }
 
@@ -48,6 +49,7 @@ server = [
     "rustineverything-module-admin/server",
     "rustineverything-module-search/server",
     "rustineverything-module-cases/server",
+    "rustineverything-module-docs/server",
     "dep:tokio",
     "dep:axum",
     "dep:dotenvy",

@@ -92,12 +92,12 @@
 > 目标：把 `app/src/server/mod.rs` 中混合的 5 个领域拆分到独立模块。
 
 ### 1B.1 文档模块独立
-- [ ] 新建 `crates/modules/docs/`（Cargo.toml + lib.rs + server.rs + docs.rs）
-- [ ] 迁移：`DocMeta / DocTreeNode / DocContentResponse / parse_doc_frontmatter / extract_doc_info / scan_doc_dir` + 16 个测试
-- [ ] 迁移路由组件：`Docs / DocPage / TreeSection` 从 `routes/mod.rs` 移到 `modules/docs/src/docs.rs`
-- [ ] `routes/mod.rs` 改为 `use rustineverything_module_docs::docs::*`
-- [ ] workspace Cargo.toml 注册新 crate
-- [ ] 验证：16 个文档系统测试通过
+- [x] 新建 `crates/modules/docs/`（Cargo.toml + lib.rs + server.rs + docs.rs）
+- [x] 迁移：`DocMeta / DocTreeNode / DocContentResponse / parse_doc_frontmatter / extract_doc_info / scan_doc_dir` + 15 个测试（原计划 16，实际原始代码 15）
+- [x] 迁移路由组件：`Docs / DocPage / TreeSection` 从 `routes/mod.rs` 移到 `modules/docs/src/docs.rs`（使用 `<a href>` 打灯 避免对 app `Route` 循环依赖）
+- [x] `routes/mod.rs` 改为 `use rustineverything_module_docs::docs::{Docs, DocPage}`（路由仍由 app crate 控制）
+- [x] workspace Cargo.toml 注册新 crate
+- [x] 验证：15 个文档系统测试通过（`cargo test -p rustineverything-module-docs --features server`）
 
 ### 1B.2 评论模块独立
 - [ ] 新建 `crates/modules/comments/`

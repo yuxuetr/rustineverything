@@ -1,0 +1,31 @@
+[package]
+name = "rustineverything-module-docs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dioxus = { workspace = true, features = ["fullstack", "router"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+serde_yaml = { workspace = true, optional = true }
+chrono = { workspace = true, features = ["serde"] }
+tokio = { workspace = true, features = ["full"], optional = true }
+rustineverything-sdk = { path = "../../sdk" }
+rustineverything-core = { path = "../../core" }
+rustineverything-module-blog = { path = "../blog" }
+rustineverything-module-course = { path = "../course" }
+rustineverything-module-forum = { path = "../forum" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+server = [
+    "dioxus/server",
+    "dep:tokio",
+    "dep:serde_yaml",
+    "rustineverything-core/server",
+    "rustineverything-module-blog/server",
+    "rustineverything-module-course/server",
+    "rustineverything-module-forum/server",
+]

@@ -9,6 +9,7 @@ members = [
     "crates/modules/admin",
     "crates/modules/search",
     "crates/modules/cases",
+    "crates/modules/docs",
     "crates/app",
     "crates/plugins/i18n-fluent",
     "crates/plugins/theme-ocean",
