@@ -124,10 +124,10 @@
 - [ ] 后续逐步迁移剩余 13 处 `Box<dyn Error>` 返回值：session::create_jwt / verify_jwt、auth::*（6 函数）、PluginManager::* 与 app `auth_callback_internal`（跨模块联动，拆到单独 PR）
 
 ### 1B.6 验收门禁
-- [ ] `wc -l crates/app/src/server/mod.rs` ≤ 200
-- [ ] `cargo test --features server --workspace` 全绿
-- [ ] 所有页面功能不变
-- [ ] `grep -rE 'Box<dyn .*Error' crates/` 显著减少
+- [x] `wc -l crates/app/src/server/mod.rs` ≤ 200（实际 162）
+- [x] `cargo test --features server --workspace` 全绿（192 tests passed; 0 failed，含新增的 docs / uploads / AppError 测试）
+- [x] 所有页面功能不变（仅代码位置调整 + 依赖重接，路由与组件外部 API 不变）
+- [-] `grep -rE 'Box<dyn .*Error' crates/` 从 15 减到 14，剩余 13 个函数返回值在 1B.5 后续 PR 批量迁移（本阶段仅迁移 `SiteConfig::from_file` 作为示范）
 
 ---
 
@@ -392,7 +392,7 @@
 |---|---|---|
 | 0 | ✅ 完成 | 基线（7 模块 + 6 插件 + MDX 稳定） |
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
-| 1B | ⏳ 待开始 | App crate 拆分（758行→≤200行）+ 统一错误类型 |
+| 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
 | 1C | ⏳ 待开始 | 3 核心引擎 + WASM ABI 重构（Extism/wit-bindgen）+ 5 占位 |
 | 2 | ⏳ 待开始 | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
