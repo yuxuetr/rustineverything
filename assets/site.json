@@ -2,6 +2,8 @@
   "site_name": "Rust in Everything",
   "site_description": "专注 Rust 技术栈的学习与实战",
   "active_theme": "theme_ocean_plugin.wasm",
+  "themes": ["theme_ocean_plugin.wasm"],
+  "active_layout": "classic",
   "default_language": "zh",
   "author": "yuxuetr",
   "paths": {

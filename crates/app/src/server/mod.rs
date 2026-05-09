@@ -1,7 +1,9 @@
 use dioxus::fullstack::{post, ServerFnError};
 use dioxus::prelude::*;
+use serde::{Deserialize, Serialize};
 use rustineverything_core::settings::SiteConfig;
 use rustineverything_core::session::SessionUser;
+#[cfg(feature = "server")]
 use rustineverything_core::utils::get_asset_root;
 
 // ========== 辅助：从 FullstackContext 读取 Cookie 中的用户 ==========
@@ -23,13 +25,48 @@ fn current_session_user() -> Option<SessionUser> {
     parse_session_from_cookie_header(cookie_str.as_deref())
 }
 
+/// server-only: 读当前请求 Cookie 头中指定 key 的值（Phase 3.1 主题覆盖用）。
+#[cfg(feature = "server")]
+fn read_request_cookie(name: &str) -> Option<String> {
+    use dioxus::fullstack::FullstackContext;
+    let ctx = FullstackContext::current()?;
+    let parts = ctx.parts_mut();
+    let cookie_str = parts
+        .headers
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+    drop(parts);
+    let raw = cookie_str?;
+    for pair in raw.split(';') {
+        let pair = pair.trim();
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == name && !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Cookie 名（Phase 3.1）：存储用户选择的主题插件文件名。
+#[cfg(feature = "server")]
+pub const THEME_COOKIE_NAME: &str = "site_theme";
+
 // ========== 站点配置 ==========
 
 #[post("/api/site/config")]
 pub async fn get_site_config() -> Result<SiteConfig, ServerFnError> {
-    let config_path = get_asset_root().join("site.json");
-    SiteConfig::from_file(config_path.to_str().unwrap())
-        .map_err(|e| ServerFnError::new(format!("配置文件加载失败: {}", e)))
+    #[cfg(feature = "server")]
+    {
+        let config_path = get_asset_root().join("site.json");
+        SiteConfig::from_file(config_path.to_str().unwrap_or_default())
+            .map_err(|e| ServerFnError::new(format!("配置文件加载失败: {}", e)))
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        Ok(SiteConfig::default())
+    }
 }
 
 // ========== i18n ==========
@@ -53,20 +90,200 @@ pub async fn translate_server(key: String, lang: String) -> Result<String, Serve
 
 // ========== 主题 ==========
 
+/// 可选主题的展示信息（Phase 3.1）。前端 ThemePicker 用。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ThemeInfo {
+    /// 插件文件名（如 `theme_ocean_plugin.wasm`），概括 cookie 存储的值。
+    pub filename: String,
+    /// 从插件 manifest 读到的 id（如 `theme-ocean`），不可用时以文件名去后缀代替。
+    pub id: String,
+    /// 展示名（如 `Theme Ocean`）；没读到 manifest 时同 id。
+    pub label: String,
+    /// 在当前 site.json::themes 栈中是否默认激活的最顶层主题。
+    pub is_active: bool,
+}
+
 #[post("/api/theme/aggregated-css")]
 pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        let config = SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap()).unwrap_or_default();
-        let plugin_dir = get_asset_root().join("plugins");
-        let wasm_path = plugin_dir.join(&config.active_theme);
+        use rustineverything_core::engines::theme::theme_with_override;
 
-        if !wasm_path.exists() { return Ok("".to_string()); }
+        let asset_root = get_asset_root();
+        let config = SiteConfig::from_file(
+            asset_root
+                .join("site.json")
+                .to_str()
+                .unwrap_or_default(),
+        )
+        .unwrap_or_default();
+        let plugin_dir = asset_root.join("plugins");
+
+        // Phase 3.1：主题栈 + 可选 cookie 覆盖。
+        let stack: Vec<std::path::PathBuf> = config
+            .theme_stack()
+            .into_iter()
+            .filter(|name| !name.is_empty())
+            .map(|name| plugin_dir.join(name))
+            .collect();
+        let cookie = read_request_cookie(THEME_COOKIE_NAME);
+        let resolved = theme_with_override(&stack, &plugin_dir, cookie.as_deref());
+
+        if resolved.is_empty() {
+            return Ok(String::new());
+        }
         let manager = rustineverything_core::shared_plugin_manager();
-        Ok(manager.aggregate_theme_css_paths(&[wasm_path]))
+        Ok(manager.aggregate_theme_css_paths(&resolved))
     }
     #[cfg(not(feature = "server"))]
     { Ok("".to_string()) }
+}
+
+/// Phase 3.1：枚举 `assets/plugins/` 下声明为 `theme` 的插件。
+///
+/// 实现策略：递归扫描 wasm 文件，试读 manifest，过滤 capability 含 `theme` 的。
+/// 失败不 manifest 的插件以“文件名含 `theme`”启发式判定为主题，以保证老插件可见。
+#[post("/api/theme/list")]
+pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use rustineverything_core::{capabilities, PluginManifest};
+
+        let asset_root = get_asset_root();
+        let plugin_dir = asset_root.join("plugins");
+        let config = SiteConfig::from_file(
+            asset_root
+                .join("site.json")
+                .to_str()
+                .unwrap_or_default(),
+        )
+        .unwrap_or_default();
+        let stack = config.theme_stack();
+        let active_top = stack.last().cloned().unwrap_or_default();
+
+        let manager = rustineverything_core::shared_plugin_manager();
+
+        let entries = match std::fs::read_dir(&plugin_dir) {
+            Ok(e) => e,
+            Err(_) => return Ok(vec![]),
+        };
+
+        let mut out: Vec<ThemeInfo> = Vec::new();
+        for entry in entries.flatten() {
+            let name = match entry.file_name().to_str() {
+                Some(s) => s.to_string(),
+                None => continue,
+            };
+            if !name.ends_with(".wasm") {
+                continue;
+            }
+            let path = entry.path();
+
+            // 读 manifest。读不到时以启发式判定。
+            let manifest_json = manager
+                .call_path_with_string(&path, "get_manifest", "")
+                .ok();
+            let (id, label, is_theme) = match manifest_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<PluginManifest>(s).ok())
+            {
+                Some(m) => {
+                    let is_theme = m.has_capability(capabilities::THEME);
+                    (m.id.clone(), m.name.clone(), is_theme)
+                }
+                None => {
+                    let lower = name.to_lowercase();
+                    let is_theme = lower.contains("theme");
+                    let stem = name.trim_end_matches(".wasm").to_string();
+                    (stem.clone(), stem, is_theme)
+                }
+            };
+            if !is_theme {
+                continue;
+            }
+            out.push(ThemeInfo {
+                filename: name.clone(),
+                id,
+                label,
+                is_active: name == active_top,
+            });
+        }
+        out.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+        Ok(out)
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        Ok(vec![])
+    }
+}
+
+/// Phase 3.1：设置用户主题 cookie（覆盖主题栈最后一项）。
+///
+/// 传入空字符串表示“重置”（删除 cookie）。其他值会被严格校验：
+/// 1. 不允许路径分隔符 / `..`
+/// 2. 必须以 `.wasm` 结尾
+/// 3. 必须在 `assets/plugins/` 中实际存在
+/// 写 `Set-Cookie: site_theme=...; HttpOnly; Path=/; Max-Age=31536000; SameSite=Lax`。
+/// 生产环境（`BASE_URL` 以 https 开头）额外附加 `Secure`。
+#[post("/api/theme/set")]
+pub async fn set_user_theme(filename: String) -> Result<(), ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use dioxus::fullstack::FullstackContext;
+
+        let trimmed = filename.trim();
+        let cookie_value = if trimmed.is_empty() {
+            // 清除 cookie
+            String::new()
+        } else {
+            // 校验输入
+            if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
+                return Err(ServerFnError::new("主题名包含非法字符".to_string()));
+            }
+            if !trimmed.ends_with(".wasm") {
+                return Err(ServerFnError::new("主题名必须以 .wasm 结尾".to_string()));
+            }
+            let path = get_asset_root().join("plugins").join(trimmed);
+            if !path.exists() {
+                return Err(ServerFnError::new(format!(
+                    "主题插件不存在: {}",
+                    trimmed
+                )));
+            }
+            trimmed.to_string()
+        };
+
+        let secure_flag = std::env::var("BASE_URL")
+            .ok()
+            .filter(|u| u.starts_with("https://"))
+            .map(|_| "; Secure")
+            .unwrap_or("");
+
+        let header_value = if cookie_value.is_empty() {
+            format!(
+                "{}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax{}",
+                THEME_COOKIE_NAME, secure_flag
+            )
+        } else {
+            format!(
+                "{}={}; HttpOnly; Path=/; Max-Age=31536000; SameSite=Lax{}",
+                THEME_COOKIE_NAME, cookie_value, secure_flag
+            )
+        };
+
+        let parsed: axum::http::HeaderValue = header_value
+            .parse()
+            .map_err(|e| ServerFnError::new(format!("不合法 Cookie 头: {}", e)))?;
+        if let Some(ctx) = FullstackContext::current() {
+            ctx.add_response_header(axum::http::header::SET_COOKIE, parsed);
+        }
+        Ok(())
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = filename;
+        Ok(())
+    }
 }
 
 // ========== Auth 辅助 (server-only) ==========

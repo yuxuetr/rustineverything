@@ -228,8 +228,9 @@
 > 目标：站点形态完全由 site.json 决定。Layout 简化为 1 默认 + 1 备选。
 
 ### 3.1 ThemeEngine 完整实现
-- [ ] 主题栈 `themes: ["base", "ocean"]`，后者覆盖前者
-- [ ] 用户 navbar 切换主题 + cookie 持久
+- [x] 主题栈 `themes: ["base", "ocean"]`，后者覆盖前者：`SiteConfig.themes` 新字段 + `theme_stack()` 语义函数（`active_theme` 作为单层 fallback），`ThemeEngine::apply_site_config` 按栈装填插件路径
+- [x] 用户 navbar 切换主题 + cookie 持久：`set_user_theme` / `list_available_themes` server fn（写 `Set-Cookie: site_theme=...`）+ `theme_with_override` 纯函数覆盖栈最后一项，`ThemePicker` 组件振插到 Navbar，`ThemeVersion` Signal 迫上层 `use_resource` 重拼 CSS
+- [x] 单测 16 个：`SiteConfig` (5) + `ThemeEngine::apply_site_config/theme_with_override` (11)。`cargo test --features server --workspace` 311 passed; 0 failed
 
 ### 3.2 新主题插件（2 个即可）
 - [ ] `theme-sunset`（暖色调，dark + light）

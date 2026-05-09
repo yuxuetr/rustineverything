@@ -13,6 +13,7 @@ pub mod utils;
 
 // Re-export SDK types needed by the app crate
 pub use rustineverything_sdk::AuthProviderDisplay;
+pub use rustineverything_sdk::{capabilities, PluginManifest, SDK_ABI_VERSION};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

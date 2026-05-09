@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use dioxus::router::{Link, Outlet};
 
+use crate::components::theme_picker::ThemePicker;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n, use_t, Language};
 use crate::routes::Route;
@@ -96,6 +97,9 @@ pub fn Navbar() -> Element {
                   div { class: "flex items-center gap-3",
                       // Search
                       SearchButton {}
+
+                      // Phase 3.1: Theme switcher (插件 ≥ 2 时才会渲染下拉)
+                      ThemePicker {}
 
                       // Language Toggle
                       button {

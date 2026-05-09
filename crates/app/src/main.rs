@@ -6,6 +6,7 @@ mod i18n;
 mod routes;
 mod server;
 
+use crate::components::theme_picker::use_theme_version_provider;
 use crate::i18n::init_i18n;
 use crate::routes::Route;
 use crate::server::{get_aggregated_theme_css, get_current_user};
@@ -247,6 +248,10 @@ fn App() -> Element {
   // 搜索 modal 全局状态(Cmd+K 快捷键 + 导航栏按钮共享)
   let _ = use_search_open_provider();
 
+  // Phase 3.1：ThemeVersion context。Navbar 的 ThemePicker 切换后 bump 该 Signal，
+  // 下面的 theme_css use_resource 将重新拉取聚合 CSS。
+  let theme_version = use_theme_version_provider();
+
   // 全局用户会话
   let user: Signal<Option<SessionUser>> = use_signal(|| None);
   use_context_provider(|| user);
@@ -261,14 +266,17 @@ fn App() -> Element {
       });
   });
 
-  // Fetch aggregated theme CSS from WASM plugins
-  let theme_css = use_resource(move || async move {
-      let result = get_aggregated_theme_css().await;
-      match &result {
-          Ok(css) => println!("[Frontend] Fetched theme CSS (len: {})", css.len()),
-          Err(e) => println!("[Frontend] Failed to fetch theme: {:?}", e),
+  // Fetch aggregated theme CSS from WASM plugins。订阅 theme_version 以便切换重拉。
+  let theme_css = use_resource(move || {
+      let _ = theme_version();
+      async move {
+          let result = get_aggregated_theme_css().await;
+          match &result {
+              Ok(css) => println!("[Frontend] Fetched theme CSS (len: {})", css.len()),
+              Err(e) => println!("[Frontend] Failed to fetch theme: {:?}", e),
+          }
+          result.unwrap_or_default()
       }
-      result.unwrap_or_default()
   });
 
   // 原生渲染：读取当前 theme CSS，由下面的 RSX 直接输出为 <style> 节点。
