@@ -52,12 +52,16 @@ fn main() {
           eprintln!("[Startup] DATABASE_URL 未配置，依赖 DB 的功能将在首次调用时出错");
       }
 
-      // Detect the assets root (same logic as server/mod.rs)
-      let assets_root = if std::path::Path::new("assets").exists() {
-          "assets"
-      } else {
-          "../../assets"
-      };
+      // 使用 core::utils::get_asset_root 返回的 PathBuf，保证与
+      // 其他 server fn 扫描资产的逻辑一致。转换为 String
+      // 并 `Box::leak` 为静态生命周期字符串，方便下面 ServeDir
+      // format! 调用（启动期仅泄露一次，不会被锁定。）
+      let assets_root: &'static str = Box::leak(
+          rustineverything_core::utils::get_asset_root()
+              .to_string_lossy()
+              .into_owned()
+              .into_boxed_str()
+      );
 
       let router = dioxus::server::router(App)
           // 1. 处理登录跳转

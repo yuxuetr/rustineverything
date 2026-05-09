@@ -112,9 +112,9 @@
 - [x] 从 `app/src/server/mod.rs` 移除上传路由与上传测试，避免重复注册 `/api/upload`
 
 ### 1B.4 App server/mod.rs 精简
-- [ ] 仅保留：站点配置 / i18n / 主题 CSS / Auth 辅助 / echo（约 150 行）
-- [ ] 移除所有内联的评论 / 文档 / 上传逻辑
-- [ ] 抽出 `get_asset_root()` 为公共工具（当前在 `app/src/main.rs` 与 `server/mod.rs` 重复定义）
+- [x] 仅保留：站点配置 / i18n / 主题 CSS / Auth 辅助 / echo（实际 162 行）
+- [x] 移除所有内联的评论 / 文档 / 上传逻辑
+- [x] 抽出 `get_asset_root()` 到 `crates/core/src/utils.rs`，`app/src/server/mod.rs` 与 `app/src/main.rs` 都改为 `rustineverything_core::utils::get_asset_root`（上游模块还未请河，在后续阶段迫出）
 
 ### 1B.5 统一错误类型
 - [ ] 新建 `crates/core/src/error.rs`：`pub enum AppError { Db(sea_orm::DbErr), Plugin(String), Auth(String), Io(std::io::Error), Validation(String) }`

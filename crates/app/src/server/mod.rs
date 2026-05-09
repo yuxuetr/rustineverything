@@ -2,20 +2,7 @@ use dioxus::fullstack::{post, ServerFnError};
 use dioxus::prelude::*;
 use rustineverything_core::settings::SiteConfig;
 use rustineverything_core::session::SessionUser;
-#[allow(unused_imports)]
-use std::path::PathBuf;
-#[allow(unused_imports)]
-use std::fs;
-
-/// 自动探测资产根目录
-#[allow(dead_code)]
-fn get_asset_root() -> PathBuf {
-    let mut path = PathBuf::from("assets");
-    if !path.exists() {
-        path = PathBuf::from("../../assets");
-    }
-    path
-}
+use rustineverything_core::utils::get_asset_root;
 
 // ========== 辅助：从 FullstackContext 读取 Cookie 中的用户 ==========
 

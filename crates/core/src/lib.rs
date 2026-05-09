@@ -7,6 +7,7 @@ pub mod db;
 pub mod i18n;
 pub mod session;
 pub mod settings;
+pub mod utils;
 
 // Re-export SDK types needed by the app crate
 pub use rustineverything_sdk::AuthProviderDisplay;
