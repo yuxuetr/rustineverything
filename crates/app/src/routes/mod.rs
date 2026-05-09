@@ -6,8 +6,9 @@ use crate::components::hero::Hero;
 use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
 use crate::i18n::{t, use_i18n};
+use crate::server::get_seo_base_url;
 use rustineverything_module_blog::server::{get_blog_content, list_blog_posts};
-use rustineverything_widgets::Markdown;
+use rustineverything_widgets::{inject_seo, parse_mdx, Markdown};
 use rustineverything_module_course::course::{
     AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
 };
@@ -353,6 +354,11 @@ pub fn Blog(id: String) -> Element {
   let anno_path = id.clone();
   let anno_blog_id = format!("blog:{}", id);
 
+  // Phase 2.3: 从 server 读 BASE_URL 以拼接 canonical URL
+  let base_url_res = use_resource(|| async move { get_seo_base_url().await.unwrap_or_default() });
+  let base_url: String = base_url_res.read().as_ref().cloned().unwrap_or_default();
+  let blog_path = format!("/blog/{}", id);
+
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950",
           Container {
@@ -360,6 +366,11 @@ pub fn Blog(id: String) -> Element {
                   div { class: "text-slate-700 dark:text-slate-200 mb-12",
                       match blog_content() {
                           Some(Ok(content)) => rsx! {
+                              // SEO 注入：inject_seo 从 frontmatter 取 metadata，只走一次。
+                              {
+                                  let (meta, _body) = parse_mdx(&content);
+                                  rsx! { {inject_seo(&meta, &blog_path, &base_url)} }
+                              }
                               Markdown { content: content.clone(), blog_id: anno_blog_id.clone() }
                               // 标注层（resource_kind="blog"，path = 博客 id）
                               AnnotationLayer {

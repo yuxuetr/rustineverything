@@ -12,11 +12,36 @@ use pulldown_latex::{push_mathml, Parser as LatexParser, Storage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// MDX frontmatter 元数据。
+///
+/// Phase 2.3 扩展：增加 image / author / canonical / date / tags
+/// 5 个字段以驱动 SEO 注入。旧字段 (title / description / keywords)
+/// 保持不变，以便存量 MDX frontmatter 无需修改即可加载。
+///
+/// 所有新字段都是 Optional，反序列化 frontmatter 时走 default，
+/// 不会因为缺失而报错。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct PostMetadata {
     pub title: String,
     pub description: Option<String>,
     pub keywords: Option<String>,
+    /// 社交分享封面。推荐是绝对 URL；相对路径也允许，调用方负责拼接。
+    #[serde(default)]
+    pub image: Option<String>,
+    /// 作者。JSON-LD 中作为 `author.name` 用。
+    #[serde(default)]
+    pub author: Option<String>,
+    /// 手动覆盖 canonical URL；不提供时 [`crate::seo::inject_seo`]
+    /// 从 `base_url + path` 自动推导。
+    #[serde(default)]
+    pub canonical: Option<String>,
+    /// ISO 8601 发布日期字符串（如 `2024-01-15`）。JSON-LD 中
+    /// 填入 `datePublished`。未提供时不输出该字段。
+    #[serde(default)]
+    pub date: Option<String>,
+    /// 文章标签。JSON-LD `keywords` + Open Graph `article:tag`。
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Props, Clone, PartialEq)]
@@ -536,6 +561,9 @@ fn latex_to_mathml_string(latex: &str, display: bool) -> String {
 // 等文字样式组件都走 [`crate::components`] 下的 `MdxComponent` 实现，
 // `render_text_style_component` 不再需要。
 
+// Phase 2.2 后只在单测中使用；生产路径走 `parse_attrs`。保留以便
+// 未来有需要调试全属性提取。
+#[allow(dead_code)]
 fn extract_attr(html: &str, attr: &str) -> Option<String> {
     let pattern = format!("{}=\"", attr);
     let start = html.find(&pattern)? + pattern.len();

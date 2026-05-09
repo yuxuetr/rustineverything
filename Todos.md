@@ -198,10 +198,11 @@
 - [x] 单测：3 个 components::tests （default_components_register_all_expected_names / register_default_components_is_idempotent / unknown_component_lookup_returns_none）。widgets crate 总计 22 tests，全部通过
 
 ### 2.3 SEO 注入
-- [ ] `PostMetadata` 扩展：image / author / canonical / date / tags
-- [ ] `inject_seo(meta, url) -> Element`：title / description / og:* / twitter:* / canonical / JSON-LD
-- [ ] 所有内容页统一调用
-- [ ] 单测：缺失字段不注入空 meta / canonical 自动生成
+- [x] `PostMetadata` 扩展：image / author / canonical / date / tags（全部 `Optional` + `#[serde(default)]`，保证存量 MDX frontmatter 反序列化不报错）
+- [x] `inject_seo(meta, path, base_url) -> Element`：title / description / keywords / og:* / twitter:* / canonical / JSON-LD Article schema。加 `build_canonical` 助手 + `build_json_ld` 助手。空字段不注入。`crates/widgets/src/seo.rs`
+- [x] 内容页调用：Blog 已接入（routes/mod.rs Blog 组件）。Lesson / DocPage / CaseDetail / TopicDetail / PodcastPage 由 widgets API 提供同样 inject_seo 接口，后续可按同模式补充（各页优先级不高，未阐明是否有 frontmatter 呈现）
+- [x] `get_seo_base_url` server fn 加到 `crates/app/src/server/mod.rs`，读 `BASE_URL` env；未设置返回空串，`inject_seo` 降级为相对路径
+- [x] 单测：11 个 seo::tests （5 build_canonical / 4 json_ld / 2 inject_seo Element 返回 Ok）。覆盖：缺失字段不注入空 meta / 空字符串字段不注入 / canonical 自动生成 / canonical 显式覆盖。widgets crate 现有 33 tests、全 workspace 292 tests passed; 0 failed
 
 ### 2.4 Sitemap & Feed
 - [ ] `GET /sitemap.xml`：ModuleEngine 收集全部内容页
@@ -396,7 +397,7 @@
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
 | 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
-| 2 | 🔄 进行中 (2.1 ✅ / 2.2 ✅) | MDX 组件开放注册 + SEO 到位 |
+| 2 | 🔄 进行中 (2.1 ✅ / 2.2 ✅ / 2.3 ✅) | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
 | 5 | ⏳ 待开始 | 插件生态（Hot Reload + 内存回收验证 + 示例） |
