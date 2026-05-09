@@ -5478,6 +5478,7 @@ dependencies = [
  "sea-orm",
  "serde",
  "serde_json",
+ "serde_yaml",
  "sha2",
  "tokio",
  "wasmi",

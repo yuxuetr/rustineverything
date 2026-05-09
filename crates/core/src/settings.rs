@@ -44,7 +44,11 @@ pub struct AuthProviderEntry {
 }
 
 impl SiteConfig {
-    pub fn from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    /// 从路径读取并解析 site.json。
+    ///
+    /// 返回统一的 [`crate::error::AppResult`]，底层 IO 失败会变为
+    /// `AppError::Io`，不合法 JSON 会变为 `AppError::Validation`。
+    pub fn from_file(path: &str) -> crate::error::AppResult<Self> {
         let content = std::fs::read_to_string(path)?;
         let config: SiteConfig = serde_json::from_str(&content)?;
         Ok(config)

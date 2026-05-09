@@ -13,6 +13,7 @@ wasmi.workspace = true
 sea-orm = { workspace = true, optional = true, features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-chrono"] }
 chrono = { workspace = true, features = ["serde"] }
 rustineverything-sdk = { path = "../sdk" }
+serde_yaml = { workspace = true }
 oauth2 = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }

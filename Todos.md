@@ -117,9 +117,11 @@
 - [x] 抽出 `get_asset_root()` 到 `crates/core/src/utils.rs`，`app/src/server/mod.rs` 与 `app/src/main.rs` 都改为 `rustineverything_core::utils::get_asset_root`（上游模块还未请河，在后续阶段迫出）
 
 ### 1B.5 统一错误类型
-- [ ] 新建 `crates/core/src/error.rs`：`pub enum AppError { Db(sea_orm::DbErr), Plugin(String), Auth(String), Io(std::io::Error), Validation(String) }`
-- [ ] 实现 `From<AppError> for ServerFnError`，逐步替换全代码 `Box<dyn std::error::Error>`（约 30+ 处）
-- [ ] 错误信息不向客户端暴露内部细节（数据库错误等只返回"内部错误"，详情写日志）
+- [x] 新建 `crates/core/src/error.rs`：`pub enum AppError { Db(sea_orm::DbErr), Plugin(String), Auth(String), Io(std::io::Error), Validation(String), Other(String) }` + `pub type AppResult<T>`
+- [x] 实现 `From<AppError> for ServerFnError`（仅 server feature），From<sea_orm::DbErr / std::io::Error / String / &str / serde_json::Error / serde_yaml::Error>
+- [x] 错误信息不向客户端暴露内部细节：Db / Io 变体转 ServerFnError 后仅返回“内部错误”，原始详情走 eprintln 日志（6 个 tests 验证）
+- [x] 示范迁移：`SiteConfig::from_file()` 从 `Box<dyn Error>` 改为 `AppResult<Self>`，调用方 (3 处) 无需修改（`unwrap_or_default` / `Display` formatting 兼容）
+- [ ] 后续逐步迁移剩余 13 处 `Box<dyn Error>` 返回值：session::create_jwt / verify_jwt、auth::*（6 函数）、PluginManager::* 与 app `auth_callback_internal`（跨模块联动，拆到单独 PR）
 
 ### 1B.6 验收门禁
 - [ ] `wc -l crates/app/src/server/mod.rs` ≤ 200
