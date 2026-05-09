@@ -16,6 +16,8 @@ members = [
     "crates/app",
     "crates/plugins/i18n-fluent",
     "crates/plugins/theme-ocean",
+    "crates/plugins/theme-sunset",
+    "crates/plugins/theme-catppuccin",
     "crates/plugins/github-auth",
     "crates/plugins/google-auth",
     "crates/plugins/discord-auth",

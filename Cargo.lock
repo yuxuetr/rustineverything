@@ -6909,7 +6909,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "theme-catppuccin-plugin"
+version = "0.1.0"
+dependencies = [
+ "rustineverything-sdk",
+]
+
+[[package]]
 name = "theme-ocean-plugin"
+version = "0.1.0"
+dependencies = [
+ "rustineverything-sdk",
+]
+
+[[package]]
+name = "theme-sunset-plugin"
 version = "0.1.0"
 dependencies = [
  "rustineverything-sdk",

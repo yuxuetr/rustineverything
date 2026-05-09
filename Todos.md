@@ -233,9 +233,9 @@
 - [x] 单测 16 个：`SiteConfig` (5) + `ThemeEngine::apply_site_config/theme_with_override` (11)。`cargo test --features server --workspace` 311 passed; 0 failed
 
 ### 3.2 新主题插件（2 个即可）
-- [ ] `theme-sunset`（暖色调，dark + light）
-- [ ] `theme-catppuccin`（Catppuccin Macchiato，dark + light）
-- [ ] `scripts/build_themes.sh` 一键构建
+- [x] `theme-sunset`（暖色调，dark + light）：`crates/plugins/theme-sunset/` cdylib，导出 `get_manifest`(capability=THEME) + `get_theme_css`，提供 6 个 CSS 变量的 light + dark 双模
+- [x] `theme-catppuccin`（Catppuccin Macchiato，dark + light）：Latte (light) + Macchiato (dark) 调色板，同样 6 变量输出
+- [x] `scripts/build_themes.sh` 一键构建：默认全量构建三主题，可传参选量构建（`./scripts/build_themes.sh sunset`）；`CARGO_TARGET_DIR=/Users/hal/.target` + 自动检测/安装 `wasm32-unknown-unknown` target；产物拷到 `assets/plugins/theme_*_plugin.wasm`（验证：3 个 wasm 文件输出 ≈ 26 KB）
 
 ### 3.3 Layout 精简
 - [ ] 从现有 Navbar/Footer 抽出 `ClassicLayout`（默认）
