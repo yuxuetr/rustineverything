@@ -179,11 +179,7 @@ async fn collect_topics() -> Result<Vec<IndexedDocument>, String> {
     use rustineverything_core::entities::topic;
     use sea_orm::EntityTrait;
 
-    let url = std::env::var("DATABASE_URL").unwrap_or_default();
-    if url.is_empty() {
-        return Ok(vec![]);
-    }
-    let db = match rustineverything_core::db::init_db(&url).await {
+    let db = match rustineverything_core::db::get_or_init_pool().await {
         Ok(db) => db,
         Err(e) => {
             // 数据库不可用时不应阻塞索引构建

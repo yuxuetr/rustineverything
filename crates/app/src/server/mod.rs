@@ -143,7 +143,7 @@ pub async fn auth_callback_internal(
     provider: String,
     state: Option<String>,
 ) -> Result<(String, String), Box<dyn std::error::Error>> {
-    use rustineverything_core::db::init_db;
+    use rustineverything_core::db::get_or_init_pool;
     use rustineverything_core::session::create_jwt;
 
     let (auth_service, site_config) = build_auth_service();
@@ -152,9 +152,7 @@ pub async fn auth_callback_internal(
 
     println!("[Auth Callback] provider={}, code_len={}, state={:?}", provider, code.len(), state);
 
-    let db_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:password@localhost/rustineverything".to_string());
-    let db = init_db(&db_url).await?;
+    let db = get_or_init_pool().await?;
 
     let user = auth_service
         .handle_callback(&db, &provider, &plugin_filename, code, state)
@@ -193,12 +191,11 @@ pub struct Comment {
 pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use rustineverything_core::db::init_db;
+        use rustineverything_core::db::get_or_init_pool;
         use rustineverything_core::entities::{comment, user};
         use sea_orm::{EntityTrait, QueryFilter, ColumnTrait, QueryOrder};
 
-        let db_url = std::env::var("DATABASE_URL").unwrap_or_default();
-        let db = init_db(&db_url).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        let db = get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))?;
 
         let results = comment::Entity::find()
             .filter(comment::Column::BlogId.eq(&blog_id))
@@ -231,7 +228,7 @@ pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError
 pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Comment>, ServerFnError> {
     #[cfg(feature = "server")]
     {
-        use rustineverything_core::db::init_db;
+        use rustineverything_core::db::get_or_init_pool;
         use rustineverything_core::entities::comment;
         use sea_orm::{EntityTrait, Set};
         use chrono::Utc;
@@ -239,8 +236,7 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
         let session_user = current_session_user()
             .ok_or_else(|| ServerFnError::new("请先登录后再发表评论"))?;
 
-        let db_url = std::env::var("DATABASE_URL").unwrap_or_default();
-        let db = init_db(&db_url).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        let db = get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))?;
 
         let new_comment = comment::ActiveModel {
             blog_id: Set(blog_id.clone()),

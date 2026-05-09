@@ -295,8 +295,7 @@ fn require_session() -> Result<rustineverything_core::session::SessionUser, Serv
 
 #[cfg(feature = "server")]
 async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
-    let url = std::env::var("DATABASE_URL").unwrap_or_default();
-    rustineverything_core::db::init_db(&url)
+    rustineverything_core::db::get_or_init_pool()
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))
 }

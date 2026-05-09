@@ -40,6 +40,18 @@ fn main() {
           .expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
       let cookie_is_secure = base_url.starts_with("https://");
 
+      // 3) 提前初始化数据库连接池，后续 server fn 都走共享连接。
+      //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
+      if let Ok(db_url) = std::env::var("DATABASE_URL") {
+          if let Err(e) = rustineverything_core::db::init_pool(&db_url).await {
+              eprintln!("[Startup] DB pool init failed (服务将在需要时进行连接重试): {}", e);
+          } else {
+              println!("[Startup] DB pool initialized");
+          }
+      } else {
+          eprintln!("[Startup] DATABASE_URL 未配置，依赖 DB 的功能将在首次调用时出错");
+      }
+
       // Detect the assets root (same logic as server/mod.rs)
       let assets_root = if std::path::Path::new("assets").exists() {
           "assets"

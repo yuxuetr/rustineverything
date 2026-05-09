@@ -42,16 +42,16 @@
 - [x] 单测：JWT Secret 缺失 panic / PKCE 过期清理 / Cookie Secure 标志
 
 ### 1A.2 数据库连接池（性能关键）
-- [ ] 新建 `crates/core/src/db/pool.rs`：`OnceLock<DatabaseConnection>` 单例
-- [ ] `init_pool(url: &str)` 应用启动时调用一次，`pool() -> &DatabaseConnection` 全局获取
-- [ ] 逐模块替换 `init_db(&db_url)` 调用（约 20+ 处）：
-  - [ ] `app/src/server/mod.rs` 中的评论 / 文档 / 上传
-  - [ ] `app/src/main.rs` 中的 auth callback
-  - [ ] `modules/forum/src/server.rs`
-  - [ ] `modules/course/src/server.rs`
-  - [ ] `modules/admin/src/server.rs`
-  - [ ] `modules/cases/src/server.rs`
-  - [ ] `modules/search/src/indexer.rs`
+- [x] 新建 `crates/core/src/db/pool.rs`：`OnceCell<DatabaseConnection>` 单例
+- [x] `init_pool(url: &str)` 应用启动时调用一次，`get_or_init_pool() -> DatabaseConnection` 全局获取
+- [x] 逐模块替换 `init_db(&db_url)` 调用（约 20+ 处）：
+  - [x] `app/src/server/mod.rs` 中的评论 / 文档 / 上传
+  - [x] `app/src/main.rs` 中的 auth callback
+  - [x] `modules/forum/src/server.rs`
+  - [x] `modules/course/src/server.rs`
+  - [x] `modules/admin/src/server.rs`
+  - [ ] `modules/cases/src/server.rs`（cases 不依赖 DB）
+  - [x] `modules/search/src/indexer.rs`
 - [ ] 性能基准：`scripts/bench_comments.sh` 评论列表 P95 前后对比
 - [ ] `docs/DEVELOPER.md` DB 章节更新
 
