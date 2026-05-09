@@ -1,7 +1,16 @@
 use fluent_bundle::{FluentBundle, FluentResource};
 use unic_langid::langid;
 use std::slice;
-use rustineverything_sdk::alloc;
+use rustineverything_sdk::{alloc, capabilities, pack_json, PluginManifest};
+
+#[no_mangle]
+pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
+    let manifest = PluginManifest::new("i18n-fluent", "i18n Fluent", env!("CARGO_PKG_VERSION"))
+        .with_capability(capabilities::I18N)
+        .with_description("中文 / EN 翻译插件 (Fluent)")
+        .with_author("yuxuetr");
+    pack_json(&manifest)
+}
 
 /// 静态加载 FTL 资源
 const FTL_ZH: &str = "nav-blog = 博客\nnav-podcast = 播客\nnav-forum = 论坛";

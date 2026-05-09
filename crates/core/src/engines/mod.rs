@@ -22,9 +22,8 @@
 //! - **Send + Sync**：所有引擎可跨线程；server fn 中通过 `Arc<EngineRegistry>`
 //!   共享访问。
 
-// 子引擎模块在后续阶段（1C.2 / 1C.3 / 1C.4）逐步加入：
-// - plugin / module / auth：3 核心引擎
-// - theme / layout / content / moderation / search：5 占位骨架
+// 子引擎模块在后续阶段（1C.2 / 1C.3 / 1C.4）逐步加入。
+pub mod plugin;
 
 use std::any::Any;
 use std::collections::HashMap;

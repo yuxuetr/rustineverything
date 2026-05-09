@@ -1,6 +1,18 @@
 use std::slice;
-use rustineverything_sdk::{alloc, dealloc, AuthProviderConfig, AuthProviderDisplay, StandardUser};
+use rustineverything_sdk::{
+    alloc, capabilities, dealloc, pack_json, AuthProviderConfig, AuthProviderDisplay,
+    PluginManifest, StandardUser,
+};
 use serde_json::Value;
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
+    let manifest = PluginManifest::new("twitter-auth", "X (Twitter) Auth", env!("CARGO_PKG_VERSION"))
+        .with_capability(capabilities::AUTH_PROVIDER)
+        .with_description("X (Twitter) OAuth2 + PKCE 登录插件")
+        .with_author("yuxuetr");
+    pack_json(&manifest)
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn get_provider_config(_ptr: *mut u8, _len: usize) -> u64 {

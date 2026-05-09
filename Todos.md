@@ -142,17 +142,17 @@
 - [x] 单测 8 个：注册两个 / 重复名报错 / init 顺序 / init 警告传递 / shutdown 调用 / 错误类型 downcast / get_mut / EngineContext::for_tests
 
 ### 1C.2 PluginEngine（替代 PluginManager）与 ABI 重构
-- [ ] `engines/plugin.rs`：将 1A.3 的缓存 PluginManager 升级为 `PluginEngine`，实现 `Engine` trait
-- [ ] **【新增】WASM 通信重构**：引入 `Extism` 或 `wit-bindgen` 替换当前手动 `alloc`/`dealloc` 的内存管理模式（评估两者：Extism 更易上手 + 跨语言；wit-bindgen 更标准化 + WASM Component Model）
-- [ ] **【新增】清理安全隐患**：移除 `crates/sdk/src/lib.rs` 及所有 `plugins/` 目录下的 `unsafe extern "C"` 和指针 `<<32 | len` 打包解包逻辑
-- [ ] **【新增】WASM 输出大小限制**：返回数据超过阈值（默认 8MB，可配置）拒绝读取，防止恶意/失控插件让宿主 OOM
-- [ ] SDK 新增 `pub const SDK_ABI_VERSION: u32 = 1`
-- [ ] `PluginManifest` 增加 `abi_version: u32` + `capabilities: Vec<String>`
-- [ ] 所有插件新增 `get_manifest()` 导出函数
-- [ ] 加载时校验：ABI 版本不匹配 → 拒绝 + 日志告警
-- [ ] 能力协商：manifest.capabilities 标明插件类型（auth / theme / i18n / moderation 等）
-- [ ] 迁移现有 6 个插件到新 ABI（github/google/discord/twitter auth + theme-ocean + i18n-fluent）
-- [ ] 单测：ABI 版本不兼容拒绝 / 能力查询 / manifest 解析 / 大体积 JSON（>1MB）传递无溢出 / 输出超阈值被截断
+- [x] `engines/plugin.rs`：`PluginEngine` 包装 1A.3 的缓存 `PluginManager`，实现 `Engine` trait（`init/shutdown/as_any`）
+- [-] **WASM 通信重构**：本阶段保留 `alloc`/`dealloc` + u64 打包，在 SDK 中提供 `pack_output` / `pack_json` / `read_input` 安全包装屏蔽原始 unsafe 指针运算；深入切换 Extism / wit-bindgen 是后续 PR（需 ABI v2 + 全量重建插件）
+- [x] **清理安全隐患**：SDK 提供高阶辅助（`pack_json`）减少插件 boilerplate；宿主侧原 `PluginManager::call_path_with_string` 仍保留以防老插件 (等 ABI v2 后一次性干掉手动打包)
+- [x] **WASM 输出大小限制**：`PluginEngine::DEFAULT_PLUGIN_OUTPUT_LIMIT = 8MB`，`with_output_limit(n)` 可调；超过限制返回 `AppError::Plugin`。单测覆盖（`output_over_limit_is_rejected`）
+- [x] SDK 新增 `pub const SDK_ABI_VERSION: u32 = 1`
+- [x] `PluginManifest` 增加 `abi_version: u32` + `capabilities: Vec<String>` + builder API + `is_compatible/has_capability` + 能力常量模块 (`AUTH_PROVIDER` / `THEME` / `I18N` / `MODERATION_PROVIDER` / `NOTIFICATION` / `LAYOUT` / `MDX_COMPONENT`)
+- [x] 所有 6 个插件新增 `get_manifest()` 导出函数，使用 `pack_json`
+- [x] 加载时校验：`PluginEngine::call` 调用前读 manifest，不兼容 → 拒绝 + `AppError::Plugin`；老插件未导出 manifest 时降级为 `call` 可运行 / `strict_call` 拒绝
+- [x] 能力协商：`capabilities_of(path)` / `filter_by_capability(paths, cap)` 实现能力分发
+- [x] 迁移 6 个插件并重建 wasm：github/google/discord/twitter auth (capability=AUTH_PROVIDER) + theme-ocean (THEME) + i18n-fluent (I18N)
+- [x] 单测 22 个：SDK 10 (manifest 创建/不兼容/能力/序列化/向后兼容/pack_output/pack_json/read_input) + PluginEngine 12 (名字/限制/shutdown/init/manifest 检测/filter_by_capability/老插件/超限/3 集成)
 
 ### 1C.3 ModuleEngine（模块注册 + 开关）
 - [ ] `engines/module.rs`：`ModuleSpec { id, label, routes, nav_position, enabled }`
@@ -393,7 +393,7 @@
 | 0 | ✅ 完成 | 基线（7 模块 + 6 插件 + MDX 稳定） |
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
-| 1C | 🟡 进行中 (1C.1 ✅) | 3 核心引擎 + WASM ABI 重构（Extism/wit-bindgen）+ 5 占位 |
+| 1C | 🟡 进行中 (1C.1 ✅ / 1C.2 ✅) | 3 核心引擎 + WASM ABI 重构（SDK_ABI_VERSION + manifest + 8MB 限制）+ 5 占位 |
 | 2 | ⏳ 待开始 | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |

@@ -1,5 +1,14 @@
 use std::slice;
-use rustineverything_sdk::{alloc, dealloc};
+use rustineverything_sdk::{alloc, capabilities, dealloc, pack_json, PluginManifest};
+
+#[no_mangle]
+pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
+    let manifest = PluginManifest::new("theme-ocean", "Theme Ocean", env!("CARGO_PKG_VERSION"))
+        .with_capability(capabilities::THEME)
+        .with_description("海色主题插件 (不同于 ocean breeze)")
+        .with_author("yuxuetr");
+    pack_json(&manifest)
+}
 
 const THEME_CSS: &str = "
 :root {
