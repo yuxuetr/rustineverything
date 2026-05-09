@@ -18,12 +18,14 @@
 //! ```
 
 pub mod components;
+pub mod feed;
 pub mod mdx;
 pub mod registry;
 pub mod seo;
 
 // 重导出最常用 API，方便调用方仅依赖 widgets 顶层路径。
 pub use components::register_default_components;
+pub use feed::{build_atom_feed, build_robots_txt, build_sitemap_xml, ContentEntry};
 pub use mdx::{parse_mdx, Markdown, MarkdownProps, PostMetadata};
 pub use registry::{
     clear_for_tests, list_registered, register, registered_count, ComponentRegistry, MdxComponent,

@@ -205,10 +205,10 @@
 - [x] 单测：11 个 seo::tests （5 build_canonical / 4 json_ld / 2 inject_seo Element 返回 Ok）。覆盖：缺失字段不注入空 meta / 空字符串字段不注入 / canonical 自动生成 / canonical 显式覆盖。widgets crate 现有 33 tests、全 workspace 292 tests passed; 0 failed
 
 ### 2.4 Sitemap & Feed
-- [ ] `GET /sitemap.xml`：ModuleEngine 收集全部内容页
-- [ ] `GET /feed.xml`：博客 Atom feed（最近 50 篇）
-- [ ] `/robots.txt` 指向 sitemap
-- [ ] 单测：URL 完整性 / feed 格式
+- [x] `GET /sitemap.xml`：作为 Axum 自定义路由接入 (`crates/app/src/main.rs`)，在 server fn `list_blog_posts` 拿到文章列表后调 `build_sitemap_xml` 拼接（静态路径默认 7 项：/ /blog /podcast /course /case /docs /topics；内容路径仅博客 — doc / lesson / case / topic 等后续在 Phase 3.4 接 ModuleEngine 后补全）
+- [x] `GET /feed.xml`：博客 Atom feed（`list_blog_posts` 默认按 date desc，truncate(50) 后调 `build_atom_feed`）。读 `site.json` 拿 site_name / site_description 作为 feed 元数据
+- [x] `/robots.txt` 指向 `<base_url>/sitemap.xml`（`build_robots_txt`）
+- [x] 单测：7 个 feed::tests 覆盖 xml_escape / join_url 尾斜杠归一 / sitemap basic shape / sitemap special chars / atom feed basic / atom feed empty fields / robots.txt format。widgets crate 现 40 tests，全 workspace 299 tests passed; 0 failed
 
 ### 2.5 文档
 - [ ] `docs/MDX_SPEC.md`
@@ -397,7 +397,7 @@
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
 | 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
-| 2 | 🔄 进行中 (2.1 ✅ / 2.2 ✅ / 2.3 ✅) | MDX 组件开放注册 + SEO 到位 |
+| 2 | 🔄 进行中 (2.1–2.4 ✅) | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
 | 5 | ⏳ 待开始 | 插件生态（Hot Reload + 内存回收验证 + 示例） |

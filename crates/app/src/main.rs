@@ -133,6 +133,93 @@ fn main() {
           .nest_service("/cases", ServeDir::new(format!("{}/cases", assets_root)))
           .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)));
 
+      // Phase 2.4: 公开 SEO 路由
+      // 为 sitemap / feed 构造 base_url。复用上面已读取的 base_url 变量，
+      // 避免重复读 env。router 各闭包需要拥有该字符串，这里 clone
+      // 三份分别交给 sitemap / feed / robots。
+      let base_url_for_routes = base_url.clone();
+      let sitemap_base = base_url.clone();
+      let feed_base = base_url.clone();
+      let robots_base = base_url_for_routes.clone();
+      let _ = base_url_for_routes; // 仅为下面闭包提供变量名锁定
+
+      let router = router
+          .route("/sitemap.xml", get(move || {
+              let base = sitemap_base.clone();
+              async move {
+                  use rustineverything_widgets::{build_sitemap_xml, ContentEntry};
+                  // 从 blog server fn 拉全部文章，并映射为 ContentEntry。
+                  let posts = rustineverything_module_blog::server::list_blog_posts()
+                      .await
+                      .unwrap_or_default();
+                  let entries: Vec<ContentEntry> = posts
+                      .into_iter()
+                      .map(|p| ContentEntry {
+                          url_path: format!("/blog/{}", p.slug),
+                          title: p.title,
+                          description: p.description,
+                          date: p.date,
+                          tags: p.tags,
+                      })
+                      .collect();
+                  let xml = build_sitemap_xml(
+                      &entries,
+                      &["/", "/blog", "/podcast", "/course", "/case", "/docs", "/topics"],
+                      &base,
+                  );
+                  axum::response::Response::builder()
+                      .header("content-type", "application/xml; charset=utf-8")
+                      .body(axum::body::Body::from(xml))
+                      .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
+              }
+          }))
+          .route("/feed.xml", get(move || {
+              let base = feed_base.clone();
+              async move {
+                  use rustineverything_widgets::{build_atom_feed, ContentEntry};
+                  // 取最近 50 篇（list_blog_posts 已按 date desc 排序）。
+                  let mut posts = rustineverything_module_blog::server::list_blog_posts()
+                      .await
+                      .unwrap_or_default();
+                  posts.truncate(50);
+                  let entries: Vec<ContentEntry> = posts
+                      .into_iter()
+                      .map(|p| ContentEntry {
+                          url_path: format!("/blog/{}", p.slug),
+                          title: p.title,
+                          description: p.description,
+                          date: p.date,
+                          tags: p.tags,
+                      })
+                      .collect();
+                  // 取站点元信息：如取不到 site.json 则走默认。
+                  let cfg = rustineverything_core::settings::SiteConfig::from_file(
+                      rustineverything_core::utils::get_asset_root().join("site.json").to_str().unwrap_or_default(),
+                  )
+                  .unwrap_or_default();
+                  let xml = build_atom_feed(
+                      &entries,
+                      &cfg.site_name,
+                      &cfg.site_description,
+                      &base,
+                  );
+                  axum::response::Response::builder()
+                      .header("content-type", "application/atom+xml; charset=utf-8")
+                      .body(axum::body::Body::from(xml))
+                      .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
+              }
+          }))
+          .route("/robots.txt", get(move || {
+              let base = robots_base.clone();
+              async move {
+                  let body = rustineverything_widgets::build_robots_txt(&base);
+                  axum::response::Response::builder()
+                      .header("content-type", "text/plain; charset=utf-8")
+                      .body(axum::body::Body::from(body))
+                      .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
+              }
+          }));
+
       Ok(router)
   });
 
