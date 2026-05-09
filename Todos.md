@@ -211,9 +211,9 @@
 - [x] 单测：7 个 feed::tests 覆盖 xml_escape / join_url 尾斜杠归一 / sitemap basic shape / sitemap special chars / atom feed basic / atom feed empty fields / robots.txt format。widgets crate 现 40 tests，全 workspace 299 tests passed; 0 failed
 
 ### 2.5 文档
-- [ ] `docs/MDX_SPEC.md`
-- [ ] `docs/SEO_SPEC.md`
-- [ ] `docs/components/<Component>.md`（8+ 组件）
+- [x] `docs/MDX_SPEC.md`：架构图 / frontmatter / GFM 语法 / 注册表机制 / 编写新组件 ≤ 30 行示例 / data-block-id / 测试概述
+- [x] `docs/SEO_SPEC.md`：inject_seo 字段表 / canonical / JSON-LD / sitemap / atom / robots
+- [x] `docs/components/<Component>.md`：10 个（README 索引 + 9 个内置 + 1 个 PodcastCard）。每个含用法 / 属性表 / 输出 HTML / 代码入口
 
 ### 2.6 验收门禁
 - [ ] `cargo test -p rustineverything-widgets` 全绿
@@ -397,7 +397,7 @@
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
 | 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
-| 2 | 🔄 进行中 (2.1–2.4 ✅) | MDX 组件开放注册 + SEO 到位 |
+| 2 | 🔄 进行中 (2.1–2.5 ✅) | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
 | 5 | ⏳ 待开始 | 插件生态（Hot Reload + 内存回收验证 + 示例） |
