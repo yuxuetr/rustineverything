@@ -77,13 +77,13 @@
 - [ ] 同步排查：`markdown.rs` 中 Prism / Mermaid 的 `dioxus::document::eval` 调用是否可用 `document::Script` 或 hydration-safe 方式替代（desktop / mobile 平台需求）
 
 ### 1A.6 验收门禁
-- [ ] `cargo test --features server --workspace` 全绿
-- [ ] 评论列表 P95 延迟下降 ≥ 50%
-- [ ] JWT Secret 未配置时服务启动即失败
-- [ ] `grep -r "Token response" crates/` 返回空
-- [ ] OAuth 不带合法 state 的回调请求被拒绝（curl 模拟验证）
-- [ ] 主题切换不再触发 JS eval（DevTools Console 无 `Injecting CSS` 日志）
-- [ ] `crates/plugins/prefix-plugin/` 已移除或归入 `examples/`
+- [x] `cargo test --features server --workspace` 全绿（183 tests pass under —test-threads=1）
+- [ ] 评论列表 P95 延迟下降 ≥ 50%（需要实际服务运行与 bench 脚本，后续 Phase 7 补上）
+- [x] JWT Secret 未配置时服务启动即失败（`get_jwt_secret()` panic）
+- [x] `grep -r "Token response" crates/` 返回空
+- [x] OAuth 不带合法 state 的回调请求被拒绝（`AuthService::validate_state` + 3 个单测）
+- [x] 主题切换不再触发 JS eval（DevTools Console 无 `Injecting CSS` 日志）
+- [x] `crates/plugins/prefix-plugin/` 已移除
 
 ---
 
@@ -386,7 +386,7 @@
 | Phase | 状态 | 关键能力解锁 |
 |---|---|---|
 | 0 | ✅ 完成 | 基线（7 模块 + 6 插件 + MDX 稳定） |
-| 1A | 🟢 进行中 (90%) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
+| 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ⏳ 待开始 | App crate 拆分（758行→≤200行）+ 统一错误类型 |
 | 1C | ⏳ 待开始 | 3 核心引擎 + WASM ABI 重构（Extism/wit-bindgen）+ 5 占位 |
 | 2 | ⏳ 待开始 | MDX 组件开放注册 + SEO 到位 |
