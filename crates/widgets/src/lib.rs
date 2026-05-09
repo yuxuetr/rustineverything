@@ -17,10 +17,12 @@
 //! rsx! { Markdown { content: text, blog_id: "welcome".to_string() } }
 //! ```
 
+pub mod components;
 pub mod mdx;
 pub mod registry;
 
 // 重导出最常用 API，方便调用方仅依赖 widgets 顶层路径。
+pub use components::register_default_components;
 pub use mdx::{parse_mdx, Markdown, MarkdownProps, PostMetadata};
 pub use registry::{
     clear_for_tests, list_registered, register, registered_count, ComponentRegistry, MdxComponent,

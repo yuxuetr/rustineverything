@@ -190,12 +190,12 @@
 - [x] workspace + 6 处 Cargo.toml 注册 widgets 依赖（含 server feature 透传）；`crates/app/src/main.rs` 启动期调 `rustineverything_module_podcast::register_components()`
 
 ### 2.2 ComponentRegistry
-- [ ] `MdxComponent` trait：`name() -> &'static str` + `render(attrs) -> Element`
-- [ ] `ComponentRegistry`：`register / lookup / list`
-- [ ] `render_mdx_registry()` if-else 链改为 registry 查询
-- [ ] 现有 7 嵌入组件作为默认注册项
-- [ ] 各模块 `register_components()`：PodcastCard / Discussion / Annotation 等
-- [ ] 单测：新组件注册可渲染 / 未知组件降级占位
+- [x] `MdxComponent` trait：`name() -> &'static str` + `render(attrs: &HashMap<String, String>) -> Element`（在 widgets crate 中定义，与 core engines 的 String-返回型互补）
+- [x] `ComponentRegistry`：`register / lookup / list / clear`，全局单例 `OnceLock<RwLock<…>>` 包装
+- [x] `render_mdx_registry()` if-else 链改为纯 registry 查询（仅 5 行：提取标签名 → 解析 attrs → 查表）
+- [x] 现有 9 个嵌入组件作为默认注册项：YouTube / Bilibili / Yellow|Green|Blue|Pink|Purple / Underline / Strikethrough（`crates/widgets/src/components.rs`）
+- [x] 各模块 `register_components()`：podcast 已提供（在 Phase 2.1 已接入）。Discussion / Annotation 仍是 Dioxus 组件未以 MDX 标签形式使用，后续需要时可按同样模式补充
+- [x] 单测：3 个 components::tests （default_components_register_all_expected_names / register_default_components_is_idempotent / unknown_component_lookup_returns_none）。widgets crate 总计 22 tests，全部通过
 
 ### 2.3 SEO 注入
 - [ ] `PostMetadata` 扩展：image / author / canonical / date / tags
@@ -396,7 +396,7 @@
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
 | 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
-| 2 | 🔄 进行中 (2.1 ✅) | MDX 组件开放注册 + SEO 到位 |
+| 2 | 🔄 进行中 (2.1 ✅ / 2.2 ✅) | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
 | 5 | ⏳ 待开始 | 插件生态（Hot Reload + 内存回收验证 + 示例） |

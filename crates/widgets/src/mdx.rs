@@ -284,41 +284,16 @@ fn render_tag(tag: Tag, children: Vec<Element>, blog_id: &str, block_id: Option<
     }
 }
 
+/// Phase 2.2: 纯注册表查询。内置 9 个组件（YouTube / Bilibili / 五色
+/// 高亮 / Underline / Strikethrough）由 [`crate::components::register_default_components`]
+/// 在启动期预注册；podcast 等业务模块走自己的 `register_components`。
+/// 未注册的标签返回 None，调用方（`render_stream`）会降级为
+/// 占位 span，保证整篇文章仍可渲染。
 fn render_mdx_registry(html: &str) -> Option<Element> {
     let clean_html = html.trim();
-
-    // 1) 先查动态注册表（PodcastCard、Discussion、Annotation … 由各自模块注册）。
-    if let Some(name) = detect_registered_tag(clean_html) {
-        let attrs = parse_attrs(clean_html);
-        if let Some(el) = crate::registry::render(&name, &attrs) {
-            return Some(el);
-        }
-    }
-
-    // 2) 内置静态嵌入：YouTube / Bilibili 视频框
-    if clean_html.contains("<YouTube") {
-        let id = extract_attr(clean_html, "id")?;
-        return Some(rsx! {
-            div { class: "not-prose aspect-video my-8 overflow-hidden rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800",
-                iframe { class: "w-full h-full", src: "https://www.youtube.com/embed/{id}", allowfullscreen: true }
-            }
-        });
-    }
-    if clean_html.contains("<Bilibili") {
-        let id = extract_attr(clean_html, "id")?;
-        return Some(rsx! {
-            div { class: "not-prose aspect-video my-8 overflow-hidden rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800",
-                iframe { class: "w-full h-full border-0", src: "//player.bilibili.com/player.html?bvid={id}&page=1&high_quality=1", allowfullscreen: true }
-            }
-        });
-    }
-
-    // 3) 文字样式组件：<Yellow text="..." /> 等
-    if let Some(el) = render_text_style_component(clean_html) {
-        return Some(el);
-    }
-
-    None
+    let name = detect_registered_tag(clean_html)?;
+    let attrs = parse_attrs(clean_html);
+    crate::registry::render(&name, &attrs)
 }
 
 /// 从 `<Tag ... />` 提取标签名（首个标签字符序列直到空白 / `/` / `>`）。
@@ -557,46 +532,9 @@ fn latex_to_mathml_string(latex: &str, display: bool) -> String {
     }
 }
 
-/// 文字样式 MDX 组件
-/// 用法：<Yellow text="高亮" /> <Green text="通过" /> <Underline text="重点" /> 等
-fn render_text_style_component(html: &str) -> Option<Element> {
-    // 颜色组件映射 (Mac Preview 标注色系)
-    let color_map: &[(&str, &str)] = &[
-        ("Yellow",  "#EAB308"),  // yellow-500
-        ("Green",   "#22C55E"),  // green-500
-        ("Blue",    "#3B82F6"),  // blue-500
-        ("Pink",    "#EC4899"),  // pink-500
-        ("Purple",  "#A855F7"),  // purple-500
-    ];
-
-    for (name, color) in color_map {
-        if html.contains(&format!("<{}", name)) {
-            let text = extract_attr(html, "text")?;
-            let style = format!("color: {}; font-weight: 600", color);
-            return Some(rsx! {
-                span { style: "{style}", "{text}" }
-            });
-        }
-    }
-
-    // 下划线
-    if html.contains("<Underline") {
-        let text = extract_attr(html, "text")?;
-        return Some(rsx! {
-            span { style: "text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px", "{text}" }
-        });
-    }
-
-    // 删除线
-    if html.contains("<Strikethrough") {
-        let text = extract_attr(html, "text")?;
-        return Some(rsx! {
-            span { style: "text-decoration: line-through; text-decoration-thickness: 2px", "{text}" }
-        });
-    }
-
-    None
-}
+// Phase 2.2 后：`<Yellow .../>` / `<Underline .../>` / `<Strikethrough .../>`
+// 等文字样式组件都走 [`crate::components`] 下的 `MdxComponent` 实现，
+// `render_text_style_component` 不再需要。
 
 fn extract_attr(html: &str, attr: &str) -> Option<String> {
     let pattern = format!("{}=\"", attr);
