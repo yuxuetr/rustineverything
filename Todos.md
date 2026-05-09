@@ -71,9 +71,9 @@
 - [ ] 单测：state 校验失败拒绝登录 / 大文件上传拒绝 / 非白名单 MIME 拒绝 / 加密 token 可解密回原值 / 事务回滚正确
 
 ### 1A.5 Dioxus 渲染原生化（去 JS 依赖）
-- [ ] `app/src/main.rs`：移除通过 `dioxus::document::eval` 动态创建 `<style>` 标签的 JavaScript 注入逻辑
-- [ ] 使用原生 RSX 语法重构：在虚拟 DOM 中直接渲染 `<style id="wasm-theme-style">{theme_css}</style>`
-- [ ] 验证：确保切换主题时无闪烁，且去除对浏览器 DOM API 的直接依赖
+- [x] `app/src/main.rs`：移除通过 `dioxus::document::eval` 动态创建 `<style>` 标签的 JavaScript 注入逻辑
+- [x] 使用原生 RSX 语法重构：在虚拟 DOM 中直接渲染 `<style id="wasm-theme-style">{theme_css}</style>`
+- [x] 验证：确保切换主题时无闪烁，且去除对浏览器 DOM API 的直接依赖
 - [ ] 同步排查：`markdown.rs` 中 Prism / Mermaid 的 `dioxus::document::eval` 调用是否可用 `document::Script` 或 hydration-safe 方式替代（desktop / mobile 平台需求）
 
 ### 1A.6 验收门禁

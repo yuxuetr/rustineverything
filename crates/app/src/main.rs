@@ -161,25 +161,14 @@ fn App() -> Element {
       result.unwrap_or_default()
   });
 
-  // 使用 eval 动态注入和更新样式
-  use_effect(move || {
-      if let Some(css) = theme_css.read().as_ref() {
-          let js = format!(
-              r#"
-              console.log("[Frontend] Injecting CSS into #wasm-theme-style");
-              let styleTag = document.getElementById('wasm-theme-style');
-              if (!styleTag) {{
-                  styleTag = document.createElement('style');
-                  styleTag.id = 'wasm-theme-style';
-                  document.head.appendChild(styleTag);
-              }}
-              styleTag.innerHTML = `{}`;
-              "#,
-              css
-          );
-          dioxus::document::eval(&js);
-      }
-  });
+  // 原生渲染：读取当前 theme CSS，由下面的 RSX 直接输出为 <style> 节点。
+  // 避免 dioxus::document::eval(...) 这种依赖浏览器 DOM API 的街道，
+  // 从而保留 desktop / mobile 等跨平台能力。
+  let theme_css_value: String = theme_css
+      .read()
+      .as_ref()
+      .cloned()
+      .unwrap_or_default();
 
   rsx! {
       // Head links
@@ -205,6 +194,12 @@ fn App() -> Element {
         .prose-comment .prose p {{ margin: 0.3em 0; line-height: 1.5; }}
         .prose-comment .prose img {{ max-height: 200px; border-radius: 0.5rem; margin: 0.5em 0; }}
       " }
+
+      // 从 WASM 插件聊合出的主题 CSS：直接以原生 <style> 标签输出。
+      // 使用 document::Style 以保证节点被插入 <head>，不依赖 JS DOM API。
+      if !theme_css_value.is_empty() {
+          document::Style { id: "wasm-theme-style", "{theme_css_value}" }
+      }
 
       // pulldown-latex math fonts & styles
       document::Link { rel: "stylesheet", href: MATH_CSS }
