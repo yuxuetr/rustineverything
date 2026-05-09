@@ -37,3 +37,4 @@ reqwest = { version = "0.12", features = ["json"] }
 jsonwebtoken = "9"
 tantivy = "0.26"
 tantivy-jieba = "0.19"
+aes-gcm = "0.10"

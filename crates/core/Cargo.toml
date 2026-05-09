@@ -19,6 +19,7 @@ sha2 = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 jsonwebtoken = { workspace = true, optional = true }
+aes-gcm = { workspace = true, optional = true }
 
 [features]
-server = ["dep:dioxus", "dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest", "dep:sha2", "dep:base64", "dep:rand", "dep:jsonwebtoken"]
+server = ["dep:dioxus", "dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest", "dep:sha2", "dep:base64", "dep:rand", "dep:jsonwebtoken", "dep:aes-gcm"]

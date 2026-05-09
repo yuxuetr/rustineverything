@@ -1,3 +1,6 @@
+#[cfg(feature = "server")]
+pub mod crypto;
+
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "server")]
 use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set, TransactionTrait};
@@ -362,6 +365,10 @@ impl AuthService {
             // 事务包裹：user 与 user_identity 要么同时成功要么同时回滚，避免孤儿 user
             let txn = db.begin().await?;
 
+            // access_token 不得明文落库：使用 AES-GCM 加密
+            let encrypted_token = crypto::encrypt_token(&token)
+                .map_err(|e| format!("access_token 加密失败: {}", e))?;
+
             let new_user = user::ActiveModel {
                 nickname: Set(nickname),
                 avatar_url: Set(avatar_url),
@@ -376,7 +383,7 @@ impl AuthService {
                 user_id: Set(user_res.last_insert_id),
                 provider: Set(provider.to_string()),
                 provider_uid: Set(uid),
-                access_token: Set(Some(token)),
+                access_token: Set(Some(encrypted_token)),
                 created_at: Set(Utc::now().fixed_offset()),
                 ..Default::default()
             };
