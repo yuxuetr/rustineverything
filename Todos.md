@@ -100,9 +100,10 @@
 - [x] 验证：15 个文档系统测试通过（`cargo test -p rustineverything-module-docs --features server`）
 
 ### 1B.2 评论模块独立
-- [ ] 新建 `crates/modules/comments/`
-- [ ] 迁移：`Comment` struct + `get_comments / post_comment` server fn
-- [ ] `CommentBox` 组件调用改为引用新模块
+- [x] 新建 `crates/modules/comments/`（Cargo.toml + lib.rs + server.rs）
+- [x] 迁移：`Comment` struct + `get_comments / post_comment` server fn（使用 `rustineverything_core::session::current_session_user`）
+- [x] `CommentBox` 组件调用改为 `rustineverything_module_comments::server::{get_comments, post_comment}`
+- [x] 在工作区 Cargo.toml + app/Cargo.toml 注册
 
 ### 1B.3 上传模块独立
 - [ ] 新建 `crates/modules/uploads/`

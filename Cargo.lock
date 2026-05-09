@@ -5446,6 +5446,7 @@ dependencies = [
  "rustineverything-module-admin",
  "rustineverything-module-blog",
  "rustineverything-module-cases",
+ "rustineverything-module-comments",
  "rustineverything-module-course",
  "rustineverything-module-docs",
  "rustineverything-module-forum",
@@ -5524,6 +5525,20 @@ dependencies = [
  "serde",
  "serde_yaml",
  "tempfile",
+]
+
+[[package]]
+name = "rustineverything-module-comments"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "rustineverything-core",
+ "rustineverything-sdk",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

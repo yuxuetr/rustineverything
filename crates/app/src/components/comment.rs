@@ -1,5 +1,6 @@
 use rustineverything_module_blog::markdown::Markdown;
-use crate::server::{get_comments, post_comment, upload_image};
+use rustineverything_module_comments::server::{get_comments, post_comment};
+use crate::server::upload_image;
 use dioxus::prelude::*;
 
 #[derive(PartialEq, Props, Clone)]
