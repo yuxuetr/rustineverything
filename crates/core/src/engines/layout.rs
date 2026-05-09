@@ -82,8 +82,11 @@ impl Engine for LayoutEngine {
         "layout"
     }
 
-    fn init(&mut self, _ctx: &EngineContext) -> AppResult<()> {
-        // SiteConfig 后续会增加 `active_layout: String` 字段；本阶段无操作。
+    fn init(&mut self, ctx: &EngineContext) -> AppResult<()> {
+        // Phase 3.3：从 SiteConfig 读 `active_layout`，默认 `"classic"`。
+        // 未注册的布局不会拒绝赋值——上层 `Navbar` 会在 server fn
+        // 层面以“未知 → classic”回退。
+        self.active = Some(ctx.site_config.active_layout_or_default().to_string());
         Ok(())
     }
 
@@ -149,5 +152,31 @@ mod tests {
         e.register(ClassicLayout).unwrap();
         e.set_active("classic");
         assert_eq!(e.active(), Some("classic"));
+    }
+
+    #[test]
+    fn init_reads_active_layout_from_site_config() {
+        // 默认 site_config.active_layout = "classic"——检查 init 走走上该路径。
+        let mut e = LayoutEngine::new();
+        let ctx = EngineContext::for_tests();
+        e.init(&ctx).unwrap();
+        assert_eq!(e.active(), Some("classic"));
+    }
+
+    #[test]
+    fn init_picks_minimal_when_site_config_says_minimal() {
+        use crate::settings::SiteConfig;
+        use std::path::PathBuf;
+        use std::sync::Arc;
+
+        let mut cfg = SiteConfig::default();
+        cfg.active_layout = "minimal".to_string();
+        let ctx = EngineContext {
+            site_config: Arc::new(cfg),
+            asset_root: PathBuf::from("assets"),
+        };
+        let mut e = LayoutEngine::new();
+        e.init(&ctx).unwrap();
+        assert_eq!(e.active(), Some("minimal"));
     }
 }

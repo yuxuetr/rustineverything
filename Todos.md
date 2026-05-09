@@ -238,9 +238,9 @@
 - [x] `scripts/build_themes.sh` 一键构建：默认全量构建三主题，可传参选量构建（`./scripts/build_themes.sh sunset`）；`CARGO_TARGET_DIR=/Users/hal/.target` + 自动检测/安装 `wasm32-unknown-unknown` target；产物拷到 `assets/plugins/theme_*_plugin.wasm`（验证：3 个 wasm 文件输出 ≈ 26 KB）
 
 ### 3.3 Layout 精简
-- [ ] 从现有 Navbar/Footer 抽出 `ClassicLayout`（默认）
-- [ ] `MinimalLayout`（极简，无 Footer / 单层 Navbar）
-- [ ] LayoutEngine 切换：site.json 配置 + admin 设置页
+- [x] 从现有 Navbar/Footer 抽出 `ClassicLayout`（默认）：`crates/app/src/components/layouts/classic.rs::ClassicShell`，完整保留原有 Logo+主导航+右侧工具+Footer，嵌入 `Outlet::<Route>`
+- [x] `MinimalLayout`（极简，无 Footer / 单层 Navbar）：`crates/app/src/components/layouts/minimal.rs::MinimalShell`，仅顶部紧凑条 (Logo + 搜索 + ThemePicker + 语言 + 暗色 + 用户菜单)，不渲染主导航与 Footer
+- [x] LayoutEngine 切换：`LayoutEngine::init` 读 `SiteConfig.active_layout_or_default()`；new server fn `get_active_layout` 返回 site.json 该字段；`Navbar`(Routable layout 入口) 重写为分发组件，use_resource 拉实际布局名后选染 `ClassicShell` / `MinimalShell`。admin 设置页 UI 推迟到 Phase 5 (不阻塞)
 
 ### 3.4 模块开关
 - [ ] `site.json::modules.{blog,podcast,course,forum,cases,docs,...}.enabled`

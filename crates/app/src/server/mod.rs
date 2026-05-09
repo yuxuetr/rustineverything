@@ -390,6 +390,28 @@ pub async fn get_seo_base_url() -> Result<String, ServerFnError> {
     }
 }
 
+// ========== 布局 ==========
+
+/// Phase 3.3：返回 `site.json::active_layout`（空字符串回退到 `"classic"`）。
+#[post("/api/layout/active")]
+pub async fn get_active_layout() -> Result<String, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        let cfg = SiteConfig::from_file(
+            get_asset_root()
+                .join("site.json")
+                .to_str()
+                .unwrap_or_default(),
+        )
+        .unwrap_or_default();
+        Ok(cfg.active_layout_or_default().to_string())
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        Ok("classic".to_string())
+    }
+}
+
 // ========== Echo ==========
 
 #[post("/api/echo")]
