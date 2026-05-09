@@ -136,10 +136,10 @@
 > 目标：建立引擎注册机制，先实现 PluginEngine / DB Engine / ModuleEngine 三个核心引擎。
 
 ### 1C.1 引擎抽象基础
-- [ ] `crates/core/src/engines/mod.rs`：`Engine` trait（`name() / init() / shutdown()`）
-- [ ] `EngineRegistry`：注册 + 按名取出 + 初始化顺序管理
-- [ ] `EngineContext`：包含 DB pool handle / SiteConfig / PluginManager
-- [ ] 单测：注册多引擎、重复名报错
+- [x] `crates/core/src/engines/mod.rs`：`Engine` trait（`name() / init() / shutdown()` + `as_any/as_any_mut` 供按类型 downcast）
+- [x] `EngineRegistry`：按顺序注册 + 按名查询 + `init_all` / `shutdown_all`（shutdown 逆序）
+- [x] `EngineContext`：持有 `Arc<SiteConfig>` + `asset_root: PathBuf`（DB / PluginManager 交由各引擎自己老仪，避免互借塑）
+- [x] 单测 8 个：注册两个 / 重复名报错 / init 顺序 / init 警告传递 / shutdown 调用 / 错误类型 downcast / get_mut / EngineContext::for_tests
 
 ### 1C.2 PluginEngine（替代 PluginManager）与 ABI 重构
 - [ ] `engines/plugin.rs`：将 1A.3 的缓存 PluginManager 升级为 `PluginEngine`，实现 `Engine` trait
@@ -393,7 +393,7 @@
 | 0 | ✅ 完成 | 基线（7 模块 + 6 插件 + MDX 稳定） |
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
-| 1C | ⏳ 待开始 | 3 核心引擎 + WASM ABI 重构（Extism/wit-bindgen）+ 5 占位 |
+| 1C | 🟡 进行中 (1C.1 ✅) | 3 核心引擎 + WASM ABI 重构（Extism/wit-bindgen）+ 5 占位 |
 | 2 | ⏳ 待开始 | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
