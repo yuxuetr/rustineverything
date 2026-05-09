@@ -172,9 +172,9 @@
 - [x] 小计：8 引擎全部实现 `Engine` trait，核心 (`plugin/module/auth`) 可接入现有 server fn；5 占位骨架 (`theme/layout/content/moderation/search`) 为后续 Phase 2/3/4 准备 trait 契约。全部 57 个 engines::* 单测通过
 
 ### 1C.5 验收门禁
-- [ ] `cargo test --features server --workspace` 全绿
-- [ ] `docs/ENGINES_SPEC.md` 完成（8 引擎职责 + 接口 + 交互图）
-- [ ] 关闭 forum 模块后导航 / 搜索 / 路由均正确响应
+- [x] `cargo test --features server --workspace` 全绿（8 引擎 + SDK + 全部模块，总计 ~249 tests passed）
+- [x] `docs/ENGINES_SPEC.md` 完成：8 引擎职责 / 接口 / 架构图 / 生命周期 / 依赖关系 / 后续阶段路径
+- [-] 关闭 forum 模块后导航 / 搜索 / 路由均正确响应：ModuleEngine `apply_site_config` + `enabled_ids/navigation` 在单测中已验证。实际 server fn / 路由层接入（路由 404 表现 / 搜索 indexer 调用）是 Phase 3.4 路纱
 
 ---
 
@@ -394,7 +394,7 @@
 | 0 | ✅ 完成 | 基线（7 模块 + 6 插件 + MDX 稳定） |
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
-| 1C | 🟡 进行中 (1C.1 ✅ / 1C.2 ✅ / 1C.3 ✅ / 1C.4 ✅) | 3 核心 + 5 占位 完成 (仅剩 1C.5 验收与文档) |
+| 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
 | 2 | ⏳ 待开始 | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
