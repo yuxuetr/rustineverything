@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "server")]
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set};
+use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set, TransactionTrait};
 #[cfg(feature = "server")]
 use crate::entities::{user, user_identity};
 #[cfg(feature = "server")]
@@ -15,11 +15,49 @@ use std::path::PathBuf;
 use std::collections::HashMap;
 #[cfg(feature = "server")]
 use std::sync::Mutex;
+#[cfg(feature = "server")]
+use std::time::{Duration, Instant};
+
+/// PKCE / state 条目的过期时间（5 分钟）
+#[cfg(feature = "server")]
+const PKCE_TTL_SECS: u64 = 5 * 60;
+
+/// PKCE 仓储条目：code_verifier + 创建时间
+#[cfg(feature = "server")]
+struct PkceEntry {
+    verifier: String,
+    created_at: Instant,
+}
+
+/// state CSRF 仓储条目：provider + 创建时间
+#[cfg(feature = "server")]
+struct StateEntry {
+    provider: String,
+    created_at: Instant,
+}
 
 /// 全局存储 PKCE code_verifier，key 为 state 参数
 #[cfg(feature = "server")]
-static PKCE_STORE: std::sync::LazyLock<Mutex<HashMap<String, String>>> =
+static PKCE_STORE: std::sync::LazyLock<Mutex<HashMap<String, PkceEntry>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// 全局存储 OAuth state（CSRF 防御），key 为 state 参数
+#[cfg(feature = "server")]
+static STATE_STORE: std::sync::LazyLock<Mutex<HashMap<String, StateEntry>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// 清理过期的 PKCE / state 条目（在每次插入 / 查询时调用）
+#[cfg(feature = "server")]
+fn cleanup_expired_pkce(store: &mut HashMap<String, PkceEntry>) {
+    let ttl = Duration::from_secs(PKCE_TTL_SECS);
+    store.retain(|_, entry| entry.created_at.elapsed() < ttl);
+}
+
+#[cfg(feature = "server")]
+fn cleanup_expired_states(store: &mut HashMap<String, StateEntry>) {
+    let ttl = Duration::from_secs(PKCE_TTL_SECS);
+    store.retain(|_, entry| entry.created_at.elapsed() < ttl);
+}
 
 /// 动态认证配置，不再硬编码单个 provider
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -136,6 +174,15 @@ impl AuthService {
             .map(|b| b as char)
             .collect();
 
+        // 记录 state 以供后续 CSRF 验证（带 5 分钟 TTL）
+        if let Ok(mut store) = STATE_STORE.lock() {
+            cleanup_expired_states(&mut store);
+            store.insert(state.clone(), StateEntry {
+                provider: provider.to_string(),
+                created_at: Instant::now(),
+            });
+        }
+
         let mut url = format!(
             "{}?client_id={}&redirect_uri={}&scope={}&response_type=code&state={}",
             provider_config.auth_url,
@@ -161,17 +208,40 @@ impl AuthService {
 
             url.push_str(&format!("&code_challenge={}&code_challenge_method=S256", code_challenge));
 
-            // 存储 code_verifier，回调时使用
+            // 存储 code_verifier，回调时使用（带 TTL）
             if let Ok(mut store) = PKCE_STORE.lock() {
-                store.insert(state.clone(), code_verifier);
+                cleanup_expired_pkce(&mut store);
+                store.insert(state.clone(), PkceEntry {
+                    verifier: code_verifier,
+                    created_at: Instant::now(),
+                });
             }
-            println!("[Auth] PKCE enabled for provider={}, state={}", provider, state);
+            println!("[Auth] PKCE enabled for provider={}", provider);
         }
 
         Ok(url)
     }
 
+    /// 验证 OAuth state。如果 state 合法，从存储中移除并返回 Ok；否则返回错误。
+    pub fn validate_state(state: &str, expected_provider: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let mut store = STATE_STORE.lock()
+            .map_err(|_| "state 存储互斥异常")?;
+        cleanup_expired_states(&mut store);
+        let entry = store.remove(state).ok_or("不合法或已过期的 state")?;
+        if entry.provider != expected_provider {
+            return Err("state 与 provider 不匹配".into());
+        }
+        if entry.created_at.elapsed() > Duration::from_secs(PKCE_TTL_SECS) {
+            return Err("state 已过期".into());
+        }
+        Ok(())
+    }
+
     pub async fn handle_callback(&self, db: &DatabaseConnection, provider: &str, plugin_filename: &str, code: String, state: Option<String>) -> Result<user::Model, Box<dyn std::error::Error>> {
+        // 0. CSRF 防御：验证 state
+        let state_str = state.as_deref().ok_or("缺失 state 参数")?;
+        Self::validate_state(state_str, provider)?;
+
         let plugin_path = self.plugin_dir.join(plugin_filename);
         let wasm_bytes = std::fs::read(&plugin_path)?;
 
@@ -184,7 +254,10 @@ impl AuthService {
 
         // 2. 构建 Token 交换请求
         let http_client = reqwest::Client::new();
-        println!("[Auth] Token exchange: url={}, client_id={}, redirect_uri={}, auth_method={}", provider_config.token_url, client_id, redirect_url, provider_config.token_auth_method);
+        println!(
+            "[Auth] Token exchange: provider={}, auth_method={}",
+            provider, provider_config.token_auth_method
+        );
 
         let mut form_params: Vec<(&str, String)> = vec![
             ("code", code),
@@ -194,11 +267,17 @@ impl AuthService {
 
         // PKCE: 添加 code_verifier
         let code_verifier = if provider_config.requires_pkce {
-            let verifier = state.as_ref().and_then(|s| {
-                PKCE_STORE.lock().ok().and_then(|mut store| store.remove(s))
-            }).ok_or("PKCE code_verifier not found for this state")?;
-            println!("[Auth] PKCE code_verifier found (len={})", verifier.len());
-            Some(verifier)
+            let entry = PKCE_STORE.lock().ok()
+                .and_then(|mut store| {
+                    cleanup_expired_pkce(&mut store);
+                    store.remove(state_str)
+                })
+                .ok_or("PKCE code_verifier not found for this state")?;
+            if entry.created_at.elapsed() > Duration::from_secs(PKCE_TTL_SECS) {
+                return Err("PKCE code_verifier 已过期".into());
+            }
+            println!("[Auth] PKCE code_verifier matched");
+            Some(entry.verifier)
         } else {
             None
         };
@@ -227,14 +306,16 @@ impl AuthService {
         };
 
         let token_response: Value = request.send().await?.json().await?;
-        println!("[Auth] Token response: {:?}", token_response);
-
+        // 安全：不输出完整 token 响应，仅记录是否拿到 access_token
         let access_token = token_response["access_token"]
             .as_str()
-            .ok_or_else(|| format!("Token 交换失败: {:?}", token_response))?;
+            .ok_or_else(|| {
+                let err_kind = token_response["error"].as_str().unwrap_or("unknown_error");
+                format!("Token 交换失败 (provider={}, error={})", provider, err_kind)
+            })?;
+        println!("[Auth] Token exchange success: provider={}", provider);
 
         // 3. 获取用户信息
-        println!("[Auth] Fetching user profile from: {}", provider_config.profile_url);
         let profile_response: Value = http_client
             .get(&provider_config.profile_url)
             .header("Authorization", format!("Bearer {}", access_token))
@@ -243,7 +324,7 @@ impl AuthService {
             .await?
             .json()
             .await?;
-        println!("[Auth] Profile response: {:?}", profile_response);
+        println!("[Auth] Profile fetched: provider={}", provider);
 
         // 4. 插件 Profile 映射
         let standard_user_json = self.plugin_manager.call_with_string(
@@ -278,6 +359,9 @@ impl AuthService {
                 .ok_or("找不到关联用户")?;
             Ok(user)
         } else {
+            // 事务包裹：user 与 user_identity 要么同时成功要么同时回滚，避免孤儿 user
+            let txn = db.begin().await?;
+
             let new_user = user::ActiveModel {
                 nickname: Set(nickname),
                 avatar_url: Set(avatar_url),
@@ -286,8 +370,8 @@ impl AuthService {
                 updated_at: Set(Utc::now().fixed_offset()),
                 ..Default::default()
             };
-            let user_res = user::Entity::insert(new_user).exec(db).await?;
-            
+            let user_res = user::Entity::insert(new_user).exec(&txn).await?;
+
             let new_ident = user_identity::ActiveModel {
                 user_id: Set(user_res.last_insert_id),
                 provider: Set(provider.to_string()),
@@ -296,12 +380,14 @@ impl AuthService {
                 created_at: Set(Utc::now().fixed_offset()),
                 ..Default::default()
             };
-            user_identity::Entity::insert(new_ident).exec(db).await?;
+            user_identity::Entity::insert(new_ident).exec(&txn).await?;
 
             let user_final = user::Entity::find_by_id(user_res.last_insert_id)
-                .one(db)
+                .one(&txn)
                 .await?
                 .ok_or("无法获取新用户")?;
+
+            txn.commit().await?;
             Ok(user_final)
         }
     }
@@ -345,5 +431,65 @@ mod tests {
         assert_eq!(user.nickname, "test_user");
         assert_eq!(user.provider, "github");
         assert_eq!(user.email, Some("test@example.com".to_string()));
+    }
+
+    #[test]
+    fn test_state_csrf_validation_invalid_state_rejected() {
+        // 伪造一个未注册的 state，验证调用应被拒绝
+        let result = AuthService::validate_state("this-state-was-never-stored-xyz", "github");
+        assert!(result.is_err(), "未注册的 state 应该被拒绝");
+    }
+
+    #[test]
+    fn test_state_csrf_validation_provider_mismatch() {
+        // 手动插入一个 state，使用不同 provider 验证应拒绝
+        let state = "test-state-mismatch";
+        if let Ok(mut store) = STATE_STORE.lock() {
+            store.insert(state.to_string(), StateEntry {
+                provider: "github".to_string(),
+                created_at: Instant::now(),
+            });
+        }
+        let result = AuthService::validate_state(state, "google");
+        assert!(result.is_err(), "provider 不匹配的 state 应被拒绝");
+    }
+
+    #[test]
+    fn test_state_csrf_validation_consumed_once() {
+        // state 验证成功后，重复使用同一 state 应拒绝
+        let state = "test-state-once";
+        if let Ok(mut store) = STATE_STORE.lock() {
+            store.insert(state.to_string(), StateEntry {
+                provider: "github".to_string(),
+                created_at: Instant::now(),
+            });
+        }
+        let first = AuthService::validate_state(state, "github");
+        assert!(first.is_ok(), "首次验证应该通过");
+        let second = AuthService::validate_state(state, "github");
+        assert!(second.is_err(), "state 应只能被消费一次");
+    }
+
+    #[test]
+    fn test_pkce_cleanup_removes_expired_entries() {
+        // 加入 100 个超出 TTL 的过期项以及 1 个新项，验证 cleanup 会仅保留未过期的
+        let mut local: HashMap<String, PkceEntry> = HashMap::new();
+        let very_old = Instant::now()
+            .checked_sub(Duration::from_secs(PKCE_TTL_SECS + 60))
+            .expect("can subtract from now");
+        for i in 0..100 {
+            local.insert(
+                format!("old-{}", i),
+                PkceEntry { verifier: "v".to_string(), created_at: very_old },
+            );
+        }
+        local.insert("fresh".to_string(), PkceEntry {
+            verifier: "v".to_string(),
+            created_at: Instant::now(),
+        });
+
+        cleanup_expired_pkce(&mut local);
+        assert_eq!(local.len(), 1);
+        assert!(local.contains_key("fresh"));
     }
 }

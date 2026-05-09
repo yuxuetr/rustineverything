@@ -40,10 +40,20 @@ struct Claims {
     exp: usize,
 }
 
+/// 取出 JWT_SECRET。
+/// **安全策略**：未配置直接 panic，避免在生产环境中误用默认值。
+/// 启动时（如 `init_pool` 之后）应主动调用一次以早失败。
 #[cfg(feature = "server")]
-fn get_jwt_secret() -> String {
-    std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "rustineverything-default-secret-change-me".to_string())
+pub fn get_jwt_secret() -> String {
+    match std::env::var("JWT_SECRET") {
+        Ok(secret) if !secret.is_empty() => secret,
+        Ok(_) => panic!(
+            "JWT_SECRET 不能为空，请在环境变量或 .env 中配置（建议 32+ 字符随机字符串）"
+        ),
+        Err(_) => panic!(
+            "JWT_SECRET 未配置，请在环境变量或 .env 中设置 JWT_SECRET"
+        ),
+    }
 }
 
 /// 根据用户模型签发 JWT

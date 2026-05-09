@@ -93,7 +93,9 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
 fn build_auth_service() -> (rustineverything_core::auth::AuthService, SiteConfig) {
     use rustineverything_core::auth::{AuthService, AuthConfig};
 
-    let base_url = std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    // BASE_URL 未配置时 panic，避免生产环境误用 localhost
+    let base_url = std::env::var("BASE_URL")
+        .expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
     let config = AuthConfig { base_url };
     let site_config = SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap()).unwrap_or_default();
     let auth_service = AuthService::new(config, get_asset_root().join("plugins"));

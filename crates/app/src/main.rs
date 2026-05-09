@@ -32,6 +32,14 @@ fn main() {
       // 加载 .env 环境变量
       dotenvy::dotenv().ok();
 
+      // 安全门禁：启动时必须提供关键环境变量，避免 fallback 到不安全默认值
+      // 1) JWT_SECRET必须配置（panic on missing）
+      let _ = rustineverything_core::session::get_jwt_secret();
+      // 2) BASE_URL 必须配置为可访问的公网 / 内网地址
+      let base_url = std::env::var("BASE_URL")
+          .expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
+      let cookie_is_secure = base_url.starts_with("https://");
+
       // Detect the assets root (same logic as server/mod.rs)
       let assets_root = if std::path::Path::new("assets").exists() {
           "assets"
@@ -49,14 +57,17 @@ fn main() {
               }
           }))
           // 2. 处理 OAuth 回调：验证 + 签发 JWT Cookie + 跳转
-          .route("/api/auth/callback/{provider}", get(|Path(provider): Path<String>, Query(params): Query<std::collections::HashMap<String, String>>| async move {
+          .route("/api/auth/callback/{provider}", get(move |Path(provider): Path<String>, Query(params): Query<std::collections::HashMap<String, String>>| async move {
               let code = params.get("code").cloned().unwrap_or_default();
               let state = params.get("state").cloned();
               match crate::server::auth_callback_internal(code, provider, state).await {
                   Ok((_message, jwt_token)) => {
+                      // 生产环境 (https) 增加 Secure 标志防止明文传输
+                      let secure_flag = if cookie_is_secure { "; Secure" } else { "" };
                       let cookie = format!(
-                          "session={}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax",
-                          jwt_token
+                          "session={}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax{}",
+                          jwt_token,
+                          secure_flag
                       );
                       let mut response = Redirect::temporary("/").into_response();
                       if let Ok(cookie_val) = cookie.parse() {
@@ -74,9 +85,14 @@ fn main() {
               }
           }))
           // 3. 登出：清除 Cookie
-          .route("/api/auth/logout", get(|| async {
+          .route("/api/auth/logout", get(move || async move {
+              let secure_flag = if cookie_is_secure { "; Secure" } else { "" };
+              let cookie_str = format!(
+                  "session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax{}",
+                  secure_flag
+              );
               let mut response = Redirect::temporary("/").into_response();
-              if let Ok(cookie_val) = "session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax".parse() {
+              if let Ok(cookie_val) = cookie_str.parse() {
                   response.headers_mut().insert(
                       axum::http::header::SET_COOKIE,
                       cookie_val,
