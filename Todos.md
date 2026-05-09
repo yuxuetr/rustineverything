@@ -216,10 +216,10 @@
 - [x] `docs/components/<Component>.md`：10 个（README 索引 + 9 个内置 + 1 个 PodcastCard）。每个含用法 / 属性表 / 输出 HTML / 代码入口
 
 ### 2.6 验收门禁
-- [ ] `cargo test -p rustineverything-widgets` 全绿
-- [ ] welcome 示例渲染一致
-- [ ] Lighthouse SEO ≥ 95
-- [ ] 新增 MDX 组件 ≤ 50 行
+- [x] `cargo test -p rustineverything-widgets --features server` 全绿：40 passed; 0 failed。2 doc-tests 标为 ignored（仅是示例代码块，正常现象）
+- [x] welcome 示例渲染一致：渲染路径未变（`render_stream` / `render_tag` 逻辑与 Phase 0 一致）。`<PodcastCard id="…" />` 从直接引用改为注册表查表，渲染出口 RSX 未变。`cargo test --features server --workspace` 299 passed，未出现回归
+- [-] Lighthouse SEO ≥ 95：需要上线部署后实测（当前本地 dev 环境不足以跨 hostname）。本地验证：inject_seo 输出调用点 + 全部 11 个 seo 单测 + 7 个 feed 单测覆盖主要路径
+- [x] 新增 MDX 组件 ≤ 50 行：`crates/widgets/src/components.rs` 中 9 个默认组件每个实现 ≤ 25 行（带文档注释）。外部模块贡献示例：`crates/modules/podcast/src/lib.rs::PodcastCardComponent` 含 register 也只 ≤ 30 行
 
 ---
 
@@ -397,7 +397,7 @@
 | 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
 | 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
-| 2 | 🔄 进行中 (2.1–2.5 ✅) | MDX 组件开放注册 + SEO 到位 |
+| 2 | ✅ 主体完成 (2.1–2.6 ✅ / Lighthouse 需上线后实测) | MDX 组件开放注册 + SEO 到位 |
 | 3 | ⏳ 待开始 | 站点形态配置化 |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
 | 5 | ⏳ 待开始 | 插件生态（Hot Reload + 内存回收验证 + 示例） |
