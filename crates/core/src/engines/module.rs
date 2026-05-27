@@ -428,6 +428,40 @@ mod tests {
     }
 
     #[test]
+    fn disabling_forum_propagates_to_all_consumer_views() {
+        // Phase 3.6 验收门禁：关闭 forum 后所有消费者视图一致地排除它。
+        let mut e = ModuleEngine::with_specs(default_module_specs());
+        let mut cfg = SiteConfig::default();
+        cfg.modules.insert(
+            "forum".to_string(),
+            ModuleSettings { enabled: false },
+        );
+        e.apply_site_config(&cfg);
+
+        // 1) is_enabled 单点查询
+        assert!(!e.is_enabled("forum"));
+        assert!(e.is_enabled("blog"));
+        assert!(e.is_enabled("docs"));
+
+        // 2) navigation 中不出现
+        let nav_ids: Vec<&str> = e.navigation().iter().map(|s| s.id.as_str()).collect();
+        assert!(!nav_ids.contains(&"forum"));
+        assert_eq!(nav_ids, vec!["blog", "podcast", "cases"]);
+
+        // 3) enabled_ids 中不出现 - 即搜索源 / sitemap 都会过滤掉 forum
+        let enabled = e.enabled_ids();
+        assert!(!enabled.contains(&"forum".to_string()));
+        // 但其他 5 个内置模块都在
+        for id in ["blog", "podcast", "course", "cases", "docs"] {
+            assert!(enabled.contains(&id.to_string()), "缺少 {}", id);
+        }
+
+        // 4) enabled_modules() spec 列表也不含 forum
+        let mods: Vec<&str> = e.enabled_modules().iter().map(|s| s.id.as_str()).collect();
+        assert!(!mods.contains(&"forum"));
+    }
+
+    #[test]
     fn applying_disabled_overrides_drops_from_navigation() {
         let mut e = ModuleEngine::with_specs(default_module_specs());
         let mut cfg = SiteConfig::default();

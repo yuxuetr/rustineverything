@@ -243,17 +243,17 @@
 - [x] LayoutEngine 切换：`LayoutEngine::init` 读 `SiteConfig.active_layout_or_default()`；new server fn `get_active_layout` 返回 site.json 该字段；`Navbar`(Routable layout 入口) 重写为分发组件，use_resource 拉实际布局名后选染 `ClassicShell` / `MinimalShell`。admin 设置页 UI 推迟到 Phase 5 (不阻塞)
 
 ### 3.4 模块开关
-- [ ] `site.json::modules.{blog,podcast,course,forum,cases,docs,...}.enabled`
-- [ ] 关闭后：路由 404 / 导航隐藏 / 搜索源剔除 / sitemap 不收录
-- [ ] 单测：单模块开关 + 组合测试
+- [x] `site.json::modules.{blog,podcast,course,forum,cases,docs,...}.enabled`：6 个内置模块通过 `default_module_specs` 注册，`default_module_engine()` 读取 `SiteConfig.modules` 覆盖 enabled
+- [x] 关闭后：导航隐藏（`ClassicShell` 按 `enabled_module_ids` 拼接 nav）/ 搜索源剔除（`collect_documents` + 纯函数 `filter_documents_by_enabled`）/ sitemap 不收录（静态路径与 blog 条目均按开关拼接）/ 路由门禁（`ModuleGate` 组件渲染「模块已停用」占位，替代 404）
+- [x] 单测：3 个 default specs 测试 + 3 个 search filter 测试 + 1 个 forum-disabled 全消费者一致性测试
 
 ### 3.5 文档
-- [ ] `docs/THEME_SPEC.md`
-- [ ] `docs/MODULE_SPEC.md`
+- [x] `docs/THEME_SPEC.md`（架构图 / 主题栈 / cookie 覆盖 / ThemePicker / 主题插件 ABI / 构建脚本 / 布局 / site.json 集成 / 测试覆盖）
+- [x] `docs/MODULE_SPEC.md`（ModuleSpec / ModuleEngine / 6 内置模块清单 / site.json 控制 / 与 nav/search/sitemap 集成 / 关闭示例 / 测试覆盖）
 
 ### 3.6 验收门禁
-- [ ] 关闭 forum 编译通过、路由不漏
-- [ ] 2 主题 + 2 布局切换正常 + 持久
+- [x] 关闭 forum 编译通过、路由不漏：`assets/site.json` 注入 `modules.forum.enabled = false` 后 `cargo check --features server -p rustineverything-app` 成功；`disabling_forum_propagates_to_all_consumer_views` 单测验证 is_enabled / navigation / enabled_ids / enabled_modules 一致
+- [x] 2 主题 + 2 布局切换正常 + 持久：Phase 3.1-3.3 已在 `theme_with_override` (11 单测) + `LayoutEngine` (4 单测) + 主题栈 (5 SiteConfig 单测) 覆盖；3 个主题 wasm 已构建到 `assets/plugins/`，2 个 layout shells 已实现并由 `Navbar` 分发；cookie 覆盖路径在 server fn `set_user_theme` + 单测中验证
 
 ---
 
@@ -399,7 +399,7 @@
 | 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
 | 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
 | 2 | ✅ 主体完成 (2.1–2.6 ✅ / Lighthouse 需上线后实测) | MDX 组件开放注册 + SEO 到位 |
-| 3 | ⏳ 待开始 | 站点形态配置化 |
+| 3 | ✅ 主体完成 (3.1–3.6 ✅) | 站点形态配置化（主题栈 + 2 布局 + 模块开关） |
 | 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
 | 5 | ⏳ 待开始 | 插件生态（Hot Reload + 内存回收验证 + 示例） |
 | 6 | ⏳ 待开始 | 5 新内容板块 |
