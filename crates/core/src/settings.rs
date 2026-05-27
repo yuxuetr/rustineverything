@@ -37,6 +37,37 @@ pub struct SiteConfig {
     /// `ModuleEngine::init` 读取该字段覆盖默认 enabled 状态。
     #[serde(default)]
     pub modules: HashMap<String, ModuleSettings>,
+    /// Phase 4.3：审核插件配置（独立于通用 `modules` 开关，因为还要装
+    /// 插件清单与阈值）。
+    /// 默认 disabled + 空插件列表 → 整条流水线短路，零开销 fail-open。
+    /// 由 `crates/modules/moderation::ModerationPipeline::from_site_config`
+    /// 读取并装载。
+    #[serde(default)]
+    pub moderation: ModerationSettings,
+}
+
+/// 审核功能在 site.json 中的配置块。**默认 disabled**，意味着评论 / 话题 /
+/// 标注的提交路径不会调用任何 LLM。
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct ModerationSettings {
+    /// 总开关。默认 `false`。
+    #[serde(default)]
+    pub enabled: bool,
+    /// 要装载的审核插件文件名列表（相对 `assets/plugins/`）。
+    /// 即使 `enabled = true`，这里为空也等于没有 stage → 全部 Allow。
+    #[serde(default)]
+    pub plugins: Vec<String>,
+    /// 可选：覆盖默认阈值（block_above = 0.9 / flag_above = 0.5）。
+    /// 留空表示用默认。
+    #[serde(default)]
+    pub thresholds: Option<ModerationThresholdsConfig>,
+}
+
+/// `ModerationSettings::thresholds` 的可选覆盖。字段缺失时不影响其它字段。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModerationThresholdsConfig {
+    pub block_above: Option<f32>,
+    pub flag_above: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,6 +153,7 @@ impl Default for SiteConfig {
             navigation: vec![],
             auth: AuthSettings::default(),
             modules: HashMap::new(),
+            moderation: ModerationSettings::default(),
         }
     }
 }
@@ -182,5 +214,55 @@ mod tests {
             cfg.theme_stack(),
             vec!["theme_ocean_plugin.wasm".to_string()]
         );
+    }
+
+    // ─── Phase 4.3 moderation settings ───────────────────────
+
+    #[test]
+    fn moderation_defaults_to_disabled_empty() {
+        let cfg = SiteConfig::default();
+        assert!(!cfg.moderation.enabled);
+        assert!(cfg.moderation.plugins.is_empty());
+        assert!(cfg.moderation.thresholds.is_none());
+    }
+
+    #[test]
+    fn moderation_back_compat_when_field_missing() {
+        // 老 site.json 完全没有 moderation block → 默认 disabled
+        let json = r#"{
+            "site_name": "X",
+            "site_description": "",
+            "active_theme": "t.wasm",
+            "default_language": "zh",
+            "author": "",
+            "paths": {},
+            "navigation": []
+        }"#;
+        let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
+        assert!(!cfg.moderation.enabled);
+    }
+
+    #[test]
+    fn moderation_parses_full_block() {
+        let json = r#"{
+            "site_name": "X",
+            "site_description": "",
+            "active_theme": "t.wasm",
+            "default_language": "zh",
+            "author": "",
+            "paths": {},
+            "navigation": [],
+            "moderation": {
+                "enabled": true,
+                "plugins": ["moderation_llm_default.wasm"],
+                "thresholds": { "block_above": 0.95, "flag_above": 0.6 }
+            }
+        }"#;
+        let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
+        assert!(cfg.moderation.enabled);
+        assert_eq!(cfg.moderation.plugins, vec!["moderation_llm_default.wasm"]);
+        let t = cfg.moderation.thresholds.unwrap();
+        assert_eq!(t.block_above, Some(0.95));
+        assert_eq!(t.flag_above, Some(0.6));
     }
 }

@@ -279,13 +279,12 @@
 - [x] **MDX `dangerous_inner_html` 审计**：全工作区仅 2 处（`crates/widgets/src/mdx.rs:184, 190`），数据来源均为 `latex_to_mathml_string`（pulldown-latex 库结构化输出），不含用户字面回显；用户内容 **不会**走该路径。审计结论与升级注意事项记录到 `docs/MODERATION_SPEC.md §1.4`
 
 ### 4.3 ModerationProvider WASM ABI
-- [ ] `get_endpoint() / map_request() / map_verdict()` 三函数
-- [ ] 宿主负责 HTTP + 超时 5s + 重试 1 次
+- [x] ABI 落地为两个函数（与 Todos.old 设计微调）：`moderation_build_prompt(submission_json) -> Vec<LlmMessage>` + `moderation_parse_verdict(llm_text) -> Verdict`。插件管 policy（prompt + 解析），宿主管 transport（HTTP/超时/鉴权/协议）。SDK 加 `ModerationSubmission` / `ModerationVerdict` 类型 + fn name 常量 + `MODERATION_PROVIDER` capability。`crates/modules/moderation/` 新 crate 实现 `AsyncModerationStage` + `PluginModerationStage` + `ModerationPipeline`，复用 `crates/llm/` 做 HTTP（统一 OpenAI / Anthropic 双协议）
+- [x] 宿主负责 HTTP + 超时 + 重试：通过 `crates/llm::LlmClient`，默认 timeout 30s。fail-open 策略：插件加载失败 / LLM 失败 / JSON 解析失败 → 当前 stage 返回 Allow + 写 warning 日志，不阻塞用户提交
 
 ### 4.4 内置审核插件
-- [ ] `moderation-openai`：OpenAI Moderation API + GPT-4o-mini 视觉
-- [ ] `moderation-anthropic`：Claude 文本 + 视觉
-- [ ] `moderation-llamaguard`：本地 ollama（fallback）
+- [x] `examples/plugin-moderation-deepseek`：示例审核插件（适配任意 OpenAI / Anthropic 兼容 LLM）。系统 prompt 让模型输出 `{score, label, reason}` JSON；带 markdown 围栏抽取容错；5 个 host 端单测；wasm 产物 146 KB。**已实测端到端**（DeepSeek）：友善评论 → Allow(0.1)，辱骂评论 → Block(0.95)
+- [ ] 后续：`moderation-anthropic`（Claude 视觉）/ `moderation-llamaguard`（本地 ollama fallback）— 待按需追加，ABI 已稳定
 
 ### 4.5 数据库 + Admin
 - [ ] `moderation_log / moderation_decisions / moderation_queue` 三张表

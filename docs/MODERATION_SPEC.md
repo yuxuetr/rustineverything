@@ -161,14 +161,104 @@ pub trait ModerationStage: Send + Sync {
 - ✅ 全 Allow → Allow
 - ✅ Score clamp 至 [0.0, 1.0]
 
-## 3. Phase 4.3-4.5 后续路线图
+## 3. LLM 审核插件（Phase 4.3-4.4）
 
-| 阶段 | 工作 |
+### 3.1 架构分层
+
+```text
+crates/core::engines::moderation   # Verdict / Label / Thresholds / 同步 trait
+crates/llm                          # OpenAI + Anthropic 双协议 HTTP 客户端
+crates/modules/moderation           # AsyncModerationStage + PluginModerationStage + Pipeline
+examples/plugin-moderation-deepseek # 演示 wasm 插件（build_prompt + parse_verdict）
+```
+
+**插件管 policy，宿主管 transport**：
+- **插件**：写 prompt、解释 LLM 输出。每个站点可以装多个不同策略的插件。
+- **宿主**：通过 `crates/llm` 的 `LlmClient` 实际发 HTTP 请求，复用四个 env
+  变量 (`OPENAI_LLM_BASE_URL` / `OPENAI_LLM_API_KEY` / `ANTHROPIC_LLM_BASE_URL`
+  / `ANTHROPIC_LLM_API_KEY`)。
+
+### 3.2 ABI（capability = `moderation-provider`）
+
+| 函数 | 输入 (JSON) | 输出 (JSON) |
+| --- | --- | --- |
+| `get_manifest` | — | `PluginManifest` |
+| `moderation_build_prompt` | `ModerationSubmission { content, kind, ref_path }` | `Vec<LlmMessage>` |
+| `moderation_parse_verdict` | LLM 原始文本 | `ModerationVerdict { score, label: "allow"\|"flag"\|"block", reason }` |
+
+类型定义在 `crates/sdk/src/lib.rs`，插件只需声明 capability `MODERATION_PROVIDER`
+即被 [`PluginEngine::filter_by_capability`](ENGINES_SPEC.md) 识别。
+
+### 3.3 配置（site.json）
+
+```jsonc
+{
+  "moderation": {
+    "enabled": false,                                     // 默认 disabled
+    "plugins": ["plugin_moderation_deepseek.wasm"],       // 装载顺序 = 评估顺序
+    "thresholds": {                                       // 可选
+      "block_above": 0.9,
+      "flag_above": 0.5
+    }
+  }
+}
+```
+
+**默认安全**：
+- `enabled = false` → 流水线为空，evaluate 总是返回 Allow（零开销）
+- `enabled = true` 但 `plugins = []` → 仍为空流水线
+- `enabled = true` + plugins 配了但 LLM env 没配 → 也是空流水线 + warning 日志
+- 三重保险，**不会**因配置错误把用户提交吞掉
+
+### 3.4 Fail-open 策略
+
+每个 stage 任一步骤失败 → 返回 Allow + 写 warning 日志：
+- 插件文件不存在
+- 插件 `build_prompt` 调用失败 / 返回非法 JSON / 0 messages
+- LLM 调用失败（超时、网络、鉴权、配额）
+- 插件 `parse_verdict` 调用失败 / 返回非法 JSON
+
+Block 决定必须由完整成功的流水线产出。这保证了 LLM 故障期间站点仍可用。
+
+### 3.5 端到端实测（DeepSeek）
+
+`examples/plugin-moderation-deepseek` 已对接 DeepSeek（OpenAI 兼容模式）实测：
+
+| 输入 | label | score | reason |
+| --- | --- | --- | --- |
+| 「感谢分享，这篇博客写得很清晰」 | Allow | 0.10 | 正常友好评论，无任何违规内容 |
+| 「你这个 sb，写的什么垃圾文章…」 | Block | 0.95 | 包含辱骂性词汇和人身攻击 |
+
+复现命令：
+```sh
+cargo test -p rustineverything-module-moderation --test live_pipeline \
+  -- --ignored --nocapture --test-threads=1
+```
+要求 `.env` 配好任一对 LLM env，且 wasm 已 `cp` 到 `assets/plugins/`。
+
+### 3.6 启用 / 禁用
+
+```sh
+# 启用：编辑 site.json 把 enabled 设 true，列上需要的插件
+$EDITOR assets/site.json
+docker compose restart app   # 重启使配置生效
+
+# 禁用：把 enabled 设回 false（plugins 字段可留着备用）
+$EDITOR assets/site.json
+docker compose restart app
+```
+
+无须改代码，无须重新 build 镜像。
+
+### 3.7 Phase 4.5 待补
+
+| 项 | 说明 |
 | --- | --- |
-| 4.3 ModerationProvider ABI | `get_endpoint() / map_request() / map_verdict()` 三函数；宿主负责 HTTP + 5s 超时 + 1 次重试 |
-| 4.4 内置审核插件 | `moderation-openai` / `moderation-anthropic` / `moderation-llamaguard`（本地 ollama fallback） |
-| 4.5 数据库 + Admin | `moderation_log / moderation_decisions / moderation_queue` 表 + Admin 队列页 |
-| 4.7 验收门禁 | 审核 P95 ≤ 1.5s；模拟违规正确 Block/Flag；LLM 失败 fail-open + 日志 |
+| `moderation_log` 表 | 持久化所有判定记录（用户 + 内容 + verdict + LLM 原文） |
+| `moderation_queue` 表 | Flag 状态的内容入队，Admin 复核界面消费 |
+| Admin 队列页 | 列表 + 批量 approve/reject |
+| 阈值在线调整 | 当前需要改 site.json + 重启；可加 admin server fn 写回 |
+| 评论 / 话题 / 标注 提交路径接入 | 目前流水线已就绪但还没 hook 到具体 server fn |
 
 ## 4. 与其他引擎的关系
 
@@ -190,5 +280,6 @@ pub trait ModerationStage: Send + Sync {
 | Cookie Secure flag (生产) | ✅ Phase 1A |
 | **用户 Markdown XSS 防护** | ✅ Phase 4.2 |
 | **`dangerous_inner_html` 审计** | ✅ Phase 4.2（仅 2 处，pulldown-latex 输出，无用户字面回显） |
-| LLM/VLM 内容审核 | ⏳ Phase 4.3-4.5 |
+| LLM 内容审核（插件 + 默认 disabled） | ✅ Phase 4.3-4.4（基础设施完成；4.5 DB/Admin 待补 + comment/forum hook 待接） |
+| VLM 视觉审核 | ⏳ 后续（Anthropic Vision / GPT-4o 视觉，需扩展 ABI 传图） |
 | Hot Reload 内存回收验证 | ⏳ Phase 5.1 |

@@ -14,6 +14,7 @@ members = [
     "crates/modules/docs",
     "crates/modules/comments",
     "crates/modules/uploads",
+    "crates/modules/moderation",
     "crates/migration",
     "crates/app",
     "crates/plugins/i18n-fluent",
@@ -25,6 +26,7 @@ members = [
     "crates/plugins/discord-auth",
     "crates/plugins/twitter-auth",
     "examples/plugin-theme-purple",
+    "examples/plugin-moderation-deepseek",
 ]
 resolver = "2"
 

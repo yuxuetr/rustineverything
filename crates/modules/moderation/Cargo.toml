@@ -1,0 +1,30 @@
+[package]
+name = "rustineverything-module-moderation"
+version = "0.1.0"
+edition = "2021"
+description = "LLM 审核流水线：把 WASM 插件 (build_prompt + parse_verdict) 与 LlmClient 串起来"
+
+# Server-only：依赖真实 HTTP + wasm runtime + tokio。
+# 调用方按需在自己的 server feature 下显式启用。
+
+[lib]
+name = "rustineverything_module_moderation"
+
+[dependencies]
+async-trait = "0.1"
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing = { workspace = true }
+
+# 工作区内的依赖：
+# - core::engines::moderation 提供 Verdict / ModerationLabel / ModerationThresholds
+# - llm 提供 LlmClient + LlmMessage / LlmRole
+# - sdk 提供 ABI 数据类型 (ModerationSubmission / ModerationVerdict)
+rustineverything-core = { path = "../../core", features = ["server"] }
+rustineverything-llm = { path = "../../llm" }
+rustineverything-sdk = { path = "../../sdk" }
+
+[dev-dependencies]
+mockito = "1.5"
+dotenvy = "0.15"

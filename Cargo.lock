@@ -4912,6 +4912,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
+name = "plugin-moderation-deepseek"
+version = "0.1.0"
+dependencies = [
+ "rustineverything-sdk",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "plugin-theme-purple"
 version = "0.1.0"
 dependencies = [
@@ -5833,6 +5842,22 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "rustineverything-module-moderation"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dotenvy",
+ "mockito",
+ "rustineverything-core",
+ "rustineverything-llm",
+ "rustineverything-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

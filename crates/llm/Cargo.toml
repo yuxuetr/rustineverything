@@ -11,7 +11,7 @@ description = "LLM 双模式（OpenAI + Anthropic 兼容）客户端，对外提
 
 [dependencies]
 async-trait = "0.1"
-reqwest = { workspace = true, features = ["json", "rustls-tls"], default-features = false }
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -1,0 +1,14 @@
+[package]
+name = "plugin-moderation-deepseek"
+version = "0.1.0"
+edition = "2021"
+description = "示例审核插件：用 DeepSeek（或任何 OpenAI / Anthropic 兼容 LLM）做评论审核"
+authors = ["yuxuetr"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rustineverything-sdk = { path = "../../crates/sdk" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
