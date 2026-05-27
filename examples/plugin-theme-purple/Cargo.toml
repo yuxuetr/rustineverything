@@ -1,0 +1,12 @@
+[package]
+name = "plugin-theme-purple"
+version = "0.1.0"
+edition = "2021"
+description = "示例：紫罗兰主题插件（演示 Phase 5 插件开发流程）"
+authors = ["yuxuetr"]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rustineverything-sdk = { path = "../../crates/sdk" }

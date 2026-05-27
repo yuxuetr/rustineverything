@@ -74,9 +74,50 @@ pub trait ModerationStage: Send + Sync {
     fn evaluate(&self, content: &str) -> Verdict;
 }
 
+/// Phase 4.1：阈值配置。pipeline 返回 Verdict 后，根据 score 升级 label：
+/// - `score >= block_above` → Block
+/// - `score >= flag_above`  → Flag
+/// 否则保留原 label（不降级，避免「Stage 明确 Block 但分数低」的反直觉行为）。
+///
+/// 默认阈值 `block_above = 0.9 / flag_above = 0.5`，对绝大多数 LLM 审核
+/// 提供商的「moderation score」语义是合理起点。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct ModerationThresholds {
+    pub block_above: f32,
+    pub flag_above: f32,
+}
+
+impl Default for ModerationThresholds {
+    fn default() -> Self {
+        Self {
+            block_above: 0.9,
+            flag_above: 0.5,
+        }
+    }
+}
+
+impl ModerationThresholds {
+    /// 把 verdict 按阈值「升级」：score >= block_above 强制 Block；
+    /// score >= flag_above 强制 Flag。已是 Block 的不降级；Allow 的也按
+    /// score 检查是否需要升级。
+    pub fn apply(&self, mut v: Verdict) -> Verdict {
+        if v.label == ModerationLabel::Block {
+            return v;
+        }
+        if v.score >= self.block_above {
+            v.label = ModerationLabel::Block;
+        } else if v.score >= self.flag_above {
+            v.label = ModerationLabel::Flag;
+        }
+        v
+    }
+}
+
 /// ModerationEngine：串行运行 stages，遇到 Block 立即返回。
 pub struct ModerationEngine {
     stages: Vec<Box<dyn ModerationStage>>,
+    /// Phase 4.1：阈值。pipeline 输出 Verdict 后再按 score 升级 label。
+    thresholds: ModerationThresholds,
 }
 
 impl Default for ModerationEngine {
@@ -87,7 +128,26 @@ impl Default for ModerationEngine {
 
 impl ModerationEngine {
     pub fn new() -> Self {
-        Self { stages: Vec::new() }
+        Self {
+            stages: Vec::new(),
+            thresholds: ModerationThresholds::default(),
+        }
+    }
+
+    /// 自定义阈值的构造（便于测试与 site.json 配置）。
+    pub fn with_thresholds(thresholds: ModerationThresholds) -> Self {
+        Self {
+            stages: Vec::new(),
+            thresholds,
+        }
+    }
+
+    pub fn set_thresholds(&mut self, t: ModerationThresholds) {
+        self.thresholds = t;
+    }
+
+    pub fn thresholds(&self) -> ModerationThresholds {
+        self.thresholds
     }
 
     pub fn register<S: ModerationStage + 'static>(&mut self, stage: S) {
@@ -98,27 +158,28 @@ impl ModerationEngine {
         self.stages.iter().map(|s| s.name()).collect()
     }
 
-    /// 跑一遍流水线：任一 Block 立即返回；否则返回最后一个 stage 的判定
-    /// （Allow 或最高分的 Flag）。空 stages 默认 Allow。
+    /// 跑一遍流水线：任一 Block 立即返回；否则按最高 score 选出 best verdict
+    /// （Allow 与 Flag 都参与比较），最后统一应用阈值
+    /// （[`ModerationThresholds::apply`]）。空 stages 默认 Allow。
+    ///
+    /// 注：保留高 score 的 Allow 是阈值层升级的语义前提 — 若某 stage 判 Allow
+    /// 但给出 score=0.95，阈值层会把它升级为 Block。
     pub fn evaluate(&self, content: &str) -> Verdict {
         let mut best: Option<Verdict> = None;
         for stage in &self.stages {
             let v = stage.evaluate(content);
             if v.is_block() {
-                return v; // 早停
+                return self.thresholds.apply(v); // 早停（阈值对 Block 无降级）
             }
-            // 选择最高 score 的非 Allow 结果，便于上报
-            if v.label == ModerationLabel::Flag {
-                let replace = match &best {
-                    Some(b) if b.score >= v.score => false,
-                    _ => true,
-                };
-                if replace {
-                    best = Some(v);
-                }
+            let replace = match &best {
+                Some(b) if b.score >= v.score => false,
+                _ => true,
+            };
+            if replace {
+                best = Some(v);
             }
         }
-        best.unwrap_or_else(Verdict::allow)
+        self.thresholds.apply(best.unwrap_or_else(Verdict::allow))
     }
 }
 
@@ -209,5 +270,96 @@ mod tests {
 
         let flag = Verdict::flag(-0.5, "negative");
         assert!((flag.score - 0.0).abs() < f32::EPSILON);
+    }
+
+    // ────────────────────────────────────────────────────────
+    // Phase 4.1：阈值（block_above / flag_above）
+    // ────────────────────────────────────────────────────────
+
+    #[test]
+    fn thresholds_default_is_0_9_block_0_5_flag() {
+        let t = ModerationThresholds::default();
+        assert!((t.block_above - 0.9).abs() < f32::EPSILON);
+        assert!((t.flag_above - 0.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn threshold_upgrades_allow_to_flag() {
+        let t = ModerationThresholds::default();
+        // Allow with score=0.6 → 升级为 Flag
+        let v = t.apply(Verdict {
+            score: 0.6,
+            label: ModerationLabel::Allow,
+            reason: String::new(),
+        });
+        assert_eq!(v.label, ModerationLabel::Flag);
+    }
+
+    #[test]
+    fn threshold_upgrades_allow_to_block() {
+        let t = ModerationThresholds::default();
+        let v = t.apply(Verdict {
+            score: 0.95,
+            label: ModerationLabel::Allow,
+            reason: String::new(),
+        });
+        assert_eq!(v.label, ModerationLabel::Block);
+    }
+
+    #[test]
+    fn threshold_upgrades_flag_to_block() {
+        let t = ModerationThresholds::default();
+        let v = t.apply(Verdict::flag(0.95, "high"));
+        assert_eq!(v.label, ModerationLabel::Block);
+    }
+
+    #[test]
+    fn threshold_never_downgrades_block() {
+        // 已是 Block 的，即使 score 低于 block_above，仍保持 Block。
+        let t = ModerationThresholds {
+            block_above: 0.9,
+            flag_above: 0.5,
+        };
+        let v = t.apply(Verdict::block(0.2, "explicit"));
+        assert_eq!(v.label, ModerationLabel::Block);
+    }
+
+    #[test]
+    fn engine_applies_thresholds_to_pipeline_output() {
+        let mut e = ModerationEngine::with_thresholds(ModerationThresholds {
+            block_above: 0.9,
+            flag_above: 0.5,
+        });
+        // 单 Allow stage 但 score=0.95 → pipeline 输出 Allow(0.95)，
+        // 阈值升级为 Block。
+        struct AllowAtHighScore;
+        impl ModerationStage for AllowAtHighScore {
+            fn name(&self) -> &'static str { "high" }
+            fn evaluate(&self, _: &str) -> Verdict {
+                Verdict {
+                    score: 0.95,
+                    label: ModerationLabel::Allow,
+                    reason: "trace".to_string(),
+                }
+            }
+        }
+        e.register(AllowAtHighScore);
+        let v = e.evaluate("anything");
+        assert_eq!(v.label, ModerationLabel::Block);
+    }
+
+    #[test]
+    fn engine_custom_thresholds_change_behavior() {
+        // 默认阈值会把 score=0.6 升级为 Flag；提高阈值后保持 Allow。
+        let lenient = ModerationThresholds {
+            block_above: 0.99,
+            flag_above: 0.95,
+        };
+        let v = lenient.apply(Verdict {
+            score: 0.6,
+            label: ModerationLabel::Allow,
+            reason: String::new(),
+        });
+        assert_eq!(v.label, ModerationLabel::Allow);
     }
 }

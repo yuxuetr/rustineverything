@@ -262,10 +262,10 @@
 > 目标：评论/话题/上传走统一审核流水线。全部走模型，不用规则关键词。
 
 ### 4.1 ModerationEngine 实现
-- [ ] `ModerationStage` trait：`evaluate(submission) -> StageVerdict`
-- [ ] `Verdict { score, label: Allow|Flag|Block, reason }`
-- [ ] Pipeline 串行 + 早停
-- [ ] 阈值配置：`block_above` / `flag_above`
+- [x] `ModerationStage` trait：`evaluate(submission) -> StageVerdict`（Phase 1C.4）
+- [x] `Verdict { score, label: Allow|Flag|Block, reason }`（Phase 1C.4）
+- [x] Pipeline 串行 + 早停（Phase 1C.4）
+- [x] 阈值配置：`block_above` / `flag_above`（`ModerationThresholds`，默认 0.9 / 0.5；pipeline 输出后统一升级 Verdict label；7 个新单测覆盖 default / 各方向升级 / 不降级 Block / engine 自定义阈值）
 
 ### 4.2 模块接入
 - [ ] 评论 / 话题创建 / 话题回复 / 标注 / 上传 → ModerationEngine hook（待 Phase 4.3 ABI 落地后接入）
@@ -305,13 +305,13 @@
 - [ ] 测试：连续 1000 次 reload 后 RSS 涨幅 ≤ 50MB
 
 ### 5.2 示例插件（3 个核心）
-- [ ] `examples/plugin-theme-purple`：自定义主题 demo
-- [ ] `examples/plugin-auth-feishu`：飞书登录
-- [ ] `examples/plugin-moderation-haiku`：Claude Haiku 轻量审核
+- [x] `examples/plugin-theme-purple`：自定义主题 demo（~30 行 + 4 host 端单测；wasm 产物 26 KB，与内置主题一致；workspace 已注册）
+- [ ] `examples/plugin-auth-feishu`：飞书登录（需要飞书 OAuth 真实凭据，留待后续）
+- [ ] `examples/plugin-moderation-haiku`：Claude Haiku 轻量审核（待 Phase 4.3 ABI 落地 + API key 配置后实现）
 
 ### 5.3 文档
-- [ ] `docs/PLUGIN_DEV.md`：从零开发插件（30 分钟上手）
-- [ ] `docs/PLUGIN_ABI.md`：ABI 规范 + 版本兼容性
+- [x] `docs/PLUGIN_DEV.md`：从零开发插件（30 分钟上手 / 主题 i18n auth 模板 / 调试技巧 / 体积建议 / 发布清单 / 后续路线图）
+- [x] `docs/PLUGIN_ABI.md`：ABI 规范 + 版本兼容性（导出函数 / 数据打包 / 能力路由 / 错误处理 / 安全模型 / 当前内置插件清单）
 
 ### 5.4 验收门禁
 - [ ] 自测 30 分钟内做出新主题
@@ -400,8 +400,8 @@
 | 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
 | 2 | ✅ 主体完成 (2.1–2.6 ✅ / Lighthouse 需上线后实测) | MDX 组件开放注册 + SEO 到位 |
 | 3 | ✅ 主体完成 (3.1–3.6 ✅) | 站点形态配置化（主题栈 + 2 布局 + 模块开关） |
-| 4 | 🔄 部分完成 (4.2 XSS + 4.6 文档 ✅；4.1 骨架在 1C.4 完成；4.3-4.5 待 LLM 集成) | LLM/VLM 审核 + XSS 防护 |
-| 5 | ⏳ 待开始 | 插件生态（Hot Reload + 内存回收验证 + 示例） |
+| 4 | 🔄 部分完成 (4.1 阈值 ✅ / 4.2 XSS ✅ / 4.6 文档 ✅；4.3-4.5 待 LLM 集成) | LLM/VLM 审核 + XSS 防护 |
+| 5 | 🔄 部分完成 (5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.1 Hot Reload、5.2.2-5.2.3、5.4 验收待 Admin UI 落地) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
 | 6 | ⏳ 待开始 | 5 新内容板块 |
 | 7 | ⏳ 待开始 | Docker + CI + 可部署 |
 

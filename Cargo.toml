@@ -22,6 +22,7 @@ members = [
     "crates/plugins/google-auth",
     "crates/plugins/discord-auth",
     "crates/plugins/twitter-auth",
+    "examples/plugin-theme-purple",
 ]
 resolver = "2"
 
