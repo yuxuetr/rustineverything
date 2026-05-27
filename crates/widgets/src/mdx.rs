@@ -49,6 +49,11 @@ pub struct MarkdownProps {
     pub content: String,
     /// 当前文章 / 章节 / 案例 ID，用于解析图片相对路径。
     pub blog_id: String,
+    /// Phase 4.2：来自用户的不受信内容（评论 / 话题 / 标注 等）。
+    /// 默认 `false`（站点作者内容，原样渲染）。`true` 时会在 cmark
+    /// 解析前调用 [`crate::sanitize::sanitize_user_html`] 剥离危险标签。
+    #[props(default = false)]
+    pub untrusted: bool,
 }
 
 /// 解析 frontmatter + 正文。frontmatter 为可选 YAML（`---` 分隔）。
@@ -67,7 +72,14 @@ pub fn parse_mdx(content: &str) -> (PostMetadata, String) {
 
 #[component]
 pub fn Markdown(props: MarkdownProps) -> Element {
-    let (metadata, body) = parse_mdx(&props.content);
+    // Phase 4.2：用户内容先经 sanitize_user_html 剥离危险 HTML，
+    // 站点作者内容保持原状（信任站点编辑者）。
+    let raw_content = if props.untrusted {
+        crate::sanitize::sanitize_user_html(&props.content)
+    } else {
+        props.content.clone()
+    };
+    let (metadata, body) = parse_mdx(&raw_content);
 
     let mut options = Options::empty();
     options.insert(Options::ENABLE_TABLES);

@@ -507,7 +507,7 @@ fn TopicDetailBody(detail: TopicDetail, on_replied: EventHandler<TopicDetail>) -
             }
             // 正文
             div { class: "prose prose-slate dark:prose-invert max-w-none mb-10",
-                Markdown { content: content.clone(), blog_id: blog_id.clone() }
+                Markdown { content: content.clone(), blog_id: blog_id.clone(), untrusted: true }
             }
             // 回复
             div { class: "border-t border-slate-200 dark:border-slate-800 pt-8",
@@ -551,7 +551,7 @@ fn ReplyItem(reply: Reply, parent_blog_id: String) -> Element {
                     span { class: "text-xs text-slate-500", "{created_at}" }
                 }
                 div { class: "prose prose-sm prose-slate dark:prose-invert max-w-none",
-                    Markdown { content: content.clone(), blog_id: parent_blog_id.clone() }
+                    Markdown { content: content.clone(), blog_id: parent_blog_id.clone(), untrusted: true }
                 }
             }
         }
@@ -831,7 +831,7 @@ pub fn NewTopicPage() -> Element {
                         }
                     } else {
                         div { class: "prose prose-slate dark:prose-invert max-w-none min-h-[16rem] p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40",
-                            Markdown { content: content(), blog_id: "topic:preview".to_string() }
+                            Markdown { content: content(), blog_id: "topic:preview".to_string(), untrusted: true }
                         }
                     }
                 }

@@ -268,10 +268,10 @@
 - [ ] 阈值配置：`block_above` / `flag_above`
 
 ### 4.2 模块接入
-- [ ] 评论 / 话题创建 / 话题回复 / 标注 / 上传 → ModerationEngine hook
-- [ ] 超时/失败 = fail-open（Allow + log）
-- [ ] **XSS 防护**：所有用户提交的 Markdown 在渲染前过滤危险 HTML 标签 / 属性（白名单：a, p, h1-h6, ul, ol, li, code, pre, blockquote, img(src/alt), br, hr, em, strong）；禁止 `<script>` `<iframe>` `on*=` 内联事件
-- [ ] **MDX `dangerous_inner_html` 审计**：`markdown.rs` 中 math / mermaid / 嵌入 HTML 的 `dangerous_inner_html` 来源是否可控；用户内容不允许走该路径
+- [ ] 评论 / 话题创建 / 话题回复 / 标注 / 上传 → ModerationEngine hook（待 Phase 4.3 ABI 落地后接入）
+- [ ] 超时/失败 = fail-open（Allow + log）（同上）
+- [x] **XSS 防护**：`crates/widgets/src/sanitize.rs::sanitize_user_html` 在 cmark 解析前剥离 `<script>` / `<iframe>` / `<object>` / `<embed>` / `<style>` 块 + `on*=` 内联事件 + `javascript:` / `data:text/html` 协议；`Markdown` 组件新增 `untrusted: bool` prop，已在评论 + 论坛话题/回复/预览 5 个站点开启；UTF-8 安全，15 个单测覆盖（含大小写变体、polyglot payload、误伤防护）
+- [x] **MDX `dangerous_inner_html` 审计**：全工作区仅 2 处（`crates/widgets/src/mdx.rs:184, 190`），数据来源均为 `latex_to_mathml_string`（pulldown-latex 库结构化输出），不含用户字面回显；用户内容 **不会**走该路径。审计结论与升级注意事项记录到 `docs/MODERATION_SPEC.md §1.4`
 
 ### 4.3 ModerationProvider WASM ABI
 - [ ] `get_endpoint() / map_request() / map_verdict()` 三函数
@@ -287,7 +287,7 @@
 - [ ] Admin：队列 / 审计日志 / 阈值配置 / 复核操作
 
 ### 4.6 文档
-- [ ] `docs/MODERATION_SPEC.md`
+- [x] `docs/MODERATION_SPEC.md`：XSS 攻击面审计 / sanitize_user_html / dangerous_inner_html 审计 / ModerationEngine 骨架 / Phase 4.3-4.5 路线图 / 安全清单
 
 ### 4.7 验收门禁
 - [ ] 审核 P95 ≤ 1.5s
@@ -400,7 +400,7 @@
 | 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
 | 2 | ✅ 主体完成 (2.1–2.6 ✅ / Lighthouse 需上线后实测) | MDX 组件开放注册 + SEO 到位 |
 | 3 | ✅ 主体完成 (3.1–3.6 ✅) | 站点形态配置化（主题栈 + 2 布局 + 模块开关） |
-| 4 | ⏳ 待开始 | LLM/VLM 审核 + XSS 防护 |
+| 4 | 🔄 部分完成 (4.2 XSS + 4.6 文档 ✅；4.1 骨架在 1C.4 完成；4.3-4.5 待 LLM 集成) | LLM/VLM 审核 + XSS 防护 |
 | 5 | ⏳ 待开始 | 插件生态（Hot Reload + 内存回收验证 + 示例） |
 | 6 | ⏳ 待开始 | 5 新内容板块 |
 | 7 | ⏳ 待开始 | Docker + CI + 可部署 |

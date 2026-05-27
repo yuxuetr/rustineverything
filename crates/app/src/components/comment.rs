@@ -117,7 +117,7 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
                           }
                       } else {
                           div { class: "min-h-[8rem] py-2",
-                              Markdown { content: content(), blog_id: props.blog_id.clone() }
+                              Markdown { content: content(), blog_id: props.blog_id.clone(), untrusted: true }
                           }
                       }
                   }
@@ -172,7 +172,7 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
                                   span { class: "text-xs text-slate-500", "{comment.date}" }
                               }
                               div { class: "text-sm text-slate-700 dark:text-slate-300 prose-comment",
-                                  Markdown { content: comment.content.clone(), blog_id: props.blog_id.clone() }
+                                  Markdown { content: comment.content.clone(), blog_id: props.blog_id.clone(), untrusted: true }
                               }
                           }
                       }
