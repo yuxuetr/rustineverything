@@ -267,6 +267,11 @@
 - [x] Pipeline 串行 + 早停（Phase 1C.4）
 - [x] 阈值配置：`block_above` / `flag_above`（`ModerationThresholds`，默认 0.9 / 0.5；pipeline 输出后统一升级 Verdict label；7 个新单测覆盖 default / 各方向升级 / 不降级 Block / engine 自定义阈值）
 
+### 4.1.5 LLM 双模式客户端（Phase 4 / 5 前置）
+- [x] `crates/core/src/llm/`：OpenAI 兼容 + Anthropic 兼容双协议，配置驱动选择（无运行时 failover）。四个独立 env：`OPENAI_LLM_BASE_URL` + `OPENAI_LLM_API_KEY`、`ANTHROPIC_LLM_BASE_URL` + `ANTHROPIC_LLM_API_KEY`，可选 `OPENAI_LLM_MODEL` / `ANTHROPIC_LLM_MODEL`（默认 `deepseek-chat`）。Anthropic 客户端自动把 `system` 角色抽取到顶层 + 校验 conv 以 user 起始 + 处理 `max_tokens` 必填语义
+- [x] 测试：30 个 mockito 单测（请求 shape / header / 错误 envelope / 参数校验 / UTF-8 truncate）+ 2 个 live 集成测试（默认 `#[ignore]`，已对 DeepSeek 两端点实测通过：reply=`2`）。Mock 客户端用 `.no_proxy()` 遵循项目约定
+- [x] 文档：`docs/LLM_SPEC.md` + `.env.example` 4 个新变量段落
+
 ### 4.2 模块接入
 - [ ] 评论 / 话题创建 / 话题回复 / 标注 / 上传 → ModerationEngine hook（待 Phase 4.3 ABI 落地后接入）
 - [ ] 超时/失败 = fail-open（Allow + log）（同上）

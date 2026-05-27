@@ -7,6 +7,8 @@ pub mod db;
 pub mod engines;
 pub mod error;
 pub mod i18n;
+#[cfg(feature = "server")]
+pub mod llm;
 pub mod session;
 pub mod settings;
 pub mod utils;

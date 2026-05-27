@@ -22,9 +22,13 @@ rand = { workspace = true, optional = true }
 jsonwebtoken = { workspace = true, optional = true }
 aes-gcm = { workspace = true, optional = true }
 tracing = { workspace = true }
+async-trait = { version = "0.1", optional = true }
 
 [features]
-server = ["dep:dioxus", "dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest", "dep:sha2", "dep:base64", "dep:rand", "dep:jsonwebtoken", "dep:aes-gcm"]
+server = ["dep:dioxus", "dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest", "dep:sha2", "dep:base64", "dep:rand", "dep:jsonwebtoken", "dep:aes-gcm", "dep:async-trait"]
 
 [dev-dependencies]
 tempfile = "3"
+mockito = "1.5"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+dotenvy = "0.15"
