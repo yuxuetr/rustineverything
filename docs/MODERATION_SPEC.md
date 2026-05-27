@@ -196,6 +196,11 @@ examples/plugin-moderation-deepseek # 演示 wasm 插件（build_prompt + parse_
   "moderation": {
     "enabled": false,                                     // 默认 disabled
     "plugins": ["plugin_moderation_deepseek.wasm"],       // 装载顺序 = 评估顺序
+    "url_blocklist": [                                    // 链接黑名单，可选
+      "scam.com",                                         // 精确匹配
+      "*.phishing.example",                               // 通配子域
+      "bit.ly"                                            // 已知短链中介
+    ],
     "thresholds": {                                       // 可选
       "block_above": 0.9,
       "flag_above": 0.5
@@ -203,6 +208,19 @@ examples/plugin-moderation-deepseek # 演示 wasm 插件（build_prompt + parse_
   }
 }
 ```
+
+**链接检测两层方案**：
+
+| Layer | 类型 | 何时跑 | 谁判定 |
+| --- | --- | --- | --- |
+| **1 UrlBlocklistStage** | host-native 同步 stage | 流水线第一站 | 直接命中域名 → Block(1.0)，不调 LLM |
+| **2 LLM prompt URL 上下文** | 插件 `build_prompt` 内嵌 | LLM 调用时 | 模型基于 `[包含链接: ...]` 上下文判断仿冒/钓鱼/诱导 |
+
+Layer 1 便宜确定，专治已知坏域名；Layer 2 智能但贵，专治未知拼写仿冒
+（例如 `paypa1-security.com` 仿冒 `paypal.com`）。两层串联，先快后慢。
+
+URL 黑名单 **空数组 = 该 stage 不注册**，零开销；插件 Layer 2 总是检查
+但只有当评论里有 URL 时才追加 prompt 上下文。
 
 **默认安全**：
 - `enabled = false` → 流水线为空，evaluate 总是返回 Allow（零开销）
@@ -256,11 +274,14 @@ user message，并升级 system prompt 加入视觉审核维度（色情 / 血�
 
 `examples/plugin-moderation-deepseek` 已对接两个端点实测：
 
-| 输入 | LLM | label | score |
-| --- | --- | --- | --- |
-| 「感谢分享，这篇博客写得很清晰」 | DeepSeek | Allow | 0.10 |
-| 「你这个 sb，写的什么垃圾文章…」 | DeepSeek | Block | 0.95 |
-| 「分享一张 Rust 的 logo」 + Rust logo 图 | gpt-4o-mini | Allow | 0.00 |
+| 输入 | LLM | label | score | 由谁判定 |
+| --- | --- | --- | --- | --- |
+| 「感谢分享，这篇博客写得很清晰」 | gpt-4o-mini | Allow | 0.00 | 插件 (LLM) |
+| 「你这个 sb，写的什么垃圾文章…」 | gpt-4o-mini | Block | 1.00 | 插件 (LLM) |
+| 「分享一张 Rust 的 logo」 + Rust logo 图 | gpt-4o-mini | Allow | 0.00 | 插件 (vision LLM) |
+| 「点 https://scam.example/x 领奖」 | — | Block | 1.00 | UrlBlocklistStage (精确) |
+| 「https://login.phishing.example/verify」 | — | Block | 1.00 | UrlBlocklistStage (通配) |
+| 「您的 PayPal 已冻结...登录 https://paypa1-security.com」 | gpt-4o-mini | Block | 1.00 | 插件 (URL 上下文 + LLM 判定仿冒) |
 
 复现命令：
 ```sh

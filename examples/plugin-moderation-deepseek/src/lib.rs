@@ -117,6 +117,10 @@ const SYSTEM_PROMPT: &str = r#"你是一个评论审核员，负责判断用户�
 3. 政治敏感、违法犯罪、煽动性内容
 4. 垃圾广告、营销链接、无意义刷屏
 5. 文本与图片不匹配的诱导（标题党 / 钓鱼）
+6. **链接风险**：当用户消息中带 `[包含链接: ...]` 标记时，仔细审查这些域名：
+   - 域名拼写仿冒知名品牌（如 paypa1.com / amaz0n.shop）→ block
+   - 短链 / 跳转中介（bit.ly, t.cn, tinyurl 等）+ 诱导话术 → flag 或 block
+   - 评论上下文与链接目的明显不符的诱导（"点这里领奖" 之类）→ block
 
 **只输出一行 JSON**，不要 markdown 围栏、不要解释。字段：
 {"score": 0.0-1.0, "label": "allow"|"flag"|"block", "reason": "≤30 字理由"}
@@ -126,22 +130,96 @@ const SYSTEM_PROMPT: &str = r#"你是一个评论审核员，负责判断用户�
 - 0.5 ~ 0.89 → label="flag"（可疑，需要复核）
 - 0.9 ~ 1.0  → label="block"（明显违规）"#;
 
+/// 极简 URL 扫描：找文本中所有 http(s):// 起始的链接。
+/// 跟宿主 `crates/modules/moderation::url_blocklist::extract_urls` 同算法
+/// 但故意不依赖该 crate（插件保持最小依赖）。
+fn extract_urls(text: &str) -> Vec<&str> {
+  let bytes = text.as_bytes();
+  let len = bytes.len();
+  let mut out = Vec::new();
+  let mut i = 0;
+  while i < len {
+    let lower_start = scan_scheme(&bytes[i..]).map(|off| i + off);
+    let start = match lower_start {
+      Some(s) => s,
+      None => break,
+    };
+    let mut j = start;
+    while j < len && is_url_byte(bytes[j]) {
+      j += 1;
+    }
+    while j > start
+      && matches!(bytes[j - 1], b'.' | b',' | b';' | b'!' | b'?' | b')' | b']' | b'"' | b'\'')
+    {
+      j -= 1;
+    }
+    if j > start + 8 {
+      out.push(&text[start..j]);
+    }
+    i = j.max(start + 1);
+  }
+  out
+}
+
+fn scan_scheme(bytes: &[u8]) -> Option<usize> {
+  let mut best: Option<usize> = None;
+  for needle in [b"http://".as_slice(), b"https://".as_slice()] {
+    if needle.len() > bytes.len() {
+      continue;
+    }
+    for i in 0..=bytes.len() - needle.len() {
+      if bytes[i..i + needle.len()].eq_ignore_ascii_case(needle) {
+        best = Some(match best {
+          Some(b) => b.min(i),
+          None => i,
+        });
+        break;
+      }
+    }
+  }
+  best
+}
+
+fn is_url_byte(b: u8) -> bool {
+  matches!(
+    b,
+    b'A'..=b'Z'
+      | b'a'..=b'z'
+      | b'0'..=b'9'
+      | b'-' | b'.' | b'_' | b'~'
+      | b':' | b'/' | b'?' | b'#' | b'[' | b']' | b'@'
+      | b'!' | b'$' | b'&' | b'\'' | b'(' | b')'
+      | b'*' | b'+' | b',' | b';' | b'='
+      | b'%'
+  )
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn moderation_build_prompt(ptr: *mut u8, len: usize) -> u64 {
   let raw = read_input(ptr, len);
   let sub: Submission = serde_json::from_slice(raw).unwrap_or_default();
 
+  // 抽链接（如有）：补到正文前置，让模型在 prompt 上下文里看到。
+  // 宿主的 UrlBlocklistStage 已经处理过命中黑名单的极端情况；模型这里
+  // 主要管「域名仿冒 / 短链诱导 / 上下文与链接目的不符」之类的判断。
+  let urls = extract_urls(&sub.content);
+  let url_hint = if urls.is_empty() {
+    String::new()
+  } else {
+    format!("\n\n[包含链接: {}]", urls.join(", "))
+  };
+
   // 文本块：把 kind / ref_path 当成附加上下文，方便模型针对场景调整严格度
-  let user_text = if sub.kind.is_empty() && sub.ref_path.is_empty() {
-    sub.content
+  let scene_prefix = if sub.kind.is_empty() && sub.ref_path.is_empty() {
+    String::new()
   } else {
     format!(
-      "[场景: {} {}]\n\n{}",
+      "[场景: {} {}]\n\n",
       if sub.kind.is_empty() { "comment" } else { &sub.kind },
-      sub.ref_path,
-      sub.content
+      sub.ref_path
     )
   };
+  let user_text = format!("{}{}{}", scene_prefix, sub.content, url_hint);
 
   // 构造 user message 的多块内容：先文本，再图片。
   let mut user_blocks: Vec<WireContent> = Vec::with_capacity(1 + sub.images.len());
@@ -293,5 +371,30 @@ mod tests {
     assert_eq!(clamp01(-3.0), 0.0);
     assert_eq!(clamp01(2.5), 1.0);
     assert!((clamp01(0.5) - 0.5).abs() < f32::EPSILON);
+  }
+
+  // ── URL 抽取（plugin 本地实现，独立于宿主） ─────────────
+
+  #[test]
+  fn extract_urls_basic() {
+    let urls = extract_urls("see https://example.com/x for info");
+    assert_eq!(urls, vec!["https://example.com/x"]);
+  }
+
+  #[test]
+  fn extract_urls_strips_trailing_punctuation() {
+    let urls = extract_urls("click https://example.com! Cool.");
+    assert_eq!(urls, vec!["https://example.com"]);
+  }
+
+  #[test]
+  fn extract_urls_finds_multiple() {
+    let urls = extract_urls("see http://a.com and https://b.org/x?y=1 ok");
+    assert_eq!(urls, vec!["http://a.com", "https://b.org/x?y=1"]);
+  }
+
+  #[test]
+  fn extract_urls_empty_when_no_link() {
+    assert!(extract_urls("plain text 没有链接").is_empty());
   }
 }

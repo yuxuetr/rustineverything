@@ -61,6 +61,14 @@ pub struct ModerationSettings {
     /// 留空表示用默认。
     #[serde(default)]
     pub thresholds: Option<ModerationThresholdsConfig>,
+    /// URL 域名黑名单。命中即 Block（score=1.0），不走 LLM。
+    /// 匹配规则（不区分大小写）：
+    /// - 精确：`"scam.com"` 只匹配 host = `scam.com`
+    /// - 通配：`"*.phishing.example"` 匹配 `sub.phishing.example` 与
+    ///   `phishing.example` 本身
+    /// 默认空 → 该 stage 不注册，零开销。
+    #[serde(default)]
+    pub url_blocklist: Vec<String>,
 }
 
 /// `ModerationSettings::thresholds` 的可选覆盖。字段缺失时不影响其它字段。
@@ -224,6 +232,7 @@ mod tests {
         assert!(!cfg.moderation.enabled);
         assert!(cfg.moderation.plugins.is_empty());
         assert!(cfg.moderation.thresholds.is_none());
+        assert!(cfg.moderation.url_blocklist.is_empty());
     }
 
     #[test]

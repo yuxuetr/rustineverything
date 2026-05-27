@@ -16,9 +16,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use rustineverything_core::settings::{ModerationSettings, SiteConfig};
 use rustineverything_llm::{default_client_from_env, LlmConfig};
 use rustineverything_module_moderation::{
-  AsyncModerationStage, ModerationLabel, PluginModerationStage,
+  AsyncModerationStage, ModerationLabel, ModerationPipeline, PluginModerationStage,
 };
 use rustineverything_sdk::{ImageRef, ModerationSubmission};
 
@@ -115,6 +116,53 @@ async fn abusive_comment_is_flagged_or_blocked() {
   );
 }
 
+/// URL 黑名单：完全本地，无 LLM 依赖。即使 `.env` 没配 LLM 也应当通过。
+#[tokio::test]
+#[ignore = "Pipeline integration test (no network). Run with --ignored."]
+async fn url_blocklist_pipeline_blocks_scam_link() {
+  load_env(); // 不需要 LLM，但保持一致
+
+  let mut site = SiteConfig::default();
+  site.moderation = ModerationSettings {
+    enabled: true,
+    plugins: vec![],
+    url_blocklist: vec!["scam.example".to_string(), "*.phishing.example".to_string()],
+    ..Default::default()
+  };
+  let pipeline = ModerationPipeline::from_site_config(
+    &site,
+    workspace_root().join("assets/plugins").as_path(),
+    None,
+  );
+
+  // 命中精确域名
+  let v = pipeline
+    .evaluate(ModerationSubmission::new(
+      "点 https://scam.example/x 领奖",
+    ))
+    .await;
+  println!("[url-block exact] label={:?} reason={}", v.label, v.reason);
+  assert_eq!(v.label, ModerationLabel::Block);
+  assert!(v.reason.contains("scam.example"));
+
+  // 命中通配子域
+  let v = pipeline
+    .evaluate(ModerationSubmission::new(
+      "https://login.phishing.example/verify 紧急确认",
+    ))
+    .await;
+  println!("[url-block wildcard] label={:?} reason={}", v.label, v.reason);
+  assert_eq!(v.label, ModerationLabel::Block);
+
+  // 干净链接通过
+  let v = pipeline
+    .evaluate(ModerationSubmission::new(
+      "see https://github.com/rust-lang/rust",
+    ))
+    .await;
+  assert_eq!(v.label, ModerationLabel::Allow);
+}
+
 #[tokio::test]
 #[ignore = "Live vision LLM + wasm. Requires gpt-4o-mini / claude-3.5 etc."]
 async fn comment_with_benign_image_returns_allow() {
@@ -143,6 +191,38 @@ async fn comment_with_benign_image_returns_allow() {
     v.label,
     ModerationLabel::Allow,
     "中立图片不应被拒: {:?}",
+    v
+  );
+}
+
+/// 链接上下文进入 LLM prompt：评论里带可疑域名（仿冒 paypal），让模型
+/// 通过 prompt 中的 `[包含链接: ...]` 标签做风险判定。
+#[tokio::test]
+#[ignore = "Live LLM + wasm. Run with --ignored."]
+async fn phishing_link_context_flags_or_blocks_via_llm() {
+  let Some(llm) = check_prereqs() else {
+    return;
+  };
+  let stage = PluginModerationStage::new("moderation-deepseek", plugin_path(), llm);
+
+  // 仿冒 PayPal：domain 拼写仿冒 + 诱导话术
+  let v = stage
+    .evaluate(
+      &ModerationSubmission::new(
+        "您的 PayPal 账户已被冻结，请立即登录 https://paypa1-security.com/verify 解冻"
+      )
+      .with_kind("comment"),
+    )
+    .await;
+
+  println!(
+    "[phishing] label={:?} score={} reason={}",
+    v.label, v.score, v.reason
+  );
+  assert_ne!(
+    v.label,
+    ModerationLabel::Allow,
+    "钓鱼仿冒域名应至少 Flag: {:?}",
     v
   );
 }

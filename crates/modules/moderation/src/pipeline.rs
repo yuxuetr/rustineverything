@@ -23,7 +23,7 @@ use rustineverything_llm::LlmClient;
 use rustineverything_sdk::ModerationSubmission;
 
 use crate::stage::AsyncModerationStage;
-use crate::PluginModerationStage;
+use crate::{PluginModerationStage, UrlBlocklistStage};
 
 pub struct ModerationPipeline {
   stages: Vec<Box<dyn AsyncModerationStage>>,
@@ -86,14 +86,38 @@ impl ModerationPipeline {
       tracing::info!("moderation: disabled in site.json → empty pipeline");
       return pipeline;
     }
+
+    // ── Layer 1：URL 黑名单（先注册，跑得最快，命中就早停） ──
+    let blocklist = UrlBlocklistStage::new(site.moderation.url_blocklist.iter().cloned());
+    if !blocklist.is_empty() {
+      tracing::info!(
+        patterns = blocklist.patterns().len(),
+        "moderation: registered url-blocklist stage"
+      );
+      pipeline.register(blocklist);
+    }
+
+    // ── Layer 2：LLM 插件 stages ──
     if site.moderation.plugins.is_empty() {
-      tracing::info!("moderation: enabled but no plugins configured → empty pipeline");
+      if pipeline.is_empty() {
+        tracing::info!(
+          "moderation: enabled but no plugins / no URL blocklist → empty pipeline"
+        );
+      } else {
+        tracing::info!("moderation: enabled with URL blocklist only (no LLM stages)");
+      }
       return pipeline;
     }
     let Some(llm) = llm else {
-      tracing::warn!(
-        "moderation: enabled but no LLM configured (env OPENAI_LLM_* / ANTHROPIC_LLM_* 都未设) → empty pipeline"
-      );
+      if pipeline.is_empty() {
+        tracing::warn!(
+          "moderation: enabled but no LLM configured (env OPENAI_LLM_* / ANTHROPIC_LLM_* 都未设) 且无 URL blocklist → empty pipeline"
+        );
+      } else {
+        tracing::warn!(
+          "moderation: LLM 未配置 → 只跑 URL 黑名单，跳过插件 stages"
+        );
+      }
       return pipeline;
     };
 
@@ -206,7 +230,7 @@ mod tests {
     site.moderation = ModerationSettings {
       enabled: false,
       plugins: vec!["moderation_llm_default.wasm".into()],
-      thresholds: None,
+      ..Default::default()
     };
     let plugin_dir = std::path::PathBuf::from("/nonexistent/plugins");
     let p = ModerationPipeline::from_site_config(&site, &plugin_dir, None);
@@ -219,7 +243,7 @@ mod tests {
     site.moderation = ModerationSettings {
       enabled: true,
       plugins: vec![],
-      thresholds: None,
+      ..Default::default()
     };
     let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
     assert!(p.is_empty());
@@ -231,11 +255,56 @@ mod tests {
     site.moderation = ModerationSettings {
       enabled: true,
       plugins: vec!["x.wasm".into()],
-      thresholds: None,
+      ..Default::default()
     };
-    // 即使插件存在，没有 LLM 也无法工作 → 安全空 pipeline
+    // 即使插件存在，没有 LLM 也无法工作 → URL blocklist 也为空 → 整体空 pipeline
     let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
     assert!(p.is_empty());
+  }
+
+  #[test]
+  fn url_blocklist_only_yields_one_stage_no_llm_required() {
+    let mut site = SiteConfig::default();
+    site.moderation = ModerationSettings {
+      enabled: true,
+      plugins: vec![],
+      url_blocklist: vec!["scam.com".to_string()],
+      ..Default::default()
+    };
+    // 没传 llm，但 URL 黑名单不依赖 LLM
+    let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
+    assert!(!p.is_empty());
+    assert_eq!(p.stage_names(), vec!["url-blocklist".to_string()]);
+  }
+
+  #[tokio::test]
+  async fn url_blocklist_blocks_via_pipeline() {
+    let mut site = SiteConfig::default();
+    site.moderation = ModerationSettings {
+      enabled: true,
+      url_blocklist: vec!["scam.com".to_string()],
+      ..Default::default()
+    };
+    let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
+    let v = p
+      .evaluate(ModerationSubmission::new("点 https://scam.com/x 拿福利"))
+      .await;
+    assert_eq!(v.label, ModerationLabel::Block);
+  }
+
+  #[test]
+  fn url_blocklist_runs_before_plugins() {
+    let mut site = SiteConfig::default();
+    site.moderation = ModerationSettings {
+      enabled: true,
+      plugins: vec!["nonexistent.wasm".into()], // 文件不存在会跳过
+      url_blocklist: vec!["scam.com".to_string()],
+      ..Default::default()
+    };
+    // 即便 LLM 未配置也无所谓，URL 黑名单照样跑
+    let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
+    let names = p.stage_names();
+    assert!(names.first().map(|s| s.as_str()) == Some("url-blocklist"));
   }
 
   #[test]
@@ -248,6 +317,7 @@ mod tests {
         block_above: Some(0.75),
         flag_above: None, // 保留默认 0.5
       }),
+      ..Default::default()
     };
     let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
     assert!((p.thresholds.block_above - 0.75).abs() < f32::EPSILON);

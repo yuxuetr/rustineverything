@@ -285,7 +285,12 @@
 - [x] 宿主负责 HTTP + 超时 + 重试：通过 `crates/llm::LlmClient`，默认 timeout 30s。fail-open 策略：插件加载失败 / LLM 失败 / JSON 解析失败 → 当前 stage 返回 Allow + 写 warning 日志，不阻塞用户提交
 
 ### 4.4 内置审核插件
-- [x] `examples/plugin-moderation-deepseek`：示例审核插件（适配任意 OpenAI / Anthropic 兼容 LLM）。系统 prompt 让模型输出 `{score, label, reason}` JSON；带 markdown 围栏抽取容错；5 个 host 端单测；wasm 产物 154 KB。**多模态升级**：消费 `ModerationSubmission.images`，把 URL 块追加到 user message，prompt 加入图像审核维度。**已实测端到端**（OpenAI gpt-4o-mini）：纯文本 benign → Allow(0)，纯文本 abusive → Block(1.0)，带图（Rust logo）→ Allow(0)
+- [x] `examples/plugin-moderation-deepseek`：示例审核插件（适配任意 OpenAI / Anthropic 兼容 LLM）。系统 prompt 让模型输出 `{score, label, reason}` JSON；带 markdown 围栏抽取容错；9 个 host 端单测；wasm 产物 158 KB。**多模态升级**：消费 `ModerationSubmission.images`，把 URL 块追加到 user message，prompt 加入图像审核维度。**URL 上下文增强**：扫描评论文本中的链接，作为 `[包含链接: ...]` 注入 user message，system prompt 加入「域名仿冒 / 短链诱导 / 上下文与链接目的不符」判定维度。**已实测端到端**（OpenAI gpt-4o-mini）：纯文本 benign → Allow(0)，纯文本 abusive → Block(1.0)，带图（Rust logo）→ Allow(0)，仿冒 PayPal 链接 `paypa1-security.com` → Block(1.0, "域名拼写仿冒知名品牌")
+
+### 4.4.5 链接检测（两层方案）
+- [x] **Layer 1** `UrlBlocklistStage`（host-native sync stage，不是 wasm）：手写 URL 扫描（不引 regex 依赖）+ host 提取 + 模式匹配（精确 / `*.wildcard.com`），命中即 Block(1.0)，不烧 token。`site.json::moderation.url_blocklist` 配置；默认空 → 不注册 stage 零开销。实测：`scam.example` 精确 + `*.phishing.example` 通配均正确 Block
+- [x] **Layer 2** 插件 prompt 升级：plugin 内独立 URL 扫描（与 host 同算法但不依赖该 crate），把 URL 列表作为上下文注入 user message；system prompt 增加 6 类「链接风险」判定维度。实测仿冒 PayPal 域名 → Block
+- [x] 测试：18 个 host 单测（URL 扫描 / host 提取 / pattern 匹配 / stage 集成 / pipeline 集成）+ 4 个插件单测（URL 扫描）+ 2 个 live 测试
 - [ ] 后续：`moderation-anthropic`（Claude 视觉）/ `moderation-llamaguard`（本地 ollama fallback）— 待按需追加，ABI 已稳定
 
 ### 4.5 数据库 + Admin
