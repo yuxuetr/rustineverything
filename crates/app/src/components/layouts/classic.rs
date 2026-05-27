@@ -14,6 +14,7 @@ use crate::components::theme_picker::ThemePicker;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n, use_t, Language};
 use crate::routes::Route;
+use crate::server::enabled_module_ids;
 use dioxus::document::eval;
 use rustineverything_module_search::search::SearchButton;
 
@@ -31,6 +32,35 @@ pub fn ClassicShell() -> Element {
     let t_blog = use_t("nav-blog");
     let t_podcast = use_t("nav-podcast");
     let t_forum = use_t("nav-forum");
+
+    // Phase 3.4：站点模块开关。默认全开（避免首屏闪烁）。
+    let enabled_res = use_resource(|| async move {
+        enabled_module_ids().await.unwrap_or_else(|_| vec![
+            "blog".into(),
+            "podcast".into(),
+            "cases".into(),
+            "forum".into(),
+            "course".into(),
+            "docs".into(),
+        ])
+    });
+    let enabled: Vec<String> = enabled_res
+        .read()
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| vec![
+            "blog".into(),
+            "podcast".into(),
+            "cases".into(),
+            "forum".into(),
+            "course".into(),
+            "docs".into(),
+        ]);
+    let on_blog = enabled.iter().any(|s| s == "blog");
+    let on_podcast = enabled.iter().any(|s| s == "podcast");
+    let on_cases = enabled.iter().any(|s| s == "cases");
+    let on_forum = enabled.iter().any(|s| s == "forum");
+    let on_docs = enabled.iter().any(|s| s == "docs");
 
     let link_class = move |target: Route| {
         let is_active = match (&route, &target) {
@@ -95,10 +125,18 @@ pub fn ClassicShell() -> Element {
                         div { class: "flex items-center gap-6",
                             Link { to: Route::Home {}, class: "font-extrabold tracking-tight text-flow", "Rust in Everything" }
                             nav { class: "hidden md:flex items-center gap-4 text-sm font-medium",
-                                Link { to: Route::BlogIndex {}, class: link_class(Route::BlogIndex {}), "{t_blog}" }
-                                Link { to: Route::Podcast {}, class: link_class(Route::Podcast {}), "{t_podcast}" }
-                                Link { to: Route::Cases {}, class: link_class(Route::Cases {}), "{t(lang(), \"nav.cases\")}" }
-                                Link { to: Route::TopicsIndex {}, class: link_class(Route::TopicsIndex {}), "{t_forum}" }
+                                if on_blog {
+                                    Link { to: Route::BlogIndex {}, class: link_class(Route::BlogIndex {}), "{t_blog}" }
+                                }
+                                if on_podcast {
+                                    Link { to: Route::Podcast {}, class: link_class(Route::Podcast {}), "{t_podcast}" }
+                                }
+                                if on_cases {
+                                    Link { to: Route::Cases {}, class: link_class(Route::Cases {}), "{t(lang(), \"nav.cases\")}" }
+                                }
+                                if on_forum {
+                                    Link { to: Route::TopicsIndex {}, class: link_class(Route::TopicsIndex {}), "{t_forum}" }
+                                }
                             }
                         }
 
@@ -157,10 +195,12 @@ pub fn ClassicShell() -> Element {
                                             div { class: "px-3 py-2 text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800",
                                                 "{u.nickname}"
                                             }
-                                            Link {
-                                                to: Route::MyTopics {},
-                                                class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                                                "我的话题"
+                                            if on_forum {
+                                                Link {
+                                                    to: Route::MyTopics {},
+                                                    class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
+                                                    "我的话题"
+                                                }
                                             }
                                             Link {
                                                 to: Route::MyAnnotations {},
@@ -195,10 +235,12 @@ pub fn ClassicShell() -> Element {
                                 }
                             }
 
-                            Link {
-                                to: Route::Docs {},
-                                class: "hidden sm:inline-flex items-center rounded-md btn-flow px-3 py-2 text-sm font-semibold transition-all",
-                                "{t(lang(), \"nav.start\")}"
+                            if on_docs {
+                                Link {
+                                    to: Route::Docs {},
+                                    class: "hidden sm:inline-flex items-center rounded-md btn-flow px-3 py-2 text-sm font-semibold transition-all",
+                                    "{t(lang(), \"nav.start\")}"
+                                }
                             }
                         }
                     }
@@ -218,9 +260,15 @@ pub fn ClassicShell() -> Element {
                             span { "专注 Rust 技术栈" }
                         }
                         div { class: "flex gap-4",
-                            Link { to: Route::TopicsIndex {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Topics" }
-                            Link { to: Route::BlogIndex {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Blog" }
-                            Link { to: Route::Docs {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Docs" }
+                            if on_forum {
+                                Link { to: Route::TopicsIndex {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Topics" }
+                            }
+                            if on_blog {
+                                Link { to: Route::BlogIndex {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Blog" }
+                            }
+                            if on_docs {
+                                Link { to: Route::Docs {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Docs" }
+                            }
                         }
                     }
                 }

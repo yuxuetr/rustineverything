@@ -3,6 +3,7 @@ use dioxus::router::{Link, Routable};
 
 use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
+use crate::components::module_gate::ModuleGate;
 use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
 use crate::i18n::{t, use_i18n};
@@ -151,17 +152,22 @@ fn FeatureCard(title: String, desc: String, icon: Element) -> Element {
 /// /docs 文档首页：转交给 docs 模块的 Docs 组件渲染
 #[component]
 pub fn Docs() -> Element {
-  rsx! { DocsView {} }
+  rsx! { ModuleGate { id: "docs".to_string(), DocsView {} } }
 }
 
 /// 文档详情页：转交给 docs 模块的 DocPage 组件渲染
 #[component]
 pub fn DocPage(path: Vec<String>) -> Element {
-  rsx! { DocPageView { path: path } }
+  rsx! { ModuleGate { id: "docs".to_string(), DocPageView { path: path } } }
 }
 
 #[component]
 pub fn BlogIndex() -> Element {
+  rsx! { ModuleGate { id: "blog".to_string(), BlogIndexInner {} } }
+}
+
+#[component]
+fn BlogIndexInner() -> Element {
   let lang = use_i18n();
 
   let posts_res = use_resource(move || async move {
@@ -344,6 +350,11 @@ pub fn BlogIndex() -> Element {
 
 #[component]
 pub fn Blog(id: String) -> Element {
+  rsx! { ModuleGate { id: "blog".to_string(), BlogInner { id: id.clone() } } }
+}
+
+#[component]
+fn BlogInner(id: String) -> Element {
   // 修复：在闭包外先克隆一次 id 用于 resource，保留原 id 用于后续组件
   let id_for_res = id.clone();
   let blog_content = use_resource(move || {
@@ -406,24 +417,26 @@ pub fn Blog(id: String) -> Element {
 
 #[component]
 pub fn Courses() -> Element {
-  rsx! { CoursesIndexPage {} }
+  rsx! { ModuleGate { id: "course".to_string(), CoursesIndexPage {} } }
 }
 
 #[component]
 pub fn CourseDetail(slug: String) -> Element {
-  rsx! { CourseDetailPage { slug: slug } }
+  rsx! { ModuleGate { id: "course".to_string(), CourseDetailPage { slug: slug } } }
 }
 
 #[component]
 pub fn Lesson(slug: String, chapter: String, lesson: String) -> Element {
   let lesson_path = format!("{}/{}/{}", slug, chapter, lesson);
   rsx! {
-      LessonPage { slug: slug.clone(), chapter: chapter.clone(), lesson: lesson.clone() }
-      // 资源讨论面板：关联论坛话题（以 lesson kind 记录）
-      Container {
-          DiscussionPanel {
-              resource_kind: "lesson".to_string(),
-              resource_path: lesson_path,
+      ModuleGate { id: "course".to_string(),
+          LessonPage { slug: slug.clone(), chapter: chapter.clone(), lesson: lesson.clone() }
+          // 资源讨论面板：关联论坛话题（以 lesson kind 记录）
+          Container {
+              DiscussionPanel {
+                  resource_kind: "lesson".to_string(),
+                  resource_path: lesson_path,
+              }
           }
       }
   }
@@ -431,12 +444,12 @@ pub fn Lesson(slug: String, chapter: String, lesson: String) -> Element {
 
 #[component]
 pub fn Cases() -> Element {
-  rsx! { CasesIndexPage {} }
+  rsx! { ModuleGate { id: "cases".to_string(), CasesIndexPage {} } }
 }
 
 #[component]
 pub fn CaseDetail(slug: String) -> Element {
-  rsx! { CaseDetailPage { slug } }
+  rsx! { ModuleGate { id: "cases".to_string(), CaseDetailPage { slug } } }
 }
 
 #[component]
@@ -465,33 +478,33 @@ pub fn Web3() -> Element {
 
 #[component]
 pub fn TopicsIndex() -> Element {
-  rsx! { TopicsIndexPage {} }
+  rsx! { ModuleGate { id: "forum".to_string(), TopicsIndexPage {} } }
 }
 
 #[component]
 pub fn TopicsNew() -> Element {
-  rsx! { NewTopicPage {} }
+  rsx! { ModuleGate { id: "forum".to_string(), NewTopicPage {} } }
 }
 
 #[component]
 pub fn TopicsByTag(tag: String) -> Element {
-  rsx! { TopicsByTagPage { tag } }
+  rsx! { ModuleGate { id: "forum".to_string(), TopicsByTagPage { tag } } }
 }
 
 #[component]
 pub fn TopicDetail(id: i32) -> Element {
-  rsx! { TopicDetailPage { id } }
+  rsx! { ModuleGate { id: "forum".to_string(), TopicDetailPage { id } } }
 }
 
 #[component]
 pub fn MyTopics() -> Element {
-  rsx! { MyTopicsPage {} }
+  rsx! { ModuleGate { id: "forum".to_string(), MyTopicsPage {} } }
 }
 
 #[component]
 pub fn Podcast() -> Element {
   rsx! {
-      PodcastPage {}
+      ModuleGate { id: "podcast".to_string(), PodcastPage {} }
   }
 }
 

@@ -149,25 +149,40 @@ fn main() {
               let base = sitemap_base.clone();
               async move {
                   use rustineverything_widgets::{build_sitemap_xml, ContentEntry};
-                  // 从 blog server fn 拉全部文章，并映射为 ContentEntry。
-                  let posts = rustineverything_module_blog::server::list_blog_posts()
-                      .await
-                      .unwrap_or_default();
-                  let entries: Vec<ContentEntry> = posts
-                      .into_iter()
-                      .map(|p| ContentEntry {
-                          url_path: format!("/blog/{}", p.slug),
-                          title: p.title,
-                          description: p.description,
-                          date: p.date,
-                          tags: p.tags,
-                      })
-                      .collect();
-                  let xml = build_sitemap_xml(
-                      &entries,
-                      &["/", "/blog", "/podcast", "/course", "/case", "/docs", "/topics"],
-                      &base,
-                  );
+                  // Phase 3.4：按模块开关过滤静态路径与博客条目。
+                  let module_engine = rustineverything_core::engines::module::default_module_engine();
+                  let enabled = module_engine.enabled_ids();
+                  let is_on = |id: &str| enabled.iter().any(|s| s == id);
+
+                  // 仅在 blog 启用时枚举博客条目（避免无谓 IO）
+                  let entries: Vec<ContentEntry> = if is_on("blog") {
+                      let posts = rustineverything_module_blog::server::list_blog_posts()
+                          .await
+                          .unwrap_or_default();
+                      posts
+                          .into_iter()
+                          .map(|p| ContentEntry {
+                              url_path: format!("/blog/{}", p.slug),
+                              title: p.title,
+                              description: p.description,
+                              date: p.date,
+                              tags: p.tags,
+                          })
+                          .collect()
+                  } else {
+                      Vec::new()
+                  };
+
+                  // 静态路径：首页恒收录；其它模块按开关动态拼接。
+                  let mut static_paths: Vec<&'static str> = vec!["/"];
+                  if is_on("blog") { static_paths.push("/blog"); }
+                  if is_on("podcast") { static_paths.push("/podcast"); }
+                  if is_on("course") { static_paths.push("/course"); }
+                  if is_on("cases") { static_paths.push("/case"); }
+                  if is_on("docs") { static_paths.push("/docs"); }
+                  if is_on("forum") { static_paths.push("/topics"); }
+
+                  let xml = build_sitemap_xml(&entries, &static_paths, &base);
                   axum::response::Response::builder()
                       .header("content-type", "application/xml; charset=utf-8")
                       .body(axum::body::Body::from(xml))
@@ -178,21 +193,29 @@ fn main() {
               let base = feed_base.clone();
               async move {
                   use rustineverything_widgets::{build_atom_feed, ContentEntry};
-                  // 取最近 50 篇（list_blog_posts 已按 date desc 排序）。
-                  let mut posts = rustineverything_module_blog::server::list_blog_posts()
-                      .await
-                      .unwrap_or_default();
-                  posts.truncate(50);
-                  let entries: Vec<ContentEntry> = posts
-                      .into_iter()
-                      .map(|p| ContentEntry {
-                          url_path: format!("/blog/{}", p.slug),
-                          title: p.title,
-                          description: p.description,
-                          date: p.date,
-                          tags: p.tags,
-                      })
-                      .collect();
+                  // Phase 3.4：blog 关闭时输出空 feed，但保留站点元信息。
+                  let module_engine = rustineverything_core::engines::module::default_module_engine();
+                  let blog_on = module_engine.is_enabled("blog");
+
+                  let entries: Vec<ContentEntry> = if blog_on {
+                      // 取最近 50 篇（list_blog_posts 已按 date desc 排序）。
+                      let mut posts = rustineverything_module_blog::server::list_blog_posts()
+                          .await
+                          .unwrap_or_default();
+                      posts.truncate(50);
+                      posts
+                          .into_iter()
+                          .map(|p| ContentEntry {
+                              url_path: format!("/blog/{}", p.slug),
+                              title: p.title,
+                              description: p.description,
+                              date: p.date,
+                              tags: p.tags,
+                          })
+                          .collect()
+                  } else {
+                      Vec::new()
+                  };
                   // 取站点元信息：如取不到 site.json 则走默认。
                   let cfg = rustineverything_core::settings::SiteConfig::from_file(
                       rustineverything_core::utils::get_asset_root().join("site.json").to_str().unwrap_or_default(),

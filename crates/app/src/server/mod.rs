@@ -390,6 +390,52 @@ pub async fn get_seo_base_url() -> Result<String, ServerFnError> {
     }
 }
 
+// ========== 模块开关（Phase 3.4） ==========
+
+/// Phase 3.4：返回当前启用的模块 id 列表。
+///
+/// `site.json::modules.<id>.enabled = false` 的模块不会出现在结果中。
+/// 默认（未在 site.json 显式声明）模块按 [`default_module_specs`] 全开。
+///
+/// 用例：
+/// - 前端 Navbar 决定是否渲染 blog / podcast / cases / forum 等链接
+/// - 各页面（`ModuleGate`）根据列表判定是否显示“该模块已停用”占位
+#[post("/api/modules/enabled")]
+pub async fn enabled_module_ids() -> Result<Vec<String>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        let engine = rustineverything_core::engines::module::default_module_engine();
+        Ok(engine.enabled_ids())
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        // 客户端 fallback：默认全开，避免 hydration 闪烁。
+        Ok(vec![
+            "blog".to_string(),
+            "podcast".to_string(),
+            "cases".to_string(),
+            "forum".to_string(),
+            "course".to_string(),
+            "docs".to_string(),
+        ])
+    }
+}
+
+/// Phase 3.4：单模块开关查询。便于页面级 ModuleGate 调用。
+#[post("/api/modules/is-enabled")]
+pub async fn is_module_enabled(id: String) -> Result<bool, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        let engine = rustineverything_core::engines::module::default_module_engine();
+        Ok(engine.is_enabled(&id))
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = id;
+        Ok(true)
+    }
+}
+
 // ========== 布局 ==========
 
 /// Phase 3.3：返回 `site.json::active_layout`（空字符串回退到 `"classic"`）。

@@ -91,6 +91,54 @@ pub struct ModuleEngine {
     overrides: HashMap<String, ModuleSettings>,
 }
 
+/// Phase 3.4：站内内置模块清单。在 server fn 中使用。
+///
+/// 全部以 `enabled = true` 初始化，实际是否启用由
+/// [`ModuleEngine::apply_site_config`] 读 `site.json::modules` 覆盖。
+///
+/// 这里不使用 `i18n` 翻译键以避免与插件耦合；前端用
+/// `nav-{id}` 作为 i18n key（与现有 i18n_fluent_plugin 表一致）。
+pub fn default_module_specs() -> Vec<ModuleSpec> {
+    vec![
+        ModuleSpec::new("blog", "Blog")
+            .with_routes(["/blog", "/blog/:id"])
+            .with_nav_position(10),
+        ModuleSpec::new("podcast", "Podcast")
+            .with_routes(["/podcast"])
+            .with_nav_position(20),
+        ModuleSpec::new("cases", "案例")
+            .with_routes(["/case", "/case/:slug"])
+            .with_nav_position(30),
+        ModuleSpec::new("forum", "论坛")
+            .with_routes([
+                "/topics",
+                "/topics/new",
+                "/topics/tag/:tag",
+                "/topics/:id",
+            ])
+            .with_nav_position(40),
+        // 以下两个不出现在顶级 Navbar（`nav_position = None`），
+        // 仅供 sitemap / 搜索 / 路由 gate 使用。
+        ModuleSpec::new("course", "课程")
+            .with_routes(["/course", "/course/:slug", "/course/:slug/:chapter/:lesson"]),
+        ModuleSpec::new("docs", "文档").with_routes(["/docs", "/docs/*"]),
+    ]
+}
+
+/// Phase 3.4：由 site.json 装填的默认 ModuleEngine。
+///
+/// 仅在 server feature 下可用（需 `SiteConfig::from_file` + IO）。调用者在
+/// 任意 server fn 里都能调用该帮手获得一个全状态 ModuleEngine。
+#[cfg(feature = "server")]
+pub fn default_module_engine() -> ModuleEngine {
+    let mut e = ModuleEngine::with_specs(default_module_specs());
+    let site_path = crate::utils::get_asset_root().join("site.json");
+    if let Ok(cfg) = SiteConfig::from_file(site_path.to_str().unwrap_or_default()) {
+        e.apply_site_config(&cfg);
+    }
+    e
+}
+
 impl Default for ModuleEngine {
     fn default() -> Self {
         Self::new()
@@ -344,5 +392,62 @@ mod tests {
         // 两个相同位置时应保持注册顺序（sort_by_key 是稳定的）
         assert_eq!(nav[0].id, "a");
         assert_eq!(nav[1].id, "b");
+    }
+
+    #[test]
+    fn default_module_specs_contains_six_builtins() {
+        let specs = default_module_specs();
+        let ids: Vec<&str> = specs.iter().map(|s| s.id.as_str()).collect();
+        assert!(ids.contains(&"blog"));
+        assert!(ids.contains(&"podcast"));
+        assert!(ids.contains(&"course"));
+        assert!(ids.contains(&"forum"));
+        assert!(ids.contains(&"cases"));
+        assert!(ids.contains(&"docs"));
+        assert_eq!(specs.len(), 6);
+    }
+
+    #[test]
+    fn default_specs_only_4_in_navbar() {
+        // 默认 nav: blog / podcast / cases / forum (剩下两个 nav_position = None)
+        let specs = default_module_specs();
+        let nav_ids: Vec<&str> = specs
+            .iter()
+            .filter(|s| s.nav_position.is_some())
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(nav_ids.len(), 4);
+        // 按位置顺序验证
+        let mut sorted: Vec<&ModuleSpec> = specs
+            .iter()
+            .filter(|s| s.nav_position.is_some())
+            .collect();
+        sorted.sort_by_key(|s| s.nav_position.unwrap_or(i32::MAX));
+        let ordered: Vec<&str> = sorted.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ordered, vec!["blog", "podcast", "cases", "forum"]);
+    }
+
+    #[test]
+    fn applying_disabled_overrides_drops_from_navigation() {
+        let mut e = ModuleEngine::with_specs(default_module_specs());
+        let mut cfg = SiteConfig::default();
+        cfg.modules.insert(
+            "forum".to_string(),
+            ModuleSettings { enabled: false },
+        );
+        cfg.modules.insert(
+            "blog".to_string(),
+            ModuleSettings { enabled: false },
+        );
+        e.apply_site_config(&cfg);
+        let ids: Vec<&str> = e.navigation().iter().map(|s| s.id.as_str()).collect();
+        // 关闭后仅剩 podcast / cases (原始 4 项 → 2 项)
+        assert_eq!(ids, vec!["podcast", "cases"]);
+        // enabled_ids 里也不含被关闭的 (但仍包含未出现在 nav 的 course / docs)
+        let enabled = e.enabled_ids();
+        assert!(!enabled.contains(&"forum".to_string()));
+        assert!(!enabled.contains(&"blog".to_string()));
+        assert!(enabled.contains(&"course".to_string()));
+        assert!(enabled.contains(&"docs".to_string()));
     }
 }

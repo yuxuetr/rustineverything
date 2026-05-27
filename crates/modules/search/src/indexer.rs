@@ -236,6 +236,9 @@ fn collect_cases() -> Vec<IndexedDocument> {
 }
 
 /// 汇总所有可索引文档。
+///
+/// Phase 3.4：读取 `site.json::modules.<id>.enabled`，过滤掉关闭的模块。
+/// kind → module id 映射：blog→blog / doc→docs / topic→forum / case→cases。
 pub async fn collect_documents() -> Result<Vec<IndexedDocument>, String> {
     let mut all = Vec::new();
     all.extend(collect_blogs());
@@ -248,7 +251,43 @@ pub async fn collect_documents() -> Result<Vec<IndexedDocument>, String> {
         }
         all.extend(collect_cases());
     }
+
+    #[cfg(feature = "server")]
+    {
+        let engine = rustineverything_core::engines::module::default_module_engine();
+        let enabled = engine.enabled_ids();
+        let is_on = |module_id: &str| enabled.iter().any(|s| s == module_id);
+        all.retain(|d| match d.kind.as_str() {
+            "blog" => is_on("blog"),
+            "doc" => is_on("docs"),
+            "topic" => is_on("forum"),
+            "case" => is_on("cases"),
+            // 未知 kind 默认保留：搜索引擎不应该错误地丢弃数据。
+            _ => true,
+        });
+    }
+
     Ok(all)
+}
+
+/// Phase 3.4：按 module id 过滤已汇总的索引文档，便于上层显式调用。
+///
+/// `enabled_module_ids` 来自 [`rustineverything_core::engines::module::ModuleEngine::enabled_ids`]。
+/// kind → module id 同 [`collect_documents`]。该函数纯逻辑，便于单测覆盖。
+pub fn filter_documents_by_enabled(
+    docs: Vec<IndexedDocument>,
+    enabled_module_ids: &[String],
+) -> Vec<IndexedDocument> {
+    let is_on = |id: &str| enabled_module_ids.iter().any(|s| s == id);
+    docs.into_iter()
+        .filter(|d| match d.kind.as_str() {
+            "blog" => is_on("blog"),
+            "doc" => is_on("docs"),
+            "topic" => is_on("forum"),
+            "case" => is_on("cases"),
+            _ => true,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -341,5 +380,48 @@ mod tests {
         };
         assert_eq!(doc.kind, "case");
         assert_eq!(doc.url, "/case/demo");
+    }
+
+    fn doc(kind: &str, id: &str) -> IndexedDocument {
+        IndexedDocument {
+            kind: kind.to_string(),
+            ref_id: id.to_string(),
+            title: id.to_string(),
+            body: String::new(),
+            url: format!("/{}/{}", kind, id),
+            created_at: String::new(),
+        }
+    }
+
+    #[test]
+    fn filter_documents_keeps_only_enabled_modules() {
+        let all = vec![
+            doc("blog", "a"),
+            doc("doc", "b"),
+            doc("topic", "1"),
+            doc("case", "c"),
+        ];
+        let enabled = vec!["blog".to_string(), "docs".to_string()];
+        let filtered = filter_documents_by_enabled(all, &enabled);
+        let kinds: Vec<&str> = filtered.iter().map(|d| d.kind.as_str()).collect();
+        assert!(kinds.contains(&"blog"));
+        assert!(kinds.contains(&"doc"));
+        assert!(!kinds.contains(&"topic"));
+        assert!(!kinds.contains(&"case"));
+    }
+
+    #[test]
+    fn filter_documents_drops_all_when_no_modules_enabled() {
+        let all = vec![doc("blog", "a"), doc("doc", "b")];
+        let filtered = filter_documents_by_enabled(all, &[]);
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn filter_documents_keeps_unknown_kinds() {
+        // 未来若新增 lesson / podcast 等 kind，不应被默认丢弃
+        let all = vec![doc("lesson", "a"), doc("podcast", "b")];
+        let filtered = filter_documents_by_enabled(all, &["blog".to_string()]);
+        assert_eq!(filtered.len(), 2);
     }
 }
