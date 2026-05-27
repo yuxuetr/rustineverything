@@ -5783,11 +5783,13 @@ dependencies = [
  "chrono",
  "dioxus",
  "rustineverything-core",
+ "rustineverything-module-moderation",
  "rustineverything-sdk",
  "sea-orm",
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -5836,12 +5838,14 @@ dependencies = [
  "rustineverything-core",
  "rustineverything-module-blog",
  "rustineverything-module-course",
+ "rustineverything-module-moderation",
  "rustineverything-sdk",
  "rustineverything-widgets",
  "sea-orm",
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

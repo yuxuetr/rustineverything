@@ -46,11 +46,16 @@
 //! }
 //! ```
 
+pub mod hook;
 pub mod pipeline;
 pub mod plugin_stage;
 pub mod stage;
 pub mod url_blocklist;
 
+pub use hook::{
+  absolutize_image_url, evaluate_submission, evaluate_with_images, extract_image_urls,
+  shared_pipeline,
+};
 pub use pipeline::ModerationPipeline;
 pub use plugin_stage::PluginModerationStage;
 pub use stage::AsyncModerationStage;

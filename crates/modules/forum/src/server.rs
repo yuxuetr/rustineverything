@@ -591,6 +591,10 @@ pub async fn create_topic(input: NewTopicInput) -> Result<TopicSummary, ServerFn
         validate_new_topic(&input).map_err(ServerFnError::new)?;
         let user = require_session()?;
 
+        // ── 审核：标题 + 正文一起评估 ──
+        let combined = format!("标题：{}\n\n{}", input.title.trim(), input.content);
+        moderate_or_reject(&combined, "topic", &format!("topic-new:{}", input.tag)).await?;
+
         let db = open_db().await?;
         let now = Utc::now().fixed_offset();
         let normalized_tag = normalize_tag(&input.tag);
@@ -639,6 +643,10 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
 
         validate_new_reply(&content).map_err(ServerFnError::new)?;
         let user = require_session()?;
+
+        // ── 审核 ──
+        moderate_or_reject(&content, "reply", &format!("topic:{}", topic_id)).await?;
+
         let db = open_db().await?;
 
         // 必须存在该话题
@@ -879,5 +887,67 @@ mod tests {
     #[test]
     fn extract_title_none() {
         assert!(extract_title_line("just plain text").is_none());
+    }
+}
+
+// =============================================================
+// 审核 helper（仅 server feature）
+// =============================================================
+
+/// 同时给 `create_topic` / `post_reply` 复用：抽 markdown 图、装填
+/// ModerationSubmission、跑全局 pipeline、按 verdict 返回错误或继续。
+///
+/// 默认 site.json::moderation.enabled = false → pipeline 内部 stages 为空 →
+/// evaluate 直接返回 Allow，零开销。
+#[cfg(feature = "server")]
+async fn moderate_or_reject(
+    content: &str,
+    kind: &str,
+    ref_path: &str,
+) -> Result<(), ServerFnError> {
+    use rustineverything_module_moderation::{
+        absolutize_image_url, evaluate_submission, extract_image_urls, ModerationLabel,
+    };
+    use rustineverything_sdk::{ImageRef, ModerationSubmission};
+
+    let base_url = std::env::var("BASE_URL").unwrap_or_default();
+    let images: Vec<ImageRef> = extract_image_urls(content)
+        .into_iter()
+        .map(|u| ImageRef::url(absolutize_image_url(&u, &base_url)))
+        .collect();
+    let submission = ModerationSubmission::new(content)
+        .with_kind(kind)
+        .with_ref_path(ref_path)
+        .with_images(images);
+    let verdict = evaluate_submission(submission).await;
+    match verdict.label {
+        ModerationLabel::Block => {
+            tracing::warn!(
+                kind = %kind,
+                ref_path = %ref_path,
+                score = verdict.score,
+                reason = %verdict.reason,
+                "moderation: forum submission BLOCKED"
+            );
+            Err(ServerFnError::new(format!(
+                "提交被审核拒绝：{}",
+                if verdict.reason.is_empty() {
+                    "未通过内容审核".to_string()
+                } else {
+                    verdict.reason
+                }
+            )))
+        }
+        ModerationLabel::Flag => {
+            tracing::warn!(
+                kind = %kind,
+                ref_path = %ref_path,
+                score = verdict.score,
+                reason = %verdict.reason,
+                "moderation: forum submission FLAGGED (still allowed; queue TBD)"
+            );
+            Ok(())
+        }
+        ModerationLabel::Allow => Ok(()),
     }
 }

@@ -275,8 +275,10 @@
 - [x] 文档：`docs/LLM_SPEC.md` + `.env.example` 4 个新变量段落
 
 ### 4.2 模块接入
-- [ ] 评论 / 话题创建 / 话题回复 / 标注 / 上传 → ModerationEngine hook（待 Phase 4.3 ABI 落地后接入）
-- [ ] 超时/失败 = fail-open（Allow + log）（同上）
+- [x] 评论 → ModerationEngine hook：`crates/modules/comments/src/server.rs::post_comment` 在 DB 写入前调 `evaluate_submission`，Block → ServerFnError，Flag → warn log + 继续，Allow → 正常。markdown 图片自动抽取（`![alt](url)`）→ `ModerationSubmission.images`，相对路径 `/uploads/x` 自动 absolutize 为 `<BASE_URL>/uploads/x` 给 vision LLM
+- [x] 话题 / 回复 → ModerationEngine hook：`forum/src/server.rs::create_topic` 把标题 + 正文合并审核；`post_reply` 仅审正文。共用 `moderate_or_reject` helper
+- [x] 超时/失败 = fail-open：pipeline 每个 stage 内部 fail-open（已在 `PluginModerationStage` 落地）。默认 `site.json::moderation.enabled = false` → pipeline empty → 零开销 Allow
+- [ ] 标注 / 上传 hook：待补（同样模式，30 行代码内可加）
 - [x] **XSS 防护**：`crates/widgets/src/sanitize.rs::sanitize_user_html` 在 cmark 解析前剥离 `<script>` / `<iframe>` / `<object>` / `<embed>` / `<style>` 块 + `on*=` 内联事件 + `javascript:` / `data:text/html` 协议；`Markdown` 组件新增 `untrusted: bool` prop，已在评论 + 论坛话题/回复/预览 5 个站点开启；UTF-8 安全，15 个单测覆盖（含大小写变体、polyglot payload、误伤防护）
 - [x] **MDX `dangerous_inner_html` 审计**：全工作区仅 2 处（`crates/widgets/src/mdx.rs:184, 190`），数据来源均为 `latex_to_mathml_string`（pulldown-latex 库结构化输出），不含用户字面回显；用户内容 **不会**走该路径。审计结论与升级注意事项记录到 `docs/MODERATION_SPEC.md §1.4`
 

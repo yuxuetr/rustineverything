@@ -304,7 +304,28 @@ docker compose restart app
 
 无须改代码，无须重新 build 镜像。
 
-### 3.8 Phase 4.5 待补
+### 3.8 业务模块接入
+
+提交路径已 hook 到全局 pipeline：
+
+| 入口 | 文件 | 行为 |
+| --- | --- | --- |
+| 评论 `post_comment` | `crates/modules/comments/src/server.rs` | DB 写入前评估；Block → ServerFnError；Flag → log + 继续 |
+| 话题 `create_topic` | `crates/modules/forum/src/server.rs` | 标题 + 正文合并审核 |
+| 回复 `post_reply` | 同上 | 正文审核 |
+
+每个 hook 自动：
+1. 从 markdown 抽 `![alt](url)` 图片 URL（站内 `/uploads/...` + 外站 https）
+2. 相对路径 `absolutize_image_url` 拼成绝对 URL（用 `BASE_URL`），给 vision LLM 用
+3. 装填 `ModerationSubmission { content, kind, ref_path, images }`
+4. 走 `evaluate_submission` 流过 [`shared_pipeline`]
+5. 按 Verdict label 决定返回 / 标记 / 通过
+
+[`shared_pipeline`] 是进程级 `OnceLock<Arc<ModerationPipeline>>`，首次访问
+时读 `site.json` + env 装载；改 site.json 后**需要重启进程**（Phase 5.1
+hot reload 未落地前的限制）。
+
+### 3.9 Phase 4.5 待补
 
 | 项 | 说明 |
 | --- | --- |

@@ -14,7 +14,9 @@ rustineverything-widgets = { path = "../../widgets" }
 rustineverything-module-blog = { path = "../blog" }
 rustineverything-module-course = { path = "../course" }
 rustineverything-core = { path = "../../core" }
+rustineverything-module-moderation = { path = "../moderation", optional = true }
 sea-orm = { workspace = true, optional = true }
+tracing = { workspace = true }
 
 [features]
 server = [
@@ -25,4 +27,5 @@ server = [
     "rustineverything-module-blog/server",
     "rustineverything-module-course/server",
     "rustineverything-core/server",
+    "dep:rustineverything-module-moderation",
 ]

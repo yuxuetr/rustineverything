@@ -195,6 +195,22 @@ async fn comment_with_benign_image_returns_allow() {
   );
 }
 
+/// `extract_image_urls` 在真实 markdown 评论上正确抽取站内 + 外站图片。
+#[test]
+fn extract_image_urls_from_realistic_comment() {
+  use rustineverything_module_moderation::extract_image_urls;
+  let body = r#"我在博客里看到了这张图：
+
+![截图](/uploads/abc.png)
+
+还有这张外站的：![meme](https://example.com/meme.jpg "好笑")
+
+最后是个普通链接 [跳转](https://other.example/page) — 不是图。
+"#;
+  let urls = extract_image_urls(body);
+  assert_eq!(urls, vec!["/uploads/abc.png", "https://example.com/meme.jpg"]);
+}
+
 /// 链接上下文进入 LLM prompt：评论里带可疑域名（仿冒 paypal），让模型
 /// 通过 prompt 中的 `[包含链接: ...]` 标签做风险判定。
 #[tokio::test]
