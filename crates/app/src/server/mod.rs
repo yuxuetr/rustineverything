@@ -349,7 +349,7 @@ pub async fn auth_callback_internal(
     let plugin_filename = find_plugin_filename(&site_config, &provider)
         .ok_or_else(|| format!("未在 site.json 中配置 provider: {}", provider))?;
 
-    println!("[Auth Callback] provider={}, code_len={}, state={:?}", provider, code.len(), state);
+    tracing::debug!(provider = %provider, code_len = code.len(), state = ?state, "auth callback received");
 
     let db = get_or_init_pool().await?;
 
@@ -358,7 +358,7 @@ pub async fn auth_callback_internal(
         .await?;
 
     let jwt_token = create_jwt(&user)?;
-    println!("[Auth Callback] Login success: user={}", user.nickname);
+    tracing::info!(user = %user.nickname, "auth callback login success");
     Ok((format!("欢迎回来, {}!", user.nickname), jwt_token))
 }
 

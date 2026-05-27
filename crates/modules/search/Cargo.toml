@@ -16,6 +16,7 @@ sea-orm = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
 tantivy = { workspace = true, optional = true }
 tantivy-jieba = { workspace = true, optional = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"

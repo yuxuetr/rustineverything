@@ -59,7 +59,7 @@ pub fn ThemePicker() -> Element {
                     version.with_mut(|v| *v += 1);
                 }
                 Err(e) => {
-                    eprintln!("[ThemePicker] set_user_theme failed: {}", e);
+                    tracing::error!(error = %e, "theme picker: set_user_theme failed");
                 }
             }
         });

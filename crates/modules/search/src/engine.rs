@@ -275,7 +275,7 @@ pub async fn rebuild() -> Result<Arc<SearchEngine>, String> {
             .map_err(|e| format!("search lock poisoned: {}", e))?;
         *guard = Some(arc.clone());
     }
-    println!("[Search] index rebuilt with {} documents", count);
+    tracing::info!(documents = count, "search: index rebuilt");
     Ok(arc)
 }
 

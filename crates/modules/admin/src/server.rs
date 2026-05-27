@@ -728,7 +728,7 @@ pub async fn admin_reload_plugins() -> Result<String, ServerFnError> {
         let _ = require_admin()?;
         // 当前 PluginManager 每次调用都重新读取 wasm 文件，没有缓存可清除。
         // 这里仅作占位：返回成功 + 打日志，便于未来切换为缓存加载时直接接入。
-        println!("[Admin] plugins reload requested");
+        tracing::info!("admin: plugins reload requested");
         Ok("插件运行时已刷新（当前实现按需读取，无缓存可清除）".to_string())
     }
     #[cfg(not(feature = "server"))]

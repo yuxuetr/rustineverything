@@ -70,7 +70,7 @@ impl ThemeEngine {
                     out.push('\n');
                 }
                 Err(e) => {
-                    eprintln!("[ThemeEngine] 跳过主题 {}: {}", path.display(), e);
+                    tracing::warn!(theme = %path.display(), error = %e, "theme: skipping plugin");
                 }
             }
         }
@@ -108,9 +108,9 @@ pub fn theme_with_override(
                 result[last] = path;
             }
         } else {
-            eprintln!(
-                "[ThemeEngine] cookie 覆盖主题不存在，跳过：{}",
-                path.display()
+            tracing::warn!(
+                theme = %path.display(),
+                "theme: cookie override file not found, ignoring"
             );
         }
     }

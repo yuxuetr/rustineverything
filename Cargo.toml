@@ -45,3 +45,5 @@ jsonwebtoken = "9"
 tantivy = "0.26"
 tantivy-jieba = "0.19"
 aes-gcm = "0.10"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

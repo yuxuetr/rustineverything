@@ -150,10 +150,10 @@ impl From<AppError> for dioxus::fullstack::ServerFnError {
         // 在 server 端把内部错误日志化，避免吞掉关键信息
         match &e {
             AppError::Db(inner) => {
-                eprintln!("[AppError::Db] {}", inner);
+                tracing::error!(error = %inner, "AppError::Db (forwarded to ServerFnError)");
             }
             AppError::Io(inner) => {
-                eprintln!("[AppError::Io] {}", inner);
+                tracing::error!(error = %inner, "AppError::Io (forwarded to ServerFnError)");
             }
             _ => {}
         }

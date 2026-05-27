@@ -183,7 +183,7 @@ async fn collect_topics() -> Result<Vec<IndexedDocument>, String> {
         Ok(db) => db,
         Err(e) => {
             // 数据库不可用时不应阻塞索引构建
-            eprintln!("[Search] DB unavailable, skipping topics: {}", e);
+            tracing::warn!(error = %e, "search: DB unavailable, skipping topics");
             return Ok(vec![]);
         }
     };
@@ -247,7 +247,7 @@ pub async fn collect_documents() -> Result<Vec<IndexedDocument>, String> {
     {
         match collect_topics().await {
             Ok(mut t) => all.append(&mut t),
-            Err(e) => eprintln!("[Search] failed to collect topics: {}", e),
+            Err(e) => tracing::warn!(error = %e, "search: failed to collect topics"),
         }
         all.extend(collect_cases());
     }

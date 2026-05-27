@@ -18,6 +18,7 @@ serde_yaml = "0.9"
 chrono = { workspace = true, features = ["serde"] }
 pulldown-cmark = { version = "0.13.0", features = ["html"] }
 pulldown-latex = "0.7.1"
+tracing = { workspace = true }
 
 [features]
 server = ["dioxus/server"]

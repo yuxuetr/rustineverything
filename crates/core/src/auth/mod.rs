@@ -124,13 +124,13 @@ impl AuthService {
 
             // 插件文件必须存在
             if !plugin_path.exists() {
-                println!("[Auth] 插件不存在，跳过: {:?}", plugin_path);
+                tracing::warn!(plugin = ?plugin_path, "auth: plugin file missing, skipping");
                 continue;
             }
 
             // 环境变量必须配置
             if !AuthConfig::has_credentials(&entry.id) {
-                println!("[Auth] 未配置凭据，跳过: {}", entry.id);
+                tracing::warn!(provider = %entry.id, "auth: no credentials configured, skipping");
                 continue;
             }
 
@@ -141,13 +141,13 @@ impl AuthService {
                         Ok(json) => {
                             match serde_json::from_str::<AuthProviderDisplay>(&json) {
                                 Ok(display) => result.push(display),
-                                Err(e) => println!("[Auth] 解析 display_info 失败 ({}): {}", entry.id, e),
+                                Err(e) => tracing::warn!(provider = %entry.id, error = %e, "auth: failed to parse display_info"),
                             }
                         }
-                        Err(e) => println!("[Auth] 调用 get_display_info 失败 ({}): {}", entry.id, e),
+                        Err(e) => tracing::warn!(provider = %entry.id, error = %e, "auth: get_display_info call failed"),
                     }
                 }
-                Err(e) => println!("[Auth] 读取插件失败 ({}): {}", entry.id, e),
+                Err(e) => tracing::warn!(provider = %entry.id, error = %e, "auth: failed to read plugin"),
             }
         }
 
@@ -219,7 +219,7 @@ impl AuthService {
                     created_at: Instant::now(),
                 });
             }
-            println!("[Auth] PKCE enabled for provider={}", provider);
+            tracing::debug!(provider = %provider, "auth: PKCE enabled");
         }
 
         Ok(url)
@@ -257,9 +257,10 @@ impl AuthService {
 
         // 2. 构建 Token 交换请求
         let http_client = reqwest::Client::new();
-        println!(
-            "[Auth] Token exchange: provider={}, auth_method={}",
-            provider, provider_config.token_auth_method
+        tracing::debug!(
+            provider = %provider,
+            auth_method = %provider_config.token_auth_method,
+            "auth: token exchange initiated"
         );
 
         let mut form_params: Vec<(&str, String)> = vec![
@@ -279,7 +280,7 @@ impl AuthService {
             if entry.created_at.elapsed() > Duration::from_secs(PKCE_TTL_SECS) {
                 return Err("PKCE code_verifier 已过期".into());
             }
-            println!("[Auth] PKCE code_verifier matched");
+            tracing::debug!("auth: PKCE code_verifier matched");
             Some(entry.verifier)
         } else {
             None
@@ -316,7 +317,7 @@ impl AuthService {
                 let err_kind = token_response["error"].as_str().unwrap_or("unknown_error");
                 format!("Token 交换失败 (provider={}, error={})", provider, err_kind)
             })?;
-        println!("[Auth] Token exchange success: provider={}", provider);
+        tracing::info!(provider = %provider, "auth: token exchange success");
 
         // 3. 获取用户信息
         let profile_response: Value = http_client
@@ -327,7 +328,7 @@ impl AuthService {
             .await?
             .json()
             .await?;
-        println!("[Auth] Profile fetched: provider={}", provider);
+        tracing::info!(provider = %provider, "auth: profile fetched");
 
         // 4. 插件 Profile 映射
         let standard_user_json = self.plugin_manager.call_with_string(

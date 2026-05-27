@@ -563,7 +563,7 @@ fn latex_to_mathml_string(latex: &str, display: bool) -> String {
     match push_mathml(&mut mathml, parser, config) {
         Ok(()) => mathml,
         Err(e) => {
-            eprintln!("[Math] LaTeX render error: {e}");
+            tracing::warn!(error = %e, "math: LaTeX render error");
             format!("<code>{}</code>", latex.replace('<', "&lt;").replace('>', "&gt;"))
         }
     }

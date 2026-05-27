@@ -301,7 +301,7 @@ pub fn scan_cases_from_root(root: &Path) -> Vec<Case> {
         }
         match read_case_from_dir(&path) {
             Ok(case) => cases.push(case),
-            Err(e) => eprintln!("[Cases] skip {}: {}", path.display(), e),
+            Err(e) => tracing::warn!(path = %path.display(), error = %e, "cases: skipping unreadable entry"),
         }
     }
     cases.sort_by(|a, b| compare_cases(&CaseSummary::from(a), &CaseSummary::from(b)));

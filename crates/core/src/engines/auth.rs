@@ -52,7 +52,7 @@ impl Engine for AuthEngine {
         // 当 site_config.auth.enabled 为 false 时仅发个日志提示；
         // AuthService 内部 list_available_providers 会自然返回空列表。
         if !ctx.site_config.auth.enabled {
-            eprintln!("[AuthEngine] site.json::auth.enabled=false，登录功能已禁用");
+            tracing::warn!("auth: site.json::auth.enabled=false, login disabled");
         }
         Ok(())
     }

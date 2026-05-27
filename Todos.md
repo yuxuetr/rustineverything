@@ -367,8 +367,8 @@
 - [ ] `.github/workflows/ci.yml`：fmt + clippy + test + build
 
 ### 7.5 日志
-- [ ] `tracing` + `tracing-subscriber`
-- [ ] 删除全部 `println!` 调试输出，替换为结构化日志
+- [x] `tracing` + `tracing-subscriber`：workspace 依赖；`crates/app/src/main.rs` 启动期初始化 `tracing_subscriber::fmt()` + `EnvFilter`（默认 info，可由 `RUST_LOG` 覆盖）+ `with_target(true)`；client 端 tracing 调用无 subscriber 时为 no-op
+- [x] 删除全部 `println!` 调试输出：33 个调用点迁移到 `tracing::{info,warn,error,debug}`，按消息语义选级别（启动成功/审计=info / 跳过/降级=warn / 调用失败=error / OAuth 步骤=debug）。保留：`build.rs` 中 cargo 指令、`#[cfg(test)]` 块中的 println、`crates/app/assets/` 下课程代码示例（内容资产）。涉及 12 个文件：core 4 / app 4 / widgets 1 / modules/{admin,cases,search,search} 3。
 
 ### 7.6 文档
 - [ ] `docs/DEPLOY_GUIDE.md`
@@ -403,7 +403,7 @@
 | 4 | 🔄 部分完成 (4.1 阈值 ✅ / 4.2 XSS ✅ / 4.6 文档 ✅；4.3-4.5 待 LLM 集成) | LLM/VLM 审核 + XSS 防护 |
 | 5 | 🔄 部分完成 (5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.1 Hot Reload、5.2.2-5.2.3、5.4 验收待 Admin UI 落地) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
 | 6 | ⏳ 待开始 | 5 新内容板块 |
-| 7 | ⏳ 待开始 | Docker + CI + 可部署 |
+| 7 | 🔄 部分完成 (7.5 tracing + 删除 println ✅) | Docker + CI + 可部署 |
 
 ## v2.1 变更记录（2026-05-09）
 

@@ -40,6 +40,16 @@ fn main() {
       // 加载 .env 环境变量
       dotenvy::dotenv().ok();
 
+      // Phase 7.5：初始化 tracing 订阅。日志级别由 `RUST_LOG` 控制
+      // （默认 `info`），格式为人可读 + 含 target。
+      tracing_subscriber::fmt()
+          .with_env_filter(
+              tracing_subscriber::EnvFilter::try_from_default_env()
+                  .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+          )
+          .with_target(true)
+          .init();
+
       // 安全门禁：启动时必须提供关键环境变量，避免 fallback 到不安全默认值
       // 1) JWT_SECRET必须配置（panic on missing）
       let _ = rustineverything_core::session::get_jwt_secret();
@@ -52,12 +62,12 @@ fn main() {
       //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
       if let Ok(db_url) = std::env::var("DATABASE_URL") {
           if let Err(e) = rustineverything_core::db::init_pool(&db_url).await {
-              eprintln!("[Startup] DB pool init failed (服务将在需要时进行连接重试): {}", e);
+              tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)");
           } else {
-              println!("[Startup] DB pool initialized");
+              tracing::info!("startup: DB pool initialized");
           }
       } else {
-          eprintln!("[Startup] DATABASE_URL 未配置，依赖 DB 的功能将在首次调用时出错");
+          tracing::warn!("startup: DATABASE_URL not set; DB-backed features will error on first call");
       }
 
       // 使用 core::utils::get_asset_root 返回的 PathBuf，保证与
@@ -103,7 +113,7 @@ fn main() {
                       response
                   }
                   Err(e) => {
-                      eprintln!("[Auth Callback] Error: {}", e);
+                      tracing::error!(error = %e, "auth callback failed");
                       Redirect::temporary("/?error=auth_failed").into_response()
                   }
               }
@@ -295,8 +305,8 @@ fn App() -> Element {
       async move {
           let result = get_aggregated_theme_css().await;
           match &result {
-              Ok(css) => println!("[Frontend] Fetched theme CSS (len: {})", css.len()),
-              Err(e) => println!("[Frontend] Failed to fetch theme: {:?}", e),
+              Ok(css) => tracing::debug!(len = css.len(), "frontend: fetched theme CSS"),
+              Err(e) => tracing::warn!(error = ?e, "frontend: failed to fetch theme"),
           }
           result.unwrap_or_default()
       }

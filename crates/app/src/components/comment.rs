@@ -43,7 +43,7 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
           is_preview.set(false);
         }
         Err(e) => {
-          println!("[Comment] post_comment error: {:?}", e);
+          tracing::error!(error = ?e, "comment: post_comment failed");
         }
       }
       is_submitting.set(false);
