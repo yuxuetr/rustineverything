@@ -1,0 +1,58 @@
+# Phase 7.4.1：减小 docker build 上下文体积。
+#
+# 不要把开发者本地 target/ 或 node_modules/ 推进 build context（GB 级），
+# 否则即使是第一行 COPY 也会拷数分钟。
+
+# Cargo / Rust
+target/
+**/target/
+**/*.rlib
+**/*.rmeta
+
+# Node
+**/node_modules/
+**/npm-debug.log
+**/.npm/
+
+# Editor / OS
+**/.DS_Store
+**/Thumbs.db
+**/.idea/
+**/.vscode/
+**/*.swp
+
+# Git
+.git/
+.gitignore
+
+# CI / docs that aren't needed at runtime
+.github/
+docs/
+Todos.md
+Todos.old.md
+AGENTS.md
+RoadMap.md
+README.md
+*.md
+
+# Tailwind / dx 构建产物（容器内会重新生成）
+crates/app/assets/tailwind.css
+**/dist/
+
+# 用户上传内容（生产部署应挂卷而非打入镜像）
+assets/uploads/
+
+# Docker 自身
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# 环境变量文件（应用通过 -e 注入；勿打进镜像）
+.env
+.env.*
+!.env.example
+
+# 测试产物
+*.log
+*.tmp
+*.bak

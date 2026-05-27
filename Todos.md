@@ -362,7 +362,7 @@
 - [ ] 增量索引
 
 ### 7.4 部署
-- [ ] `Dockerfile`（多阶段 alpine）
+- [x] `Dockerfile`（多阶段 alpine）：builder = `rust:1-alpine` + node/npm + dx CLI + wasm32 target，串接 Tailwind v4 编译 → `scripts/build_themes.sh` 主题构建 → `dx bundle --platform web --release` 全栈打包；runtime = `alpine:3.20` + `ca-certificates` + `tini`，非 root 用户 `app` 运行 `dx bundle` 产物。`docker buildx build --check` 验证 0 warning；通过 `CARGO_TARGET_DIR=/tmp/target` 覆盖 `.cargo/config.toml` 开发者本地路径。配套 `.dockerignore` 排除 target/node_modules/.git/docs 等大目录，控制构建上下文体积
 - [ ] `docker-compose.yml`：app + postgres + ollama
 - [x] `.github/workflows/ci.yml`：fmt + clippy + test + build。5 jobs：fmt（report-only，待全量 reformat 后切强校验）/ clippy（report-only，~130 warnings 收敛中）/ test（强校验 `--features server --workspace --test-threads=1`）/ build-server（`cargo check`）/ build-wasm-plugins（`scripts/build_themes.sh` + plugin-theme-purple）。提交 `rustfmt.toml` 作为团队 2-space 缩进声明配置；CI 通过 `CARGO_TARGET_DIR: target` env 覆盖 `.cargo/config.toml` 中的开发者本地路径
 
