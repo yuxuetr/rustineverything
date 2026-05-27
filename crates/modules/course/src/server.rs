@@ -1366,9 +1366,46 @@ pub async fn create_annotation(
             ));
         }
         use chrono::Utc;
+        use rustineverything_core::engines::moderation::ModerationLabel;
         use rustineverything_core::entities::annotation;
+        use rustineverything_module_moderation::{
+            enqueue_if_flagged, evaluate_submission,
+        };
+        use rustineverything_sdk::ModerationSubmission;
         use sea_orm::{ActiveValue::Set, EntityTrait};
         let user = require_writer()?;
+
+        // ── 审核：只对 note 非空时调；exact_text 是被引用的原文，不是用户内容 ──
+        // resource_kind + resource_path 组成 ref_path（便于 admin 复核时跳回原文）
+        let ref_path = format!("{}:{}", payload.resource_kind, payload.resource_path);
+        let note_content = payload.note.clone().unwrap_or_default();
+        let mod_outcome = if !note_content.trim().is_empty() {
+            let submission = ModerationSubmission::new(&note_content)
+                .with_kind("annotation")
+                .with_ref_path(&ref_path);
+            let verdict = evaluate_submission(submission).await;
+            if verdict.label == ModerationLabel::Block {
+                tracing::warn!(
+                    user = %user.nickname,
+                    ref_path = %ref_path,
+                    score = verdict.score,
+                    reason = %verdict.reason,
+                    "moderation: annotation BLOCKED"
+                );
+                return Err(ServerFnError::new(format!(
+                    "标注被审核拒绝：{}",
+                    if verdict.reason.is_empty() {
+                        "未通过内容审核".to_string()
+                    } else {
+                        verdict.reason
+                    }
+                )));
+            }
+            Some(verdict)
+        } else {
+            None
+        };
+
         let db = open_db().await?;
         let now = Utc::now().fixed_offset();
         let visibility = normalize_visibility(payload.visibility.as_deref());
@@ -1393,6 +1430,22 @@ pub async fn create_annotation(
             .exec_with_returning(&db)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        // Flag note → 入审核队列（annotation.id 是 i64 BIGSERIAL）
+        if let Some(verdict) = mod_outcome {
+            enqueue_if_flagged(
+                &db,
+                &verdict,
+                "annotation",
+                Some(res.id),
+                &ref_path,
+                Some(user.id),
+                &note_content,
+                &[],
+            )
+            .await;
+        }
+
         Ok(model_to_annotation(res))
     }
     #[cfg(not(feature = "server"))]

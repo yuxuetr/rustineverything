@@ -14,7 +14,9 @@ rustineverything-sdk = { path = "../../sdk" }
 rustineverything-widgets = { path = "../../widgets" }
 rustineverything-module-blog = { path = "../blog" }
 rustineverything-core = { path = "../../core" }
+rustineverything-module-moderation = { path = "../moderation", optional = true }
 sea-orm = { workspace = true, optional = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -28,4 +30,5 @@ server = [
     "rustineverything-widgets/server",
     "rustineverything-module-blog/server",
     "rustineverything-core/server",
+    "dep:rustineverything-module-moderation",
 ]

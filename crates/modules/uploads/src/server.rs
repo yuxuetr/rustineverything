@@ -92,6 +92,10 @@ pub async fn upload_image(name: String, data_base64: String) -> Result<String, S
     #[cfg(feature = "server")]
     {
         use base64::Engine as _;
+        use rustineverything_core::engines::moderation::ModerationLabel;
+        use rustineverything_core::session::current_session_user;
+        use rustineverything_module_moderation::{enqueue_if_flagged, evaluate_submission};
+        use rustineverything_sdk::{ImageRef, ModerationSubmission};
 
         // 1. 取出 Base64 负载部分（接受 data:URL 或裸 base64）
         let base64_str = data_base64.split(',').last().unwrap_or(&data_base64);
@@ -136,15 +140,70 @@ pub async fn upload_image(name: String, data_base64: String) -> Result<String, S
             return Err(ServerFnError::new("不允许的文件扩展名".to_string()));
         }
 
+        // 7. ── 审核：在写盘前用 base64 data URL 调 vision LLM ──
+        // 注意：用 base64 内联避免把私有图暴露给 LLM 供商前 URL；
+        // 默认 moderation.enabled = false → pipeline 空，直接 Allow。
+        let session_user = current_session_user();
+        let session_id = session_user.as_ref().map(|u| u.id);
+        let session_nick = session_user
+            .as_ref()
+            .map(|u| u.nickname.clone())
+            .unwrap_or_default();
+        let data_url = format!(
+            "data:{};base64,{}",
+            mime,
+            base64::engine::general_purpose::STANDARD.encode(&data)
+        );
+        let saved_url = format!("/uploads/{}", filename);
+        let submission = ModerationSubmission::new("用户上传的图片")
+            .with_kind("upload")
+            .with_ref_path(&saved_url)
+            .with_images(vec![ImageRef::url(data_url).with_media_type(mime)]);
+        let verdict = evaluate_submission(submission).await;
+        if verdict.label == ModerationLabel::Block {
+            tracing::warn!(
+                user = %session_nick,
+                filename = %filename,
+                score = verdict.score,
+                reason = %verdict.reason,
+                "moderation: upload BLOCKED (not saved)"
+            );
+            return Err(ServerFnError::new(format!(
+                "图片被审核拒绝：{}",
+                if verdict.reason.is_empty() {
+                    "未通过内容审核".to_string()
+                } else {
+                    verdict.reason
+                }
+            )));
+        }
+
+        // 8. 写盘
         let dir_path = get_asset_root().join("uploads");
         if !dir_path.exists() {
             fs::create_dir_all(&dir_path).map_err(|e| ServerFnError::new(e.to_string()))?;
         }
-
         let path = dir_path.join(&filename);
         fs::write(&path, &data).map_err(|e| ServerFnError::new(format!("保存失败: {}", e)))?;
 
-        Ok(format!("/uploads/{}", filename))
+        // 9. Flag → 入审核队列。ref_id 留 None（upload 无独立业务表）；
+        //    队列里记录保存后的 URL 让 admin 可以直接预览。
+        let db_opt = rustineverything_core::db::get_or_init_pool().await.ok();
+        if let Some(db) = db_opt {
+            enqueue_if_flagged(
+                &db,
+                &verdict,
+                "upload",
+                None,
+                &saved_url,
+                session_id,
+                "用户上传的图片",
+                std::slice::from_ref(&saved_url),
+            )
+            .await;
+        }
+
+        Ok(saved_url)
     }
     #[cfg(not(feature = "server"))]
     {

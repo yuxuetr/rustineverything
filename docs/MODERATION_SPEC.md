@@ -306,13 +306,15 @@ docker compose restart app
 
 ### 3.8 业务模块接入
 
-提交路径已 hook 到全局 pipeline：
+5 个提交入口已 hook 到全局 pipeline：
 
 | 入口 | 文件 | 行为 |
 | --- | --- | --- |
-| 评论 `post_comment` | `crates/modules/comments/src/server.rs` | DB 写入前评估；Block → ServerFnError；Flag → log + 继续 |
+| 评论 `post_comment` | `crates/modules/comments/src/server.rs` | DB 写入后入队；Block → ServerFnError |
 | 话题 `create_topic` | `crates/modules/forum/src/server.rs` | 标题 + 正文合并审核 |
-| 回复 `post_reply` | 同上 | 正文审核 |
+| 回复 `post_reply` | 同上 | 正文审核；事务提交后入队 |
+| 标注 `create_annotation` | `crates/modules/course/src/server.rs` | 只审 `note` 字段（非空时）；空 note 不调 LLM |
+| 上传 `upload_image` | `crates/modules/uploads/src/server.rs` | **写盘前** 用 base64 data URL 调 vision LLM；Block 不落盘 |
 
 每个 hook 自动：
 1. 从 markdown 抽 `![alt](url)` 图片 URL（站内 `/uploads/...` + 外站 https）

@@ -12,10 +12,15 @@ base64 = { workspace = true }
 tokio = { workspace = true, features = ["full"], optional = true }
 rand = { workspace = true, optional = true }
 rustineverything-sdk = { path = "../../sdk" }
+rustineverything-core = { path = "../../core" }
+rustineverything-module-moderation = { path = "../moderation", optional = true }
+tracing = { workspace = true }
 
 [features]
 server = [
     "dioxus/server",
     "dep:tokio",
     "dep:rand",
+    "rustineverything-core/server",
+    "dep:rustineverything-module-moderation",
 ]
