@@ -37,6 +37,7 @@ serde_yaml = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
+rustineverything-migration = { path = "../migration", optional = true }
 
 [features]
 default = ["web"]
@@ -67,6 +68,7 @@ server = [
     "dep:serde_yaml",
     "dep:rand",
     "dep:tracing-subscriber",
+    "dep:rustineverything-migration",
 ]
 
 [dev-dependencies]

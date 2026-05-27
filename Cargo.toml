@@ -13,6 +13,7 @@ members = [
     "crates/modules/docs",
     "crates/modules/comments",
     "crates/modules/uploads",
+    "crates/migration",
     "crates/app",
     "crates/plugins/i18n-fluent",
     "crates/plugins/theme-ocean",

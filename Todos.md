@@ -350,8 +350,8 @@
 ## Phase 7 — 可部署上线
 
 ### 7.1 数据库 Migration
-- [ ] `crates/migration`（sea-orm-migration），替代 `init.sql`
-- [ ] 启动时自动迁移
+- [x] `crates/migration`（sea-orm-migration 1.1），替代 `init.sql`：单 migration `m20260527_000001_initial_schema` 覆盖 users / comments / user_identities / course_progress / annotations / topics / topic_replies 共 7 张表 + 全部索引 + 外键 ON DELETE CASCADE，列名/类型与 `crates/core/src/entities/*` 实体严格对齐。后续 schema 变更按 `m<YYYYMMDD>_<seq>_<slug>.rs` 追加；`Migrator` trait 在 `seaql_migrations` 表中追踪已应用迁移
+- [x] 启动时自动迁移：`crates/app/src/main.rs` 在 `init_pool` 成功后调 `rustineverything_migration::Migrator::up(&db, None)`，失败仅日志不退出（便于 schema 已存在场景）；root `init.sql` 加 DEPRECATED 警示但保留作参考。2 个单测：migrations_have_expected_names + migrator_can_be_constructed
 
 ### 7.2 Auth 进一步加固
 - [ ] PKCE 持久化：加密 cookie 替代进程内 HashMap
@@ -403,7 +403,7 @@
 | 4 | 🔄 部分完成 (4.1 阈值 ✅ / 4.2 XSS ✅ / 4.6 文档 ✅；4.3-4.5 待 LLM 集成) | LLM/VLM 审核 + XSS 防护 |
 | 5 | 🔄 部分完成 (5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.1 Hot Reload、5.2.2-5.2.3、5.4 验收待 Admin UI 落地) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
 | 6 | ⏳ 待开始 | 5 新内容板块 |
-| 7 | 🔄 部分完成 (7.5 tracing + 删除 println ✅) | Docker + CI + 可部署 |
+| 7 | 🔄 部分完成 (7.1 migration / 7.4.3 CI / 7.5 tracing ✅) | Docker + CI + 可部署 |
 
 ## v2.1 变更记录（2026-05-09）
 

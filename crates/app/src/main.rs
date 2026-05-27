@@ -60,11 +60,26 @@ fn main() {
 
       // 3) 提前初始化数据库连接池，后续 server fn 都走共享连接。
       //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
+      //    成功连上数据库后再跑 sea-orm-migration（Phase 7.1）。
       if let Ok(db_url) = std::env::var("DATABASE_URL") {
-          if let Err(e) = rustineverything_core::db::init_pool(&db_url).await {
-              tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)");
-          } else {
-              tracing::info!("startup: DB pool initialized");
+          match rustineverything_core::db::init_pool(&db_url).await {
+              Err(e) => tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)"),
+              Ok(()) => {
+                  tracing::info!("startup: DB pool initialized");
+                  // 自动迁移：用同一连接池跑 sea-orm-migration。
+                  // 失败仅日志，不退出，避免因为 schema 已存在的细节差异（例如
+                  // init.sql 已手动落地）阻塞启动；运维通过日志确认即可。
+                  match rustineverything_core::db::get_or_init_pool().await {
+                      Err(e) => tracing::error!(error = %e, "startup: cannot get pool for migration"),
+                      Ok(db) => {
+                          use rustineverything_migration::MigratorTrait;
+                          match rustineverything_migration::Migrator::up(&db, None).await {
+                              Ok(()) => tracing::info!("startup: schema migrations applied"),
+                              Err(e) => tracing::error!(error = %e, "startup: migration failed"),
+                          }
+                      }
+                  }
+              }
           }
       } else {
           tracing::warn!("startup: DATABASE_URL not set; DB-backed features will error on first call");

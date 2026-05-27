@@ -1,3 +1,10 @@
+-- DEPRECATED (Phase 7.1)
+-- ────────────────────────────────────────────────────────────
+-- 本文件保留作为参考；运行时 schema 由 `crates/migration` 通过
+-- sea-orm-migration 自动应用（应用启动时 `Migrator::up(&db, None)`）。
+-- 新增表 / 改列时请在 `crates/migration/src/m<YYYYMMDD>_<seq>_*.rs` 中追加。
+-- ────────────────────────────────────────────────────────────
+
 -- 初始化用户表
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,

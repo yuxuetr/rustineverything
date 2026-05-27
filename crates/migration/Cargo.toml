@@ -1,0 +1,22 @@
+[package]
+name = "rustineverything-migration"
+version = "0.1.0"
+edition = "2021"
+
+# Phase 7.1：数据库 schema 迁移。
+#
+# 取代 `init.sql`，由 SeaORM 的 sea-orm-migration 在应用启动时自动跑：
+#   `crates/app/src/main.rs` → `init_pool` → `Migrator::up(&db, None)`
+#
+# 仅在 server feature 下编译；client/wasm 不需要数据库迁移。
+
+[lib]
+name = "rustineverything_migration"
+
+[dependencies]
+async-trait = "0.1"
+sea-orm-migration = { version = "1.1", features = [
+    "runtime-tokio-rustls",
+    "sqlx-postgres",
+] }
+tracing = { workspace = true }
