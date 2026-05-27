@@ -364,7 +364,7 @@
 ### 7.4 部署
 - [ ] `Dockerfile`（多阶段 alpine）
 - [ ] `docker-compose.yml`：app + postgres + ollama
-- [ ] `.github/workflows/ci.yml`：fmt + clippy + test + build
+- [x] `.github/workflows/ci.yml`：fmt + clippy + test + build。5 jobs：fmt（report-only，待全量 reformat 后切强校验）/ clippy（report-only，~130 warnings 收敛中）/ test（强校验 `--features server --workspace --test-threads=1`）/ build-server（`cargo check`）/ build-wasm-plugins（`scripts/build_themes.sh` + plugin-theme-purple）。提交 `rustfmt.toml` 作为团队 2-space 缩进声明配置；CI 通过 `CARGO_TARGET_DIR: target` env 覆盖 `.cargo/config.toml` 中的开发者本地路径
 
 ### 7.5 日志
 - [x] `tracing` + `tracing-subscriber`：workspace 依赖；`crates/app/src/main.rs` 启动期初始化 `tracing_subscriber::fmt()` + `EnvFilter`（默认 info，可由 `RUST_LOG` 覆盖）+ `with_target(true)`；client 端 tracing 调用无 subscriber 时为 no-op

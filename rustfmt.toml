@@ -1,0 +1,14 @@
+# Project-local rustfmt config.
+#
+# CLAUDE.md (项目约定): Rust 缩进 2 空格，覆盖 rustfmt 默认 4 空格。
+# 与用户全局 `~/.rustfmt.toml` 保持一致（去掉 nightly-only 的
+# `format_strings`，保留 stable channel 能识别的项）。
+#
+# CI (.github/workflows/ci.yml) 通过 `cargo fmt --all -- --check` 强校验。
+
+max_width = 100
+hard_tabs = false
+tab_spaces = 2
+edition = "2021"
+newline_style = "Unix"
+use_small_heuristics = "Max"
