@@ -14,7 +14,8 @@ use rustineverything_module_course::course::{
     AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
 };
 use rustineverything_module_admin::admin::{
-    AdminCommentsPage, AdminDashboardPage, AdminPluginsPage, AdminTopicsPage, AdminUsersPage,
+    AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminPluginsPage, AdminTopicsPage,
+    AdminUsersPage,
 };
 use rustineverything_module_docs::docs::{Docs as DocsView, DocPage as DocPageView};
 use rustineverything_module_forum::forum::{
@@ -92,6 +93,8 @@ pub enum Route {
         AdminTopics {},
         #[route("/admin/plugins")]
         AdminPlugins {},
+        #[route("/admin/moderation")]
+        AdminModeration {},
 }
 
 /// Home page
@@ -537,4 +540,9 @@ pub fn AdminTopics() -> Element {
 #[component]
 pub fn AdminPlugins() -> Element {
   rsx! { AdminPluginsPage {} }
+}
+
+#[component]
+pub fn AdminModeration() -> Element {
+  rsx! { AdminModerationPage {} }
 }

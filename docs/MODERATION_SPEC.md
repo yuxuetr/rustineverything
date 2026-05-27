@@ -325,7 +325,52 @@ docker compose restart app
 时读 `site.json` + env 装载；改 site.json 后**需要重启进程**（Phase 5.1
 hot reload 未落地前的限制）。
 
-### 3.9 Phase 4.5 待补
+### 3.9 审核队列（Phase 4.5）
+
+Flag 决定自动入 `moderation_queue` 表等待 admin 复核。
+
+**Schema** (`crates/migration/src/m20260530_000002_moderation_queue.rs`)：
+
+| 列 | 类型 | 用途 |
+| --- | --- | --- |
+| `id` | BIGSERIAL PK | 队列 id |
+| `kind` | VARCHAR(32) | `comment` / `topic` / `reply` / `annotation` |
+| `ref_id` | BIGINT nullable | 业务表主键（comment.id 等） |
+| `ref_path` | TEXT | 人类可读路径，例 `blog:welcome` / `topic:42` |
+| `user_id` | INTEGER FK ON DELETE SET NULL | 提交者 |
+| `content` | TEXT | 内容快照（避免业务行被删后失去上下文） |
+| `images` | TEXT | URL 数组 JSON 字符串 |
+| `score` / `label` / `reason` | — | LLM 评估结果 |
+| `status` | VARCHAR(16) | `pending` / `approved` / `rejected` |
+| `reviewer_user_id` / `reviewer_note` / `reviewed_at` | — | 复核痕迹 |
+
+索引：`(status, created_at DESC)` + `(kind)`。
+
+**Hook 流程**：业务行先入库拿到 id，再 `enqueue_if_flagged(db, verdict,
+kind, Some(ref_id), ref_path, user_id, content, image_urls)`。Allow / Block
+都是 no-op（Block 在前置阶段已被拒绝，不写业务库也不入队）。
+
+**Admin 复核页** `/admin/moderation`：
+- Tab 切换：待复核 / 已通过 / 已拒绝 / 全部
+- 每行：状态徽章 + 类型 + 路径 + 作者 + 评分百分比 + 理由 + 内容快照 + 图片缩略图
+- 待复核行：「通过」按钮 → `admin_approve_moderation`（保留内容，标记
+  approved）；「拒绝（删除内容）」按钮 → `admin_reject_moderation`
+  （按 kind+ref_id 删除业务表行，标记 rejected）
+- Dashboard 卡片新增 "审核待办" 计数
+
+**对已有部署的迁移注意**：如果你的 postgres 是通过 `init.sql` 直接灌入
+（而非 `Migrator::up`），`seaql_migrations` 表里没有 initial_schema 记录，
+应用启动时 Migrator 会反复尝试重跑初始迁移并失败（`relation "..."
+already exists`）。一次性修复：
+
+```sh
+./scripts/repair_seaql_migrations.sh
+```
+
+脚本会建 `seaql_migrations` 表（如未建）并补一条 `initial_schema` 记录，
+之后 Migrator 跳过 initial、正常跑 `m20260530_000002_moderation_queue`。
+
+### 3.10 Phase 4.5 待补
 
 | 项 | 说明 |
 | --- | --- |

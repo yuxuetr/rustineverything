@@ -1,8 +1,9 @@
 use crate::server::{
-    admin_delete_comment, admin_delete_reply, admin_delete_topic, admin_list_comments,
-    admin_list_plugins, admin_list_topics, admin_list_users, admin_overview,
-    admin_reload_plugins, admin_set_user_role, AdminCommentRow, AdminPluginRow,
-    AdminTopicRow, AdminUserRow, ADMIN_PAGE_SIZE,
+    admin_approve_moderation, admin_delete_comment, admin_delete_reply, admin_delete_topic,
+    admin_list_comments, admin_list_moderation_queue, admin_list_plugins, admin_list_topics,
+    admin_list_users, admin_overview, admin_reject_moderation, admin_reload_plugins,
+    admin_set_user_role, AdminCommentRow, AdminPluginRow, AdminTopicRow, AdminUserRow,
+    ModerationQueueRow, ADMIN_PAGE_SIZE,
 };
 use dioxus::prelude::*;
 use rustineverything_core::session::{SessionUser, ALL_ROLES};
@@ -65,6 +66,7 @@ fn AdminShell(active: String, children: Element) -> Element {
                         AdminNavLink { href: "/admin/users", label: "用户".to_string(), key_id: "users".to_string(), active: active.clone() }
                         AdminNavLink { href: "/admin/comments", label: "评论".to_string(), key_id: "comments".to_string(), active: active.clone() }
                         AdminNavLink { href: "/admin/topics", label: "话题".to_string(), key_id: "topics".to_string(), active: active.clone() }
+                        AdminNavLink { href: "/admin/moderation", label: "审核".to_string(), key_id: "moderation".to_string(), active: active.clone() }
                         AdminNavLink { href: "/admin/plugins", label: "插件".to_string(), key_id: "plugins".to_string(), active: active.clone() }
                     }
                 }
@@ -672,6 +674,231 @@ fn Pagination(page: u32, total_pages: u32, on_change: EventHandler<u32>) -> Elem
                     if page + 1 < total_pages { on_change.call(page + 1); }
                 },
                 "下一页"
+            }
+        }
+    }
+}
+
+// =============================================================
+// /admin/moderation （Phase 4.5）
+// =============================================================
+
+#[component]
+pub fn AdminModerationPage() -> Element {
+    if !is_current_user_admin() {
+        return rsx! { ForbiddenPanel {} };
+    }
+
+    let mut filter = use_signal(|| "pending".to_string()); // pending / approved / rejected / ""
+    let mut error = use_signal::<Option<String>>(|| None);
+    let mut bump = use_signal(|| 0u32);
+
+    let res = use_resource(move || {
+        let f = filter();
+        let _ = bump();
+        async move {
+            let arg = if f.is_empty() { None } else { Some(f) };
+            admin_list_moderation_queue(arg, Some(200)).await.ok()
+        }
+    });
+    let rows: Vec<ModerationQueueRow> =
+        res.read().as_ref().cloned().flatten().unwrap_or_default();
+
+    let tab_btn = move |key: &str, label: &str| {
+        let active = filter() == key;
+        let key_owned = key.to_string();
+        rsx! {
+            button {
+                class: if active {
+                    "px-3 py-1.5 rounded-md text-sm font-semibold bg-blue-600 text-white"
+                } else {
+                    "px-3 py-1.5 rounded-md text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                },
+                onclick: move |_| filter.set(key_owned.clone()),
+                "{label}"
+            }
+        }
+    };
+
+    rsx! {
+        AdminShell { active: "moderation".to_string(),
+            div { class: "flex items-center justify-between mb-6",
+                h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white", "审核队列" }
+                span { class: "text-sm text-slate-500", "共 {rows.len()} 条" }
+            }
+
+            div { class: "flex gap-2 mb-4",
+                {tab_btn("pending", "待复核")}
+                {tab_btn("approved", "已通过")}
+                {tab_btn("rejected", "已拒绝")}
+                {tab_btn("", "全部")}
+            }
+
+            if let Some(err) = error() {
+                div { class: "mb-4 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400 rounded-lg",
+                    "{err}"
+                }
+            }
+
+            match res.read().as_ref() {
+                None => rsx! { Spinner {} },
+                Some(_) if rows.is_empty() => rsx! {
+                    div { class: "py-16 text-center text-slate-500", "暂无记录" }
+                },
+                Some(_) => rsx! {
+                    div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden",
+                        div { class: "divide-y divide-slate-100 dark:divide-slate-800",
+                            for r in rows.iter() {
+                                ModerationQueueRowView {
+                                    key: "{r.id}",
+                                    row: r.clone(),
+                                    on_done: move |msg: Result<(), String>| {
+                                        match msg {
+                                            Ok(()) => {
+                                                error.set(None);
+                                                bump.with_mut(|n| *n = n.wrapping_add(1));
+                                            }
+                                            Err(e) => error.set(Some(e)),
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+}
+
+#[component]
+fn ModerationQueueRowView(
+    row: ModerationQueueRow,
+    on_done: EventHandler<Result<(), String>>,
+) -> Element {
+    let mut submitting = use_signal(|| false);
+    let id = row.id;
+
+    // 状态徽章颜色
+    let (status_class, status_label) = match row.status.as_str() {
+        "pending" => (
+            "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+            "待复核",
+        ),
+        "approved" => (
+            "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
+            "已通过",
+        ),
+        "rejected" => (
+            "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+            "已拒绝",
+        ),
+        _ => ("bg-slate-100 text-slate-800", row.status.as_str()),
+    };
+
+    let kind_label = match row.kind.as_str() {
+        "comment" => "评论",
+        "topic" => "话题",
+        "reply" => "回复",
+        "annotation" => "标注",
+        other => other,
+    };
+    let author = row
+        .user_nickname
+        .clone()
+        .unwrap_or_else(|| format!("用户#{}", row.user_id.unwrap_or(0)));
+    let score_pct = ((row.score * 100.0).round() as i32).clamp(0, 100);
+
+    let is_pending = row.status == "pending";
+
+    rsx! {
+        div { class: "px-5 py-4",
+            // 头部：状态徽章 / 类型 / 路径 / 时间 / 评分
+            div { class: "flex items-center gap-2 mb-2 text-xs flex-wrap",
+                span { class: "px-2 py-0.5 rounded-full font-medium {status_class}", "{status_label}" }
+                span { class: "px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300", "{kind_label}" }
+                span { class: "text-slate-500 truncate max-w-xs", "{row.ref_path}" }
+                span { class: "text-slate-400", "·" }
+                span { class: "text-slate-500", "{author}" }
+                span { class: "text-slate-400", "·" }
+                span { class: "text-slate-500", "{row.created_at}" }
+                span { class: "text-slate-400", "·" }
+                span { class: "font-mono text-slate-600 dark:text-slate-300", "score {score_pct}%" }
+            }
+
+            // 理由
+            if !row.reason.is_empty() {
+                div { class: "mb-2 text-sm text-slate-600 dark:text-slate-300",
+                    span { class: "text-xs uppercase text-slate-400 mr-2", "理由" }
+                    span { "{row.reason}" }
+                }
+            }
+
+            // 内容
+            div { class: "text-sm text-slate-800 dark:text-slate-100 whitespace-pre-wrap break-words border border-slate-100 dark:border-slate-800 rounded-md px-3 py-2 bg-slate-50/60 dark:bg-slate-900/60",
+                "{row.content}"
+            }
+
+            // 图片
+            if !row.images.is_empty() {
+                div { class: "flex flex-wrap gap-2 mt-2",
+                    for url in row.images.iter() {
+                        img {
+                            src: "{url}",
+                            class: "h-20 w-20 object-cover rounded-md border border-slate-200 dark:border-slate-700",
+                            alt: ""
+                        }
+                    }
+                }
+            }
+
+            // 操作 + 复核者信息
+            div { class: "mt-3 flex items-center justify-between gap-3 flex-wrap",
+                div { class: "text-xs text-slate-500",
+                    if let Some(ref reviewer) = row.reviewer_nickname {
+                        if let Some(ref at) = row.reviewed_at {
+                            span { "复核者：{reviewer} · {at}" }
+                        } else {
+                            span { "复核者：{reviewer}" }
+                        }
+                    }
+                }
+                if is_pending {
+                    div { class: "flex gap-2",
+                        button {
+                            class: "px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50",
+                            disabled: submitting(),
+                            onclick: move |_| {
+                                let on_done = on_done.clone();
+                                spawn(async move {
+                                    submitting.set(true);
+                                    match admin_approve_moderation(id).await {
+                                        Ok(()) => on_done.call(Ok(())),
+                                        Err(e) => on_done.call(Err(format!("通过失败: {}", e))),
+                                    }
+                                    submitting.set(false);
+                                });
+                            },
+                            "通过"
+                        }
+                        button {
+                            class: "px-3 py-1.5 rounded-md text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50",
+                            disabled: submitting(),
+                            onclick: move |_| {
+                                let on_done = on_done.clone();
+                                spawn(async move {
+                                    submitting.set(true);
+                                    match admin_reject_moderation(id).await {
+                                        Ok(()) => on_done.call(Ok(())),
+                                        Err(e) => on_done.call(Err(format!("拒绝失败: {}", e))),
+                                    }
+                                    submitting.set(false);
+                                });
+                            },
+                            "拒绝（删除内容）"
+                        }
+                    }
+                }
             }
         }
     }

@@ -5853,11 +5853,14 @@ name = "rustineverything-module-moderation"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "dotenvy",
  "mockito",
  "rustineverything-core",
  "rustineverything-llm",
+ "rustineverything-migration",
  "rustineverything-sdk",
+ "sea-orm",
  "serde",
  "serde_json",
  "tokio",

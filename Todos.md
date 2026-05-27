@@ -296,8 +296,11 @@
 - [ ] 后续：`moderation-anthropic`（Claude 视觉）/ `moderation-llamaguard`（本地 ollama fallback）— 待按需追加，ABI 已稳定
 
 ### 4.5 数据库 + Admin
-- [ ] `moderation_log / moderation_decisions / moderation_queue` 三张表
-- [ ] Admin：队列 / 审计日志 / 阈值配置 / 复核操作
+- [x] `moderation_queue` 表（一表多用，覆盖 log + queue 两个用例）：14 列含 kind / ref_id / ref_path / user_id / content 快照 / images JSON / score / label / reason / status / reviewer / created_at / reviewed_at；两个索引（status+created_at、kind）；外键 ON DELETE SET NULL。新 SeaORM 实体 + sea-orm-migration `m20260530_000002_moderation_queue`。`scripts/repair_seaql_migrations.sh` 给已有 init.sql 部署一键补齐迁移记录
+- [x] Admin 复核页 `/admin/moderation`：列表（Tab: 待复核/已通过/已拒绝/全部）+ 每行展示状态徽章 / 类型 / 路径 / 作者 / 评分百分比 / 理由 / 内容快照 / 图片缩略图；待复核行带「通过」「拒绝（删除内容）」两个操作。Dashboard 概览新增 `moderation_pending_count` 统计
+- [x] Hook 升级：comment / topic / reply 业务行落库后调 `enqueue_if_flagged`；Block 仍在前置拒绝，Flag 入队 pending；Allow no-op。3 个 server fn：`admin_list_moderation_queue` / `admin_approve_moderation` / `admin_reject_moderation`（reject 同时按 kind+ref_id 删除业务记录）
+- [x] 测试：3 个 live DB 测试验证 Allow no-op / Flag 入队 +1 / Block no-op（实跑 postgres，自带 schema bootstrap fallback）。workspace 全测 470+ passed
+- [ ] 阈值配置 admin UI 在线调整：现在仍需改 `site.json` 重启（Phase 5.1 hot reload 后再补 UI）
 
 ### 4.6 文档
 - [x] `docs/MODERATION_SPEC.md`：XSS 攻击面审计 / sanitize_user_html / dangerous_inner_html 审计 / ModerationEngine 骨架 / Phase 4.3-4.5 路线图 / 安全清单

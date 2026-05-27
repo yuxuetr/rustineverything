@@ -32,7 +32,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
-use rustineverything_core::engines::moderation::Verdict;
+use rustineverything_core::engines::moderation::{ModerationLabel, Verdict};
 use rustineverything_core::settings::SiteConfig;
 use rustineverything_llm::{default_client_from_env, LlmClient};
 use rustineverything_sdk::{ImageRef, ModerationSubmission};
@@ -98,6 +98,71 @@ pub async fn evaluate_with_images(
     .with_ref_path(ref_path)
     .with_images(images);
   evaluate_submission(submission).await
+}
+
+/// Phase 4.5：把 Flag verdict 入库到 `moderation_queue`。
+///
+/// Allow / Block 都是 no-op：Allow 不需要审核，Block 在上游已经被拒绝
+/// （未入业务库）。**只有 Flag 进队列**等 admin 复核。
+///
+/// `ref_id` 是业务表的主键（comment.id 等）。允许 None — 如果调用方
+/// 在业务插入前就想入队（用于事务一致性时），ref_id 可以为 None，但通常
+/// 推荐先插业务行拿到 id 再入队。
+///
+/// 失败仅 log warning，不传播错误：审核记录丢失不应影响主业务流。
+pub async fn enqueue_if_flagged(
+  db: &sea_orm::DatabaseConnection,
+  verdict: &Verdict,
+  kind: &str,
+  ref_id: Option<i64>,
+  ref_path: &str,
+  user_id: Option<i32>,
+  content: &str,
+  image_urls: &[String],
+) {
+  if verdict.label != ModerationLabel::Flag {
+    return;
+  }
+  use rustineverything_core::entities::moderation_queue;
+  use sea_orm::{ActiveModelTrait, ActiveValue::Set};
+
+  let images_json = if image_urls.is_empty() {
+    None
+  } else {
+    serde_json::to_string(image_urls).ok()
+  };
+
+  let am = moderation_queue::ActiveModel {
+    kind: Set(kind.to_string()),
+    ref_id: Set(ref_id),
+    ref_path: Set(ref_path.to_string()),
+    user_id: Set(user_id),
+    content: Set(content.to_string()),
+    images: Set(images_json),
+    score: Set(verdict.score),
+    label: Set("flag".to_string()),
+    reason: Set(verdict.reason.clone()),
+    status: Set("pending".to_string()),
+    reviewer_user_id: Set(None),
+    reviewer_note: Set(None),
+    created_at: Set(chrono::Utc::now().fixed_offset()),
+    reviewed_at: Set(None),
+    ..Default::default()
+  };
+  match am.insert(db).await {
+    Ok(row) => tracing::info!(
+      queue_id = row.id,
+      kind = %kind,
+      ref_path = %ref_path,
+      "moderation: flagged item enqueued for review"
+    ),
+    Err(e) => tracing::warn!(
+      error = %e,
+      kind = %kind,
+      ref_path = %ref_path,
+      "moderation: failed to enqueue flagged item (业务不受影响)"
+    ),
+  }
 }
 
 // ────────────────────────────────────────────────────────────

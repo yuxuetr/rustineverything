@@ -71,50 +71,40 @@ pub async fn post_comment(
         use rustineverything_core::entities::comment;
         use rustineverything_core::session::current_session_user;
         use rustineverything_module_moderation::{
-            absolutize_image_url, evaluate_submission, extract_image_urls, ModerationLabel,
+            absolutize_image_url, enqueue_if_flagged, evaluate_submission, extract_image_urls,
+            ModerationLabel,
         };
         use rustineverything_sdk::{ImageRef, ModerationSubmission};
-        use sea_orm::{EntityTrait, Set};
+        use sea_orm::{ActiveModelTrait, Set};
 
         let session_user = current_session_user()
             .ok_or_else(|| ServerFnError::new("请先登录后再发表评论"))?;
 
         // ── 审核（默认 disabled → pipeline 为空 → 直接 Allow，零开销） ──
         let base_url = std::env::var("BASE_URL").unwrap_or_default();
-        let image_urls: Vec<ImageRef> = extract_image_urls(&content)
+        let raw_image_urls: Vec<String> = extract_image_urls(&content)
             .into_iter()
-            .map(|u| ImageRef::url(absolutize_image_url(&u, &base_url)))
+            .map(|u| absolutize_image_url(&u, &base_url))
             .collect();
+        let image_refs: Vec<ImageRef> = raw_image_urls.iter().cloned().map(ImageRef::url).collect();
+        let ref_path = format!("blog:{}", blog_id);
         let submission = ModerationSubmission::new(&content)
             .with_kind("comment")
-            .with_ref_path(format!("blog:{}", blog_id))
-            .with_images(image_urls);
+            .with_ref_path(&ref_path)
+            .with_images(image_refs);
         let verdict = evaluate_submission(submission).await;
-        match verdict.label {
-            ModerationLabel::Block => {
-                tracing::warn!(
-                    user = %session_user.nickname,
-                    blog_id = %blog_id,
-                    score = verdict.score,
-                    reason = %verdict.reason,
-                    "moderation: comment BLOCKED"
-                );
-                return Err(ServerFnError::new(format!(
-                    "评论被审核拒绝：{}",
-                    if verdict.reason.is_empty() { "未通过内容审核".to_string() } else { verdict.reason }
-                )));
-            }
-            ModerationLabel::Flag => {
-                // Phase 4.5 会落审核队列；现阶段记日志后继续。
-                tracing::warn!(
-                    user = %session_user.nickname,
-                    blog_id = %blog_id,
-                    score = verdict.score,
-                    reason = %verdict.reason,
-                    "moderation: comment FLAGGED (still allowed; queue TBD)"
-                );
-            }
-            ModerationLabel::Allow => {}
+        if verdict.label == ModerationLabel::Block {
+            tracing::warn!(
+                user = %session_user.nickname,
+                blog_id = %blog_id,
+                score = verdict.score,
+                reason = %verdict.reason,
+                "moderation: comment BLOCKED"
+            );
+            return Err(ServerFnError::new(format!(
+                "评论被审核拒绝：{}",
+                if verdict.reason.is_empty() { "未通过内容审核".to_string() } else { verdict.reason }
+            )));
         }
 
         let db = get_or_init_pool()
@@ -124,14 +114,28 @@ pub async fn post_comment(
         let new_comment = comment::ActiveModel {
             blog_id: Set(blog_id.clone()),
             user_id: Set(session_user.id),
-            content: Set(content),
+            content: Set(content.clone()),
             created_at: Set(Utc::now().fixed_offset()),
             ..Default::default()
         };
-        comment::Entity::insert(new_comment)
-            .exec(&db)
+        // `insert(...)` 返回新行 ActiveModel；用 id 入审核队列
+        let inserted = new_comment
+            .insert(&db)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        // Flag → 入审核队列（Allow / Block 都是 no-op）
+        enqueue_if_flagged(
+            &db,
+            &verdict,
+            "comment",
+            Some(inserted.id as i64),
+            &ref_path,
+            Some(session_user.id),
+            &content,
+            &raw_image_urls,
+        )
+        .await;
 
         get_comments(blog_id).await
     }

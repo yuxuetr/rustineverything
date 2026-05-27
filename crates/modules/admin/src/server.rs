@@ -17,6 +17,28 @@ pub struct AdminOverview {
     pub topic_count: i64,
     pub reply_count: i64,
     pub annotation_count: i64,
+    /// Phase 4.5：待复核的审核队列数量
+    pub moderation_pending_count: i64,
+}
+
+/// 审核队列单行
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ModerationQueueRow {
+    pub id: i64,
+    pub kind: String,
+    pub ref_id: Option<i64>,
+    pub ref_path: String,
+    pub user_id: Option<i32>,
+    pub user_nickname: Option<String>,
+    pub content: String,
+    pub images: Vec<String>,
+    pub score: f32,
+    pub label: String,
+    pub reason: String,
+    pub status: String,
+    pub created_at: String,
+    pub reviewer_nickname: Option<String>,
+    pub reviewed_at: Option<String>,
 }
 
 /// 用户行（管理视角包含 role / 创建时间 / 绑定 provider）
@@ -174,7 +196,7 @@ pub async fn admin_overview() -> Result<AdminOverview, ServerFnError> {
     #[cfg(feature = "server")]
     {
         use rustineverything_core::entities::{
-            annotation, comment, topic, topic_reply, user as user_entity,
+            annotation, comment, moderation_queue, topic, topic_reply, user as user_entity,
         };
         use rustineverything_core::session::require_admin;
         use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
@@ -207,6 +229,11 @@ pub async fn admin_overview() -> Result<AdminOverview, ServerFnError> {
             .count(&db)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))? as i64;
+        let moderation_pending_count = moderation_queue::Entity::find()
+            .filter(moderation_queue::Column::Status.eq("pending"))
+            .count(&db)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))? as i64;
 
         Ok(AdminOverview {
             user_count,
@@ -215,6 +242,7 @@ pub async fn admin_overview() -> Result<AdminOverview, ServerFnError> {
             topic_count,
             reply_count,
             annotation_count,
+            moderation_pending_count,
         })
     }
     #[cfg(not(feature = "server"))]
@@ -734,6 +762,182 @@ pub async fn admin_reload_plugins() -> Result<String, ServerFnError> {
     #[cfg(not(feature = "server"))]
     {
         Err(ServerFnError::new("server only".to_string()))
+    }
+}
+
+// =============================================================
+// Phase 4.5：审核队列 (Moderation Queue)
+// =============================================================
+
+/// 列出审核队列。filter_status 可选 `"pending"` / `"approved"` / `"rejected"`，
+/// 留空表示全部。limit 默认 100（防止数据爆炸）。
+#[post("/api/admin/moderation/list")]
+pub async fn admin_list_moderation_queue(
+    filter_status: Option<String>,
+    limit: Option<u64>,
+) -> Result<Vec<ModerationQueueRow>, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use rustineverything_core::entities::{moderation_queue, user as user_entity};
+        use rustineverything_core::session::require_admin;
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+
+        let _ = require_admin()?;
+        let db = open_db().await?;
+
+        let mut q = moderation_queue::Entity::find();
+        if let Some(status) = filter_status.as_ref().filter(|s| !s.is_empty()) {
+            q = q.filter(moderation_queue::Column::Status.eq(status.clone()));
+        }
+        let rows = q
+            .order_by_desc(moderation_queue::Column::CreatedAt)
+            .limit(limit.unwrap_or(100).min(500))
+            .all(&db)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        // 批量查 user / reviewer 昵称
+        let mut user_ids: Vec<i32> = rows.iter().filter_map(|r| r.user_id).collect();
+        user_ids.extend(rows.iter().filter_map(|r| r.reviewer_user_id));
+        user_ids.sort_unstable();
+        user_ids.dedup();
+        let users = if user_ids.is_empty() {
+            Vec::new()
+        } else {
+            user_entity::Entity::find()
+                .filter(user_entity::Column::Id.is_in(user_ids))
+                .all(&db)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?
+        };
+        let lookup = |uid: Option<i32>| {
+            uid.and_then(|id| users.iter().find(|u| u.id == id).map(|u| u.nickname.clone()))
+        };
+
+        Ok(rows
+            .into_iter()
+            .map(|r| ModerationQueueRow {
+                id: r.id,
+                kind: r.kind,
+                ref_id: r.ref_id,
+                ref_path: r.ref_path,
+                user_id: r.user_id,
+                user_nickname: lookup(r.user_id),
+                content: r.content,
+                images: r
+                    .images
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+                    .unwrap_or_default(),
+                score: r.score,
+                label: r.label,
+                reason: r.reason,
+                status: r.status,
+                created_at: fmt_dt(r.created_at),
+                reviewer_nickname: lookup(r.reviewer_user_id),
+                reviewed_at: r.reviewed_at.map(fmt_dt),
+            })
+            .collect())
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = (filter_status, limit);
+        Ok(vec![])
+    }
+}
+
+/// 标记一条记录为已批准（保留内容）。
+#[post("/api/admin/moderation/approve")]
+pub async fn admin_approve_moderation(id: i64) -> Result<(), ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use rustineverything_core::entities::moderation_queue;
+        use rustineverything_core::session::require_admin;
+        use sea_orm::{ActiveValue::Set, EntityTrait};
+
+        let admin = require_admin()?;
+        let db = open_db().await?;
+        let now = chrono::Utc::now().fixed_offset();
+
+        let row = moderation_queue::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .ok_or_else(|| ServerFnError::new("审核记录不存在".to_string()))?;
+
+        let mut am: moderation_queue::ActiveModel = row.into();
+        am.status = Set("approved".to_string());
+        am.reviewer_user_id = Set(Some(admin.id));
+        am.reviewed_at = Set(Some(now));
+        moderation_queue::Entity::update(am)
+            .exec(&db)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(())
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = id;
+        Ok(())
+    }
+}
+
+/// 拒绝一条记录：把队列标记为 rejected，并删除关联的业务内容（如果 ref_id 在）。
+#[post("/api/admin/moderation/reject")]
+pub async fn admin_reject_moderation(id: i64) -> Result<(), ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use rustineverything_core::entities::{
+            annotation, comment, moderation_queue, topic, topic_reply,
+        };
+        use rustineverything_core::session::require_admin;
+        use sea_orm::{ActiveValue::Set, EntityTrait};
+
+        let admin = require_admin()?;
+        let db = open_db().await?;
+        let now = chrono::Utc::now().fixed_offset();
+
+        let row = moderation_queue::Entity::find_by_id(id)
+            .one(&db)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .ok_or_else(|| ServerFnError::new("审核记录不存在".to_string()))?;
+
+        // 尝试按 kind + ref_id 删除业务内容；找不到 ref_id 时跳过删除，仅打标记。
+        if let Some(ref_id) = row.ref_id {
+            match row.kind.as_str() {
+                "comment" => {
+                    let _ = comment::Entity::delete_by_id(ref_id as i32).exec(&db).await;
+                }
+                "topic" => {
+                    let _ = topic::Entity::delete_by_id(ref_id as i32).exec(&db).await;
+                }
+                "reply" => {
+                    let _ = topic_reply::Entity::delete_by_id(ref_id as i32).exec(&db).await;
+                }
+                "annotation" => {
+                    let _ = annotation::Entity::delete_by_id(ref_id).exec(&db).await;
+                }
+                _ => {
+                    tracing::warn!(kind = %row.kind, "unknown moderation kind; queue marked rejected without business delete");
+                }
+            }
+        }
+
+        let mut am: moderation_queue::ActiveModel = row.into();
+        am.status = Set("rejected".to_string());
+        am.reviewer_user_id = Set(Some(admin.id));
+        am.reviewed_at = Set(Some(now));
+        moderation_queue::Entity::update(am)
+            .exec(&db)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        Ok(())
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = id;
+        Ok(())
     }
 }
 

@@ -14,11 +14,14 @@ name = "rustineverything_module_moderation"
 async-trait = "0.1"
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sea-orm = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing = { workspace = true }
 
 # 工作区内的依赖：
 # - core::engines::moderation 提供 Verdict / ModerationLabel / ModerationThresholds
+# - core::entities::moderation_queue 提供入队 entity
 # - llm 提供 LlmClient + LlmMessage / LlmRole
 # - sdk 提供 ABI 数据类型 (ModerationSubmission / ModerationVerdict)
 rustineverything-core = { path = "../../core", features = ["server"] }
@@ -28,3 +31,4 @@ rustineverything-sdk = { path = "../../sdk" }
 [dev-dependencies]
 mockito = "1.5"
 dotenvy = "0.15"
+rustineverything-migration = { path = "../../migration" }

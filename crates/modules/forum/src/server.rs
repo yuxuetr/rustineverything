@@ -593,7 +593,8 @@ pub async fn create_topic(input: NewTopicInput) -> Result<TopicSummary, ServerFn
 
         // ── 审核：标题 + 正文一起评估 ──
         let combined = format!("标题：{}\n\n{}", input.title.trim(), input.content);
-        moderate_or_reject(&combined, "topic", &format!("topic-new:{}", input.tag)).await?;
+        let ref_path = format!("topic-new:{}", input.tag);
+        let outcome = moderate_or_reject(&combined, "topic", &ref_path).await?;
 
         let db = open_db().await?;
         let now = Utc::now().fixed_offset();
@@ -617,6 +618,18 @@ pub async fn create_topic(input: NewTopicInput) -> Result<TopicSummary, ServerFn
             .exec_with_returning(&db)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        // Flag → 入审核队列
+        enqueue_after_insert(
+            &db,
+            &outcome,
+            "topic",
+            inserted.id as i64,
+            &ref_path,
+            user.id,
+            &combined,
+        )
+        .await;
 
         let author = rustineverything_core::entities::user::Entity::find_by_id(user.id)
             .one(&db)
@@ -645,7 +658,8 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
         let user = require_session()?;
 
         // ── 审核 ──
-        moderate_or_reject(&content, "reply", &format!("topic:{}", topic_id)).await?;
+        let ref_path = format!("topic:{}", topic_id);
+        let outcome = moderate_or_reject(&content, "reply", &ref_path).await?;
 
         let db = open_db().await?;
 
@@ -665,12 +679,12 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
         let reply_am = topic_reply::ActiveModel {
             topic_id: Set(topic_id),
             user_id: Set(user.id),
-            content: Set(content),
+            content: Set(content.clone()),
             created_at: Set(now),
             ..Default::default()
         };
-        topic_reply::Entity::insert(reply_am)
-            .exec(&txn)
+        let inserted_reply = topic_reply::Entity::insert(reply_am)
+            .exec_with_returning(&txn)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -691,6 +705,18 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
         txn.commit()
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        // 事务提交后再入队（队列写失败不应回滚业务）
+        enqueue_after_insert(
+            &db,
+            &outcome,
+            "reply",
+            inserted_reply.id as i64,
+            &ref_path,
+            user.id,
+            &content,
+        )
+        .await;
 
         // 返回最新详情
         get_topic(topic_id)
@@ -894,31 +920,36 @@ mod tests {
 // 审核 helper（仅 server feature）
 // =============================================================
 
-/// 同时给 `create_topic` / `post_reply` 复用：抽 markdown 图、装填
-/// ModerationSubmission、跑全局 pipeline、按 verdict 返回错误或继续。
-///
-/// 默认 site.json::moderation.enabled = false → pipeline 内部 stages 为空 →
-/// evaluate 直接返回 Allow，零开销。
+/// 给 `create_topic` / `post_reply` 复用的审核结果，便于复核入队。
+#[cfg(feature = "server")]
+struct ModerationOutcome {
+    verdict: rustineverything_core::engines::moderation::Verdict,
+    image_urls: Vec<String>,
+}
+
+/// 在写库前评估内容：Block → ServerFnError，Allow / Flag → 返回 outcome 让
+/// 调用方在业务行落库后调 [`enqueue_after_insert`] 把 Flag 入审核队列。
 #[cfg(feature = "server")]
 async fn moderate_or_reject(
     content: &str,
     kind: &str,
     ref_path: &str,
-) -> Result<(), ServerFnError> {
+) -> Result<ModerationOutcome, ServerFnError> {
     use rustineverything_module_moderation::{
         absolutize_image_url, evaluate_submission, extract_image_urls, ModerationLabel,
     };
     use rustineverything_sdk::{ImageRef, ModerationSubmission};
 
     let base_url = std::env::var("BASE_URL").unwrap_or_default();
-    let images: Vec<ImageRef> = extract_image_urls(content)
+    let image_urls: Vec<String> = extract_image_urls(content)
         .into_iter()
-        .map(|u| ImageRef::url(absolutize_image_url(&u, &base_url)))
+        .map(|u| absolutize_image_url(&u, &base_url))
         .collect();
+    let image_refs: Vec<ImageRef> = image_urls.iter().cloned().map(ImageRef::url).collect();
     let submission = ModerationSubmission::new(content)
         .with_kind(kind)
         .with_ref_path(ref_path)
-        .with_images(images);
+        .with_images(image_refs);
     let verdict = evaluate_submission(submission).await;
     match verdict.label {
         ModerationLabel::Block => {
@@ -938,16 +969,33 @@ async fn moderate_or_reject(
                 }
             )))
         }
-        ModerationLabel::Flag => {
-            tracing::warn!(
-                kind = %kind,
-                ref_path = %ref_path,
-                score = verdict.score,
-                reason = %verdict.reason,
-                "moderation: forum submission FLAGGED (still allowed; queue TBD)"
-            );
-            Ok(())
-        }
-        ModerationLabel::Allow => Ok(()),
+        _ => Ok(ModerationOutcome {
+            verdict,
+            image_urls,
+        }),
     }
+}
+
+/// 业务行落库后调用：Flag 入队，Allow no-op。
+#[cfg(feature = "server")]
+async fn enqueue_after_insert(
+    db: &sea_orm::DatabaseConnection,
+    outcome: &ModerationOutcome,
+    kind: &str,
+    ref_id: i64,
+    ref_path: &str,
+    user_id: i32,
+    content: &str,
+) {
+    rustineverything_module_moderation::enqueue_if_flagged(
+        db,
+        &outcome.verdict,
+        kind,
+        Some(ref_id),
+        ref_path,
+        Some(user_id),
+        content,
+        &outcome.image_urls,
+    )
+    .await;
 }

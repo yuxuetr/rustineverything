@@ -24,13 +24,17 @@
 pub use sea_orm_migration::prelude::*;
 
 mod m20260527_000001_initial_schema;
+mod m20260530_000002_moderation_queue;
 
 pub struct Migrator;
 
 #[async_trait::async_trait]
 impl MigratorTrait for Migrator {
   fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-    vec![Box::new(m20260527_000001_initial_schema::Migration)]
+    vec![
+      Box::new(m20260527_000001_initial_schema::Migration),
+      Box::new(m20260530_000002_moderation_queue::Migration),
+    ]
   }
 }
 
@@ -44,7 +48,13 @@ mod tests {
       .iter()
       .map(|m| m.name().to_string())
       .collect();
-    assert_eq!(names, vec!["m20260527_000001_initial_schema".to_string()]);
+    assert_eq!(
+      names,
+      vec![
+        "m20260527_000001_initial_schema".to_string(),
+        "m20260530_000002_moderation_queue".to_string(),
+      ]
+    );
   }
 
   #[test]
