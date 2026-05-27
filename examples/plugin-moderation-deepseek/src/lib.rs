@@ -63,12 +63,39 @@ struct Submission {
   kind: String,
   #[serde(default)]
   ref_path: String,
+  /// 多模态：评论中夹带的图片（绝对 URL 或 data URL）。
+  /// 老宿主不传该字段时默认空 → 行为退化为纯文本审核。
+  #[serde(default)]
+  images: Vec<ImageRef>,
+}
+
+#[derive(Deserialize, Default)]
+struct ImageRef {
+  #[serde(default)]
+  url: String,
+  // 接受但不用：plugin 不需要知道 media_type；它由宿主 (`crates/llm`) 在
+  // 序列化到 LLM 时用（Anthropic 需要 media_type，OpenAI 从 URL 推断）。
+  #[serde(default)]
+  #[allow(dead_code)]
+  media_type: String,
 }
 
 #[derive(Serialize)]
 struct WireMessage<'a> {
   role: &'a str,
-  content: String,
+  /// 走 LlmContentBlock 数组：宿主 (`crates/llm`) 的 LlmMessage Deserializer
+  /// 兼容字符串和数组两种形态，但有图片时必须用数组。
+  /// 没有图片时统一也用数组（让宿主自己决定是否折叠回字符串）。
+  content: Vec<WireContent<'a>>,
+}
+
+/// 与 `rustineverything_llm::LlmContentBlock` 字面对齐的内容块。
+/// 插件 crate 不依赖 llm crate（避免 wasm 体积爆炸），手写同字面 JSON。
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum WireContent<'a> {
+  Text { text: &'a str },
+  ImageUrl { url: &'a str },
 }
 
 #[derive(Serialize)]
@@ -82,13 +109,14 @@ struct Verdict<'a> {
 // build_prompt：把待审内容包装成两条 LLM 消息
 // ────────────────────────────────────────────────────────────
 
-/// 系统提示词：让模型严格输出 JSON。
+/// 系统提示词：让模型严格输出 JSON。多模态维度只在 user message 含图时由模型考虑。
 const SYSTEM_PROMPT: &str = r#"你是一个评论审核员，负责判断用户提交的内容是否合规。
 判断维度（任意命中即视为有问题）：
 1. 谩骂、人身攻击、歧视、骚扰
-2. 色情、低俗、暴力血腥描写
+2. 色情、低俗、暴力血腥描写（**含图片**：色情、血腥、政治符号、令人不适的视觉元素）
 3. 政治敏感、违法犯罪、煽动性内容
 4. 垃圾广告、营销链接、无意义刷屏
+5. 文本与图片不匹配的诱导（标题党 / 钓鱼）
 
 **只输出一行 JSON**，不要 markdown 围栏、不要解释。字段：
 {"score": 0.0-1.0, "label": "allow"|"flag"|"block", "reason": "≤30 字理由"}
@@ -103,7 +131,7 @@ pub unsafe extern "C" fn moderation_build_prompt(ptr: *mut u8, len: usize) -> u6
   let raw = read_input(ptr, len);
   let sub: Submission = serde_json::from_slice(raw).unwrap_or_default();
 
-  // 把 kind / ref_path 当成附加上下文塞给 user message，方便模型针对场景调整严格度
+  // 文本块：把 kind / ref_path 当成附加上下文，方便模型针对场景调整严格度
   let user_text = if sub.kind.is_empty() && sub.ref_path.is_empty() {
     sub.content
   } else {
@@ -115,14 +143,25 @@ pub unsafe extern "C" fn moderation_build_prompt(ptr: *mut u8, len: usize) -> u6
     )
   };
 
+  // 构造 user message 的多块内容：先文本，再图片。
+  let mut user_blocks: Vec<WireContent> = Vec::with_capacity(1 + sub.images.len());
+  user_blocks.push(WireContent::Text { text: &user_text });
+  // images 字段会在 push 后被 borrow，因此这里需要保留 images 的所有权
+  // 直到序列化结束（vec! 通过引用持有）。直接借 sub.images 即可。
+  for img in &sub.images {
+    if !img.url.is_empty() {
+      user_blocks.push(WireContent::ImageUrl { url: &img.url });
+    }
+  }
+
   let messages = vec![
     WireMessage {
       role: "system",
-      content: SYSTEM_PROMPT.to_string(),
+      content: vec![WireContent::Text { text: SYSTEM_PROMPT }],
     },
     WireMessage {
       role: "user",
-      content: user_text,
+      content: user_blocks,
     },
   ];
   pack_json(&messages)

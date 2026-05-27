@@ -220,14 +220,47 @@ examples/plugin-moderation-deepseek # 演示 wasm 插件（build_prompt + parse_
 
 Block 决定必须由完整成功的流水线产出。这保证了 LLM 故障期间站点仍可用。
 
-### 3.5 端到端实测（DeepSeek）
+### 3.5 多模态（图像审核）
 
-`examples/plugin-moderation-deepseek` 已对接 DeepSeek（OpenAI 兼容模式）实测：
+评论 / 话题中夹带的图片（站点 `/uploads/...`）也走同一条流水线，无需独立插件。
 
-| 输入 | label | score | reason |
+**调用方式**：
+
+```rust
+use rustineverything_sdk::{ImageRef, ModerationSubmission};
+
+let submission = ModerationSubmission::new(comment_body)
+  .with_kind("comment")
+  .push_image(ImageRef::url("https://example.com/uploads/x.jpg"));
+let verdict = pipeline.evaluate(submission).await;
+```
+
+**URL 形态选择**：
+
+| 形态 | 适用 | 注意 |
+| --- | --- | --- |
+| 绝对 https URL | 生产 / 公网可达 | LLM 厂商服务器侧 fetch；要求图片端公开访问 |
+| `data:image/...;base64,...` | 私有 / localhost / 不想公开图 | 流量随 prompt 一起发；OpenAI / Anthropic 都接受 |
+| 相对 `/uploads/x.jpg` | 不允许 | hook 调用方必须先补全成绝对 URL |
+
+**协议转换**（`crates/llm` 自动处理）：
+
+- OpenAI 兼容：始终发 `image_url`，data URL 原样传
+- Anthropic 兼容：data URL 自动拆为 `source.base64`；http(s) URL 走 `source.url`
+
+**插件 build_prompt** 自动 detect `submission.images`，按顺序追加图像块到
+user message，并升级 system prompt 加入视觉审核维度（色情 / 血腥 / 政治
+符号 / 文本-图片不匹配的诱导）。
+
+### 3.6 端到端实测
+
+`examples/plugin-moderation-deepseek` 已对接两个端点实测：
+
+| 输入 | LLM | label | score |
 | --- | --- | --- | --- |
-| 「感谢分享，这篇博客写得很清晰」 | Allow | 0.10 | 正常友好评论，无任何违规内容 |
-| 「你这个 sb，写的什么垃圾文章…」 | Block | 0.95 | 包含辱骂性词汇和人身攻击 |
+| 「感谢分享，这篇博客写得很清晰」 | DeepSeek | Allow | 0.10 |
+| 「你这个 sb，写的什么垃圾文章…」 | DeepSeek | Block | 0.95 |
+| 「分享一张 Rust 的 logo」 + Rust logo 图 | gpt-4o-mini | Allow | 0.00 |
 
 复现命令：
 ```sh
@@ -236,7 +269,7 @@ cargo test -p rustineverything-module-moderation --test live_pipeline \
 ```
 要求 `.env` 配好任一对 LLM env，且 wasm 已 `cp` 到 `assets/plugins/`。
 
-### 3.6 启用 / 禁用
+### 3.7 启用 / 禁用
 
 ```sh
 # 启用：编辑 site.json 把 enabled 设 true，列上需要的插件
@@ -250,7 +283,7 @@ docker compose restart app
 
 无须改代码，无须重新 build 镜像。
 
-### 3.7 Phase 4.5 待补
+### 3.8 Phase 4.5 待补
 
 | 项 | 说明 |
 | --- | --- |
@@ -281,5 +314,5 @@ docker compose restart app
 | **用户 Markdown XSS 防护** | ✅ Phase 4.2 |
 | **`dangerous_inner_html` 审计** | ✅ Phase 4.2（仅 2 处，pulldown-latex 输出，无用户字面回显） |
 | LLM 内容审核（插件 + 默认 disabled） | ✅ Phase 4.3-4.4（基础设施完成；4.5 DB/Admin 待补 + comment/forum hook 待接） |
-| VLM 视觉审核 | ⏳ 后续（Anthropic Vision / GPT-4o 视觉，需扩展 ABI 传图） |
+| 视觉审核（图片评论） | ✅ 通过 `ModerationSubmission.images` + 多模态 LlmMessage，已对 gpt-4o-mini 实测 |
 | Hot Reload 内存回收验证 | ⏳ Phase 5.1 |

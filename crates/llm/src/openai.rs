@@ -29,7 +29,9 @@ use rustineverything_core::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::{config::DEFAULT_TIMEOUT_SECS, LlmClient, LlmMessage, LlmProvider, LlmRole};
+use super::{
+  config::DEFAULT_TIMEOUT_SECS, LlmClient, LlmContentBlock, LlmMessage, LlmProvider, LlmRole,
+};
 
 #[derive(Debug, Clone)]
 pub struct OpenAiChat {
@@ -65,8 +67,16 @@ impl OpenAiChat {
     self
   }
 
+  /// 计算最终 endpoint。允许 base_url 既不带 `/v1` 也带 `/v1`：
+  /// - `https://api.openai.com`       → 拼接 `/v1/chat/completions`
+  /// - `https://api.openai.com/v1`    → 拼接 `/chat/completions`
+  /// OpenAI 官方文档示例同时存在两种写法，用户两种都可能填。
   fn endpoint(&self) -> String {
-    format!("{}/v1/chat/completions", self.base_url)
+    if self.base_url.ends_with("/v1") {
+      format!("{}/chat/completions", self.base_url)
+    } else {
+      format!("{}/v1/chat/completions", self.base_url)
+    }
   }
 }
 
@@ -83,7 +93,33 @@ struct ChatRequest<'a> {
 #[derive(Serialize)]
 struct WireMessage<'a> {
   role: &'a str,
-  content: &'a str,
+  /// OpenAI 兼容协议下，content 可以是 **字符串** 或 **数组**。
+  /// 只有 1 个 Text block 时我们走字符串路径（最广兼容性，
+  /// 部分老 provider 不接受数组）；任何 image block 都走数组。
+  content: OpenAiContent<'a>,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum OpenAiContent<'a> {
+  Text(&'a str),
+  Blocks(Vec<OpenAiContentBlock<'a>>),
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum OpenAiContentBlock<'a> {
+  Text {
+    text: &'a str,
+  },
+  ImageUrl {
+    image_url: OpenAiImageUrl<'a>,
+  },
+}
+
+#[derive(Serialize)]
+struct OpenAiImageUrl<'a> {
+  url: std::borrow::Cow<'a, str>,
 }
 
 #[derive(Deserialize)]
@@ -120,19 +156,9 @@ impl LlmClient for OpenAiChat {
   }
 
   async fn chat(&self, messages: Vec<LlmMessage>) -> AppResult<String> {
-    let wire: Vec<WireMessage> = messages
-      .iter()
-      .map(|m| WireMessage {
-        role: m.role.as_str(),
-        content: &m.content,
-      })
-      .collect();
-
-    // role 校验：OpenAI 协议拒绝空 messages，提前给可读错误
-    if wire.is_empty() {
+    if messages.is_empty() {
       return Err(AppError::validation("LLM 请求 messages 不能为空"));
     }
-    // 角色覆盖检查；assistant-only 在 chat completions 中没意义
     let has_meaningful_input = messages
       .iter()
       .any(|m| matches!(m.role, LlmRole::System | LlmRole::User));
@@ -141,6 +167,14 @@ impl LlmClient for OpenAiChat {
         "LLM 请求 messages 至少需要包含 system 或 user 角色",
       ));
     }
+
+    let wire: Vec<WireMessage> = messages
+      .iter()
+      .map(|m| WireMessage {
+        role: m.role.as_str(),
+        content: build_openai_content(&m.content),
+      })
+      .collect();
 
     let body = ChatRequest {
       model: &self.model,
@@ -200,6 +234,35 @@ impl LlmClient for OpenAiChat {
 
     tracing::debug!(provider = "openai", len = answer.len(), "llm: chat ok");
     Ok(answer)
+  }
+}
+
+/// 把统一抽象的内容块转成 OpenAI 协议的 wire 形态。
+/// - 单 Text → `content: "string"`（最大兼容老 provider）
+/// - 任何含图像 / 多 block → `content: [{type, ...}, ...]` 数组
+/// - ImageBase64 → 转 data URL 嵌入 `image_url`
+fn build_openai_content(blocks: &[LlmContentBlock]) -> OpenAiContent<'_> {
+  match blocks {
+    [LlmContentBlock::Text { text }] => OpenAiContent::Text(text.as_str()),
+    _ => {
+      let v: Vec<OpenAiContentBlock> = blocks
+        .iter()
+        .map(|b| match b {
+          LlmContentBlock::Text { text } => OpenAiContentBlock::Text { text: text.as_str() },
+          LlmContentBlock::ImageUrl { url } => OpenAiContentBlock::ImageUrl {
+            image_url: OpenAiImageUrl {
+              url: std::borrow::Cow::Borrowed(url.as_str()),
+            },
+          },
+          LlmContentBlock::ImageBase64 { media_type, data } => OpenAiContentBlock::ImageUrl {
+            image_url: OpenAiImageUrl {
+              url: std::borrow::Cow::Owned(format!("data:{};base64,{}", media_type, data)),
+            },
+          },
+        })
+        .collect();
+      OpenAiContent::Blocks(v)
+    }
   }
 }
 
@@ -263,6 +326,26 @@ mod tests {
   async fn endpoint_trims_trailing_slash() {
     let client = OpenAiChat::new("https://api.deepseek.com/", "k", "m");
     assert_eq!(client.endpoint(), "https://api.deepseek.com/v1/chat/completions");
+  }
+
+  #[tokio::test]
+  async fn endpoint_handles_base_with_v1_suffix() {
+    // OpenAI 官方文档示例同时存在 `https://api.openai.com` 和
+    // `https://api.openai.com/v1` 两种写法；两者都必须工作。
+    let with_v1 = OpenAiChat::new("https://api.openai.com/v1", "k", "m");
+    assert_eq!(with_v1.endpoint(), "https://api.openai.com/v1/chat/completions");
+
+    let with_v1_slash = OpenAiChat::new("https://api.openai.com/v1/", "k", "m");
+    assert_eq!(
+      with_v1_slash.endpoint(),
+      "https://api.openai.com/v1/chat/completions"
+    );
+
+    let without_v1 = OpenAiChat::new("https://api.openai.com", "k", "m");
+    assert_eq!(
+      without_v1.endpoint(),
+      "https://api.openai.com/v1/chat/completions"
+    );
   }
 
   #[tokio::test]
@@ -341,6 +424,81 @@ mod tests {
       .await
       .unwrap_err();
     assert!(matches!(err, AppError::Validation(_)));
+  }
+
+  // ── 多模态 wire format ─────────────────────────────────────
+
+  #[tokio::test]
+  async fn text_only_message_still_serialized_as_string_content() {
+    // 单 Text block 应当走字符串路径，确保最大 provider 兼容性。
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+      .mock("POST", "/v1/chat/completions")
+      .match_body(mockito::Matcher::AllOf(vec![
+        mockito::Matcher::Regex("\"content\":\"hi\"".to_string()),
+      ]))
+      .with_status(200)
+      .with_body(r#"{"choices":[{"message":{"role":"assistant","content":"OK"}}]}"#)
+      .create_async()
+      .await;
+
+    let client = build_chat(&server.url());
+    let _ = client.chat(vec![LlmMessage::user("hi")]).await.unwrap();
+    mock.assert_async().await;
+  }
+
+  #[tokio::test]
+  async fn message_with_image_url_serializes_as_blocks_array() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+      .mock("POST", "/v1/chat/completions")
+      .match_body(mockito::Matcher::AllOf(vec![
+        mockito::Matcher::Regex("\"type\":\"text\"".to_string()),
+        mockito::Matcher::Regex("\"text\":\"what is this\\?\"".to_string()),
+        mockito::Matcher::Regex("\"type\":\"image_url\"".to_string()),
+        mockito::Matcher::Regex(
+          "\"url\":\"https://example.com/a.jpg\"".to_string(),
+        ),
+      ]))
+      .with_status(200)
+      .with_body(r#"{"choices":[{"message":{"role":"assistant","content":"a cat"}}]}"#)
+      .create_async()
+      .await;
+
+    let client = build_chat(&server.url());
+    let _ = client
+      .chat(vec![LlmMessage::user_with_image_urls(
+        "what is this?",
+        vec!["https://example.com/a.jpg".to_string()],
+      )])
+      .await
+      .unwrap();
+    mock.assert_async().await;
+  }
+
+  #[tokio::test]
+  async fn image_base64_block_emitted_as_data_url() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+      .mock("POST", "/v1/chat/completions")
+      .match_body(mockito::Matcher::Regex(
+        "\"url\":\"data:image/png;base64,iVBORw0K\"".to_string(),
+      ))
+      .with_status(200)
+      .with_body(r#"{"choices":[{"message":{"role":"assistant","content":"png"}}]}"#)
+      .create_async()
+      .await;
+
+    let client = build_chat(&server.url());
+    let msg = LlmMessage {
+      role: LlmRole::User,
+      content: vec![
+        LlmContentBlock::text("look"),
+        LlmContentBlock::image_base64("image/png", "iVBORw0K"),
+      ],
+    };
+    let _ = client.chat(vec![msg]).await.unwrap();
+    mock.assert_async().await;
   }
 
   #[test]

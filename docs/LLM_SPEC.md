@@ -54,6 +54,38 @@ if let Some(client) = default_client_from_env() {
 }
 ```
 
+### 3.1 多模态（图像）
+
+```rust
+use rustineverything_llm::{LlmMessage, LlmContentBlock, LlmRole};
+
+// 便捷构造：文本 + 一组图片 URL
+let msg = LlmMessage::user_with_image_urls(
+  "这条评论里的图有问题吗？",
+  vec!["https://example.com/uploads/x.jpg".into()],
+);
+
+// 或手动拼内容块（含 base64 内联）：
+let msg = LlmMessage {
+  role: LlmRole::User,
+  content: vec![
+    LlmContentBlock::text("look"),
+    LlmContentBlock::image_base64("image/png", "iVBORw0K..."),
+  ],
+};
+```
+
+| Block | OpenAI 序列化 | Anthropic 序列化 |
+| --- | --- | --- |
+| `Text` | 单块时折叠为 `content: "string"`；多块时 `{"type":"text","text":"..."}` | 始终 `{"type":"text","text":"..."}` |
+| `ImageUrl` (http/s) | `{"type":"image_url","image_url":{"url":"..."}}` | `{"type":"image","source":{"type":"url","url":"..."}}` |
+| `ImageUrl` (data:) | 同 URL（OpenAI 直接接受 data URL） | 自动拆解为 `{"type":"base64","media_type":...,"data":...}` |
+| `ImageBase64` | 嵌入 data URL | `{"type":"image","source":{"type":"base64",...}}` |
+
+**反序列化兼容**：`LlmMessage` 自定义 Deserialize 同时接受 `content: "string"`
+（老格式 / 老插件）和 `content: [...]`（新多模态），所以**老 wasm 插件不用
+重建**也能在新宿主上跑。
+
 [`LlmClient`] trait：
 
 ```rust

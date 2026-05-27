@@ -269,7 +269,9 @@
 
 ### 4.1.5 LLM 双模式客户端（Phase 4 / 5 前置）
 - [x] `crates/llm/`（**独立 crate**，不在 core）：OpenAI 兼容 + Anthropic 兼容双协议，配置驱动选择（无运行时 failover）。四个独立 env：`OPENAI_LLM_BASE_URL` + `OPENAI_LLM_API_KEY`、`ANTHROPIC_LLM_BASE_URL` + `ANTHROPIC_LLM_API_KEY`，可选 `OPENAI_LLM_MODEL` / `ANTHROPIC_LLM_MODEL`（默认 `deepseek-chat`）。Anthropic 客户端自动把 `system` 角色抽取到顶层 + 校验 conv 以 user 起始 + 处理 `max_tokens` 必填语义。**架构**：core 保持精简，不再背 `reqwest` / `async-trait` / `mockito` / `dotenvy`；纯静态部署不依赖本 crate
-- [x] 测试：30 个 mockito 单测（请求 shape / header / 错误 envelope / 参数校验 / UTF-8 truncate）+ 2 个 live 集成测试（默认 `#[ignore]`，已对 DeepSeek 两端点实测通过：reply=`2`）。Mock 客户端用 `.no_proxy()` 遵循项目约定
+- [x] 测试：46 个 mockito 单测（含多模态 wire format 验证）+ live 集成测试（实测 OpenAI gpt-4o-mini + DeepSeek anthropic 兼容均通过）。Mock 客户端用 `.no_proxy()` 遵循项目约定
+- [x] **多模态扩展**：`LlmMessage.content` 改为 `Vec<LlmContentBlock>`（Text / ImageUrl / ImageBase64）。OpenAI 客户端单 Text → 字符串形态（兼容老 provider）/ 含图 → 数组形态；Anthropic 始终数组形态 + 自动 data URL → base64 source 拆分。**反序列化兼容**：自定义 `Deserialize` 接受字符串或数组，老插件 wasm 不用重建
+- [x] **base_url 智能 endpoint**：容忍 `https://api.openai.com` 和 `https://api.openai.com/v1` 两种写法，不重复拼 `/v1`
 - [x] 文档：`docs/LLM_SPEC.md` + `.env.example` 4 个新变量段落
 
 ### 4.2 模块接入
@@ -283,7 +285,7 @@
 - [x] 宿主负责 HTTP + 超时 + 重试：通过 `crates/llm::LlmClient`，默认 timeout 30s。fail-open 策略：插件加载失败 / LLM 失败 / JSON 解析失败 → 当前 stage 返回 Allow + 写 warning 日志，不阻塞用户提交
 
 ### 4.4 内置审核插件
-- [x] `examples/plugin-moderation-deepseek`：示例审核插件（适配任意 OpenAI / Anthropic 兼容 LLM）。系统 prompt 让模型输出 `{score, label, reason}` JSON；带 markdown 围栏抽取容错；5 个 host 端单测；wasm 产物 146 KB。**已实测端到端**（DeepSeek）：友善评论 → Allow(0.1)，辱骂评论 → Block(0.95)
+- [x] `examples/plugin-moderation-deepseek`：示例审核插件（适配任意 OpenAI / Anthropic 兼容 LLM）。系统 prompt 让模型输出 `{score, label, reason}` JSON；带 markdown 围栏抽取容错；5 个 host 端单测；wasm 产物 154 KB。**多模态升级**：消费 `ModerationSubmission.images`，把 URL 块追加到 user message，prompt 加入图像审核维度。**已实测端到端**（OpenAI gpt-4o-mini）：纯文本 benign → Allow(0)，纯文本 abusive → Block(1.0)，带图（Rust logo）→ Allow(0)
 - [ ] 后续：`moderation-anthropic`（Claude 视觉）/ `moderation-llamaguard`（本地 ollama fallback）— 待按需追加，ABI 已稳定
 
 ### 4.5 数据库 + Admin

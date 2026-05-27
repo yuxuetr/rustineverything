@@ -20,7 +20,7 @@ use rustineverything_llm::{default_client_from_env, LlmConfig};
 use rustineverything_module_moderation::{
   AsyncModerationStage, ModerationLabel, PluginModerationStage,
 };
-use rustineverything_sdk::ModerationSubmission;
+use rustineverything_sdk::{ImageRef, ModerationSubmission};
 
 fn workspace_root() -> PathBuf {
   // crates/modules/moderation/ → 上溯 3 级
@@ -111,6 +111,38 @@ async fn abusive_comment_is_flagged_or_blocked() {
     v.label,
     ModerationLabel::Allow,
     "明显辱骂应至少 Flag: {:?}",
+    v
+  );
+}
+
+#[tokio::test]
+#[ignore = "Live vision LLM + wasm. Requires gpt-4o-mini / claude-3.5 etc."]
+async fn comment_with_benign_image_returns_allow() {
+  let Some(llm) = check_prereqs() else {
+    return;
+  };
+  let stage = PluginModerationStage::new("moderation-deepseek", plugin_path(), llm);
+
+  // 用 Wikipedia 公开 logo（中立内容）。LLM provider 服务器侧 fetch。
+  // 若用 DeepSeek 之类不带视觉的端点，会返回错误 → stage fail-open 为 Allow。
+  let url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Rust_programming_language_black_logo.svg/240px-Rust_programming_language_black_logo.svg.png";
+
+  let v = stage
+    .evaluate(
+      &ModerationSubmission::new("分享一张 Rust 的 logo")
+        .with_kind("comment")
+        .push_image(ImageRef::url(url).with_media_type("image/png")),
+    )
+    .await;
+
+  println!(
+    "[benign+image] label={:?} score={} reason={}",
+    v.label, v.score, v.reason
+  );
+  assert_eq!(
+    v.label,
+    ModerationLabel::Allow,
+    "中立图片不应被拒: {:?}",
     v
   );
 }

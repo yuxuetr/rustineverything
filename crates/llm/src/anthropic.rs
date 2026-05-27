@@ -45,7 +45,9 @@ use rustineverything_core::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::{config::DEFAULT_TIMEOUT_SECS, LlmClient, LlmMessage, LlmProvider, LlmRole};
+use super::{
+  config::DEFAULT_TIMEOUT_SECS, LlmClient, LlmContentBlock, LlmMessage, LlmProvider, LlmRole,
+};
 
 /// Anthropic API 版本头。0.x SDK 与 2023-06-01 兼容；后续升级时更新。
 const ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -88,8 +90,17 @@ impl AnthropicChat {
     self
   }
 
+  /// 计算最终 endpoint。允许 base_url 既不带 `/v1` 也带 `/v1`：
+  /// - `https://api.anthropic.com`              → 拼接 `/v1/messages`
+  /// - `https://api.anthropic.com/v1`           → 拼接 `/messages`
+  /// - `https://api.deepseek.com/anthropic`     → 拼接 `/v1/messages`
+  /// - `https://api.deepseek.com/anthropic/v1`  → 拼接 `/messages`
   fn endpoint(&self) -> String {
-    format!("{}/v1/messages", self.base_url)
+    if self.base_url.ends_with("/v1") {
+      format!("{}/messages", self.base_url)
+    } else {
+      format!("{}/v1/messages", self.base_url)
+    }
   }
 }
 
@@ -98,13 +109,19 @@ impl AnthropicChat {
 // ────────────────────────────────────────────────────────────
 
 /// 把统一抽象的 messages 拆成 `(system_prompt, conversation)`。
-/// 多个 system 消息按出现顺序用换行串接，符合常见 Anthropic 客户端做法。
+/// system 消息的 **文本块** 按出现顺序用换行串接；图像 block 在 system
+/// 角色下被丢弃（Anthropic 顶层 `system` 字段只支持字符串）。
 fn split_system_and_messages(messages: &[LlmMessage]) -> (Option<String>, Vec<&LlmMessage>) {
-  let mut systems = Vec::new();
+  let mut systems: Vec<String> = Vec::new();
   let mut conv: Vec<&LlmMessage> = Vec::new();
   for m in messages {
     match m.role {
-      LlmRole::System => systems.push(m.content.as_str()),
+      LlmRole::System => {
+        let text = m.text_only();
+        if !text.is_empty() {
+          systems.push(text);
+        }
+      }
       _ => conv.push(m),
     }
   }
@@ -128,7 +145,80 @@ struct MessagesRequest<'a> {
 #[derive(Serialize)]
 struct WireMessage<'a> {
   role: &'a str,
-  content: &'a str,
+  /// Anthropic 协议 content 始终是数组。
+  content: Vec<AnthropicContentBlock<'a>>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum AnthropicContentBlock<'a> {
+  Text {
+    text: &'a str,
+  },
+  Image {
+    source: AnthropicImageSource<'a>,
+  },
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+enum AnthropicImageSource<'a> {
+  Base64 {
+    media_type: &'a str,
+    data: &'a str,
+  },
+  Url {
+    url: &'a str,
+  },
+}
+
+/// 把内容块转 Anthropic 协议 wire 形态。
+/// - Text → `{type:"text",...}`
+/// - ImageUrl with `data:` prefix → 拆出 media_type / base64 走 `source.base64`
+/// - ImageUrl with `http(s):` → `source.url`（2024-10+ Claude 支持）
+/// - ImageBase64 → `source.base64`
+fn build_anthropic_content<'a>(blocks: &'a [LlmContentBlock]) -> Vec<AnthropicContentBlock<'a>> {
+  blocks
+    .iter()
+    .map(|b| match b {
+      LlmContentBlock::Text { text } => AnthropicContentBlock::Text { text: text.as_str() },
+      LlmContentBlock::ImageUrl { url } => {
+        // 如果是 data URL，拆成 base64 source；否则走 url source
+        if let Some((media_type, data)) = parse_data_url(url) {
+          AnthropicContentBlock::Image {
+            source: AnthropicImageSource::Base64 { media_type, data },
+          }
+        } else {
+          AnthropicContentBlock::Image {
+            source: AnthropicImageSource::Url { url: url.as_str() },
+          }
+        }
+      }
+      LlmContentBlock::ImageBase64 { media_type, data } => AnthropicContentBlock::Image {
+        source: AnthropicImageSource::Base64 {
+          media_type: media_type.as_str(),
+          data: data.as_str(),
+        },
+      },
+    })
+    .collect()
+}
+
+/// 拆 `data:<media_type>;base64,<data>` 为 `(media_type, data)`。
+/// 不是 data URL 返回 None。
+fn parse_data_url(url: &str) -> Option<(&str, &str)> {
+  let rest = url.strip_prefix("data:")?;
+  let semi = rest.find(';')?;
+  let media_type = &rest[..semi];
+  let after_semi = &rest[semi + 1..];
+  let comma = after_semi.find(',')?;
+  // 形如 "base64,<data>" — 只接受 base64 编码
+  let encoding = &after_semi[..comma];
+  if encoding != "base64" {
+    return None;
+  }
+  let data = &after_semi[comma + 1..];
+  Some((media_type, data))
 }
 
 #[derive(Deserialize)]
@@ -183,7 +273,7 @@ impl LlmClient for AnthropicChat {
       .iter()
       .map(|m| WireMessage {
         role: m.role.as_str(),
-        content: m.content.as_str(),
+        content: build_anthropic_content(&m.content),
       })
       .collect();
 
@@ -462,5 +552,135 @@ mod tests {
   async fn endpoint_trims_trailing_slash() {
     let client = AnthropicChat::new("https://api.deepseek.com/anthropic/", "k", "m");
     assert_eq!(client.endpoint(), "https://api.deepseek.com/anthropic/v1/messages");
+  }
+
+  // ── 多模态 wire format + data URL 拆分 ─────────────────────
+
+  #[test]
+  fn parse_data_url_extracts_media_type_and_data() {
+    let (mt, data) = parse_data_url("data:image/png;base64,iVBORw0K").unwrap();
+    assert_eq!(mt, "image/png");
+    assert_eq!(data, "iVBORw0K");
+  }
+
+  #[test]
+  fn parse_data_url_returns_none_for_non_data() {
+    assert!(parse_data_url("https://example.com/a.jpg").is_none());
+    assert!(parse_data_url("data:image/png,iVBORw0K").is_none()); // 缺 base64;
+  }
+
+  #[tokio::test]
+  async fn text_only_message_serialized_as_text_block() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+      .mock("POST", "/v1/messages")
+      .match_body(mockito::Matcher::AllOf(vec![
+        mockito::Matcher::Regex("\"type\":\"text\"".to_string()),
+        mockito::Matcher::Regex("\"text\":\"hi\"".to_string()),
+      ]))
+      .with_status(200)
+      .with_body(r#"{"type":"message","content":[{"type":"text","text":"ok"}]}"#)
+      .create_async()
+      .await;
+
+    let client = build_chat(&server.url());
+    let _ = client.chat(vec![LlmMessage::user("hi")]).await.unwrap();
+    mock.assert_async().await;
+  }
+
+  #[tokio::test]
+  async fn image_url_serialized_as_url_source() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+      .mock("POST", "/v1/messages")
+      .match_body(mockito::Matcher::AllOf(vec![
+        mockito::Matcher::Regex("\"type\":\"image\"".to_string()),
+        mockito::Matcher::Regex("\"type\":\"url\"".to_string()),
+        mockito::Matcher::Regex(
+          "\"url\":\"https://example.com/a.jpg\"".to_string(),
+        ),
+      ]))
+      .with_status(200)
+      .with_body(r#"{"type":"message","content":[{"type":"text","text":"a"}]}"#)
+      .create_async()
+      .await;
+
+    let client = build_chat(&server.url());
+    let _ = client
+      .chat(vec![LlmMessage::user_with_image_urls(
+        "what",
+        vec!["https://example.com/a.jpg".to_string()],
+      )])
+      .await
+      .unwrap();
+    mock.assert_async().await;
+  }
+
+  #[tokio::test]
+  async fn data_url_split_into_base64_source() {
+    // ImageUrl with `data:` prefix should be split to base64 source
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+      .mock("POST", "/v1/messages")
+      .match_body(mockito::Matcher::AllOf(vec![
+        mockito::Matcher::Regex("\"type\":\"base64\"".to_string()),
+        mockito::Matcher::Regex("\"media_type\":\"image/png\"".to_string()),
+        mockito::Matcher::Regex("\"data\":\"iVBORw0K\"".to_string()),
+      ]))
+      .with_status(200)
+      .with_body(r#"{"type":"message","content":[{"type":"text","text":"a"}]}"#)
+      .create_async()
+      .await;
+
+    let client = build_chat(&server.url());
+    let msg = LlmMessage {
+      role: LlmRole::User,
+      content: vec![
+        LlmContentBlock::text("look"),
+        LlmContentBlock::image_url("data:image/png;base64,iVBORw0K"),
+      ],
+    };
+    let _ = client.chat(vec![msg]).await.unwrap();
+    mock.assert_async().await;
+  }
+
+  #[tokio::test]
+  async fn image_base64_block_serialized_directly() {
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+      .mock("POST", "/v1/messages")
+      .match_body(mockito::Matcher::AllOf(vec![
+        mockito::Matcher::Regex("\"type\":\"base64\"".to_string()),
+        mockito::Matcher::Regex("\"media_type\":\"image/jpeg\"".to_string()),
+        mockito::Matcher::Regex("\"data\":\"/9j/4AA\"".to_string()),
+      ]))
+      .with_status(200)
+      .with_body(r#"{"type":"message","content":[{"type":"text","text":"a"}]}"#)
+      .create_async()
+      .await;
+
+    let client = build_chat(&server.url());
+    let msg = LlmMessage {
+      role: LlmRole::User,
+      content: vec![LlmContentBlock::image_base64("image/jpeg", "/9j/4AA")],
+    };
+    let _ = client.chat(vec![msg]).await.unwrap();
+    mock.assert_async().await;
+  }
+
+  #[tokio::test]
+  async fn endpoint_handles_base_with_v1_suffix() {
+    let with_v1 = AnthropicChat::new("https://api.anthropic.com/v1", "k", "m");
+    assert_eq!(with_v1.endpoint(), "https://api.anthropic.com/v1/messages");
+
+    let without_v1 = AnthropicChat::new("https://api.anthropic.com", "k", "m");
+    assert_eq!(without_v1.endpoint(), "https://api.anthropic.com/v1/messages");
+
+    // DeepSeek 的 /anthropic 路径 + 带或不带 /v1
+    let deepseek = AnthropicChat::new("https://api.deepseek.com/anthropic", "k", "m");
+    assert_eq!(deepseek.endpoint(), "https://api.deepseek.com/anthropic/v1/messages");
+
+    let deepseek_v1 = AnthropicChat::new("https://api.deepseek.com/anthropic/v1", "k", "m");
+    assert_eq!(deepseek_v1.endpoint(), "https://api.deepseek.com/anthropic/v1/messages");
   }
 }
