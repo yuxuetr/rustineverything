@@ -31,8 +31,6 @@
 //! `deepseek-chat`（DeepSeek 同名）。可分别覆盖：`OPENAI_LLM_MODEL=...`、
 //! `ANTHROPIC_LLM_MODEL=...`。
 
-#![cfg(feature = "server")]
-
 pub mod anthropic;
 pub mod config;
 pub mod openai;
@@ -41,8 +39,8 @@ pub use anthropic::AnthropicChat;
 pub use config::{LlmConfig, LlmProvider};
 pub use openai::OpenAiChat;
 
-use crate::error::AppResult;
 use async_trait::async_trait;
+use rustineverything_core::error::AppResult;
 use serde::{Deserialize, Serialize};
 
 /// 聊天消息中的角色。两个协议共用此抽象，序列化时分别按各自约定写入。

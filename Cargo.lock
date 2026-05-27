@@ -5679,13 +5679,10 @@ name = "rustineverything-core"
 version = "0.1.0"
 dependencies = [
  "aes-gcm",
- "async-trait",
  "base64",
  "chrono",
  "dioxus",
- "dotenvy",
  "jsonwebtoken",
- "mockito",
  "oauth2",
  "rand 0.9.3",
  "reqwest",
@@ -5699,6 +5696,21 @@ dependencies = [
  "tokio",
  "tracing",
  "wasmi",
+]
+
+[[package]]
+name = "rustineverything-llm"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "dotenvy",
+ "mockito",
+ "reqwest",
+ "rustineverything-core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

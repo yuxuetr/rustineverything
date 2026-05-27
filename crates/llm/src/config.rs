@@ -4,8 +4,6 @@
 //!
 //! 测试时绕开 env：直接构造 [`LlmConfig`] 字段后调 [`LlmConfig::build`]。
 
-#![cfg(feature = "server")]
-
 use std::env;
 
 use super::{AnthropicChat, LlmClient, OpenAiChat};

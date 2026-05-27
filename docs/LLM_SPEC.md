@@ -1,8 +1,12 @@
 # LLM Integration Spec
 
-> 适用阶段：Phase 4 前置。位于 `crates/core/src/llm/`。
+> 适用阶段：Phase 4 前置。位于 `crates/llm/`（独立 crate，**不在** `crates/core`）。
 > 双模式 LLM 客户端：OpenAI 兼容 + Anthropic 兼容。审核 / 自由问答 / 摘要
 > 等业务调用都通过 [`LlmClient`] trait 接入，对协议差异不可见。
+>
+> **架构定位**：纯静态站点部署 / 不需要审核 / 不需要 AI 助理的用户完全
+> 不必依赖本 crate，零额外编译时间和二进制体积。只在 `crates/modules/
+> moderation`（未来）或自定义业务的 `server` feature 下按需引入。
 
 ## 1. 为什么是双模式
 
@@ -38,7 +42,7 @@
 ## 3. 接口
 
 ```rust
-use rustineverything_core::llm::{default_client_from_env, LlmMessage};
+use rustineverything_llm::{default_client_from_env, LlmMessage};
 
 if let Some(client) = default_client_from_env() {
   let reply = client

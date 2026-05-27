@@ -23,15 +23,13 @@
 //! { "choices": [{"message": {"role": "assistant", "content": "..."}}] }
 //! ```
 
-#![cfg(feature = "server")]
-
 use async_trait::async_trait;
 use reqwest::Client;
+use rustineverything_core::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use super::{config::DEFAULT_TIMEOUT_SECS, LlmClient, LlmMessage, LlmProvider, LlmRole};
-use crate::error::{AppError, AppResult};
 
 #[derive(Debug, Clone)]
 pub struct OpenAiChat {

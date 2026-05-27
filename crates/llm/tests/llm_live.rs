@@ -22,9 +22,7 @@
 //! 如果对应的 env 未配置，测试 `early return` 并提示。这样可在不同 CI
 //! / 本地环境下「只跑配置好的那一种」。
 
-#![cfg(feature = "server")]
-
-use rustineverything_core::llm::{
+use rustineverything_llm::{
   AnthropicChat, LlmClient, LlmConfig, LlmMessage, LlmProvider, OpenAiChat,
 };
 
@@ -34,7 +32,7 @@ fn load_env() {
 }
 
 fn workspace_root() -> std::path::PathBuf {
-  // crates/core/tests/ → 上溯 3 级
+  // CARGO_MANIFEST_DIR = crates/llm/ → 上溯 2 级
   std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
     .parent()
     .and_then(|p| p.parent())

@@ -1,0 +1,25 @@
+[package]
+name = "rustineverything-llm"
+version = "0.1.0"
+edition = "2021"
+description = "LLM 双模式（OpenAI + Anthropic 兼容）客户端，对外提供统一的 LlmClient trait"
+
+# 设计：这是 **server-only 基础设施 crate**。
+# - 完全不在 wasm32 客户端编译（依赖 reqwest 真实 HTTP，wasm32 跑不动）
+# - 与业务模块同级，独立于 `crates/core`，让纯静态站点部署不必背 LLM 依赖
+# - 调用方：仅 `crates/modules/moderation`（未来）或自定义业务在 server feature 下显式开启
+
+[dependencies]
+async-trait = "0.1"
+reqwest = { workspace = true, features = ["json", "rustls-tls"], default-features = false }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tracing = { workspace = true }
+# 复用 core 的 AppError / AppResult，避免在工作区内引入第二套错误类型。
+# 这是「上游 → 下游」依赖：llm 用 core 的错误抽象，不反过来。
+rustineverything-core = { path = "../core", features = ["server"] }
+
+[dev-dependencies]
+mockito = "1.5"
+dotenvy = "0.15"

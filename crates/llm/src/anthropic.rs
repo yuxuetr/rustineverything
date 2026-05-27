@@ -39,15 +39,13 @@
 //! { "type": "error", "error": {"type": "...", "message": "..."} }
 //! ```
 
-#![cfg(feature = "server")]
-
 use async_trait::async_trait;
 use reqwest::Client;
+use rustineverything_core::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use super::{config::DEFAULT_TIMEOUT_SECS, LlmClient, LlmMessage, LlmProvider, LlmRole};
-use crate::error::{AppError, AppResult};
 
 /// Anthropic API 版本头。0.x SDK 与 2023-06-01 兼容；后续升级时更新。
 const ANTHROPIC_VERSION: &str = "2023-06-01";
