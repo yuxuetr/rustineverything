@@ -371,8 +371,8 @@
 - [x] 删除全部 `println!` 调试输出：33 个调用点迁移到 `tracing::{info,warn,error,debug}`，按消息语义选级别（启动成功/审计=info / 跳过/降级=warn / 调用失败=error / OAuth 步骤=debug）。保留：`build.rs` 中 cargo 指令、`#[cfg(test)]` 块中的 println、`crates/app/assets/` 下课程代码示例（内容资产）。涉及 12 个文件：core 4 / app 4 / widgets 1 / modules/{admin,cases,search,search} 3。
 
 ### 7.6 文档
-- [ ] `docs/DEPLOY_GUIDE.md`
-- [ ] `docs/OPERATIONS.md`
+- [x] `docs/DEPLOY_GUIDE.md`：从零部署 runbook — 部署方式概览 / 前置条件 / `.env` 准备 / docker compose 一键起 / 烟测端点 / admin 升级 / 单 Docker 镜像 / OAuth 凭据申请 / HTTPS 反代（Caddy + nginx + Traefik）/ `site.json` 配置示例 / 内容资产 / 升级流程 / 上线 checklist / 已知限制
+- [x] `docs/OPERATIONS.md`：day-2 运维 — 日志（tracing + RUST_LOG + 关键事件表）/ 数据库 + uploads 备份与恢复 / 迁移管理（自动 + 手动 sea-orm-cli + 新增模板）/ 监控指标 / 6 类故障排查 / 应用 + schema + 完整回滚 / 性能调优（连接池、镜像缓存、wasm 冷启动）/ 安全运维任务表
 
 ### 7.7 验收门禁
 - [ ] CI 全绿
