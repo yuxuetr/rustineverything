@@ -1,0 +1,121 @@
+# Phase 7.4.2：一键启动整套站点（app + postgres + ollama）。
+#
+# 使用：
+#   cp .env.example .env       # 编辑 JWT_SECRET / BASE_URL 等
+#   docker compose up -d        # 启动全部
+#   docker compose logs -f app  # 跟随日志
+#
+# 设计：
+# - **postgres 16** 提供主存储。健康检查通过后，app 才启动 + 自动跑
+#   `sea-orm-migration` (Phase 7.1)。
+# - **ollama** 用于 Phase 4 LLM 审核（`moderation-llamaguard` 等本地
+#   fallback）。镜像启动后通过 `ollama pull` 拉模型；compose 不强制预拉
+#   以缩短首启时间。GPU 段默认注释，按需启用。
+# - **app** 通过 `service: postgres` DNS 名连数据库，避免硬编码 IP。
+#   `restart: unless-stopped` 让生产滚动重启时不丢启动状态。
+# - 持久化：
+#     postgres-data → /var/lib/postgresql/data
+#     ollama-data   → /root/.ollama（模型权重，按需 GB 级）
+#     app-uploads   → /app/assets/uploads（用户上传图片，挂卷而非镜像层）
+
+name: rustineverything
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: rie-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rie}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rie-dev-password}
+      POSTGRES_DB: ${POSTGRES_DB:-rie}
+      # 显式锁 locale，避免 alpine 默认 UTF-8 collation 在不同主机间漂移。
+      POSTGRES_INITDB_ARGS: "--lc-collate=C --lc-ctype=C --encoding=UTF8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      # 仅 dev/调试暴露；生产环境通常移除该 ports 段。
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rie} -d ${POSTGRES_DB:-rie}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - rie-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rie-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      # 仅 dev/调试暴露；生产可改为同 docker network 内访问。
+      - "127.0.0.1:11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # GPU 支持（Linux + nvidia-container-toolkit）。Mac/Windows 默认 CPU。
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    networks:
+      - rie-net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rustineverything:latest
+    container_name: rie-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        # 不阻塞 app 启动；ollama 慢启动时 LLM 审核会自然降级（fail-open）。
+        condition: service_started
+    environment:
+      # 数据库：连到 compose 内部的 postgres 服务名。
+      DATABASE_URL: postgres://${POSTGRES_USER:-rie}:${POSTGRES_PASSWORD:-rie-dev-password}@postgres:5432/${POSTGRES_DB:-rie}
+      # 必须项（启动时校验，缺失会 panic）：
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必须设置（建议 32+ 字符随机）}
+      BASE_URL: ${BASE_URL:?BASE_URL 必须设置（如 https://example.com）}
+      # 可选：OAuth 凭据，对应 Auth 插件读取
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      TWITTER_CLIENT_ID: ${TWITTER_CLIENT_ID:-}
+      TWITTER_CLIENT_SECRET: ${TWITTER_CLIENT_SECRET:-}
+      # ollama 端点（Phase 4 审核插件读取）
+      OLLAMA_BASE_URL: http://ollama:11434
+      # tracing 输出级别
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      # 用户上传图片：挂卷而非镜像层，便于备份与跨版本继承
+      - app-uploads:/app/assets/uploads
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    networks:
+      - rie-net
+
+networks:
+  rie-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  ollama-data:
+  app-uploads:
