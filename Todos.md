@@ -53,7 +53,7 @@
   - [ ] `modules/cases/src/server.rs`（cases 不依赖 DB）
   - [x] `modules/search/src/indexer.rs`
 - [ ] 性能基准：`scripts/bench_comments.sh` 评论列表 P95 前后对比
-- [ ] `docs/DEVELOPER.md` DB 章节更新
+- [x] `docs/DEVELOPER.md` DB 章节更新：新增 §2.3「数据库层与连接池」，文档化 SeaORM+PG + sea-orm-migration 自动迁移 + `init_pool/get_or_init_pool/pool` 连接池单例 API + 旧 `init_db` 兼容说明
 
 ### 1A.3 PluginManager 缓存
 - [x] `PluginManager` 增加 `Module` 缓存：`HashMap<PathBuf, CachedModule { module, mtime }>`

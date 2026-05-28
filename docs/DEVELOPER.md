@@ -47,6 +47,33 @@
 *   **alloc/dealloc**：用于在 WASM 线性内存中手动管理字符串空间。
 *   **Packed Result**：函数返回 `u64`，高 32 位为指针，低 32 位为长度，实现零拷贝数据传递。
 
+### 2.3 数据库层与连接池
+
+后端用 **SeaORM + PostgreSQL**。实体定义在 `crates/core/src/entities/`，schema 由
+`crates/migration`（sea-orm-migration）管理，应用启动时自动 `Migrator::up`（失败仅
+日志、不退出，便于 schema 已存在的场景）。
+
+**连接池单例**（`crates/core/src/db/pool.rs`）——`DatabaseConnection` 内部已是连接池，
+clone 只复制一个 `Arc`，因此全局用一个 `OnceCell` 复用，避免每次请求重建连接 + TLS
+握手：
+
+```rust
+// 启动时调用一次（main.rs，读 DATABASE_URL）
+rustineverything_core::db::init_pool(&db_url).await?;
+
+// 任意 server fn 里获取共享连接（已初始化则直接返回 clone）
+let db = rustineverything_core::db::get_or_init_pool().await?;
+```
+
+API：
+*   `init_pool(url) -> Result<(), DbErr>`：启动期初始化全局池。
+*   `get_or_init_pool() -> Result<DatabaseConnection, DbErr>`：获取共享连接（server fn 首选）。
+*   `pool() -> Option<DatabaseConnection>`：非阻塞读取，未初始化返回 `None`。
+
+> 旧的 `db::init_db(url)`（每调用新建连接）仅保留兼容；新代码一律用 `get_or_init_pool()`。
+> 本地用 `.env` 提供 `DATABASE_URL`；DB 不可用时仅 DB 相关 server fn 报错，静态/markdown
+> 页面（blog、内容板块等）仍可访问。
+
 ---
 
 ## 3. 插件开发篇 (Plugin Development Guide)
