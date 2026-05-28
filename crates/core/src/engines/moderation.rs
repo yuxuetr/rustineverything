@@ -83,6 +83,30 @@ impl Default for ModerationThresholds {
 }
 
 impl ModerationThresholds {
+  /// Schema 校验：阈值必须落在 `[0.0, 1.0]` 且 `block_above >= flag_above`
+  /// （Block 比 Flag 更严格）。不允许 NaN。返回可读错误供日志/拒绝使用。
+  ///
+  /// 由 `ModerationPipeline::from_site_config` 在装载 `site.json` 时调用：
+  /// 非法配置回退默认值并告警，避免「block < flag」这类把所有命中都判成
+  /// Block 的反直觉行为。
+  pub fn validate(&self) -> Result<(), String> {
+    for (name, v) in [("block_above", self.block_above), ("flag_above", self.flag_above)] {
+      if v.is_nan() {
+        return Err(format!("{name} 不能是 NaN"));
+      }
+      if !(0.0..=1.0).contains(&v) {
+        return Err(format!("{name} 必须在 [0.0, 1.0] 之间，当前为 {v}"));
+      }
+    }
+    if self.block_above < self.flag_above {
+      return Err(format!(
+        "block_above ({}) 不能小于 flag_above ({})：Block 应比 Flag 更严格",
+        self.block_above, self.flag_above
+      ));
+    }
+    Ok(())
+  }
+
   /// 把 verdict 按阈值「升级」：score >= block_above 强制 Block；
   /// score >= flag_above 强制 Flag。已是 Block 的不降级；Allow 的也按
   /// score 检查是否需要升级。
@@ -255,6 +279,30 @@ mod tests {
     let t = ModerationThresholds::default();
     assert!((t.block_above - 0.9).abs() < f32::EPSILON);
     assert!((t.flag_above - 0.5).abs() < f32::EPSILON);
+  }
+
+  #[test]
+  fn thresholds_validate_accepts_sane_values() {
+    assert!(ModerationThresholds::default().validate().is_ok());
+    assert!(ModerationThresholds { block_above: 1.0, flag_above: 0.0 }.validate().is_ok());
+    assert!(ModerationThresholds { block_above: 0.5, flag_above: 0.5 }.validate().is_ok());
+  }
+
+  #[test]
+  fn thresholds_validate_rejects_out_of_range() {
+    assert!(ModerationThresholds { block_above: 1.5, flag_above: 0.5 }.validate().is_err());
+    assert!(ModerationThresholds { block_above: 0.9, flag_above: -0.1 }.validate().is_err());
+  }
+
+  #[test]
+  fn thresholds_validate_rejects_block_below_flag() {
+    let err = ModerationThresholds { block_above: 0.3, flag_above: 0.7 }.validate().unwrap_err();
+    assert!(err.contains("block_above"));
+  }
+
+  #[test]
+  fn thresholds_validate_rejects_nan() {
+    assert!(ModerationThresholds { block_above: f32::NAN, flag_above: 0.5 }.validate().is_err());
   }
 
   #[test]

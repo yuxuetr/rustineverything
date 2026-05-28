@@ -39,6 +39,10 @@ pub struct ModerationQueueRow {
   pub created_at: String,
   pub reviewer_nickname: Option<String>,
   pub reviewed_at: Option<String>,
+  /// 该作者在审核队列中的累计命中数（任意状态）。
+  pub user_history_total: i64,
+  /// 该作者已被「拒绝」的确认违规数。
+  pub user_history_rejected: i64,
 }
 
 /// 用户行（管理视角包含 role / 创建时间 / 绑定 provider）
@@ -912,29 +916,75 @@ pub async fn admin_list_moderation_queue(
       uid.and_then(|id| users.iter().find(|u| u.id == id).map(|u| u.nickname.clone()))
     };
 
+    // 作者历史违规聚合：对本页出现的内容作者，统计其在审核队列中的累计命中数
+    // 与「已拒绝」（确认违规）数。队列规模有限，单查 + 内存聚合足够。
+    let author_ids: Vec<i32> = {
+      let mut v: Vec<i32> = rows.iter().filter_map(|r| r.user_id).collect();
+      v.sort_unstable();
+      v.dedup();
+      v
+    };
+    let (history_total, history_rejected): (
+      std::collections::HashMap<i32, i64>,
+      std::collections::HashMap<i32, i64>,
+    ) = if author_ids.is_empty() {
+      Default::default()
+    } else {
+      let entries = moderation_queue::Entity::find()
+        .filter(moderation_queue::Column::UserId.is_in(author_ids))
+        .all(&db)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+      let mut total = std::collections::HashMap::new();
+      let mut rejected = std::collections::HashMap::new();
+      for e in &entries {
+        if let Some(uid) = e.user_id {
+          *total.entry(uid).or_insert(0) += 1;
+          if e.status == "rejected" {
+            *rejected.entry(uid).or_insert(0) += 1;
+          }
+        }
+      }
+      (total, rejected)
+    };
+    let hist = |uid: Option<i32>| -> (i64, i64) {
+      match uid {
+        Some(id) => (
+          history_total.get(&id).copied().unwrap_or(0),
+          history_rejected.get(&id).copied().unwrap_or(0),
+        ),
+        None => (0, 0),
+      }
+    };
+
     Ok(
       rows
         .into_iter()
-        .map(|r| ModerationQueueRow {
-          id: r.id,
-          kind: r.kind,
-          ref_id: r.ref_id,
-          ref_path: r.ref_path,
-          user_id: r.user_id,
-          user_nickname: lookup(r.user_id),
-          content: r.content,
-          images: r
-            .images
-            .as_deref()
-            .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
-            .unwrap_or_default(),
-          score: r.score,
-          label: r.label,
-          reason: r.reason,
-          status: r.status,
-          created_at: fmt_dt(r.created_at),
-          reviewer_nickname: lookup(r.reviewer_user_id),
-          reviewed_at: r.reviewed_at.map(fmt_dt),
+        .map(|r| {
+          let (user_history_total, user_history_rejected) = hist(r.user_id);
+          ModerationQueueRow {
+            id: r.id,
+            kind: r.kind,
+            ref_id: r.ref_id,
+            ref_path: r.ref_path,
+            user_id: r.user_id,
+            user_nickname: lookup(r.user_id),
+            content: r.content,
+            images: r
+              .images
+              .as_deref()
+              .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+              .unwrap_or_default(),
+            score: r.score,
+            label: r.label,
+            reason: r.reason,
+            status: r.status,
+            created_at: fmt_dt(r.created_at),
+            reviewer_nickname: lookup(r.reviewer_user_id),
+            reviewed_at: r.reviewed_at.map(fmt_dt),
+            user_history_total,
+            user_history_rejected,
+          }
         })
         .collect(),
     )
@@ -982,62 +1032,143 @@ pub async fn admin_approve_moderation(id: i64) -> Result<(), ServerFnError> {
   }
 }
 
+/// 拒绝一条队列记录：删除关联业务内容（按 kind + ref_id）并标记 rejected。
+/// 供单条 [`admin_reject_moderation`] 与批量 [`admin_bulk_reject_moderation`] 复用。
+#[cfg(feature = "server")]
+async fn reject_one(
+  db: &sea_orm::DatabaseConnection,
+  admin_id: i32,
+  row: rustineverything_core::entities::moderation_queue::Model,
+) -> Result<(), ServerFnError> {
+  use rustineverything_core::entities::{annotation, comment, moderation_queue, topic, topic_reply};
+  use sea_orm::{ActiveValue::Set, EntityTrait};
+
+  let now = chrono::Utc::now().fixed_offset();
+  // 尝试按 kind + ref_id 删除业务内容；找不到 ref_id 时跳过删除，仅打标记。
+  if let Some(ref_id) = row.ref_id {
+    match row.kind.as_str() {
+      "comment" => {
+        let _ = comment::Entity::delete_by_id(ref_id as i32).exec(db).await;
+      }
+      "topic" => {
+        let _ = topic::Entity::delete_by_id(ref_id as i32).exec(db).await;
+      }
+      "reply" => {
+        let _ = topic_reply::Entity::delete_by_id(ref_id as i32).exec(db).await;
+      }
+      "annotation" => {
+        let _ = annotation::Entity::delete_by_id(ref_id).exec(db).await;
+      }
+      _ => {
+        tracing::warn!(kind = %row.kind, "unknown moderation kind; queue marked rejected without business delete");
+      }
+    }
+  }
+
+  let mut am: moderation_queue::ActiveModel = row.into();
+  am.status = Set("rejected".to_string());
+  am.reviewer_user_id = Set(Some(admin_id));
+  am.reviewed_at = Set(Some(now));
+  moderation_queue::Entity::update(am)
+    .exec(db)
+    .await
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+  Ok(())
+}
+
 /// 拒绝一条记录：把队列标记为 rejected，并删除关联的业务内容（如果 ref_id 在）。
 #[post("/api/admin/moderation/reject")]
 pub async fn admin_reject_moderation(id: i64) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{
-      annotation, comment, moderation_queue, topic, topic_reply,
-    };
+    use rustineverything_core::entities::moderation_queue;
     use rustineverything_core::session::require_admin;
-    use sea_orm::{ActiveValue::Set, EntityTrait};
+    use sea_orm::EntityTrait;
 
     let admin = require_admin()?;
     let db = open_db().await?;
-    let now = chrono::Utc::now().fixed_offset();
-
     let row = moderation_queue::Entity::find_by_id(id)
       .one(&db)
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?
       .ok_or_else(|| ServerFnError::new("审核记录不存在".to_string()))?;
-
-    // 尝试按 kind + ref_id 删除业务内容；找不到 ref_id 时跳过删除，仅打标记。
-    if let Some(ref_id) = row.ref_id {
-      match row.kind.as_str() {
-        "comment" => {
-          let _ = comment::Entity::delete_by_id(ref_id as i32).exec(&db).await;
-        }
-        "topic" => {
-          let _ = topic::Entity::delete_by_id(ref_id as i32).exec(&db).await;
-        }
-        "reply" => {
-          let _ = topic_reply::Entity::delete_by_id(ref_id as i32).exec(&db).await;
-        }
-        "annotation" => {
-          let _ = annotation::Entity::delete_by_id(ref_id).exec(&db).await;
-        }
-        _ => {
-          tracing::warn!(kind = %row.kind, "unknown moderation kind; queue marked rejected without business delete");
-        }
-      }
-    }
-
-    let mut am: moderation_queue::ActiveModel = row.into();
-    am.status = Set("rejected".to_string());
-    am.reviewer_user_id = Set(Some(admin.id));
-    am.reviewed_at = Set(Some(now));
-    moderation_queue::Entity::update(am)
-      .exec(&db)
-      .await
-      .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(())
+    reject_one(&db, admin.id, row).await
   }
   #[cfg(not(feature = "server"))]
   {
     let _ = id;
     Ok(())
+  }
+}
+
+/// 批量通过：把一组 pending 记录标记为 approved（保留内容）。返回更新条数。
+#[post("/api/admin/moderation/bulk-approve")]
+pub async fn admin_bulk_approve_moderation(ids: Vec<i64>) -> Result<u64, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use rustineverything_core::entities::moderation_queue;
+    use rustineverything_core::session::require_admin;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let admin = require_admin()?;
+    if ids.is_empty() {
+      return Ok(0);
+    }
+    let db = open_db().await?;
+    let now = chrono::Utc::now().fixed_offset();
+
+    // 单条 UPDATE ... WHERE id IN (...)，避免逐行往返。
+    let res = moderation_queue::Entity::update_many()
+      .col_expr(moderation_queue::Column::Status, sea_orm::sea_query::Expr::value("approved"))
+      .col_expr(moderation_queue::Column::ReviewerUserId, sea_orm::sea_query::Expr::value(admin.id))
+      .col_expr(moderation_queue::Column::ReviewedAt, sea_orm::sea_query::Expr::value(now))
+      .filter(moderation_queue::Column::Id.is_in(ids))
+      .exec(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(res.rows_affected)
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = ids;
+    Ok(0)
+  }
+}
+
+/// 批量拒绝：逐条删除关联业务内容并标记 rejected。返回成功处理的条数。
+#[post("/api/admin/moderation/bulk-reject")]
+pub async fn admin_bulk_reject_moderation(ids: Vec<i64>) -> Result<u64, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use rustineverything_core::entities::moderation_queue;
+    use rustineverything_core::session::require_admin;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let admin = require_admin()?;
+    if ids.is_empty() {
+      return Ok(0);
+    }
+    let db = open_db().await?;
+    let rows = moderation_queue::Entity::find()
+      .filter(moderation_queue::Column::Id.is_in(ids))
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let mut done = 0u64;
+    for row in rows {
+      // 单条失败只告警，继续处理其余（批量操作尽量不整体回滚）。
+      match reject_one(&db, admin.id, row).await {
+        Ok(()) => done += 1,
+        Err(e) => tracing::warn!(error = %e, "bulk reject: one entry failed"),
+      }
+    }
+    Ok(done)
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = ids;
+    Ok(0)
   }
 }
 

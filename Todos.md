@@ -266,6 +266,7 @@
 - [x] `Verdict { score, label: Allow|Flag|Block, reason }`（Phase 1C.4）
 - [x] Pipeline 串行 + 早停（Phase 1C.4）
 - [x] 阈值配置：`block_above` / `flag_above`（`ModerationThresholds`，默认 0.9 / 0.5；pipeline 输出后统一升级 Verdict label；7 个新单测覆盖 default / 各方向升级 / 不降级 Block / engine 自定义阈值）
+- [x] **阈值 schema 校验**：`ModerationThresholds::validate()` 校验 `[0,1]` 范围、非 NaN、`block_above >= flag_above`；`ModerationPipeline::from_site_config` 装载 site.json 阈值时调用，非法值回退默认 + warn 日志（4 个新单测：合法 / 越界 / block<flag / NaN）
 
 ### 4.1.5 LLM 双模式客户端（Phase 4 / 5 前置）
 - [x] `crates/llm/`（**独立 crate**，不在 core）：OpenAI 兼容 + Anthropic 兼容双协议，配置驱动选择（无运行时 failover）。四个独立 env：`OPENAI_LLM_BASE_URL` + `OPENAI_LLM_API_KEY`、`ANTHROPIC_LLM_BASE_URL` + `ANTHROPIC_LLM_API_KEY`，可选 `OPENAI_LLM_MODEL` / `ANTHROPIC_LLM_MODEL`（默认 `deepseek-chat`）。Anthropic 客户端自动把 `system` 角色抽取到顶层 + 校验 conv 以 user 起始 + 处理 `max_tokens` 必填语义。**架构**：core 保持精简，不再背 `reqwest` / `async-trait` / `mockito` / `dotenvy`；纯静态部署不依赖本 crate
@@ -301,7 +302,9 @@
 - [x] Admin 复核页 `/admin/moderation`：列表（Tab: 待复核/已通过/已拒绝/全部）+ 每行展示状态徽章 / 类型 / 路径 / 作者 / 评分百分比 / 理由 / 内容快照 / 图片缩略图；待复核行带「通过」「拒绝（删除内容）」两个操作。Dashboard 概览新增 `moderation_pending_count` 统计
 - [x] Hook 升级：comment / topic / reply 业务行落库后调 `enqueue_if_flagged`；Block 仍在前置拒绝，Flag 入队 pending；Allow no-op。3 个 server fn：`admin_list_moderation_queue` / `admin_approve_moderation` / `admin_reject_moderation`（reject 同时按 kind+ref_id 删除业务记录）
 - [x] 测试：3 个 live DB 测试验证 Allow no-op / Flag 入队 +1 / Block no-op（实跑 postgres，自带 schema bootstrap fallback）。workspace 全测 470+ passed
-- [ ] 阈值配置 admin UI 在线调整：现在仍需改 `site.json` 重启（Phase 5.1 hot reload 后再补 UI）
+- [x] **批量复核**：`admin_bulk_approve_moderation(ids)`（单条 UPDATE…WHERE id IN）+ `admin_bulk_reject_moderation(ids)`（逐条删业务内容 + 标 rejected，复用 `reject_one` helper）；`/admin/moderation` 加全选/单选 checkbox + 「批量通过」「批量拒绝（删除内容）」操作栏
+- [x] **作者违规历史聚合**：`admin_list_moderation_queue` 对本页内容作者聚合其队列累计命中数 + 已拒绝（确认违规）数，行内以徽章展示「历史 N 次命中 / M 次确认违规」，便于识别惯犯
+- [-] 阈值配置 admin UI 在线编辑：Phase 5.1 hot reload 后「重新载入」即可让改后的 `site.json` 阈值生效（无需重启）；图形化在线编辑器（写 site.json）仍未做，留待后续
 
 ### 4.6 文档
 - [x] `docs/MODERATION_SPEC.md`：XSS 攻击面审计 / sanitize_user_html / dangerous_inner_html 审计 / ModerationEngine 骨架 / Phase 4.3-4.5 路线图 / 安全清单

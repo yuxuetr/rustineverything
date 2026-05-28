@@ -65,7 +65,8 @@ impl ModerationPipeline {
   ) -> Self {
     let mut pipeline = Self::new();
 
-    // 阈值覆盖（site.json 中可选）
+    // 阈值覆盖（site.json 中可选）。schema 校验失败 → 回退默认 + 告警，
+    // 避免 block < flag / 越界值导致的反直觉判定。
     if let Some(cfg) = &site.moderation.thresholds {
       let mut t = ModerationThresholds::default();
       if let Some(v) = cfg.block_above {
@@ -74,7 +75,15 @@ impl ModerationPipeline {
       if let Some(v) = cfg.flag_above {
         t.flag_above = v;
       }
-      pipeline.thresholds = t;
+      match t.validate() {
+        Ok(()) => pipeline.thresholds = t,
+        Err(e) => {
+          tracing::warn!(
+            error = %e,
+            "moderation: site.json 阈值非法，回退默认 (block 0.9 / flag 0.5)"
+          );
+        }
+      }
     }
 
     if !site.moderation.enabled {

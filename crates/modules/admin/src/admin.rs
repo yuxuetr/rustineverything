@@ -1,9 +1,10 @@
 use crate::server::{
-  admin_approve_moderation, admin_delete_comment, admin_delete_reply, admin_delete_topic,
-  admin_list_comments, admin_list_moderation_queue, admin_list_plugins, admin_list_topics,
-  admin_list_users, admin_overview, admin_reject_moderation, admin_reload_plugins,
-  admin_set_user_role, admin_upload_plugin, AdminCommentRow, AdminPluginRow, AdminTopicRow,
-  AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
+  admin_approve_moderation, admin_bulk_approve_moderation, admin_bulk_reject_moderation,
+  admin_delete_comment, admin_delete_reply, admin_delete_topic, admin_list_comments,
+  admin_list_moderation_queue, admin_list_plugins, admin_list_topics, admin_list_users,
+  admin_overview, admin_reject_moderation, admin_reload_plugins, admin_set_user_role,
+  admin_upload_plugin, AdminCommentRow, AdminPluginRow, AdminTopicRow, AdminUserRow,
+  ModerationQueueRow, ADMIN_PAGE_SIZE,
 };
 use dioxus::prelude::*;
 use rustineverything_core::session::{SessionUser, ALL_ROLES};
@@ -736,6 +737,9 @@ pub fn AdminModerationPage() -> Element {
   let mut filter = use_signal(|| "pending".to_string()); // pending / approved / rejected / ""
   let mut error = use_signal::<Option<String>>(|| None);
   let mut bump = use_signal(|| 0u32);
+  // 批量选择：保存被勾选的队列行 id。
+  let mut selected = use_signal(std::collections::HashSet::<i64>::new);
+  let mut bulk_busy = use_signal(|| false);
 
   let res = use_resource(move || {
     let f = filter();
@@ -746,6 +750,24 @@ pub fn AdminModerationPage() -> Element {
     }
   });
   let rows: Vec<ModerationQueueRow> = res.read().as_ref().cloned().flatten().unwrap_or_default();
+  let pending_ids: Vec<i64> =
+    rows.iter().filter(|r| r.status == "pending").map(|r| r.id).collect();
+  let selected_count = selected().len();
+  let all_pending_selected =
+    !pending_ids.is_empty() && pending_ids.iter().all(|id| selected().contains(id));
+
+  // 批量操作完成后的统一收尾：清空选择 + 刷新列表。
+  let mut finish_bulk = move |result: Result<u64, String>| {
+    bulk_busy.set(false);
+    match result {
+      Ok(_) => {
+        selected.with_mut(|s| s.clear());
+        error.set(None);
+        bump.with_mut(|n| *n = n.wrapping_add(1));
+      }
+      Err(e) => error.set(Some(e)),
+    }
+  };
 
   let tab_btn = move |key: &str, label: &str| {
     let active = filter() == key;
@@ -783,6 +805,67 @@ pub fn AdminModerationPage() -> Element {
               }
           }
 
+          // 批量操作栏：仅在有待复核行时显示。
+          if !pending_ids.is_empty() {
+              div { class: "flex items-center gap-3 mb-4 px-4 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 text-sm flex-wrap",
+                  label { class: "flex items-center gap-2 cursor-pointer",
+                      input {
+                          r#type: "checkbox",
+                          checked: all_pending_selected,
+                          class: "h-4 w-4 accent-blue-600",
+                          onclick: {
+                              let pending_ids = pending_ids.clone();
+                              move |_| {
+                                  let all = !pending_ids.is_empty()
+                                      && pending_ids.iter().all(|id| selected().contains(id));
+                                  let ids = pending_ids.clone();
+                                  selected.with_mut(|s| {
+                                      if all {
+                                          for id in &ids { s.remove(id); }
+                                      } else {
+                                          for id in &ids { s.insert(*id); }
+                                      }
+                                  });
+                              }
+                          },
+                      }
+                      span { class: "text-slate-600 dark:text-slate-300", "全选待复核" }
+                  }
+                  span { class: "text-slate-500", "已选 {selected_count} 条" }
+                  div { class: "flex-1" }
+                  button {
+                      class: "px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50",
+                      disabled: selected_count == 0 || bulk_busy(),
+                      onclick: move |_| {
+                          let ids: Vec<i64> = selected().iter().copied().collect();
+                          spawn(async move {
+                              bulk_busy.set(true);
+                              match admin_bulk_approve_moderation(ids).await {
+                                  Ok(n) => finish_bulk(Ok(n)),
+                                  Err(e) => finish_bulk(Err(format!("批量通过失败: {}", e))),
+                              }
+                          });
+                      },
+                      "批量通过"
+                  }
+                  button {
+                      class: "px-3 py-1.5 rounded-md text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50",
+                      disabled: selected_count == 0 || bulk_busy(),
+                      onclick: move |_| {
+                          let ids: Vec<i64> = selected().iter().copied().collect();
+                          spawn(async move {
+                              bulk_busy.set(true);
+                              match admin_bulk_reject_moderation(ids).await {
+                                  Ok(n) => finish_bulk(Ok(n)),
+                                  Err(e) => finish_bulk(Err(format!("批量拒绝失败: {}", e))),
+                              }
+                          });
+                      },
+                      "批量拒绝（删除内容）"
+                  }
+              }
+          }
+
           match res.read().as_ref() {
               None => rsx! { Spinner {} },
               Some(_) if rows.is_empty() => rsx! {
@@ -795,6 +878,14 @@ pub fn AdminModerationPage() -> Element {
                               ModerationQueueRowView {
                                   key: "{r.id}",
                                   row: r.clone(),
+                                  selected: selected().contains(&r.id),
+                                  on_toggle: move |id: i64| {
+                                      selected.with_mut(|s| {
+                                          if !s.insert(id) {
+                                              s.remove(&id);
+                                          }
+                                      });
+                                  },
                                   on_done: move |msg: Result<(), String>| {
                                       match msg {
                                           Ok(()) => {
@@ -817,6 +908,8 @@ pub fn AdminModerationPage() -> Element {
 #[component]
 fn ModerationQueueRowView(
   row: ModerationQueueRow,
+  selected: bool,
+  on_toggle: EventHandler<i64>,
   on_done: EventHandler<Result<(), String>>,
 ) -> Element {
   let mut submitting = use_signal(|| false);
@@ -847,13 +940,28 @@ fn ModerationQueueRowView(
 
   rsx! {
       div { class: "px-5 py-4",
-          // 头部：状态徽章 / 类型 / 路径 / 时间 / 评分
+          // 头部：勾选 / 状态徽章 / 类型 / 路径 / 作者历史 / 时间 / 评分
           div { class: "flex items-center gap-2 mb-2 text-xs flex-wrap",
+              if is_pending {
+                  input {
+                      r#type: "checkbox",
+                      checked: selected,
+                      onclick: move |_| on_toggle.call(id),
+                      class: "h-4 w-4 accent-blue-600 cursor-pointer",
+                  }
+              }
               span { class: "px-2 py-0.5 rounded-full font-medium {status_class}", "{status_label}" }
               span { class: "px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300", "{kind_label}" }
               span { class: "text-slate-500 truncate max-w-xs", "{row.ref_path}" }
               span { class: "text-slate-400", "·" }
               span { class: "text-slate-500", "{author}" }
+              // 作者历史违规：累计命中 > 1 时提示，已被拒绝（确认违规）单独红标
+              if row.user_history_total > 1 {
+                  span { class: "px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300", "历史 {row.user_history_total} 次命中" }
+              }
+              if row.user_history_rejected > 0 {
+                  span { class: "px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300", "{row.user_history_rejected} 次确认违规" }
+              }
               span { class: "text-slate-400", "·" }
               span { class: "text-slate-500", "{row.created_at}" }
               span { class: "text-slate-400", "·" }
