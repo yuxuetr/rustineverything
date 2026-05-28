@@ -89,6 +89,17 @@ pub struct AdminPluginRow {
     pub modified: Option<String>,
 }
 
+/// 插件上传结果（Phase 5.1 hot reload）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginUploadResult {
+    pub filename: String,
+    pub plugin_id: String,
+    pub capabilities: Vec<String>,
+    pub size_bytes: u64,
+    /// 是否覆盖了已存在的同名插件（true 时已生成 `.bak` 备份）。
+    pub replaced_existing: bool,
+}
+
 /// 通用分页信息
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct AdminPage<T> {
@@ -139,6 +150,38 @@ pub fn check_self_role_change(
         return Err("不能取消自己的管理员角色：系统中没有其他管理员".to_string());
     }
     Ok(())
+}
+
+/// 生成一个安全的插件文件名：去除目录、强制 `.wasm` 后缀、仅保留 ASCII
+/// 字母 / 数字 / `_` / `-`，并统一小写（与 site.json 中的插件命名约定一致）。
+///
+/// hot reload（Phase 5.1）用：上传的 wasm 必须覆盖到一个可预测的安全路径，
+/// 杜绝 `../` 路径穿越与异常字符。
+pub fn safe_plugin_filename(original: &str) -> Result<String, String> {
+    use std::path::Path;
+
+    let name = Path::new(original)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| "无效的文件名".to_string())?
+        .to_ascii_lowercase();
+
+    let stem = name
+        .strip_suffix(".wasm")
+        .ok_or_else(|| "插件文件必须以 .wasm 结尾".to_string())?;
+
+    let safe: String = stem
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+        .collect();
+
+    if safe.is_empty() {
+        return Err("文件名为空或仅含非法字符".to_string());
+    }
+    if safe.len() > 80 {
+        return Err("文件名过长（≤ 80 字符）".to_string());
+    }
+    Ok(format!("{}.wasm", safe))
 }
 
 /// 统一识别插件类型（按文件名后缀启发式判断）
@@ -754,13 +797,142 @@ pub async fn admin_reload_plugins() -> Result<String, ServerFnError> {
         use rustineverything_core::session::require_admin;
 
         let _ = require_admin()?;
-        // 当前 PluginManager 每次调用都重新读取 wasm 文件，没有缓存可清除。
-        // 这里仅作占位：返回成功 + 打日志，便于未来切换为缓存加载时直接接入。
-        tracing::info!("admin: plugins reload requested");
-        Ok("插件运行时已刷新（当前实现按需读取，无缓存可清除）".to_string())
+        // 清空共享 PluginManager 的 Module 缓存（i18n / 主题 / auth 下次调用
+        // 会重新从磁盘加载），并重建审核流水线（重读 site.json + 插件目录）。
+        rustineverything_core::shared_plugin_manager().invalidate_all();
+        rustineverything_module_moderation::reload_pipeline();
+        tracing::info!("admin: plugin caches invalidated + moderation pipeline reloaded");
+        Ok("已清空插件缓存并重建审核流水线（无需重启）".to_string())
     }
     #[cfg(not(feature = "server"))]
     {
+        Err(ServerFnError::new("server only".to_string()))
+    }
+}
+
+/// 允许上传的插件最大字节数（16MB）。当前最大的内置插件（审核 LLM）约 158KB，
+/// 留足余量同时阻断异常大的负载。
+#[cfg(feature = "server")]
+const PLUGIN_MAX_BYTES: usize = 16 * 1024 * 1024;
+
+/// Phase 5.1：admin 上传 wasm 插件 → 沙箱校验 → 备份 → 原子替换 → 失效缓存。
+///
+/// 安全流程：
+/// 1. 仅 admin 可调。
+/// 2. 文件名经 [`safe_plugin_filename`] 清洗，杜绝路径穿越。
+/// 3. 字节先在临时 [`wasmi`] Store 上编译 + 实例化（[`validate_plugin_bytes`]），
+///    再读 `get_manifest` 校验 ABI 版本——不兼容直接拒绝，文件不落盘。
+/// 4. 旧文件复制为 `<name>.bak`，新字节写入 `<name>.tmp` 后 `rename` 原子替换。
+///    任一 IO 步骤失败都会回滚到备份。
+/// 5. 替换成功后失效插件缓存；审核类插件额外触发审核流水线重建。
+#[post("/api/admin/plugins/upload")]
+pub async fn admin_upload_plugin(
+    name: String,
+    data_base64: String,
+) -> Result<PluginUploadResult, ServerFnError> {
+    #[cfg(feature = "server")]
+    {
+        use base64::Engine as _;
+        use rustineverything_core::session::require_admin;
+        use rustineverything_core::{capabilities, shared_plugin_manager, PluginManifest, SDK_ABI_VERSION};
+
+        let _ = require_admin()?;
+
+        // 1. 安全文件名
+        let filename = safe_plugin_filename(&name).map_err(ServerFnError::new)?;
+
+        // 2. 解码 base64（容忍 data:URL 前缀）+ 大小限制
+        let base64_str = data_base64.split(',').next_back().unwrap_or(&data_base64);
+        let estimated = base64_str.len().saturating_mul(3) / 4;
+        if estimated > PLUGIN_MAX_BYTES {
+            return Err(ServerFnError::new(format!(
+                "插件过大（限制 {} MB）",
+                PLUGIN_MAX_BYTES / 1024 / 1024
+            )));
+        }
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(base64_str)
+            .map_err(|e| ServerFnError::new(format!("解码失败: {}", e)))?;
+        if bytes.len() > PLUGIN_MAX_BYTES {
+            return Err(ServerFnError::new(format!(
+                "插件过大（限制 {} MB）",
+                PLUGIN_MAX_BYTES / 1024 / 1024
+            )));
+        }
+
+        // 3. 沙箱结构校验：能编译 + 实例化 + 具备内存管理 ABI
+        let manager = shared_plugin_manager();
+        manager
+            .validate_plugin_bytes(&bytes)
+            .map_err(|e| ServerFnError::new(format!("插件校验失败: {}", e)))?;
+
+        // 4. manifest + ABI 版本校验（hot reload 要求新 ABI 插件导出 get_manifest）
+        let manifest_json = manager
+            .call_with_string(&bytes, "get_manifest", "")
+            .map_err(|e| {
+                ServerFnError::new(format!("插件缺少 get_manifest 导出，无法识别 ABI: {}", e))
+            })?;
+        let manifest: PluginManifest = serde_json::from_str(&manifest_json)
+            .map_err(|e| ServerFnError::new(format!("manifest 解析失败: {}", e)))?;
+        if !manifest.is_compatible() {
+            return Err(ServerFnError::new(format!(
+                "插件 ABI 版本不兼容：期望 {}，得到 {}。请用最新 SDK 重新构建。",
+                SDK_ABI_VERSION, manifest.abi_version
+            )));
+        }
+
+        // 5. 落盘：备份 + 原子替换 + 失败回滚
+        let plugin_dir = get_asset_root().join("plugins");
+        if !plugin_dir.exists() {
+            std::fs::create_dir_all(&plugin_dir)
+                .map_err(|e| ServerFnError::new(format!("创建插件目录失败: {}", e)))?;
+        }
+        let target = plugin_dir.join(&filename);
+        let replaced_existing = target.exists();
+        let backup = plugin_dir.join(format!("{}.bak", filename));
+        if replaced_existing {
+            std::fs::copy(&target, &backup)
+                .map_err(|e| ServerFnError::new(format!("备份旧插件失败: {}", e)))?;
+        }
+
+        let tmp = plugin_dir.join(format!("{}.tmp", filename));
+        let swap_result = std::fs::write(&tmp, &bytes)
+            .and_then(|_| std::fs::rename(&tmp, &target));
+        if let Err(e) = swap_result {
+            // 回滚：清理残留 tmp，恢复备份
+            let _ = std::fs::remove_file(&tmp);
+            if replaced_existing {
+                let _ = std::fs::rename(&backup, &target);
+            }
+            return Err(ServerFnError::new(format!("写入插件失败，已回滚: {}", e)));
+        }
+
+        // 6. 失效缓存 → 下次调用重新加载新插件
+        manager.invalidate(&target);
+
+        // 7. 审核类插件 → 重建审核流水线立即生效
+        if manifest.has_capability(capabilities::MODERATION_PROVIDER) {
+            rustineverything_module_moderation::reload_pipeline();
+        }
+
+        tracing::info!(
+            plugin = %manifest.id,
+            file = %filename,
+            replaced = replaced_existing,
+            "admin: plugin uploaded and hot-reloaded"
+        );
+
+        Ok(PluginUploadResult {
+            filename,
+            plugin_id: manifest.id,
+            capabilities: manifest.capabilities,
+            size_bytes: bytes.len() as u64,
+            replaced_existing,
+        })
+    }
+    #[cfg(not(feature = "server"))]
+    {
+        let _ = (name, data_base64);
         Err(ServerFnError::new("server only".to_string()))
     }
 }
@@ -1017,5 +1189,56 @@ mod tests {
     fn classify_plugin_kind_case_insensitive() {
         assert_eq!(classify_plugin_kind("GitHub_Auth.wasm"), "auth");
         assert_eq!(classify_plugin_kind("THEME_neo.wasm"), "theme");
+    }
+
+    // ─── Phase 5.1 安全文件名 ───────────────────────────────
+
+    #[test]
+    fn safe_plugin_filename_keeps_valid_name() {
+        assert_eq!(
+            safe_plugin_filename("theme_ocean_plugin.wasm").unwrap(),
+            "theme_ocean_plugin.wasm"
+        );
+        assert_eq!(
+            safe_plugin_filename("github-auth.wasm").unwrap(),
+            "github-auth.wasm"
+        );
+    }
+
+    #[test]
+    fn safe_plugin_filename_strips_path_traversal() {
+        let name = safe_plugin_filename("../../etc/evil_plugin.wasm").unwrap();
+        assert_eq!(name, "evil_plugin.wasm");
+        assert!(!name.contains(".."));
+        assert!(!name.contains('/'));
+    }
+
+    #[test]
+    fn safe_plugin_filename_lowercases() {
+        assert_eq!(
+            safe_plugin_filename("Theme_Ocean.WASM").unwrap(),
+            "theme_ocean.wasm"
+        );
+    }
+
+    #[test]
+    fn safe_plugin_filename_requires_wasm_ext() {
+        assert!(safe_plugin_filename("plugin.exe").is_err());
+        assert!(safe_plugin_filename("plugin").is_err());
+        assert!(safe_plugin_filename("plugin.wasm.exe").is_err());
+    }
+
+    #[test]
+    fn safe_plugin_filename_rejects_empty_stem() {
+        assert!(safe_plugin_filename(".wasm").is_err());
+        assert!(safe_plugin_filename("中文.wasm").is_err());
+    }
+
+    #[test]
+    fn safe_plugin_filename_strips_unsafe_chars() {
+        assert_eq!(
+            safe_plugin_filename("my plugin@v1!.wasm").unwrap(),
+            "mypluginv1.wasm"
+        );
     }
 }

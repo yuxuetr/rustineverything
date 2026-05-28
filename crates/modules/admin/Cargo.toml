@@ -9,9 +9,12 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
+base64 = { workspace = true }
 rustineverything-sdk = { path = "../../sdk" }
 rustineverything-core = { path = "../../core" }
 sea-orm = { workspace = true, optional = true }
+# Server-only：审核插件 hot reload 需要重建审核流水线。
+rustineverything-module-moderation = { path = "../moderation", optional = true }
 tracing = { workspace = true }
 
 [features]
@@ -19,5 +22,6 @@ server = [
     "dioxus/server",
     "dep:tokio",
     "dep:sea-orm",
+    "dep:rustineverything-module-moderation",
     "rustineverything-core/server",
 ]

@@ -183,6 +183,38 @@ impl PluginManager {
         }
         aggregated_css
     }
+
+    /// 沙箱校验一段 wasm 字节是否是合法的站点插件。
+    ///
+    /// 用于 hot reload（Phase 5.1）：admin 上传的 wasm 在落盘前必须先编译 +
+    /// 实例化，确认它能在本宿主的 [`wasmi`] 引擎上运行且导出了 ABI 约定的
+    /// `memory` / `alloc` / `dealloc`。校验只触碰一个临时 [`Store`]，不读写
+    /// 任何外部状态，失败时返回可读错误信息（不 panic）。
+    ///
+    /// 注意：本方法只验证**结构**（能编译 + 有内存管理 ABI）。ABI 版本与能力
+    /// 协商由上层在拿到 `get_manifest` 输出后判断。
+    pub fn validate_plugin_bytes(&self, bytes: &[u8]) -> Result<(), String> {
+        let module = Module::new(&self.engine, bytes)
+            .map_err(|e| format!("无法编译为合法 wasm 模块: {}", e))?;
+        let mut store = Store::new(&self.engine, ());
+        let instance = self
+            .linker
+            .instantiate(&mut store, &module)
+            .map_err(|e| format!("实例化失败: {}", e))?
+            .start(&mut store)
+            .map_err(|e| format!("启动失败: {}", e))?;
+
+        if instance.get_memory(&store, "memory").is_none() {
+            return Err("插件缺少 `memory` 导出".to_string());
+        }
+        instance
+            .get_typed_func::<i32, i32>(&store, "alloc")
+            .map_err(|_| "插件缺少 `alloc(i32) -> i32` 导出".to_string())?;
+        instance
+            .get_typed_func::<(i32, i32), ()>(&store, "dealloc")
+            .map_err(|_| "插件缺少 `dealloc(i32, i32)` 导出".to_string())?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -264,5 +296,49 @@ mod tests {
         let _ = manager.call_path_with_string(path, "translate", &input);
         manager.invalidate_all();
         assert!(manager.cache.lock().unwrap().is_empty());
+    }
+
+    /// Phase 5.1 内存回收代理测试：反复 invalidate + 重新加载，缓存条目数
+    /// 始终保持为 1，旧 `Module` 句柄在 invalidate 时被 Drop（不会累积）。
+    /// 真正的 RSS 长跑监测在 `docs/OPERATIONS.md` 记录，单测只验证缓存不泄漏。
+    #[test]
+    fn test_reload_evicts_old_module_cache_stays_bounded() {
+        let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+        if !std::path::Path::new(wasm_path).exists() {
+            return;
+        }
+        let manager = PluginManager::new();
+        let path = std::path::Path::new(wasm_path);
+        let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
+        for _ in 0..50 {
+            let _ = manager.call_path_with_string(path, "translate", &input);
+            // 模拟一次 hot reload：显式失效后重新加载
+            manager.invalidate(path);
+            let _ = manager.call_path_with_string(path, "translate", &input);
+            assert_eq!(
+                manager.cache.lock().unwrap().len(),
+                1,
+                "重复 reload 后缓存条目应恒为 1，不应累积旧 Module"
+            );
+        }
+    }
+
+    /// `validate_plugin_bytes` 接受真实插件 wasm、拒绝垃圾字节。
+    #[test]
+    fn test_validate_plugin_bytes() {
+        let manager = PluginManager::new();
+        // 垃圾字节：不是 wasm
+        assert!(manager.validate_plugin_bytes(b"not a wasm module").is_err());
+        assert!(manager.validate_plugin_bytes(&[]).is_err());
+
+        let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+        if !std::path::Path::new(wasm_path).exists() {
+            return;
+        }
+        let bytes = fs::read(wasm_path).expect("read plugin");
+        assert!(
+            manager.validate_plugin_bytes(&bytes).is_ok(),
+            "真实插件 wasm 应通过结构校验"
+        );
     }
 }

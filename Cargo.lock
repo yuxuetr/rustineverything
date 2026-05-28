@@ -5735,9 +5735,11 @@ dependencies = [
 name = "rustineverything-module-admin"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
  "dioxus",
  "rustineverything-core",
+ "rustineverything-module-moderation",
  "rustineverything-sdk",
  "sea-orm",
  "serde",

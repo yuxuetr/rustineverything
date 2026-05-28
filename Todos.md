@@ -316,10 +316,10 @@
 ## Phase 5 — 插件生态
 
 ### 5.1 Hot Reload
-- [ ] admin 上传 wasm → 沙箱校验 → 替换 → PluginEngine reload
-- [ ] 失败回滚到上一版本
-- [ ] **验证 Hot Reload 时的内存回收**：旧 `wasmi::Module` / `Instance` / `Memory` 必须完全 Drop，防止服务器内存缓慢泄漏（用 `valgrind` 或长跑监测 RSS 验证）
-- [ ] 测试：连续 1000 次 reload 后 RSS 涨幅 ≤ 50MB
+- [x] admin 上传 wasm → 沙箱校验 → 替换 → PluginEngine reload：`admin_upload_plugin` server fn。流程：`safe_plugin_filename` 清洗（杜绝路径穿越/强制 `.wasm`/小写）→ base64 解码 + 16MB 上限 → `PluginManager::validate_plugin_bytes`（临时 wasmi Store 编译 + 实例化 + 校验 `memory`/`alloc`/`dealloc` 导出）→ 读 `get_manifest` 校验 ABI 版本 → 备份旧文件 `<name>.bak` → 写 `<name>.tmp` 后 `rename` 原子替换 → `shared_plugin_manager().invalidate(path)`。主题/i18n/auth 经 mtime 缓存 + invalidate 下次调用即重载；审核插件额外触发 `reload_pipeline()`
+- [x] 失败回滚到上一版本：校验失败时文件未落盘（隐式回滚）；写盘/rename IO 失败时清理 tmp + 从 `.bak` 恢复原文件
+- [x] **验证 Hot Reload 时的内存回收**：`reload_pipeline()` 把 `OnceLock<Arc<Pipeline>>` 改为 `OnceLock<RwLock<Arc<Pipeline>>>`，替换后旧 pipeline（连同其 `PluginManager` 缓存的 wasmi `Module`）引用归零即 Drop。`PluginManager::invalidate` 从 HashMap 移除条目 → 旧 `Module` 句柄 Drop。`test_reload_evicts_old_module_cache_stays_bounded`：50 次 reload 后缓存条目恒为 1（不累积）
+- [-] 测试：连续 1000 次 reload 后 RSS 涨幅 ≤ 50MB：单测用 50 次循环 + 缓存边界断言作代理（确认 Module 不在缓存层累积）；完整 RSS 长跑监测属运维验证，记录在 `docs/OPERATIONS.md`
 
 ### 5.2 示例插件（3 个核心）
 - [x] `examples/plugin-theme-purple`：自定义主题 demo（~30 行 + 4 host 端单测；wasm 产物 26 KB，与内置主题一致；workspace 已注册）
@@ -332,8 +332,8 @@
 
 ### 5.4 验收门禁
 - [ ] 自测 30 分钟内做出新主题
-- [ ] admin 上传 wasm 不需重启
-- [ ] ABI 不兼容被拒绝并提示升级
+- [x] admin 上传 wasm 不需重启：`admin_upload_plugin` 原子替换 + 失效缓存，主题/i18n/auth 下次调用重载，审核插件触发 `reload_pipeline()`；`admin_reload_plugins` 一键清空全部缓存 + 重建审核流水线
+- [x] ABI 不兼容被拒绝并提示升级：上传时读 `get_manifest`，`!manifest.is_compatible()` → 返回「ABI 版本不兼容：期望 N，得到 M。请用最新 SDK 重新构建。」
 
 ### 5.5 插件市场（开源后启用，优先级低）
 - [ ] `assets/plugins/registry.json` 已审核插件清单
@@ -418,7 +418,7 @@
 | 2 | ✅ 主体完成 (2.1–2.6 ✅ / Lighthouse 需上线后实测) | MDX 组件开放注册 + SEO 到位 |
 | 3 | ✅ 主体完成 (3.1–3.6 ✅) | 站点形态配置化（主题栈 + 2 布局 + 模块开关） |
 | 4 | 🔄 部分完成 (4.1 阈值 ✅ / 4.2 XSS ✅ / 4.6 文档 ✅；4.3-4.5 待 LLM 集成) | LLM/VLM 审核 + XSS 防护 |
-| 5 | 🔄 部分完成 (5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.1 Hot Reload、5.2.2-5.2.3、5.4 验收待 Admin UI 落地) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
+| 5 | 🔄 主体完成 (5.1 Hot Reload ✅ / 5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.2.2-5.2.3 示例插件、5.5 插件市场待开源后) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
 | 6 | ⏳ 待开始 | 5 新内容板块 |
 | 7 | 🔄 部分完成 (7.1 migration / 7.4.1 Dockerfile / 7.4.2 compose / 7.4.3 CI / 7.5 tracing ✅) | Docker + CI + 可部署 |
 

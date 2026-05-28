@@ -2,8 +2,8 @@ use crate::server::{
     admin_approve_moderation, admin_delete_comment, admin_delete_reply, admin_delete_topic,
     admin_list_comments, admin_list_moderation_queue, admin_list_plugins, admin_list_topics,
     admin_list_users, admin_overview, admin_reject_moderation, admin_reload_plugins,
-    admin_set_user_role, AdminCommentRow, AdminPluginRow, AdminTopicRow, AdminUserRow,
-    ModerationQueueRow, ADMIN_PAGE_SIZE,
+    admin_set_user_role, admin_upload_plugin, AdminCommentRow, AdminPluginRow, AdminTopicRow,
+    AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
 };
 use dioxus::prelude::*;
 use rustineverything_core::session::{SessionUser, ALL_ROLES};
@@ -545,26 +545,75 @@ pub fn AdminPluginsPage() -> Element {
 
     let mut reload_msg = use_signal::<Option<String>>(|| None);
     let mut reloading = use_signal(|| false);
+    let mut uploading = use_signal(|| false);
+
+    let handle_upload = move |evt: Event<FormData>| {
+        spawn(async move {
+            let files = evt.data().files();
+            for file in files {
+                let Ok(bytes) = file.read_bytes().await else {
+                    reload_msg.set(Some(format!("读取文件失败：{}", file.name())));
+                    continue;
+                };
+                uploading.set(true);
+                use base64::Engine as _;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                match admin_upload_plugin(file.name(), b64).await {
+                    Ok(res) => {
+                        let action = if res.replaced_existing { "已替换" } else { "已新增" };
+                        reload_msg.set(Some(format!(
+                            "{} 插件 {}（{}，{:.1} KB，能力：{}）",
+                            action,
+                            res.plugin_id,
+                            res.filename,
+                            (res.size_bytes as f64) / 1024.0,
+                            if res.capabilities.is_empty() {
+                                "无".to_string()
+                            } else {
+                                res.capabilities.join(", ")
+                            }
+                        )));
+                    }
+                    Err(e) => reload_msg.set(Some(format!("上传失败：{}", e))),
+                }
+                uploading.set(false);
+                bump.with_mut(|n| *n = n.wrapping_add(1));
+            }
+        });
+    };
 
     rsx! {
         AdminShell { active: "plugins".to_string(),
             div { class: "flex items-center justify-between mb-6",
                 h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white", "插件" }
-                button {
-                    class: "px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50",
-                    disabled: reloading(),
-                    onclick: move |_| {
-                        spawn(async move {
-                            reloading.set(true);
-                            match admin_reload_plugins().await {
-                                Ok(msg) => reload_msg.set(Some(msg)),
-                                Err(e) => reload_msg.set(Some(format!("失败: {}", e))),
-                            }
-                            reloading.set(false);
-                            bump.with_mut(|n| *n = n.wrapping_add(1));
-                        });
-                    },
-                    if reloading() { "刷新中..." } else { "重新载入" }
+                div { class: "flex items-center gap-2",
+                    label {
+                        class: "px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 cursor-pointer disabled:opacity-50",
+                        input {
+                            r#type: "file",
+                            class: "hidden",
+                            accept: ".wasm,application/wasm",
+                            disabled: uploading(),
+                            onchange: handle_upload,
+                        }
+                        if uploading() { "上传中..." } else { "上传 .wasm" }
+                    }
+                    button {
+                        class: "px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50",
+                        disabled: reloading(),
+                        onclick: move |_| {
+                            spawn(async move {
+                                reloading.set(true);
+                                match admin_reload_plugins().await {
+                                    Ok(msg) => reload_msg.set(Some(msg)),
+                                    Err(e) => reload_msg.set(Some(format!("失败: {}", e))),
+                                }
+                                reloading.set(false);
+                                bump.with_mut(|n| *n = n.wrapping_add(1));
+                            });
+                        },
+                        if reloading() { "刷新中..." } else { "重新载入" }
+                    }
                 }
             }
 

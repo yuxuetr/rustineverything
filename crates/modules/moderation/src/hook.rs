@@ -30,7 +30,7 @@
 //! ```
 
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use rustineverything_core::engines::moderation::{ModerationLabel, Verdict};
 use rustineverything_core::settings::SiteConfig;
@@ -39,45 +39,67 @@ use rustineverything_sdk::{ImageRef, ModerationSubmission};
 
 use crate::pipeline::ModerationPipeline;
 
-static SHARED: OnceLock<Arc<ModerationPipeline>> = OnceLock::new();
+/// 进程级共享 pipeline，包在 `RwLock` 里以支持 hot reload（Phase 5.1）。
+/// 读多写极少（仅 admin reload 时写一次），`RwLock` 读锁开销可忽略。
+static SHARED: OnceLock<RwLock<Arc<ModerationPipeline>>> = OnceLock::new();
+
+/// 从 `site.json` + env 重新构造一条 pipeline。
+fn build_pipeline() -> ModerationPipeline {
+  let site = SiteConfig::from_file(
+    rustineverything_core::utils::get_asset_root()
+      .join("site.json")
+      .to_str()
+      .unwrap_or_default(),
+  )
+  .unwrap_or_default();
+
+  let plugin_dir: PathBuf = rustineverything_core::utils::get_asset_root().join("plugins");
+  let llm: Option<Arc<dyn LlmClient>> = default_client_from_env().map(Arc::from);
+
+  let pipeline = ModerationPipeline::from_site_config(&site, &plugin_dir, llm);
+  if pipeline.is_empty() {
+    tracing::info!("moderation: shared pipeline empty (disabled or unconfigured)");
+  } else {
+    tracing::info!(
+      stages = ?pipeline.stage_names(),
+      "moderation: shared pipeline (re)initialized"
+    );
+  }
+  pipeline
+}
+
+fn cell() -> &'static RwLock<Arc<ModerationPipeline>> {
+  SHARED.get_or_init(|| RwLock::new(Arc::new(build_pipeline())))
+}
 
 /// 进程级共享 pipeline。第一次访问时从 `site.json` + env 装载。
 ///
-/// 后续 `site.json` 改动需要重启进程才会生效（Phase 5.1 hot reload 之前）。
+/// 调用 [`reload_pipeline`] 后会换成新装载的实例（无需重启进程）。
 pub fn shared_pipeline() -> Arc<ModerationPipeline> {
-  SHARED
-    .get_or_init(|| {
-      let site = SiteConfig::from_file(
-        rustineverything_core::utils::get_asset_root()
-          .join("site.json")
-          .to_str()
-          .unwrap_or_default(),
-      )
-      .unwrap_or_default();
-
-      let plugin_dir: PathBuf = rustineverything_core::utils::get_asset_root().join("plugins");
-      let llm: Option<Arc<dyn LlmClient>> = default_client_from_env().map(Arc::from);
-
-      let pipeline = ModerationPipeline::from_site_config(&site, &plugin_dir, llm);
-      if pipeline.is_empty() {
-        tracing::info!("moderation: shared pipeline empty (disabled or unconfigured)");
-      } else {
-        tracing::info!(
-          stages = ?pipeline.stage_names(),
-          "moderation: shared pipeline initialized"
-        );
-      }
-      Arc::new(pipeline)
-    })
-    .clone()
+  match cell().read() {
+    Ok(guard) => guard.clone(),
+    // 锁中毒（某次写时 panic）→ 退化到一条新装载的 pipeline，绝不阻塞业务。
+    Err(poisoned) => poisoned.into_inner().clone(),
+  }
 }
 
-/// 仅供测试 / hot reload 使用：清空全局 pipeline 以便下一次访问重读 site.json。
-/// 生产代码不要调；当前 OnceLock 不支持 reset，所以该函数留为占位接口。
+/// Phase 5.1 hot reload：重读 `site.json` + 插件目录，原子替换全局 pipeline。
+/// admin 上传 / 切换审核插件或改阈值后调用即可生效，无需重启进程。
+///
+/// 旧 pipeline（连同其 `PluginManager` 缓存的 wasmi `Module`）在替换后引用计
+/// 数归零即被 Drop，不会泄漏。
+pub fn reload_pipeline() {
+  let fresh = Arc::new(build_pipeline());
+  match cell().write() {
+    Ok(mut guard) => *guard = fresh,
+    Err(poisoned) => *poisoned.into_inner() = fresh,
+  }
+}
+
+/// 仅供测试使用：等价于 [`reload_pipeline`]，强制下一次访问重读 site.json。
 #[doc(hidden)]
 pub fn _internal_reset_for_tests() {
-  // OnceLock 在 stable rust 不支持 take（要 nightly），所以这里只是占位。
-  // 真正的 hot reload 见 Phase 5.1。
+  reload_pipeline();
 }
 
 /// 用全局 pipeline 评估一条提交。便捷的「一行接入」入口。

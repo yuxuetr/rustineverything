@@ -96,6 +96,34 @@ docker run --rm -v rustineverything_app-uploads:/data -v $(pwd):/in \
 这两个跟随 git 仓库 / 镜像版本走，**不**需要独立备份。任何 `assets/`
 变更必须经 git → CI → 重新 build 镜像，才能上线。
 
+### 2.4 插件热更新（Hot Reload, Phase 5.1）
+
+admin 可在 `/admin/plugins` 直接上传 `.wasm`，无需重启进程：
+
+- **校验**：上传字节先在临时 wasmi Store 上编译 + 实例化，校验 `memory` /
+  `alloc` / `dealloc` 导出，并读 `get_manifest` 比对 ABI 版本。不兼容 / 非法
+  wasm 直接拒绝，文件不落盘。
+- **原子替换 + 回滚**：旧文件先复制为 `<name>.bak`，新字节写 `<name>.tmp` 后
+  `rename` 原子替换；任一 IO 步骤失败自动从 `.bak` 恢复。
+- **生效**：替换后失效 `PluginManager` 缓存（主题 / i18n / auth 下次调用按
+  mtime 重新加载）；审核类插件额外触发 `reload_pipeline()` 重建审核流水线。
+- 「重新载入」按钮 = `admin_reload_plugins`：清空全部插件缓存 + 重建审核流水线
+  （改完 `site.json::moderation` 阈值 / 插件列表后点一下即可生效）。
+
+> ⚠️ **持久化警告**：hot reload 写入的是**运行中容器**的 `assets/plugins/`。
+> 容器重建（`docker compose up --force-recreate` / 滚动发布）会回到镜像内的
+> 版本。要永久生效，仍需把 `.wasm` 提交进 git → CI → 重 build 镜像（见 2.3）。
+> 若希望热更新持久，可把 `assets/plugins/` 挂为命名卷。
+
+**内存回收监测**：每次 reload 旧 `wasmi::Module` 句柄从缓存 HashMap 移除即
+Drop（单测 `test_reload_evicts_old_module_cache_stays_bounded` 验证缓存恒为
+单条不累积）。生产环境若担心长跑泄漏，连续上传同一插件后观察 RSS：
+
+```bash
+# 反复 reload 时跟随容器内存（应趋于平稳，不持续爬升）
+watch -n 5 'docker compose exec app sh -c "cat /proc/1/status | grep VmRSS"'
+```
+
 ## 3. 数据库迁移
 
 ### 3.1 自动应用

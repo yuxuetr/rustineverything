@@ -54,7 +54,7 @@ pub mod url_blocklist;
 
 pub use hook::{
   absolutize_image_url, enqueue_if_flagged, evaluate_submission, evaluate_with_images,
-  extract_image_urls, shared_pipeline,
+  extract_image_urls, reload_pipeline, shared_pipeline,
 };
 pub use pipeline::ModerationPipeline;
 pub use plugin_stage::PluginModerationStage;
