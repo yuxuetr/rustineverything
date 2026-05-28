@@ -24,6 +24,19 @@ const UPLOAD_MAX_BYTES: usize = 5 * 1024 * 1024;
 #[cfg(feature = "server")]
 const UPLOAD_ALLOWED_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp"];
 
+/// 写盘前的第一道大小防线：取出 base64 负载（接受 `data:URL` 或裸 base64），
+/// 按长度估算解码后字节数（`len * 3/4` 为上限），超出 `UPLOAD_MAX_BYTES` 即拒绝。
+/// 在分配解码缓冲区之前拦截超大负载，返回提取出的裸 base64 切片。
+#[cfg(feature = "server")]
+pub(crate) fn check_upload_size(data_base64: &str) -> Result<&str, String> {
+  let base64_str = data_base64.split(',').next_back().unwrap_or(data_base64);
+  let estimated_bytes = base64_str.len().saturating_mul(3) / 4;
+  if estimated_bytes > UPLOAD_MAX_BYTES {
+    return Err(format!("文件过大（限制 {} MB）", UPLOAD_MAX_BYTES / 1024 / 1024));
+  }
+  Ok(base64_str)
+}
+
 /// 检测上传文件的 MIME 类型。针对 png/jpg/gif/webp 的 magic bytes 进行验证。
 /// 返回 "mime/subtype" 或 None。
 #[cfg(feature = "server")]
@@ -82,18 +95,8 @@ pub async fn upload_image(name: String, data_base64: String) -> Result<String, S
     use rustineverything_module_moderation::{enqueue_if_flagged, evaluate_submission};
     use rustineverything_sdk::{ImageRef, ModerationSubmission};
 
-    // 1. 取出 Base64 负载部分（接受 data:URL 或裸 base64）
-    let base64_str = data_base64.split(',').next_back().unwrap_or(&data_base64);
-
-    // 2. 预估 base64 解码后的字节数，提前拒绝超大负载
-    //    base64 长度 * 3/4 即为原字节数的上限
-    let estimated_bytes = base64_str.len().saturating_mul(3) / 4;
-    if estimated_bytes > UPLOAD_MAX_BYTES {
-      return Err(ServerFnError::new(format!(
-        "文件过大（限制 {} MB）",
-        UPLOAD_MAX_BYTES / 1024 / 1024
-      )));
-    }
+    // 1. 取出 Base64 负载并按长度估算提前拒绝超大负载（写盘前第一道防线）
+    let base64_str = check_upload_size(&data_base64).map_err(ServerFnError::new)?;
 
     let data = base64::engine::general_purpose::STANDARD
       .decode(base64_str)
@@ -249,6 +252,26 @@ mod tests {
   fn test_safe_filename_rejects_unsupported_mime() {
     let result = safe_upload_filename("x.bmp", "image/bmp");
     assert!(result.is_err());
+  }
+
+  #[test]
+  fn test_check_upload_size_accepts_small_payload() {
+    let payload = "AAAA".repeat(10);
+    assert_eq!(check_upload_size(&payload).unwrap(), payload);
+  }
+
+  #[test]
+  fn test_check_upload_size_strips_data_url_prefix() {
+    assert_eq!(check_upload_size("data:image/png;base64,QUJD").unwrap(), "QUJD");
+  }
+
+  #[test]
+  fn test_check_upload_size_rejects_oversize() {
+    // 长度取至 estimated_bytes (len*3/4) 必然 > 5MB 上限
+    let over_len = UPLOAD_MAX_BYTES / 3 * 4 + 16;
+    let payload = "A".repeat(over_len);
+    let err = check_upload_size(&payload).unwrap_err();
+    assert!(err.contains("过大"));
   }
 
   #[test]

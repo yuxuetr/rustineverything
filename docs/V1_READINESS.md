@@ -25,7 +25,8 @@
 
 - ✅ 11 个内置模块，`site.json::modules.<id>.enabled` 一键开关（nav/路由 gate/sitemap/feed 一致）
 - ✅ 5 个新内容板块：embedded / ai / web3 / wasm / cli（各独立 crate，≥15 单测，含真实长文）
-- 🟡 每板块 ≥3 真实案例（cases 联动）+ 板块文章接入 Tantivy 搜索 — 机制就绪，内容/接线待补
+- ✅ 板块文章接入 Tantivy 全文搜索（`collect_boards()` 索引 `assets/topics/<board>/`，kind=板块 id，受 `site.json` 模块开关 gate）
+- 🟡 每板块 ≥3 真实案例（cases 联动）— 机制就绪，案例内容待补
 
 ## 4. 内容审核（Phase 4）
 
@@ -52,11 +53,11 @@
 
 ## 7. 部署 / CI / 运维（Phase 7）
 
-- ✅ 多阶段 Alpine Dockerfile + `docker-compose.yml`（app + postgres；审核走托管 LLM API，无 ollama/GPU 依赖）
+- ✅ 多阶段 Debian (trixie/glibc) Dockerfile + `docker-compose.yml`（app + postgres；审核走托管 LLM API，无 ollama/GPU 依赖）
 - ✅ CI：fmt + clippy **强校验**（clippy `-D warnings` 零告警）+ test + build + wasm 插件构建
 - ✅ tracing 日志（`RUST_LOG`），全工作区无 `println!` 调试输出
 - ✅ runbook：`DEPLOY_GUIDE.md`（部署）+ `OPERATIONS.md`（day-2 运维，含 hot reload §2.4）
-- 🟡 `docker compose up` 一键起 + 自动迁移 — 配置完整，需在干净 docker 环境实跑确认
+- ✅ `docker compose up` 一键起 + 自动迁移 — 2026-05-29 干净环境实跑通过（Debian trixie 镜像；postgres healthy → app 启动 → 8 表迁移干净应用 → `curl :8080` 200）
 - ⏳ 7.2 PKCE 持久化（加密 cookie）/ 7.3 搜索 `MmapDirectory` 持久化 — v1 可选
 
 ## 8. 上线前必做（go-live）
@@ -71,6 +72,6 @@
 ## 9. 已知限制（v1 可接受）
 
 - 审核阈值在线图形编辑器未做（改 site.json + 「重新载入」生效）。
-- 板块文章未进全文搜索索引；cases 每板块 ≥3 真实案例为内容待补。
+- cases 每板块 ≥3 真实案例为内容待补（搜索索引已接入板块文章）。
 - 评论硬删除，无软删除 / 操作审计。
 - hot reload 写入运行中容器的 `assets/plugins/`，容器重建会回到镜像版本（除非挂卷）。

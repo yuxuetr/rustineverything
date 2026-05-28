@@ -68,7 +68,8 @@
 - [x] **图片上传校验**：`upload_image` 增加 MIME 嗅探（白名单 png/jpg/gif/webp）+ 文件大小上限（5MB）+ 安全文件名（移除 `..`、`/`、`\`，限制扩展名）
 - [x] **`access_token` 加密存表**：`user_identities.access_token` 当前明文落库；用 `JWT_SECRET` 派生密钥做 AES-GCM 加密；解密失败时强制重新登录
 - [x] **删除 dead code**：`crates/plugins/prefix-plugin/` 是 hello-world demo，未在 site.json 引用；移到 `examples/` 或直接删除
-- [ ] 单测：state 校验失败拒绝登录 / 大文件上传拒绝 / 非白名单 MIME 拒绝 / 加密 token 可解密回原值 / 事务回滚正确
+- [x] 单测：state 校验失败拒绝登录（`auth/mod.rs` 3 例：非法/provider 不符/一次性消费）/ 大文件上传拒绝（`uploads/server.rs::check_upload_size` 3 例）/ 非白名单 MIME 拒绝（sniff + safe_filename 5 例）/ 加密 token 可解密回原值（`auth/crypto.rs` 3 例：roundtrip/唯一 nonce/篡改失败）
+  - [ ] 事务回滚正确 — 需 live DB（本地 postgres 已关，待重启后验证）
 
 ### 1A.5 Dioxus 渲染原生化（去 JS 依赖）
 - [x] `app/src/main.rs`：移除通过 `dioxus::document::eval` 动态创建 `<style>` 标签的 JavaScript 注入逻辑
@@ -382,14 +383,14 @@
 
 ### 7.2 Auth 进一步加固
 - [ ] PKCE 持久化：加密 cookie 替代进程内 HashMap
-- [ ] state CSRF 短 TTL（5 分钟）
+- [x] state CSRF 短 TTL（5 分钟）— `validate_state` 强制 `created_at.elapsed() > 300s` 拒绝 + `cleanup_expired_states` 清理（`crates/core/src/auth/mod.rs`）
 
 ### 7.3 搜索持久化
 - [ ] `MmapDirectory` 替代 `RAMDirectory`
 - [ ] 增量索引
 
 ### 7.4 部署
-- [x] `Dockerfile`（多阶段 alpine）：builder = `rust:1-alpine` + node/npm + dx CLI + wasm32 target，串接 Tailwind v4 编译 → `scripts/build_themes.sh` 主题构建 → `dx bundle --platform web --release` 全栈打包；runtime = `alpine:3.20` + `ca-certificates` + `tini`，非 root 用户 `app` 运行 `dx bundle` 产物。`docker buildx build --check` 验证 0 warning；通过 `CARGO_TARGET_DIR=/tmp/target` 覆盖 `.cargo/config.toml` 开发者本地路径。配套 `.dockerignore` 排除 target/node_modules/.git/docs 等大目录，控制构建上下文体积
+- [x] `Dockerfile`（多阶段 Debian/glibc）：builder = `rust:1-trixie` + node 20/npm + dx CLI(`=0.7.5`) + wasm32 target，串接 Tailwind v4 编译 → `scripts/build_themes.sh` 主题构建 → `dx bundle --platform web --release` 全栈打包；runtime = `debian:trixie-slim` + `ca-certificates` + `tini`，非 root 用户 `app` 运行 `dx bundle` 产物。**改用 Debian 而非 Alpine**：`dx bundle` release 下载 GitHub 预编译 glibc wasm-bindgen/wasm-opt，musl(Alpine) 上因缺 ld-linux 解释器 ENOENT 失败；builder/runtime 同为 trixie 保证 glibc 对齐。通过 `CARGO_TARGET_DIR=/tmp/target` 覆盖 `.cargo/config.toml` 开发者本地路径。配套 `.dockerignore` 排除 target/node_modules/.git/docs 等大目录，控制构建上下文体积
 - [x] `docker-compose.yml`：app + postgres（**已移除 ollama** —— 小站无需自托管 GPU 视觉模型；审核走托管 LLM API，ollama 想用也是经其 `/v1` OpenAI 兼容端点由 `OPENAI_LLM_BASE_URL` 接入，无需单独服务）。postgres 16-alpine 持久卷 + 健康检查 (`pg_isready`) gate app 启动；app 经 `service_healthy` 等 postgres 后 sea-orm-migration 自动迁移。app 环境透传可选 `OPENAI_LLM_*` / `ANTHROPIC_LLM_*`（审核默认关 → 零开销）。`.env.example` 文档化所有变量。`docker compose config` 验证 0 错误
 - [x] `.github/workflows/ci.yml`：fmt + clippy + test + build。5 jobs：fmt（report-only，待全量 reformat 后切强校验）/ clippy（report-only，~130 warnings 收敛中）/ test（强校验 `--features server --workspace --test-threads=1`）/ build-server（`cargo check`）/ build-wasm-plugins（`scripts/build_themes.sh` + plugin-theme-purple）。提交 `rustfmt.toml` 作为团队 2-space 缩进声明配置；CI 通过 `CARGO_TARGET_DIR: target` env 覆盖 `.cargo/config.toml` 中的开发者本地路径
 
@@ -403,7 +404,7 @@
 
 ### 7.7 验收门禁
 - [x] CI 全绿：fmt + clippy 从 report-only 切换为强校验。`cargo fmt --all` 全量格式化（120 文件，2-space/max_width=100）；clippy 收敛到 **0 warning**（`cargo clippy --features server --workspace --all-targets -- -D warnings` 通过）。收敛手段：`cargo clippy --fix` 自动修 + 插件/SDK 的 WASM-ABI unsafe 导出加 crate 级 `#![allow(clippy::missing_safety_doc)]`（契约见 PLUGIN_ABI.md）+ 测试 setup 的 `field_reassign_with_default` 就地 allow + 手工修若干 `matches!`/`unwrap_or_default`/`while let`/`enumerate`/`checked_div`/doc-list。`.github/workflows/ci.yml` 去掉 fmt/clippy 的 `continue-on-error`。550 测试全绿
-- [ ] `docker compose up` 一键启动 + 自动迁移（需实跑 docker 环境验证，本地未起容器）
+- [x] `docker compose up` 一键启动 + 自动迁移（2026-05-29 实跑验证：Debian trixie 多阶段镜像构建成功 → postgres healthy → app 启动，两条迁移 `initial_schema`+`moderation_queue`（8 表）在全新库上干净应用，`startup: schema migrations applied`，`curl :8080` → 200。修复链：Alpine→Debian glibc（绕开 `dx bundle` 下载的 glibc wasm-bindgen/wasm-opt 在 musl 上 ENOENT）；补 `crates/llm` COPY；dx CLI 锁 `=0.7.5` 与库版本一致）
 
 ---
 
@@ -429,7 +430,7 @@
 | 3 | ✅ 主体完成 (3.1–3.6 ✅) | 站点形态配置化（主题栈 + 2 布局 + 模块开关） |
 | 4 | ✅ 主体完成 (4.1 阈值+校验 / 4.2 XSS / 4.3 ABI / 4.4 插件+链接检测 / 4.5 队列+Admin批量+作者历史 / 4.6 文档 ✅；4.7 验收 7 个 live 用例实跑 OpenAI 全过,P95 视觉略高) | LLM/VLM 审核 + XSS 防护 |
 | 5 | 🔄 主体完成 (5.1 Hot Reload ✅ / 5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.2.2-5.2.3 示例插件、5.5 插件市场待开源后) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
-| 6 | ✅ 主体完成 (6.1–6.5 ✅ 5 板块 crate + 真实长文 / 6.7 ✅ 测试+开关+sitemap+feed；6.6 cases≥3 案例 + 搜索源待补) | 5 新内容板块（embedded/ai/web3/wasm/cli） |
+| 6 | ✅ 主体完成 (6.1–6.5 ✅ 5 板块 crate + 真实长文 / 6.7 ✅ 测试+开关+sitemap+feed + 板块文章已接入 Tantivy 搜索；6.6 仅 cases≥3 案例内容待补) | 5 新内容板块（embedded/ai/web3/wasm/cli） |
 | 7 | 🔄 主体完成 (7.1 migration / 7.4 Docker+compose / 7.5 tracing / 7.6 docs / 7.7 CI fmt+clippy 强校验 0-warning ✅；7.2/7.3 加固 + docker 实跑待补) | Docker + CI + 可部署 |
 
 ## v2.1 变更记录（2026-05-09）

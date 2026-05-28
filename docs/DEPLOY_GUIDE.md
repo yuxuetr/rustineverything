@@ -13,7 +13,7 @@
 | 单 Docker 镜像 | 已有 postgres / 数据库托管，仅跑 app | §4 |
 | 裸机 `dx serve` | 本地开发（含热重载） | [README.md](../README.md) |
 
-镜像基于 `alpine:3.20` + 非 root 用户 `app`，绑定 `0.0.0.0:8080`。
+镜像 runtime 基于 `debian:trixie-slim`（glibc）+ 非 root 用户 `app`，绑定 `0.0.0.0:8080`。
 
 ## 2. 前置条件
 

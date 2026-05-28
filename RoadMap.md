@@ -360,7 +360,7 @@ pub unsafe extern "C" fn map_profile(ptr: *mut u8, len: usize) -> u64 {
 **删除（个人站过度工程）**
 - ~~`tower-governor` 限流~~（流量低，反向代理层处理足够）
 - ~~OpenTelemetry / Grafana~~（基础 tracing 文件日志够用）
-- ~~distroless~~（普通 alpine 即可）
+- ~~distroless~~（`debian:trixie-slim` 即可；dx bundle 依赖 glibc 预编译工具，Alpine/musl 不可行）
 - ~~OWASP Top10 强制清单~~（基础安全审视即可）
 
 **验收**
