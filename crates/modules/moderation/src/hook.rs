@@ -127,6 +127,7 @@ pub async fn evaluate_with_images(
 /// 推荐先插业务行拿到 id 再入队。
 ///
 /// 失败仅 log warning，不传播错误：审核记录丢失不应影响主业务流。
+#[allow(clippy::too_many_arguments)] // 一次性入队所有快照字段，拆 struct 反而更绕
 pub async fn enqueue_if_flagged(
   db: &sea_orm::DatabaseConnection,
   verdict: &Verdict,

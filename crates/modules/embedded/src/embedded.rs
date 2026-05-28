@@ -19,7 +19,7 @@ pub fn EmbeddedIndexPage() -> Element {
     use_resource(|| async move { list_embedded_articles().await.unwrap_or_default() });
   let articles: Vec<ArticleSummary> = articles_res.read().as_ref().cloned().unwrap_or_default();
 
-  let mut active_subtopic = use_signal(|| String::new()); // "" = 全部
+  let mut active_subtopic = use_signal(String::new); // "" = 全部
   let mut query = use_signal(String::new);
 
   let q = query();

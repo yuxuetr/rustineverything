@@ -166,7 +166,7 @@ fn get_asset_root() -> PathBuf {
 fn extract_title_line(content: &str) -> Option<String> {
   // 尝试 frontmatter `title: xxx`
   if content.starts_with("---") {
-    if let Some(rest) = content.splitn(3, "---").nth(1) {
+    if let Some(rest) = content.split("---").nth(1) {
       for line in rest.lines() {
         let line = line.trim();
         if let Some(value) = line.strip_prefix("title:") {

@@ -1,8 +1,8 @@
 # Phase 7.4.3：持续集成。
 #
 # 设计原则：
-# - 主门禁是 test + build。fmt 与 clippy 当前仅报告（codebase 还在收敛中），
-#   未来达到 0-warning 时切换为 `-D warnings` 强校验。
+# - 全门禁强校验：fmt / clippy / test / build 任一失败即红。Phase 7.7 起
+#   fmt 与 clippy 已收敛到 0-warning，从 report-only 切换为强校验。
 # - `.cargo/config.toml::build.target-dir = /Users/hal/.target` 是开发者本地
 #   路径，CI 不可写。这里通过 `CARGO_TARGET_DIR: target` env 覆盖，让 cargo
 #   写到 GitHub Runner 工作目录下。
@@ -30,22 +30,19 @@ env:
 
 jobs:
   fmt:
-    name: rustfmt (report only)
+    name: rustfmt
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      # 当前 codebase 含历史 4-space 文件未统一；先以 report-only 形式
-      # 给 PR 作者可见性，避免阻塞合并。后续 PR 完成全量 reformat 后改
-      # 为强校验（去掉 `continue-on-error`）。
+      # Phase 7.7：全量 `cargo fmt --all` 后，强校验（rustfmt.toml = 2-space）。
       - name: cargo fmt --check
-        continue-on-error: true
         run: cargo fmt --all -- --check
 
   clippy:
-    name: Clippy (report only)
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,11 +53,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-server
-      # 当前 codebase 含 ~130 个 warning（多数来自插件 unused 占位 / 测试模板）；
-      # 与 fmt 同理：先报告再收敛。0-warning 后改为 `-- -D warnings`。
+      # Phase 7.7：收敛到 0-warning 后强校验（`-D warnings`）。WASM-ABI 的
+      # unsafe 导出与测试 setup 已用就地 #[allow] 标注（见 docs/PLUGIN_ABI.md）。
       - name: cargo clippy --features server --workspace
-        continue-on-error: true
-        run: cargo clippy --features server --workspace --all-targets
+        run: cargo clippy --features server --workspace --all-targets -- -D warnings
 
   test:
     name: Test (server feature)

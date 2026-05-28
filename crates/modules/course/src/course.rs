@@ -210,7 +210,7 @@ fn CourseDetailBody(
     .iter()
     .map(|ch| ch.lessons.iter().filter(|l| lesson_completed(&progress, &ch.slug, &l.slug)).count())
     .sum();
-  let percent = if total_lessons > 0 { (completed_lessons * 100) / total_lessons } else { 0 };
+  let percent = (completed_lessons * 100).checked_div(total_lessons).unwrap_or(0);
   let has_last = last.is_some();
   let continue_link = match &last {
     Some(p) => Some(format!("/course/{}/{}", course.slug, p)),

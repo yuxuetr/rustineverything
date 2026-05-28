@@ -66,6 +66,7 @@ pub struct ModerationSettings {
   /// - 精确：`"scam.com"` 只匹配 host = `scam.com`
   /// - 通配：`"*.phishing.example"` 匹配 `sub.phishing.example` 与
   ///   `phishing.example` 本身
+  ///
   /// 默认空 → 该 stage 不注册，零开销。
   #[serde(default)]
   pub url_blocklist: Vec<String>,
@@ -86,16 +87,12 @@ pub struct NavItem {
 
 /// 授权登录配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct AuthSettings {
   pub enabled: bool,
   pub providers: Vec<AuthProviderEntry>,
 }
 
-impl Default for AuthSettings {
-  fn default() -> Self {
-    Self { enabled: false, providers: vec![] }
-  }
-}
 
 /// 单个授权提供者配置项
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,6 +161,7 @@ impl Default for SiteConfig {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)] // 测试 setup：Default + 逐字段赋值更易读
 mod tests {
   use super::*;
 

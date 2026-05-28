@@ -93,7 +93,7 @@ pub fn PodcastPage() -> Element {
   };
 
   // 分页计算（tag 变化时自动限定页码范围）
-  let total_pages = ((filtered.len() + PAGE_SIZE - 1) / PAGE_SIZE).max(1);
+  let total_pages = filtered.len().div_ceil(PAGE_SIZE).max(1);
   let safe_page = current_page().min(total_pages - 1);
   let paged: Vec<Episode> =
     filtered.iter().skip(safe_page * PAGE_SIZE).take(PAGE_SIZE).cloned().collect();

@@ -10,7 +10,7 @@ pub const ALL_ROLES: &[&str] = &[ROLE_ADMIN, ROLE_MEMBER, ROLE_GUEST];
 
 /// 校验任意字符串是否是合法的角色取值
 pub fn is_known_role(role: &str) -> bool {
-  ALL_ROLES.iter().any(|r| *r == role)
+  ALL_ROLES.contains(&role)
 }
 
 /// 会话用户信息，前后端共享

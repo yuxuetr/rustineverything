@@ -93,14 +93,11 @@ pub fn SearchModal() -> Element {
                 window.addEventListener('rie-search-close', () => dioxus.send('close'));
                 "#,
       );
-      loop {
-        match e.recv::<String>().await {
-          Ok(msg) => match msg.as_str() {
-            "toggle" => open.set(!open()),
-            "close" => open.set(false),
-            _ => {}
-          },
-          Err(_) => break,
+      while let Ok(msg) = e.recv::<String>().await {
+        match msg.as_str() {
+          "toggle" => open.set(!open()),
+          "close" => open.set(false),
+          _ => {}
         }
       }
     });

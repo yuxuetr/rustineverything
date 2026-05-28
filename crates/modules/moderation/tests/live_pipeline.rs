@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)] // 测试里 Default + 逐字段赋值更易读
 //! 端到端集成测试：真实 wasm 插件 + 真实 LLM 端点（DeepSeek）。
 //!
 //! 默认 `#[ignore]`，仅当显式指定 `--ignored` 时运行：
@@ -58,10 +59,7 @@ fn check_prereqs() -> Option<Arc<dyn rustineverything_llm::LlmClient>> {
     return None;
   }
   // Box<dyn> → Arc<dyn>
-  match default_client_from_env() {
-    Some(b) => Some(Arc::from(b)),
-    None => None,
-  }
+  default_client_from_env().map(Arc::from)
 }
 
 #[tokio::test]

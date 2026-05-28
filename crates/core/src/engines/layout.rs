@@ -94,6 +94,7 @@ impl Engine for LayoutEngine {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)] // 测试 setup：Default + 逐字段赋值更易读
 mod tests {
   use super::*;
 

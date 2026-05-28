@@ -1,3 +1,4 @@
+#![allow(clippy::missing_safety_doc)] // WASM ABI exports: 安全契约见 docs/PLUGIN_ABI.md
 use serde::{Deserialize, Serialize};
 use std::mem;
 
@@ -389,7 +390,7 @@ mod tests {
 
   #[test]
   fn read_input_zero_len_returns_empty() {
-    let buf = vec![1u8, 2, 3];
+    let buf = [1u8, 2, 3];
     let ptr = buf.as_ptr() as *mut u8;
     let slice = unsafe { read_input(ptr, 0) };
     assert!(slice.is_empty());

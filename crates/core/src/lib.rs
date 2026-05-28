@@ -43,6 +43,12 @@ pub struct PluginManager {
   cache: Mutex<HashMap<PathBuf, CachedModule>>,
 }
 
+impl Default for PluginManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PluginManager {
   pub fn new() -> Self {
     let engine = Engine::default();

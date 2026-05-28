@@ -398,8 +398,8 @@
 - [x] `docs/OPERATIONS.md`：day-2 运维 — 日志（tracing + RUST_LOG + 关键事件表）/ 数据库 + uploads 备份与恢复 / 迁移管理（自动 + 手动 sea-orm-cli + 新增模板）/ 监控指标 / 6 类故障排查 / 应用 + schema + 完整回滚 / 性能调优（连接池、镜像缓存、wasm 冷启动）/ 安全运维任务表
 
 ### 7.7 验收门禁
-- [ ] CI 全绿
-- [ ] `docker compose up` 一键启动 + 自动迁移
+- [x] CI 全绿：fmt + clippy 从 report-only 切换为强校验。`cargo fmt --all` 全量格式化（120 文件，2-space/max_width=100）；clippy 收敛到 **0 warning**（`cargo clippy --features server --workspace --all-targets -- -D warnings` 通过）。收敛手段：`cargo clippy --fix` 自动修 + 插件/SDK 的 WASM-ABI unsafe 导出加 crate 级 `#![allow(clippy::missing_safety_doc)]`（契约见 PLUGIN_ABI.md）+ 测试 setup 的 `field_reassign_with_default` 就地 allow + 手工修若干 `matches!`/`unwrap_or_default`/`while let`/`enumerate`/`checked_div`/doc-list。`.github/workflows/ci.yml` 去掉 fmt/clippy 的 `continue-on-error`。550 测试全绿
+- [ ] `docker compose up` 一键启动 + 自动迁移（需实跑 docker 环境验证，本地未起容器）
 
 ---
 
@@ -426,7 +426,7 @@
 | 4 | 🔄 部分完成 (4.1 阈值 ✅ / 4.2 XSS ✅ / 4.6 文档 ✅；4.3-4.5 待 LLM 集成) | LLM/VLM 审核 + XSS 防护 |
 | 5 | 🔄 主体完成 (5.1 Hot Reload ✅ / 5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.2.2-5.2.3 示例插件、5.5 插件市场待开源后) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
 | 6 | ✅ 主体完成 (6.1–6.5 ✅ 5 板块 crate + 真实长文 / 6.7 ✅ 测试+开关+sitemap+feed；6.6 cases≥3 案例 + 搜索源待补) | 5 新内容板块（embedded/ai/web3/wasm/cli） |
-| 7 | 🔄 部分完成 (7.1 migration / 7.4.1 Dockerfile / 7.4.2 compose / 7.4.3 CI / 7.5 tracing ✅) | Docker + CI + 可部署 |
+| 7 | 🔄 主体完成 (7.1 migration / 7.4 Docker+compose / 7.5 tracing / 7.6 docs / 7.7 CI fmt+clippy 强校验 0-warning ✅；7.2/7.3 加固 + docker 实跑待补) | Docker + CI + 可部署 |
 
 ## v2.1 变更记录（2026-05-09）
 

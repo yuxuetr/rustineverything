@@ -1,3 +1,4 @@
+#![allow(clippy::missing_safety_doc)] // WASM ABI exports: 安全契约见 docs/PLUGIN_ABI.md
 //! 示例审核插件：DeepSeek（或任意 OpenAI / Anthropic 兼容 LLM）做评论审核。
 //!
 //! 本插件只管 **policy**（怎么问 LLM、怎么读懂回答），LLM 端点与协议由

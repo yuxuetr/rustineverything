@@ -69,6 +69,7 @@ impl OpenAiChat {
   /// 计算最终 endpoint。允许 base_url 既不带 `/v1` 也带 `/v1`：
   /// - `https://api.openai.com`       → 拼接 `/v1/chat/completions`
   /// - `https://api.openai.com/v1`    → 拼接 `/chat/completions`
+  ///
   /// OpenAI 官方文档示例同时存在两种写法，用户两种都可能填。
   fn endpoint(&self) -> String {
     if self.base_url.ends_with("/v1") {

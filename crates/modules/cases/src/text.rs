@@ -59,7 +59,7 @@ pub fn normalize_category(raw: &str) -> Option<String> {
 }
 
 pub fn is_known_tag(tag: &str) -> bool {
-  KNOWN_TAGS.iter().any(|t| *t == tag)
+  KNOWN_TAGS.contains(&tag)
 }
 
 pub fn normalize_tags(tags: &[String]) -> Vec<String> {
@@ -97,7 +97,7 @@ pub fn compare_cases<A: CaseSortable, B: CaseSortable>(a: &A, b: &B) -> Ordering
 
 pub fn humanize_slug(slug: &str) -> String {
   slug
-    .split(|c: char| c == '-' || c == '_')
+    .split(['-', '_'])
     .filter(|part| !part.is_empty())
     .map(|part| {
       let mut chars = part.chars();
@@ -198,8 +198,7 @@ mod tests {
 
   #[test]
   fn compare_cases_then_stars_date_and_name() {
-    let mut cases = vec![
-      SortCase {
+    let mut cases = [SortCase {
         name: "beta".to_string(),
         favorite: false,
         stars: 5,
@@ -222,8 +221,7 @@ mod tests {
         favorite: false,
         stars: 5,
         date_added: "2026-01-01".to_string(),
-      },
-    ];
+      }];
     cases.sort_by(compare_cases);
     let names: Vec<&str> = cases.iter().map(|case| case.name.as_str()).collect();
     assert_eq!(names, vec!["zeta", "newer", "alpha", "beta"]);

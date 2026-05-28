@@ -83,7 +83,7 @@ pub async fn upload_image(name: String, data_base64: String) -> Result<String, S
     use rustineverything_sdk::{ImageRef, ModerationSubmission};
 
     // 1. 取出 Base64 负载部分（接受 data:URL 或裸 base64）
-    let base64_str = data_base64.split(',').last().unwrap_or(&data_base64);
+    let base64_str = data_base64.split(',').next_back().unwrap_or(&data_base64);
 
     // 2. 预估 base64 解码后的字节数，提前拒绝超大负载
     //    base64 长度 * 3/4 即为原字节数的上限

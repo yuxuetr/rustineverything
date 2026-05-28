@@ -324,7 +324,7 @@ fn filter_summaries(
   let normalized_tags =
     tags.map(|values| normalize_tags(&values)).filter(|values| !values.is_empty());
   let normalized_category = category.and_then(|value| normalize_category(&value));
-  let query = q.map_or_else(String::new, |value| value);
+  let query = q.unwrap_or_default();
   cases.retain(|case| {
     let tag_match = match &normalized_tags {
       Some(selected) => selected.iter().any(|tag| case.tags.iter().any(|t| t == tag)),

@@ -140,10 +140,7 @@ impl ModerationPipeline {
         return self.thresholds.apply(v);
       }
       // 取最高 score 的非 Allow
-      let replace = match &best {
-        Some(b) if b.score >= v.score => false,
-        _ => true,
-      };
+      let replace = !matches!(&best, Some(b) if b.score >= v.score);
       if replace {
         best = Some(v);
       }
@@ -153,6 +150,7 @@ impl ModerationPipeline {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)] // 测试 setup：Default + 逐字段赋值更易读
 mod tests {
   use super::*;
   use async_trait::async_trait;

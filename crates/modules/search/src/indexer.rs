@@ -200,10 +200,7 @@ fn collect_cases() -> Vec<IndexedDocument> {
   scan_cases()
     .into_iter()
     .map(|case| {
-      let readme = match case.readme_md {
-        Some(value) => value,
-        None => String::new(),
-      };
+      let readme = case.readme_md.unwrap_or_default();
       let body =
         format!("{} {} {}", case.description, case.tags.join(" "), truncate_chars(&readme, 4000));
       IndexedDocument {

@@ -1,3 +1,4 @@
+#![allow(clippy::missing_safety_doc)] // WASM ABI exports: 安全契约见 docs/PLUGIN_ABI.md
 //! Phase 5.2.1：示例主题插件 — 紫罗兰（Violet / Purple）。
 //!
 //! 本插件是 [PLUGIN_DEV.md](../../docs/PLUGIN_DEV.md) 中演示的「30 分钟做

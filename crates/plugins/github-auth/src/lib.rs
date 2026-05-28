@@ -1,3 +1,4 @@
+#![allow(clippy::missing_safety_doc)] // WASM ABI exports: 安全契约见 docs/PLUGIN_ABI.md
 use rustineverything_sdk::{
   alloc, capabilities, dealloc, pack_json, AuthProviderConfig, AuthProviderDisplay, PluginManifest,
   StandardUser,
@@ -83,5 +84,5 @@ pub unsafe extern "C" fn map_profile(ptr: *mut u8, len: usize) -> u64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn plugin_unused_fix() {
-  let _ = dealloc(std::ptr::null_mut(), 0);
+  dealloc(std::ptr::null_mut(), 0);
 }

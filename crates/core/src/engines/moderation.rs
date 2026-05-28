@@ -65,6 +65,7 @@ pub trait ModerationStage: Send + Sync {
 /// Phase 4.1：阈值配置。pipeline 返回 Verdict 后，根据 score 升级 label：
 /// - `score >= block_above` → Block
 /// - `score >= flag_above`  → Flag
+///
 /// 否则保留原 label（不降级，避免「Stage 明确 Block 但分数低」的反直觉行为）。
 ///
 /// 默认阈值 `block_above = 0.9 / flag_above = 0.5`，对绝大多数 LLM 审核
@@ -150,10 +151,7 @@ impl ModerationEngine {
       if v.is_block() {
         return self.thresholds.apply(v); // 早停（阈值对 Block 无降级）
       }
-      let replace = match &best {
-        Some(b) if b.score >= v.score => false,
-        _ => true,
-      };
+      let replace = !matches!(&best, Some(b) if b.score >= v.score);
       if replace {
         best = Some(v);
       }

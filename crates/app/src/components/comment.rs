@@ -10,7 +10,7 @@ pub struct CommentBoxProps {
 
 #[component]
 pub fn CommentBox(props: CommentBoxProps) -> Element {
-  let mut content = use_signal(|| String::new());
+  let mut content = use_signal(String::new);
   let mut is_preview = use_signal(|| false);
   let mut is_submitting = use_signal(|| false);
   let session_user = crate::use_session_user();

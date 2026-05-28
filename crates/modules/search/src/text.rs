@@ -130,14 +130,12 @@ fn next_char_boundary(s: &str, pos: usize) -> usize {
 
 /// 取前 N 个字符,过长截断并加 ellipsis。
 pub fn truncate_chars(s: &str, max_chars: usize) -> String {
-  let mut count = 0;
   let mut end = s.len();
-  for (idx, _) in s.char_indices() {
+  for (count, (idx, _)) in s.char_indices().enumerate() {
     if count == max_chars {
       end = idx;
       break;
     }
-    count += 1;
   }
   if end >= s.len() {
     s.to_string()

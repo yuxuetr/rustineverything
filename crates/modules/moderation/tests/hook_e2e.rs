@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)] // 测试里 Default + 逐字段赋值更易读
 //! 端到端 hook 测试：模拟业务模块（comments / forum）调用 hook 层的完整
 //! 路径，含 markdown 图片抽取 + ModerationSubmission 构造 + pipeline 评估。
 //!

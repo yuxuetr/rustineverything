@@ -290,7 +290,7 @@ mod tests {
     // 每个字段都能从 schema 取到
     for f in [fields.kind, fields.ref_id, fields.title, fields.body, fields.url, fields.created_at]
     {
-      assert!(schema.get_field_name(f).len() > 0);
+      assert!(!schema.get_field_name(f).is_empty());
     }
   }
 

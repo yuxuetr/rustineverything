@@ -190,7 +190,7 @@ pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
       }
       out.push(ThemeInfo { filename: name.clone(), id, label, is_active: name == active_top });
     }
-    out.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    out.sort_by_key(|a| a.label.to_lowercase());
     Ok(out)
   }
   #[cfg(not(feature = "server"))]

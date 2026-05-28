@@ -1,3 +1,4 @@
+#![allow(clippy::missing_safety_doc)] // WASM ABI exports: 安全契约见 docs/PLUGIN_ABI.md
 //! Phase 3.2 主题插件：Sunset。
 //!
 //! 暖色调（橙 / 桃 / 琥珀）；同时提供 light 与 `.dark` 两套 CSS 变量。
@@ -55,5 +56,5 @@ pub unsafe extern "C" fn get_theme_css(_ptr: *mut u8, _len: usize) -> u64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn plugin_unused_fix() {
-  let _ = dealloc(std::ptr::null_mut(), 0);
+  dealloc(std::ptr::null_mut(), 0);
 }

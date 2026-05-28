@@ -173,24 +173,12 @@ pub fn CasesIndexPage() -> Element {
     let tag = selected_tag();
     async move {
       let tags = tag.map(|value| vec![value]);
-      match list_cases(tags, category, Some(q)).await {
-        Ok(cases) => cases,
-        Err(_) => Vec::new(),
-      }
+      list_cases(tags, category, Some(q)).await.unwrap_or_default()
     }
   });
-  let tags_res = use_resource(|| async move {
-    match list_case_tags().await {
-      Ok(tags) => tags,
-      Err(_) => Vec::new(),
-    }
-  });
-  let categories_res = use_resource(|| async move {
-    match list_case_categories().await {
-      Ok(categories) => categories,
-      Err(_) => Vec::new(),
-    }
-  });
+  let tags_res = use_resource(|| async move { list_case_tags().await.unwrap_or_default() });
+  let categories_res =
+    use_resource(|| async move { list_case_categories().await.unwrap_or_default() });
 
   let cases = cases_res.read().as_ref().cloned();
   let tags = tags_res.read().as_ref().cloned();
@@ -446,12 +434,7 @@ pub fn CaseDetailPage(slug: String) -> Element {
   let slug_for_res = slug.clone();
   let case_res = use_resource(move || {
     let s = slug_for_res.clone();
-    async move {
-      match get_case(s).await {
-        Ok(case) => case,
-        Err(_) => None,
-      }
-    }
+    async move { get_case(s).await.unwrap_or_default() }
   });
   let case = case_res.read().as_ref().cloned();
 

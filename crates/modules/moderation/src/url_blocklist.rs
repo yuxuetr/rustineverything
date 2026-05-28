@@ -182,7 +182,7 @@ pub fn host_of(url: &str) -> Option<&str> {
   };
   // 截到 path / query / fragment / port 之前
   let end = after_userinfo
-    .find(|c: char| matches!(c, '/' | '?' | '#' | ':'))
+    .find(['/', '?', '#', ':'])
     .unwrap_or(after_userinfo.len());
   let host = &after_userinfo[..end];
   if host.is_empty() {
@@ -196,6 +196,7 @@ pub fn host_of(url: &str) -> Option<&str> {
 /// 匹配规则：
 /// - `"scam.com"` 精确匹配 host
 /// - `"*.evil.com"` 匹配 host 为 `evil.com` 或以 `.evil.com` 结尾
+///
 /// 不区分大小写；调用方保证 patterns 已 lowercase。
 pub fn match_blocklist<'a>(host: &str, patterns: &'a [String]) -> Option<&'a str> {
   let host_lower = host.to_ascii_lowercase();

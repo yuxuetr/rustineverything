@@ -234,7 +234,7 @@ pub fn ext_in(name: &str, exts: &[&str]) -> bool {
     None => return false,
   };
   let ext = &lower[dot + 1..];
-  exts.iter().any(|e| *e == ext)
+  exts.contains(&ext)
 }
 
 /// 以"数字前缀 + 分隔符"驱动顺序：`01-foo` → (1, "foo")；无前缀返回 (i32::MAX, slug)
@@ -261,7 +261,7 @@ pub fn humanize_title(slug: &str) -> String {
   let (_, rest) = parse_order_prefix(slug);
   let base = if rest.is_empty() { slug.to_string() } else { rest };
   base
-    .split(|c: char| c == '-' || c == '_')
+    .split(['-', '_'])
     .filter(|s| !s.is_empty())
     .map(|w| {
       let mut chars = w.chars();
@@ -296,13 +296,7 @@ pub fn lang_from_ext(name: &str) -> String {
     "cpp" | "hpp" | "cc" | "hh" => "cpp",
     "html" => "html",
     "css" => "css",
-    other => {
-      if other.is_empty() {
-        "text"
-      } else {
-        "text"
-      }
-    }
+    _ => "text",
   }
   .to_string()
 }
@@ -310,6 +304,7 @@ pub fn lang_from_ext(name: &str) -> String {
 /// 把 markdown 里的相对路径图片重写为绝对 URL
 /// - `![](./diagram.png)` / `![](images/diagram.png)` → `<base>/diagram.png` 或 `<base>/images/diagram.png`
 /// - `![](/foo)` / `![](http(s)://...)` 原样保留
+///
 /// 仅支持 `![alt](url)` 格式（不处理 reference link 与 HTML img）
 pub fn rewrite_image_urls(markdown: &str, base: &str) -> String {
   let mut out = String::with_capacity(markdown.len());
@@ -398,7 +393,7 @@ pub(crate) fn parse_frontmatter_lesson(content: &str) -> (LessonFrontmatter, Str
   #[cfg(feature = "server")]
   {
     let meta: LessonFrontmatter = serde_yaml::from_str(parts[1]).unwrap_or_default();
-    return (meta, parts[2].to_string());
+    (meta, parts[2].to_string())
   }
   #[cfg(not(feature = "server"))]
   {
@@ -1647,7 +1642,7 @@ mod tests {
     let tmp = TempDir::new().unwrap();
     let cwd = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let res = (|| {
+    let res = {
       let lesson_dir =
         tmp.path().join("assets/courses/rust-basics/01-fundamentals/01-what-is-rust");
       stdfs::create_dir_all(&lesson_dir).unwrap();
@@ -1674,7 +1669,7 @@ mod tests {
       assert_eq!(lesson.downloads.len(), 1);
       assert_eq!(lesson.downloads[0].size_bytes, "pdfdata".len() as u64);
       Ok::<(), ()>(())
-    })();
+    };
     std::env::set_current_dir(cwd).unwrap();
     res.unwrap();
   }
@@ -1684,7 +1679,7 @@ mod tests {
     let tmp = TempDir::new().unwrap();
     let cwd = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let res = (|| {
+    let res = {
       let root = tmp.path().join("assets/courses");
       // course rust-basics with two chapters
       write(
@@ -1713,7 +1708,7 @@ mod tests {
       let async_rust = courses.iter().find(|c| c.slug == "async-rust").unwrap();
       assert_eq!(async_rust.title, "Async Rust");
       Ok::<(), ()>(())
-    })();
+    };
     std::env::set_current_dir(cwd).unwrap();
     res.unwrap();
   }
@@ -1749,10 +1744,10 @@ mod tests {
     let tmp = TempDir::new().unwrap();
     let cwd = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
-    let res = (|| {
+    let res = {
       let root = tmp.path().join("assets/courses");
       // course 没有任何 lesson
-      stdfs::create_dir_all(&root.join("empty/01-ch")).unwrap();
+      stdfs::create_dir_all(root.join("empty/01-ch")).unwrap();
       // course 有一个 lesson
       write(&root.join("real/01-ch/01-le/index.md"), "# r");
 
@@ -1760,7 +1755,7 @@ mod tests {
       assert_eq!(courses.len(), 1);
       assert_eq!(courses[0].slug, "real");
       Ok::<(), ()>(())
-    })();
+    };
     std::env::set_current_dir(cwd).unwrap();
     res.unwrap();
   }

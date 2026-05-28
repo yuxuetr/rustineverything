@@ -263,7 +263,7 @@ fn UserRow(user: AdminUserRow, on_role_changed: EventHandler<Result<(), String>>
                   disabled: submitting(),
                   onchange: move |evt| {
                       let new_role = evt.value();
-                      let on_role_changed = on_role_changed.clone();
+                      let on_role_changed = on_role_changed;
                       spawn(async move {
                           submitting.set(true);
                           let res = admin_set_user_role(user_id, new_role).await;
@@ -378,7 +378,7 @@ fn CommentRow(comment: AdminCommentRow, on_deleted: EventHandler<Result<(), Stri
                   class: "px-3 py-1 rounded text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50",
                   disabled: submitting(),
                   onclick: move |_| {
-                      let on_deleted = on_deleted.clone();
+                      let on_deleted = on_deleted;
                       spawn(async move {
                           submitting.set(true);
                           match admin_delete_comment(id).await {
@@ -498,7 +498,7 @@ fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) 
                   class: "px-3 py-1 rounded text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50",
                   disabled: submitting(),
                   onclick: move |_| {
-                      let on_deleted = on_deleted.clone();
+                      let on_deleted = on_deleted;
                       spawn(async move {
                           submitting.set(true);
                           match admin_delete_topic(id).await {
@@ -903,7 +903,7 @@ fn ModerationQueueRowView(
                           class: "px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50",
                           disabled: submitting(),
                           onclick: move |_| {
-                              let on_done = on_done.clone();
+                              let on_done = on_done;
                               spawn(async move {
                                   submitting.set(true);
                                   match admin_approve_moderation(id).await {
@@ -919,7 +919,7 @@ fn ModerationQueueRowView(
                           class: "px-3 py-1.5 rounded-md text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50",
                           disabled: submitting(),
                           onclick: move |_| {
-                              let on_done = on_done.clone();
+                              let on_done = on_done;
                               spawn(async move {
                                   submitting.set(true);
                                   match admin_reject_moderation(id).await {

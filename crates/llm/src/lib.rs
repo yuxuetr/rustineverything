@@ -1,12 +1,11 @@
 //! LLM 集成：OpenAI 兼容 + Anthropic 兼容双模式。
 //!
 //! ## 设计
-//! - **配置驱动**：四个独立 env 变量，两两成对（OpenAI 一对 / Anthropic
-//!   一对）。
-//!     - `OPENAI_LLM_BASE_URL` + `OPENAI_LLM_API_KEY`
-//!     - `ANTHROPIC_LLM_BASE_URL` + `ANTHROPIC_LLM_API_KEY`
-//!   独立 key 让用户可以混合不同厂商（例如 OpenAI 兼容指向 DeepSeek，
-//!   Anthropic 兼容指向真正的 Claude）。
+//! - **配置驱动**：四个独立 env 变量，两两成对——OpenAI 一对
+//!   (`OPENAI_LLM_BASE_URL` + `OPENAI_LLM_API_KEY`) / Anthropic 一对
+//!   (`ANTHROPIC_LLM_BASE_URL` + `ANTHROPIC_LLM_API_KEY`)。独立 key 让用户
+//!   可以混合不同厂商（例如 OpenAI 兼容指向 DeepSeek，Anthropic 兼容指向
+//!   真正的 Claude）。
 //! - **优先级**：`OPENAI_LLM_BASE_URL` 非空（且 key 也非空）→ OpenAI；
 //!   否则 `ANTHROPIC_LLM_BASE_URL` 非空（且 key 也非空）→ Anthropic；
 //!   都未配置 → `None`。

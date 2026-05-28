@@ -566,7 +566,7 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
       return;
     }
     let body = content();
-    let on_replied = on_replied.clone();
+    let on_replied = on_replied;
     spawn(async move {
       submitting.set(true);
       error.set(None);
@@ -623,7 +623,7 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
                       else { "btn-flow" }
                   ),
                   disabled: submitting(),
-                  onclick: move |evt| handle_submit(evt),
+                  onclick: handle_submit,
                   if submitting() { "{tf(lang, \"forum.submitting\")}" } else { "{tf(lang, \"forum.post_reply\")}" }
               }
           }
@@ -827,7 +827,7 @@ pub fn NewTopicPage() -> Element {
                           if submitting() { "bg-slate-200 text-slate-400 cursor-not-allowed" }
                           else { "btn-flow" }),
                       disabled: submitting(),
-                      onclick: move |evt| handle_submit(evt),
+                      onclick: handle_submit,
                       if submitting() { "{tf(lang, \"forum.publishing\")}" } else { "{tf(lang, \"forum.publish_topic\")}" }
                   }
               }

@@ -430,7 +430,7 @@ fn convert_admonitions(body: &str) -> String {
     let trimmed = line.trim();
     if !in_block {
       if let Some(kind) = trimmed.strip_prefix(":::").and_then(|rest| {
-        let word = rest.trim().split_whitespace().next().unwrap_or("");
+        let word = rest.split_whitespace().next().unwrap_or("");
         match word.to_lowercase().as_str() {
           "note" | "info" => Some("NOTE"),
           "tip" | "success" => Some("TIP"),

@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 /// under the field once the server replies.
 #[component]
 pub fn Echo() -> Element {
-  let mut response = use_signal(|| String::new());
+  let mut response = use_signal(String::new);
 
   rsx! {
       div {

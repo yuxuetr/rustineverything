@@ -250,7 +250,7 @@ mod tests {
   #[test]
   fn filter_by_capability_with_no_manifests_returns_empty() {
     let e = make_engine();
-    let nonexistent = vec![PathBuf::from("/tmp/__no_such_plugin__.wasm")];
+    let nonexistent = [PathBuf::from("/tmp/__no_such_plugin__.wasm")];
     let refs: Vec<&Path> = nonexistent.iter().map(|p| p.as_path()).collect();
     let result = e.filter_by_capability(refs, capabilities::THEME);
     assert!(result.is_empty());
