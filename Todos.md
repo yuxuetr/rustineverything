@@ -310,9 +310,10 @@
 - [x] `docs/MODERATION_SPEC.md`：XSS 攻击面审计 / sanitize_user_html / dangerous_inner_html 审计 / ModerationEngine 骨架 / Phase 4.3-4.5 路线图 / 安全清单
 
 ### 4.7 验收门禁
-- [ ] 审核 P95 ≤ 1.5s
-- [ ] 模拟违规 → Block/Flag 正确
-- [ ] LLM 失败不阻塞用户
+> 用 `.env` 的 OpenAI 配置(gpt-4o-mini)实跑 `crates/modules/moderation/tests/{live_pipeline,hook_e2e}.rs` 的 7 个 `#[ignore]` live 用例,全过。
+- [-] 审核 P95 ≤ 1.5s：实测 gpt-4o-mini 纯文本调用 ≈1.4–1.8s/次(live_pipeline 5 例含纯文本+视觉+黑名单 7.25s);纯文本基本达标,视觉略高。数值随 provider/model 浮动,正式 P95 需在目标部署模型上测
+- [x] 模拟违规 → Block/Flag 正确：benign 文本→Allow、abusive 文本→Block/Flag、benign 图片(视觉)→Allow、钓鱼链接→Block/Flag、URL 黑名单→Block、full-pipeline hook abusive→Block —— 7 例全过(实跑 OpenAI)
+- [x] LLM 失败不阻塞用户：fail-open 由离线用例 `disabled_pipeline_allows_anything_including_abusive` + 各 stage 内部 fail-open 覆盖(默认 `moderation.enabled=false` → 空流水线 → 零开销 Allow)
 
 ---
 
@@ -426,7 +427,7 @@
 | 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
 | 2 | ✅ 主体完成 (2.1–2.6 ✅ / Lighthouse 需上线后实测) | MDX 组件开放注册 + SEO 到位 |
 | 3 | ✅ 主体完成 (3.1–3.6 ✅) | 站点形态配置化（主题栈 + 2 布局 + 模块开关） |
-| 4 | 🔄 部分完成 (4.1 阈值 ✅ / 4.2 XSS ✅ / 4.6 文档 ✅；4.3-4.5 待 LLM 集成) | LLM/VLM 审核 + XSS 防护 |
+| 4 | ✅ 主体完成 (4.1 阈值+校验 / 4.2 XSS / 4.3 ABI / 4.4 插件+链接检测 / 4.5 队列+Admin批量+作者历史 / 4.6 文档 ✅；4.7 验收 7 个 live 用例实跑 OpenAI 全过,P95 视觉略高) | LLM/VLM 审核 + XSS 防护 |
 | 5 | 🔄 主体完成 (5.1 Hot Reload ✅ / 5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.2.2-5.2.3 示例插件、5.5 插件市场待开源后) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
 | 6 | ✅ 主体完成 (6.1–6.5 ✅ 5 板块 crate + 真实长文 / 6.7 ✅ 测试+开关+sitemap+feed；6.6 cases≥3 案例 + 搜索源待补) | 5 新内容板块（embedded/ai/web3/wasm/cli） |
 | 7 | 🔄 主体完成 (7.1 migration / 7.4 Docker+compose / 7.5 tracing / 7.6 docs / 7.7 CI fmt+clippy 强校验 0-warning ✅；7.2/7.3 加固 + docker 实跑待补) | Docker + CI + 可部署 |
