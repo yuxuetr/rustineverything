@@ -31,8 +31,10 @@ pub unsafe extern "C" fn translate(ptr: *mut u8, len: usize) -> u64 {
   let mut bundle = FluentBundle::new(vec![lang_id]);
 
   let ftl = if lang == "en" { FTL_EN } else { FTL_ZH };
-  let res = FluentResource::try_new(ftl.to_string()).expect("Failed to parse ftl");
-  bundle.add_resource(res).expect("Failed to add resource");
+  // try_new 即使解析出错也会返回（部分）资源；取回它而非 panic，
+  // 让 wasm 调用永不 trap（缺失的 key 会自然回退为原 key）。
+  let res = FluentResource::try_new(ftl.to_string()).unwrap_or_else(|(res, _errors)| res);
+  let _ = bundle.add_resource(res);
 
   // 3. 执行翻译
   let msg = bundle.get_message(key);

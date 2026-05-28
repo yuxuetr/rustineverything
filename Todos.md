@@ -408,7 +408,7 @@
 
 ## 跨阶段持续任务
 
-- [ ] **代码规范**：消除所有非测试代码中的 `unwrap` / `expect`
+- [-] **代码规范**：消除非测试代码中的 `unwrap` / `expect`。全量扫描后实际仅 ~5 处：已修 `app/server/mod.rs` 的 `.to_str().unwrap()`（→ `.and_then(to_str).ok().unwrap_or_default()`）+ i18n 插件 2 处 `expect`（→ `FluentResource::try_new(...).unwrap_or_else(|(r,_)| r)` + 忽略 add_resource 错误，已重建 wasm）。**剩余 2 处为有意为之的启动 fail-fast**：`main.rs` / `build_auth_service` 的 `std::env::var("BASE_URL").expect(...)`（与 `get_jwt_secret()` panic 同属 1A.1「缺配置即硬失败」设计，保留）。examples / tests / build.rs 按约定豁免
 - [ ] **Rust target dir**：构建产物路径 `/Users/hal/.target`
 - [ ] **debug 习惯**：新增 server fn 打印请求/响应/DB 查询便于联调
 - [ ] **每个模块完成后**：更新本 Todos.md + 写 `docs/<MODULE>_SPEC.md`

@@ -271,8 +271,9 @@ fn build_auth_service() -> (rustineverything_core::auth::AuthService, SiteConfig
   let base_url =
     std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
   let config = AuthConfig { base_url };
+  let site_path = get_asset_root().join("site.json");
   let site_config =
-    SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap()).unwrap_or_default();
+    site_path.to_str().and_then(|p| SiteConfig::from_file(p).ok()).unwrap_or_default();
   let auth_service = AuthService::new(config, get_asset_root().join("plugins"));
   (auth_service, site_config)
 }
