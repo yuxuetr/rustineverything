@@ -347,20 +347,26 @@
 > 每模块遵循 `lib.rs + <name>.rs(UI) + server.rs + text.rs` + 单测 ≥ 12。
 
 ### 6.1 ~ 6.5 新模块
-- [ ] `modules/embedded`：Rust 嵌入式（no_std / Embassy / RTIC / 平台）
-- [ ] `modules/ai`：Rust AI（candle / burn / llm 推理 / tokenizers）
-- [ ] `modules/web3`：Web3（alloy / solana / anchor / substrate）
-- [ ] `modules/wasm`：WASM 专题（wasm-bindgen / wasi / 组件模型）
-- [ ] `modules/cli`：CLI 工具（clap / ratatui / indicatif）
+> 5 个**独立 crate**（用户选定，接受结构重复），统一形态：`lib.rs + <board>.rs(UI) +
+> server.rs(扫 `assets/topics/<board>/*/index.md`) + text.rs(子主题/精选 crate/搜索/排序 +
+> 15 单测)`。落地页 = 子主题筛选 chip + 搜索 + 文章卡片 + 精选 crate 侧栏；详情页复用
+> `widgets::Markdown` 渲染。导航用 `<a href>` 避免对 app `Route` 循环依赖。
+- [x] `modules/embedded`：嵌入式（no_std / Embassy / RTIC / HAL / defmt / 平台）；2 篇真实长文（no_std 入门、Embassy 异步固件）
+- [x] `modules/ai`：AI（张量 / 推理 / LLM / tokenizers / 训练 / 向量）；真实长文（candle 本地 LLM）
+- [x] `modules/web3`：Web3（EVM / Solana / Substrate / 合约 / 钱包 / 索引）；真实长文（alloy 读链上状态）
+- [x] `modules/wasm`：WASM（wasm-bindgen / WASI / 组件模型 / 运行时 / 前端 / 插件）；真实长文（wasmtime 插件沙箱）
+- [x] `modules/cli`：CLI（参数 / TUI / 输出 / 配置 / 测试 / 分发）；真实长文（clap derive 子命令）
+- [x] 接线：workspace + app Cargo.toml、`default_module_specs`（nav 50–90）、app routes（落地 + `/<board>/:slug` 详情，复用原 `/ai` `/web3` 占位）、ClassicShell nav、sitemap + feed
 
 ### 6.6 Cases 联动
-- [ ] 按 module 自动归类
-- [ ] 每模块至少 3 个真实案例
+- [-] 按 module 自动归类：cases 已有 `category` 字段（含 embedded/ai/web3/cli）+ tag（wasm），分类机制就绪；板块页「相关案例」展示与每板块 ≥3 真实案例属内容补充，留待后续
+- [ ] 每模块至少 3 个真实案例（内容撰写，后续补）
 
 ### 6.7 验收门禁
-- [ ] 5 模块 `cargo test -p` 通过
-- [ ] ModuleEngine 一键开关
-- [ ] sitemap / feed 包含新模块内容
+- [x] 5 模块 `cargo test -p` 通过：每个 15 单测（13 text + 2 server）全绿
+- [x] ModuleEngine 一键开关：`site.json::modules.<board>.enabled` 控制 nav / 路由 gate / sitemap / feed
+- [x] sitemap / feed 包含新模块内容：`/sitemap.xml` 与 `/feed.xml` 均按开关收录 5 板块静态路径 + 文章条目（feed 全站按日期降序取最近 50）
+- [-] 搜索源接入：Tantivy indexer 暂未加板块源（blog/docs/case/forum 现有），留待后续
 
 ---
 
@@ -419,7 +425,7 @@
 | 3 | ✅ 主体完成 (3.1–3.6 ✅) | 站点形态配置化（主题栈 + 2 布局 + 模块开关） |
 | 4 | 🔄 部分完成 (4.1 阈值 ✅ / 4.2 XSS ✅ / 4.6 文档 ✅；4.3-4.5 待 LLM 集成) | LLM/VLM 审核 + XSS 防护 |
 | 5 | 🔄 主体完成 (5.1 Hot Reload ✅ / 5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.2.2-5.2.3 示例插件、5.5 插件市场待开源后) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
-| 6 | ⏳ 待开始 | 5 新内容板块 |
+| 6 | ✅ 主体完成 (6.1–6.5 ✅ 5 板块 crate + 真实长文 / 6.7 ✅ 测试+开关+sitemap+feed；6.6 cases≥3 案例 + 搜索源待补) | 5 新内容板块（embedded/ai/web3/wasm/cli） |
 | 7 | 🔄 部分完成 (7.1 migration / 7.4.1 Dockerfile / 7.4.2 compose / 7.4.3 CI / 7.5 tracing ✅) | Docker + CI + 可部署 |
 
 ## v2.1 变更记录（2026-05-09）

@@ -24,6 +24,11 @@ use rustineverything_module_forum::forum::{
 };
 use rustineverything_module_podcast::podcast::PodcastPage;
 use rustineverything_module_cases::cases::{CaseDetailPage, CasesIndexPage};
+use rustineverything_module_embedded::embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
+use rustineverything_module_ai::ai::{AiArticlePage, AiIndexPage};
+use rustineverything_module_web3::web3::{Web3ArticlePage, Web3IndexPage};
+use rustineverything_module_wasm::wasm::{WasmArticlePage, WasmIndexPage};
+use rustineverything_module_cli::cli::{CliArticlePage, CliIndexPage};
 
 /// Application routes
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -60,11 +65,31 @@ pub enum Route {
         #[route("/case/:slug")]
         CaseDetail { slug: String },
 
+        // Phase 6 内容板块：每个一条落地页 + 一条文章详情页
+        #[route("/embedded")]
+        Embedded {},
+        #[route("/embedded/:slug")]
+        EmbeddedArticle { slug: String },
+
         #[route("/ai")]
         Ai {},
+        #[route("/ai/:slug")]
+        AiArticle { slug: String },
 
         #[route("/web3")]
         Web3 {},
+        #[route("/web3/:slug")]
+        Web3Article { slug: String },
+
+        #[route("/wasm")]
+        Wasm {},
+        #[route("/wasm/:slug")]
+        WasmArticle { slug: String },
+
+        #[route("/cli")]
+        Cli {},
+        #[route("/cli/:slug")]
+        CliArticle { slug: String },
 
         // 论坛：注意路由顺序，静态路径优先于 i32 动态参数
         #[route("/topics")]
@@ -455,28 +480,56 @@ pub fn CaseDetail(slug: String) -> Element {
   rsx! { ModuleGate { id: "cases".to_string(), CaseDetailPage { slug } } }
 }
 
+// ── Phase 6 内容板块路由（委派给各模块的页面组件，ModuleGate 控制开关）──
+
+#[component]
+pub fn Embedded() -> Element {
+  rsx! { ModuleGate { id: "embedded".to_string(), EmbeddedIndexPage {} } }
+}
+
+#[component]
+pub fn EmbeddedArticle(slug: String) -> Element {
+  rsx! { ModuleGate { id: "embedded".to_string(), EmbeddedArticlePage { slug } } }
+}
+
 #[component]
 pub fn Ai() -> Element {
-  rsx! {
-      section { class: "py-12 bg-white dark:bg-slate-950",
-          Container {
-              SectionTitle { title: "AI".to_string(), subtitle: Some("Rust 驱动的 AI 开发".to_string()) }
-              div { class: "text-center text-slate-500 py-20", "AI modules are coming soon..." }
-          }
-      }
-  }
+  rsx! { ModuleGate { id: "ai".to_string(), AiIndexPage {} } }
+}
+
+#[component]
+pub fn AiArticle(slug: String) -> Element {
+  rsx! { ModuleGate { id: "ai".to_string(), AiArticlePage { slug } } }
 }
 
 #[component]
 pub fn Web3() -> Element {
-  rsx! {
-      section { class: "py-12 bg-white dark:bg-slate-950",
-          Container {
-              SectionTitle { title: "Web3".to_string(), subtitle: Some("区块链与去中心化应用".to_string()) }
-              div { class: "text-center text-slate-500 py-20", "Web3 modules are coming soon..." }
-          }
-      }
-  }
+  rsx! { ModuleGate { id: "web3".to_string(), Web3IndexPage {} } }
+}
+
+#[component]
+pub fn Web3Article(slug: String) -> Element {
+  rsx! { ModuleGate { id: "web3".to_string(), Web3ArticlePage { slug } } }
+}
+
+#[component]
+pub fn Wasm() -> Element {
+  rsx! { ModuleGate { id: "wasm".to_string(), WasmIndexPage {} } }
+}
+
+#[component]
+pub fn WasmArticle(slug: String) -> Element {
+  rsx! { ModuleGate { id: "wasm".to_string(), WasmArticlePage { slug } } }
+}
+
+#[component]
+pub fn Cli() -> Element {
+  rsx! { ModuleGate { id: "cli".to_string(), CliIndexPage {} } }
+}
+
+#[component]
+pub fn CliArticle(slug: String) -> Element {
+  rsx! { ModuleGate { id: "cli".to_string(), CliArticlePage { slug } } }
 }
 
 #[component]

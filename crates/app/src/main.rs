@@ -180,7 +180,7 @@ fn main() {
                   let is_on = |id: &str| enabled.iter().any(|s| s == id);
 
                   // 仅在 blog 启用时枚举博客条目（避免无谓 IO）
-                  let entries: Vec<ContentEntry> = if is_on("blog") {
+                  let mut entries: Vec<ContentEntry> = if is_on("blog") {
                       let posts = rustineverything_module_blog::server::list_blog_posts()
                           .await
                           .unwrap_or_default();
@@ -198,6 +198,28 @@ fn main() {
                       Vec::new()
                   };
 
+                  // Phase 6：内容板块文章条目，按开关收录。
+                  macro_rules! collect_board {
+                      ($id:literal, $list:path, $route:literal) => {
+                          if is_on($id) {
+                              for a in $list().await.unwrap_or_default() {
+                                  entries.push(ContentEntry {
+                                      url_path: format!(concat!($route, "/{}"), a.slug),
+                                      title: a.title,
+                                      description: a.description,
+                                      date: a.date,
+                                      tags: a.tags,
+                                  });
+                              }
+                          }
+                      };
+                  }
+                  collect_board!("embedded", rustineverything_module_embedded::server::list_embedded_articles, "/embedded");
+                  collect_board!("ai", rustineverything_module_ai::server::list_ai_articles, "/ai");
+                  collect_board!("web3", rustineverything_module_web3::server::list_web3_articles, "/web3");
+                  collect_board!("wasm", rustineverything_module_wasm::server::list_wasm_articles, "/wasm");
+                  collect_board!("cli", rustineverything_module_cli::server::list_cli_articles, "/cli");
+
                   // 静态路径：首页恒收录；其它模块按开关动态拼接。
                   let mut static_paths: Vec<&'static str> = vec!["/"];
                   if is_on("blog") { static_paths.push("/blog"); }
@@ -206,6 +228,11 @@ fn main() {
                   if is_on("cases") { static_paths.push("/case"); }
                   if is_on("docs") { static_paths.push("/docs"); }
                   if is_on("forum") { static_paths.push("/topics"); }
+                  if is_on("embedded") { static_paths.push("/embedded"); }
+                  if is_on("ai") { static_paths.push("/ai"); }
+                  if is_on("web3") { static_paths.push("/web3"); }
+                  if is_on("wasm") { static_paths.push("/wasm"); }
+                  if is_on("cli") { static_paths.push("/cli"); }
 
                   let xml = build_sitemap_xml(&entries, &static_paths, &base);
                   axum::response::Response::builder()
@@ -222,13 +249,11 @@ fn main() {
                   let module_engine = rustineverything_core::engines::module::default_module_engine();
                   let blog_on = module_engine.is_enabled("blog");
 
-                  let entries: Vec<ContentEntry> = if blog_on {
-                      // 取最近 50 篇（list_blog_posts 已按 date desc 排序）。
-                      let mut posts = rustineverything_module_blog::server::list_blog_posts()
+                  let is_on = |id: &str| module_engine.enabled_ids().iter().any(|s| s == id);
+                  let mut entries: Vec<ContentEntry> = if blog_on {
+                      rustineverything_module_blog::server::list_blog_posts()
                           .await
-                          .unwrap_or_default();
-                      posts.truncate(50);
-                      posts
+                          .unwrap_or_default()
                           .into_iter()
                           .map(|p| ContentEntry {
                               url_path: format!("/blog/{}", p.slug),
@@ -241,6 +266,32 @@ fn main() {
                   } else {
                       Vec::new()
                   };
+
+                  // Phase 6：内容板块文章也进 feed。
+                  macro_rules! collect_board {
+                      ($id:literal, $list:path, $route:literal) => {
+                          if is_on($id) {
+                              for a in $list().await.unwrap_or_default() {
+                                  entries.push(ContentEntry {
+                                      url_path: format!(concat!($route, "/{}"), a.slug),
+                                      title: a.title,
+                                      description: a.description,
+                                      date: a.date,
+                                      tags: a.tags,
+                                  });
+                              }
+                          }
+                      };
+                  }
+                  collect_board!("embedded", rustineverything_module_embedded::server::list_embedded_articles, "/embedded");
+                  collect_board!("ai", rustineverything_module_ai::server::list_ai_articles, "/ai");
+                  collect_board!("web3", rustineverything_module_web3::server::list_web3_articles, "/web3");
+                  collect_board!("wasm", rustineverything_module_wasm::server::list_wasm_articles, "/wasm");
+                  collect_board!("cli", rustineverything_module_cli::server::list_cli_articles, "/cli");
+
+                  // 全站按日期降序，取最近 50 篇。
+                  entries.sort_by(|a, b| b.date.cmp(&a.date));
+                  entries.truncate(50);
                   // 取站点元信息：如取不到 site.json 则走默认。
                   let cfg = rustineverything_core::settings::SiteConfig::from_file(
                       rustineverything_core::utils::get_asset_root().join("site.json").to_str().unwrap_or_default(),

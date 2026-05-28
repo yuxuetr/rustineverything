@@ -40,6 +40,11 @@ pub fn ClassicShell() -> Element {
             "podcast".into(),
             "cases".into(),
             "forum".into(),
+            "embedded".into(),
+            "ai".into(),
+            "web3".into(),
+            "wasm".into(),
+            "cli".into(),
             "course".into(),
             "docs".into(),
         ])
@@ -53,6 +58,11 @@ pub fn ClassicShell() -> Element {
             "podcast".into(),
             "cases".into(),
             "forum".into(),
+            "embedded".into(),
+            "ai".into(),
+            "web3".into(),
+            "wasm".into(),
+            "cli".into(),
             "course".into(),
             "docs".into(),
         ]);
@@ -61,6 +71,11 @@ pub fn ClassicShell() -> Element {
     let on_cases = enabled.iter().any(|s| s == "cases");
     let on_forum = enabled.iter().any(|s| s == "forum");
     let on_docs = enabled.iter().any(|s| s == "docs");
+    let on_embedded = enabled.iter().any(|s| s == "embedded");
+    let on_ai = enabled.iter().any(|s| s == "ai");
+    let on_web3 = enabled.iter().any(|s| s == "web3");
+    let on_wasm = enabled.iter().any(|s| s == "wasm");
+    let on_cli = enabled.iter().any(|s| s == "cli");
 
     let link_class = move |target: Route| {
         let is_active = match (&route, &target) {
@@ -69,6 +84,11 @@ pub fn ClassicShell() -> Element {
             (Route::TopicDetail { .. }, Route::TopicsIndex {}) => true,
             (Route::TopicsNew {}, Route::TopicsIndex {}) => true,
             (Route::CaseDetail { .. }, Route::Cases {}) => true,
+            (Route::EmbeddedArticle { .. }, Route::Embedded {}) => true,
+            (Route::AiArticle { .. }, Route::Ai {}) => true,
+            (Route::Web3Article { .. }, Route::Web3 {}) => true,
+            (Route::WasmArticle { .. }, Route::Wasm {}) => true,
+            (Route::CliArticle { .. }, Route::Cli {}) => true,
             (current, target) => current == target,
         };
 
@@ -136,6 +156,21 @@ pub fn ClassicShell() -> Element {
                                 }
                                 if on_forum {
                                     Link { to: Route::TopicsIndex {}, class: link_class(Route::TopicsIndex {}), "{t_forum}" }
+                                }
+                                if on_embedded {
+                                    Link { to: Route::Embedded {}, class: link_class(Route::Embedded {}), "嵌入式" }
+                                }
+                                if on_ai {
+                                    Link { to: Route::Ai {}, class: link_class(Route::Ai {}), "AI" }
+                                }
+                                if on_web3 {
+                                    Link { to: Route::Web3 {}, class: link_class(Route::Web3 {}), "Web3" }
+                                }
+                                if on_wasm {
+                                    Link { to: Route::Wasm {}, class: link_class(Route::Wasm {}), "WASM" }
+                                }
+                                if on_cli {
+                                    Link { to: Route::Cli {}, class: link_class(Route::Cli {}), "CLI" }
                                 }
                             }
                         }

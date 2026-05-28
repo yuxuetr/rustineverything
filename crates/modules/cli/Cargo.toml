@@ -1,0 +1,24 @@
+[package]
+name = "rustineverything-module-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI 工具内容板块（clap / ratatui / indicatif）"
+
+[dependencies]
+dioxus = { workspace = true, features = ["fullstack", "router"] }
+serde = { workspace = true, features = ["derive"] }
+serde_yaml = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+rustineverything-sdk = { path = "../../sdk" }
+rustineverything-widgets = { path = "../../widgets" }
+rustineverything-core = { path = "../../core" }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+server = [
+    "dioxus/server",
+    "rustineverything-widgets/server",
+]

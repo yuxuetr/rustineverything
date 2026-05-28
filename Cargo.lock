@@ -5662,15 +5662,20 @@ dependencies = [
  "rustineverything-core",
  "rustineverything-migration",
  "rustineverything-module-admin",
+ "rustineverything-module-ai",
  "rustineverything-module-blog",
  "rustineverything-module-cases",
+ "rustineverything-module-cli",
  "rustineverything-module-comments",
  "rustineverything-module-course",
  "rustineverything-module-docs",
+ "rustineverything-module-embedded",
  "rustineverything-module-forum",
  "rustineverything-module-podcast",
  "rustineverything-module-search",
  "rustineverything-module-uploads",
+ "rustineverything-module-wasm",
+ "rustineverything-module-web3",
  "rustineverything-widgets",
  "sea-orm",
  "serde",
@@ -5749,6 +5754,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustineverything-module-ai"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "rustineverything-core",
+ "rustineverything-sdk",
+ "rustineverything-widgets",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "rustineverything-module-blog"
 version = "0.1.0"
 dependencies = [
@@ -5770,6 +5790,21 @@ dependencies = [
  "rustineverything-core",
  "rustineverything-module-blog",
  "rustineverything-module-forum",
+ "rustineverything-sdk",
+ "rustineverything-widgets",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "rustineverything-module-cli"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "rustineverything-core",
  "rustineverything-sdk",
  "rustineverything-widgets",
  "serde",
@@ -5831,6 +5866,21 @@ dependencies = [
  "serde_yaml",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "rustineverything-module-embedded"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "rustineverything-core",
+ "rustineverything-sdk",
+ "rustineverything-widgets",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
 ]
 
 [[package]]
@@ -5921,6 +5971,36 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "rustineverything-module-wasm"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "rustineverything-core",
+ "rustineverything-sdk",
+ "rustineverything-widgets",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "rustineverything-module-web3"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "rustineverything-core",
+ "rustineverything-sdk",
+ "rustineverything-widgets",
+ "serde",
+ "serde_yaml",
+ "tempfile",
  "tracing",
 ]
 

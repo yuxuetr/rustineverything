@@ -22,6 +22,11 @@ rustineverything-module-cases = { path = "../modules/cases" }
 rustineverything-module-docs = { path = "../modules/docs" }
 rustineverything-module-comments = { path = "../modules/comments" }
 rustineverything-module-uploads = { path = "../modules/uploads" }
+rustineverything-module-embedded = { path = "../modules/embedded" }
+rustineverything-module-ai = { path = "../modules/ai" }
+rustineverything-module-web3 = { path = "../modules/web3" }
+rustineverything-module-wasm = { path = "../modules/wasm" }
+rustineverything-module-cli = { path = "../modules/cli" }
 pulldown-cmark = "0.13.0"
 chrono = { workspace = true, features = ["serde"] }
 
@@ -59,6 +64,11 @@ server = [
     "rustineverything-module-docs/server",
     "rustineverything-module-comments/server",
     "rustineverything-module-uploads/server",
+    "rustineverything-module-embedded/server",
+    "rustineverything-module-ai/server",
+    "rustineverything-module-web3/server",
+    "rustineverything-module-wasm/server",
+    "rustineverything-module-cli/server",
     "dep:tokio",
     "dep:axum",
     "dep:dotenvy",
