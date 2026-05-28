@@ -52,7 +52,7 @@
   - [x] `modules/admin/src/server.rs`
   - [ ] `modules/cases/src/server.rs`（cases 不依赖 DB）
   - [x] `modules/search/src/indexer.rs`
-- [ ] 性能基准：`scripts/bench_comments.sh` 评论列表 P95 前后对比
+- [x] 性能基准：`scripts/bench_comments.sh`（压 `POST /api/comments/list`；有 `oha` 用 oha，否则 curl 循环 + awk 算 P50/P95/P99；参数化 N/blog_id/base_url，脚本头含种子+清理说明）。已对本地 postgres 实跑验证（种子 5000 评论 → p95≈111ms@dx-serve 调试构建 → 清理）。注：调试构建数值偏高，release 会显著更低；"前后对比"基线已失效（连接池 1A.2 早已落地）
 - [x] `docs/DEVELOPER.md` DB 章节更新：新增 §2.3「数据库层与连接池」，文档化 SeaORM+PG + sea-orm-migration 自动迁移 + `init_pool/get_or_init_pool/pool` 连接池单例 API + 旧 `init_db` 兼容说明
 
 ### 1A.3 PluginManager 缓存
@@ -78,7 +78,7 @@
 
 ### 1A.6 验收门禁
 - [x] `cargo test --features server --workspace` 全绿（183 tests pass under —test-threads=1）
-- [ ] 评论列表 P95 延迟下降 ≥ 50%（需要实际服务运行与 bench 脚本，后续 Phase 7 补上）
+- [-] 评论列表 P95 延迟下降 ≥ 50%：`bench_comments.sh` 已就绪并可实跑（见 1A.2）。但"下降 ≥50%"的前后对比基线已不存在——连接池在 1A.2 一次性落地，没有保留"每请求新建连接"的旧路径可对照。现状：脚本可随时测当前 P95（部署/release 环境下做正式数值）
 - [x] JWT Secret 未配置时服务启动即失败（`get_jwt_secret()` panic）
 - [x] `grep -r "Token response" crates/` 返回空
 - [x] OAuth 不带合法 state 的回调请求被拒绝（`AuthService::validate_state` + 3 个单测）
