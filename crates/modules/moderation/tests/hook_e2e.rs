@@ -65,10 +65,7 @@ async fn disabled_pipeline_allows_anything_including_abusive() {
   assert!(pipeline.is_empty());
 
   // 不调 LLM、不读插件 wasm
-  assert_eq!(
-    evaluate_comment(&pipeline, "welcome", "你这个 sb").await,
-    ModerationLabel::Allow
-  );
+  assert_eq!(evaluate_comment(&pipeline, "welcome", "你这个 sb").await, ModerationLabel::Allow);
   assert_eq!(
     evaluate_comment(&pipeline, "welcome", "https://scam.example/x").await,
     ModerationLabel::Allow
@@ -102,10 +99,7 @@ async fn url_blocklist_only_blocks_known_bad_domains() {
     ModerationLabel::Allow
   );
   // 无链接也通过（黑名单 stage 不会无中生有判 Block）
-  assert_eq!(
-    evaluate_comment(&pipeline, "welcome", "感谢分享").await,
-    ModerationLabel::Allow
-  );
+  assert_eq!(evaluate_comment(&pipeline, "welcome", "感谢分享").await, ModerationLabel::Allow);
 }
 
 // ── 完整 LLM 路径 ──

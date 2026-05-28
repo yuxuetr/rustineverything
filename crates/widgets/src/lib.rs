@@ -29,7 +29,7 @@ pub use components::register_default_components;
 pub use feed::{build_atom_feed, build_robots_txt, build_sitemap_xml, ContentEntry};
 pub use mdx::{parse_mdx, Markdown, MarkdownProps, PostMetadata};
 pub use registry::{
-    clear_for_tests, list_registered, register, registered_count, ComponentRegistry, MdxComponent,
+  clear_for_tests, list_registered, register, registered_count, ComponentRegistry, MdxComponent,
 };
 pub use sanitize::sanitize_user_html;
 pub use seo::{build_canonical, inject_seo};

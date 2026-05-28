@@ -90,10 +90,7 @@ impl LlmContentBlock {
     LlmContentBlock::ImageUrl { url: url.into() }
   }
   pub fn image_base64(media_type: impl Into<String>, data: impl Into<String>) -> Self {
-    LlmContentBlock::ImageBase64 {
-      media_type: media_type.into(),
-      data: data.into(),
-    }
+    LlmContentBlock::ImageBase64 { media_type: media_type.into(), data: data.into() }
   }
 
   /// 是否是文本 block。
@@ -135,31 +132,19 @@ impl<'de> serde::Deserialize<'de> for LlmMessage {
       ContentRepr::Str(s) => vec![LlmContentBlock::Text { text: s }],
       ContentRepr::Blocks(b) => b,
     };
-    Ok(LlmMessage {
-      role: h.role,
-      content,
-    })
+    Ok(LlmMessage { role: h.role, content })
   }
 }
 
 impl LlmMessage {
   pub fn system(content: impl Into<String>) -> Self {
-    Self {
-      role: LlmRole::System,
-      content: vec![LlmContentBlock::text(content)],
-    }
+    Self { role: LlmRole::System, content: vec![LlmContentBlock::text(content)] }
   }
   pub fn user(content: impl Into<String>) -> Self {
-    Self {
-      role: LlmRole::User,
-      content: vec![LlmContentBlock::text(content)],
-    }
+    Self { role: LlmRole::User, content: vec![LlmContentBlock::text(content)] }
   }
   pub fn assistant(content: impl Into<String>) -> Self {
-    Self {
-      role: LlmRole::Assistant,
-      content: vec![LlmContentBlock::text(content)],
-    }
+    Self { role: LlmRole::Assistant, content: vec![LlmContentBlock::text(content)] }
   }
 
   /// 构造一条 user 消息，附带若干图片 URL。
@@ -173,10 +158,7 @@ impl LlmMessage {
     for url in image_urls {
       content.push(LlmContentBlock::image_url(url));
     }
-    Self {
-      role: LlmRole::User,
-      content,
-    }
+    Self { role: LlmRole::User, content }
   }
 
   /// 提取所有文本块的拼接（便于 logging / 调试）。
@@ -194,10 +176,7 @@ impl LlmMessage {
 
   /// 是否包含任意图像 block。
   pub fn has_images(&self) -> bool {
-    self
-      .content
-      .iter()
-      .any(|b| !matches!(b, LlmContentBlock::Text { .. }))
+    self.content.iter().any(|b| !matches!(b, LlmContentBlock::Text { .. }))
   }
 }
 

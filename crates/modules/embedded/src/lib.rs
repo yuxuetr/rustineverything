@@ -14,7 +14,7 @@ use rustineverything_sdk::AppModule;
 pub struct EmbeddedModule;
 
 impl AppModule for EmbeddedModule {
-    fn name(&self) -> &'static str {
-        "Embedded"
-    }
+  fn name(&self) -> &'static str {
+    "Embedded"
+  }
 }

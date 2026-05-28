@@ -26,11 +26,7 @@ impl MigrationTrait for Migration {
           .col(pk_auto(Users::Id))
           .col(string_len(Users::Nickname, 255).not_null())
           .col(text_null(Users::AvatarUrl))
-          .col(
-            string_len(Users::Role, 50)
-              .not_null()
-              .default("member".to_string()),
-          )
+          .col(string_len(Users::Role, 50).not_null().default("member".to_string()))
           .col(
             timestamp_with_time_zone(Users::CreatedAt)
               .not_null()
@@ -115,11 +111,7 @@ impl MigrationTrait for Migration {
           .col(integer(CourseProgress::UserId).not_null())
           .col(string_len(CourseProgress::CourseSlug, 255).not_null())
           .col(text(CourseProgress::LessonPath).not_null())
-          .col(
-            boolean(CourseProgress::Completed)
-              .not_null()
-              .default(false),
-          )
+          .col(boolean(CourseProgress::Completed).not_null().default(false))
           .col(integer_null(CourseProgress::PositionSeconds))
           .col(
             timestamp_with_time_zone(CourseProgress::UpdatedAt)
@@ -170,11 +162,7 @@ impl MigrationTrait for Migration {
           .col(text_null(Annotations::SuffixText))
           .col(string_len(Annotations::Style, 32).not_null())
           .col(text_null(Annotations::Note))
-          .col(
-            string_len(Annotations::Visibility, 16)
-              .not_null()
-              .default("private".to_string()),
-          )
+          .col(string_len(Annotations::Visibility, 16).not_null().default("private".to_string()))
           .col(
             timestamp_with_time_zone(Annotations::CreatedAt)
               .not_null()
@@ -252,20 +240,12 @@ impl MigrationTrait for Migration {
       .await?;
     manager
       .create_index(
-        Index::create()
-          .name("idx_topics_tag")
-          .table(Topics::Table)
-          .col(Topics::Tag)
-          .to_owned(),
+        Index::create().name("idx_topics_tag").table(Topics::Table).col(Topics::Tag).to_owned(),
       )
       .await?;
     manager
       .create_index(
-        Index::create()
-          .name("idx_topics_user")
-          .table(Topics::Table)
-          .col(Topics::UserId)
-          .to_owned(),
+        Index::create().name("idx_topics_user").table(Topics::Table).col(Topics::UserId).to_owned(),
       )
       .await?;
     // recency 索引在 SeaORM 中不直接支持 NULLS LAST，只能按列顺序近似。
@@ -348,9 +328,7 @@ impl MigrationTrait for Migration {
       Comments::Table.into_iden(),
       Users::Table.into_iden(),
     ] {
-      manager
-        .drop_table(Table::drop().table(table).if_exists().to_owned())
-        .await?;
+      manager.drop_table(Table::drop().table(table).if_exists().to_owned()).await?;
     }
     Ok(())
   }

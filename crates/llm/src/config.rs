@@ -50,25 +50,17 @@ impl LlmConfig {
 
   /// 选定 provider 并构造对应客户端。优先级：OpenAI > Anthropic。
   pub fn build(&self) -> Option<Box<dyn LlmClient>> {
-    if let (Some(url), Some(key)) = (
-      self.openai_base_url.as_deref(),
-      self.openai_api_key.as_deref(),
-    ) {
-      let model = self
-        .openai_model
-        .clone()
-        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    if let (Some(url), Some(key)) =
+      (self.openai_base_url.as_deref(), self.openai_api_key.as_deref())
+    {
+      let model = self.openai_model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
       let client = OpenAiChat::new(url, key, model);
       return Some(Box::new(client));
     }
-    if let (Some(url), Some(key)) = (
-      self.anthropic_base_url.as_deref(),
-      self.anthropic_api_key.as_deref(),
-    ) {
-      let model = self
-        .anthropic_model
-        .clone()
-        .unwrap_or_else(|| DEFAULT_MODEL.to_string());
+    if let (Some(url), Some(key)) =
+      (self.anthropic_base_url.as_deref(), self.anthropic_api_key.as_deref())
+    {
+      let model = self.anthropic_model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
       let client = AnthropicChat::new(url, key, model);
       return Some(Box::new(client));
     }
@@ -88,10 +80,7 @@ impl LlmConfig {
 }
 
 fn read_nonempty(name: &str) -> Option<String> {
-  env::var(name)
-    .ok()
-    .map(|s| s.trim().to_string())
-    .filter(|s| !s.is_empty())
+  env::var(name).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
 #[cfg(test)]
@@ -144,20 +133,14 @@ mod tests {
   #[test]
   fn base_url_without_key_does_not_resolve() {
     // 半配置（url 但缺 key）等同于未配置；防止运行时拿空 token 调上游。
-    let cfg = LlmConfig {
-      openai_base_url: Some("https://o.example".into()),
-      ..Default::default()
-    };
+    let cfg = LlmConfig { openai_base_url: Some("https://o.example".into()), ..Default::default() };
     assert_eq!(cfg.resolved_provider(), None);
     assert!(cfg.build().is_none());
   }
 
   #[test]
   fn key_without_base_url_does_not_resolve() {
-    let cfg = LlmConfig {
-      openai_api_key: Some("o-key".into()),
-      ..Default::default()
-    };
+    let cfg = LlmConfig { openai_api_key: Some("o-key".into()), ..Default::default() };
     assert_eq!(cfg.resolved_provider(), None);
   }
 

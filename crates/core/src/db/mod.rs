@@ -7,5 +7,5 @@ pub use pool::{get_or_init_pool, init_pool};
 /// 新代码请一律调用 [`get_or_init_pool`]。
 #[deprecated(note = "Use rustineverything_core::db::get_or_init_pool() instead")]
 pub async fn init_db(url: &str) -> Result<DatabaseConnection, sea_orm::DbErr> {
-    Database::connect(url).await
+  Database::connect(url).await
 }

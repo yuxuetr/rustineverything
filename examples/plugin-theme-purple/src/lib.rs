@@ -25,14 +25,10 @@ use std::slice;
 /// Manifest：声明 capability=theme，复用当前 SDK ABI 版本。
 #[no_mangle]
 pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
-  let m = PluginManifest::new(
-    "theme-purple",
-    "Theme Purple (Example)",
-    env!("CARGO_PKG_VERSION"),
-  )
-  .with_capability(capabilities::THEME)
-  .with_description("紫罗兰示例主题，演示 Phase 5 插件开发流程")
-  .with_author("yuxuetr");
+  let m = PluginManifest::new("theme-purple", "Theme Purple (Example)", env!("CARGO_PKG_VERSION"))
+    .with_capability(capabilities::THEME)
+    .with_description("紫罗兰示例主题，演示 Phase 5 插件开发流程")
+    .with_author("yuxuetr");
   pack_json(&m)
 }
 
@@ -88,14 +84,10 @@ mod tests {
   /// manifest_core 提取出可在 host 环境构造的 PluginManifest，与
   /// `get_manifest` 的逻辑一致；让单测覆盖最小可证文本。
   fn manifest_core() -> PluginManifest {
-    PluginManifest::new(
-      "theme-purple",
-      "Theme Purple (Example)",
-      env!("CARGO_PKG_VERSION"),
-    )
-    .with_capability(capabilities::THEME)
-    .with_description("紫罗兰示例主题，演示 Phase 5 插件开发流程")
-    .with_author("yuxuetr")
+    PluginManifest::new("theme-purple", "Theme Purple (Example)", env!("CARGO_PKG_VERSION"))
+      .with_capability(capabilities::THEME)
+      .with_description("紫罗兰示例主题，演示 Phase 5 插件开发流程")
+      .with_author("yuxuetr")
   }
 
   #[test]
@@ -109,14 +101,8 @@ mod tests {
   #[test]
   fn palette_has_violet_primary() {
     // 防止颜色被误改回非紫色（回归保护）。
-    assert!(
-      THEME_CSS.contains("#7c3aed"),
-      "light primary should be violet-600"
-    );
-    assert!(
-      THEME_CSS.contains("#a78bfa"),
-      "dark primary should be violet-400"
-    );
+    assert!(THEME_CSS.contains("#7c3aed"), "light primary should be violet-600");
+    assert!(THEME_CSS.contains("#a78bfa"), "dark primary should be violet-400");
   }
 
   #[test]
@@ -129,11 +115,7 @@ mod tests {
       "--color-text-muted",
       "--color-border",
     ] {
-      assert!(
-        THEME_CSS.contains(v),
-        "missing required CSS var: {}",
-        v
-      );
+      assert!(THEME_CSS.contains(v), "missing required CSS var: {}", v);
     }
   }
 

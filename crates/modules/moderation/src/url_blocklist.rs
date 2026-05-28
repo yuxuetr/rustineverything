@@ -85,10 +85,7 @@ impl AsyncModerationStage for UrlBlocklistStage {
           pattern = %pattern,
           "moderation: URL blocklist hit"
         );
-        return Verdict::block(
-          1.0,
-          format!("命中链接黑名单: {} (规则 {})", host, pattern),
-        );
+        return Verdict::block(1.0, format!("命中链接黑名单: {} (规则 {})", host, pattern));
       }
     }
     Verdict::allow()
@@ -119,10 +116,7 @@ pub fn extract_urls(text: &str) -> Vec<&str> {
     }
     // 去掉常见结尾标点（句号 / 逗号 / 分号 / 引号 / 括号）
     while j > url_start_byte
-      && matches!(
-        bytes[j - 1],
-        b'.' | b',' | b';' | b'!' | b'?' | b')' | b']' | b'"' | b'\''
-      )
+      && matches!(bytes[j - 1], b'.' | b',' | b';' | b'!' | b'?' | b')' | b']' | b'"' | b'\'')
     {
       j -= 1;
     }
@@ -180,10 +174,7 @@ fn is_url_byte(b: u8) -> bool {
 /// 从 URL 提取 host（不含 scheme / 用户名密码 / 端口 / 路径）。
 /// 返回 Some 时保证 host 至少 1 个字符。
 pub fn host_of(url: &str) -> Option<&str> {
-  let after_scheme = url
-    .find("://")
-    .map(|i| &url[i + 3..])
-    .unwrap_or(url);
+  let after_scheme = url.find("://").map(|i| &url[i + 3..]).unwrap_or(url);
   // 跳过 userinfo
   let after_userinfo = match after_scheme.rfind('@') {
     Some(i) if i < after_scheme.len() => &after_scheme[i + 1..],
@@ -320,10 +311,7 @@ mod tests {
     let pats = vec!["*.evil.com".to_string()];
     assert_eq!(match_blocklist("evil.com", &pats), Some("*.evil.com"));
     assert_eq!(match_blocklist("a.evil.com", &pats), Some("*.evil.com"));
-    assert_eq!(
-      match_blocklist("deep.sub.evil.com", &pats),
-      Some("*.evil.com")
-    );
+    assert_eq!(match_blocklist("deep.sub.evil.com", &pats), Some("*.evil.com"));
     assert!(match_blocklist("notevil.com", &pats).is_none());
   }
 
@@ -339,9 +327,7 @@ mod tests {
   #[tokio::test]
   async fn stage_blocks_on_blocklist_hit() {
     let stage = UrlBlocklistStage::new(vec!["scam.com"]);
-    let v = stage
-      .evaluate(&ModerationSubmission::new("快来 https://scam.com/x 领奖"))
-      .await;
+    let v = stage.evaluate(&ModerationSubmission::new("快来 https://scam.com/x 领奖")).await;
     assert_eq!(v.label, ModerationLabel::Block);
     assert!(v.reason.contains("scam.com"));
     assert!((v.score - 1.0).abs() < f32::EPSILON);
@@ -350,18 +336,14 @@ mod tests {
   #[tokio::test]
   async fn stage_allows_when_no_url() {
     let stage = UrlBlocklistStage::new(vec!["scam.com"]);
-    let v = stage
-      .evaluate(&ModerationSubmission::new("纯文字评论，没有链接"))
-      .await;
+    let v = stage.evaluate(&ModerationSubmission::new("纯文字评论，没有链接")).await;
     assert_eq!(v.label, ModerationLabel::Allow);
   }
 
   #[tokio::test]
   async fn stage_allows_when_url_not_in_blocklist() {
     let stage = UrlBlocklistStage::new(vec!["scam.com"]);
-    let v = stage
-      .evaluate(&ModerationSubmission::new("see https://safe.example/x"))
-      .await;
+    let v = stage.evaluate(&ModerationSubmission::new("see https://safe.example/x")).await;
     assert_eq!(v.label, ModerationLabel::Allow);
   }
 
@@ -369,9 +351,7 @@ mod tests {
   async fn stage_with_empty_patterns_always_allows() {
     let stage = UrlBlocklistStage::new(Vec::<String>::new());
     assert!(stage.is_empty());
-    let v = stage
-      .evaluate(&ModerationSubmission::new("https://scam.com 但黑名单空"))
-      .await;
+    let v = stage.evaluate(&ModerationSubmission::new("https://scam.com 但黑名单空")).await;
     assert_eq!(v.label, ModerationLabel::Allow);
   }
 

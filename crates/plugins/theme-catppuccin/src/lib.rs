@@ -11,15 +11,12 @@ use rustineverything_sdk::{alloc, capabilities, dealloc, pack_json, PluginManife
 
 #[no_mangle]
 pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
-    let manifest = PluginManifest::new(
-        "theme-catppuccin",
-        "Theme Catppuccin",
-        env!("CARGO_PKG_VERSION"),
-    )
-    .with_capability(capabilities::THEME)
-    .with_description("Catppuccin Latte (light) + Macchiato (dark) 调色板")
-    .with_author("yuxuetr");
-    pack_json(&manifest)
+  let manifest =
+    PluginManifest::new("theme-catppuccin", "Theme Catppuccin", env!("CARGO_PKG_VERSION"))
+      .with_capability(capabilities::THEME)
+      .with_description("Catppuccin Latte (light) + Macchiato (dark) 调色板")
+      .with_author("yuxuetr");
+  pack_json(&manifest)
 }
 
 // Latte: base #eff1f5, text #4c4f69, mantle #e6e9ef, surface0 #ccd0da, blue #1e66f5, overlay0 #9ca0b0
@@ -52,15 +49,15 @@ body {
 
 #[no_mangle]
 pub unsafe extern "C" fn get_theme_css(_ptr: *mut u8, _len: usize) -> u64 {
-    let result_bytes = THEME_CSS.as_bytes();
-    let res_len = result_bytes.len();
-    let res_ptr = alloc(res_len);
-    let res_slice = slice::from_raw_parts_mut(res_ptr, res_len);
-    res_slice.copy_from_slice(result_bytes);
-    ((res_ptr as u64) << 32) | (res_len as u64)
+  let result_bytes = THEME_CSS.as_bytes();
+  let res_len = result_bytes.len();
+  let res_ptr = alloc(res_len);
+  let res_slice = slice::from_raw_parts_mut(res_ptr, res_len);
+  res_slice.copy_from_slice(result_bytes);
+  ((res_ptr as u64) << 32) | (res_len as u64)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn plugin_unused_fix() {
-    let _ = dealloc(std::ptr::null_mut(), 0);
+  let _ = dealloc(std::ptr::null_mut(), 0);
 }

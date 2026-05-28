@@ -10,7 +10,7 @@ use rustineverything_sdk::AppModule;
 pub struct AiModule;
 
 impl AppModule for AiModule {
-    fn name(&self) -> &'static str {
-        "AI"
-    }
+  fn name(&self) -> &'static str {
+    "AI"
+  }
 }

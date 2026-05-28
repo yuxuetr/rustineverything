@@ -21,12 +21,7 @@ impl MigrationTrait for Migration {
         Table::create()
           .table(ModerationQueue::Table)
           .if_not_exists()
-          .col(
-            big_integer(ModerationQueue::Id)
-              .not_null()
-              .auto_increment()
-              .primary_key(),
-          )
+          .col(big_integer(ModerationQueue::Id).not_null().auto_increment().primary_key())
           .col(string_len(ModerationQueue::Kind, 32).not_null())
           .col(big_integer_null(ModerationQueue::RefId))
           .col(text(ModerationQueue::RefPath).not_null())
@@ -35,16 +30,8 @@ impl MigrationTrait for Migration {
           .col(text_null(ModerationQueue::Images))
           .col(float(ModerationQueue::Score).not_null().default(0.0))
           .col(string_len(ModerationQueue::Label, 16).not_null())
-          .col(
-            text(ModerationQueue::Reason)
-              .not_null()
-              .default("".to_string()),
-          )
-          .col(
-            string_len(ModerationQueue::Status, 16)
-              .not_null()
-              .default("pending".to_string()),
-          )
+          .col(text(ModerationQueue::Reason).not_null().default("".to_string()))
+          .col(string_len(ModerationQueue::Status, 16).not_null().default("pending".to_string()))
           .col(integer_null(ModerationQueue::ReviewerUserId))
           .col(text_null(ModerationQueue::ReviewerNote))
           .col(
@@ -98,14 +85,7 @@ impl MigrationTrait for Migration {
   }
 
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-    manager
-      .drop_table(
-        Table::drop()
-          .table(ModerationQueue::Table)
-          .if_exists()
-          .to_owned(),
-      )
-      .await?;
+    manager.drop_table(Table::drop().table(ModerationQueue::Table).if_exists().to_owned()).await?;
     Ok(())
   }
 }

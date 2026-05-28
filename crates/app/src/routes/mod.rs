@@ -8,27 +8,26 @@ use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
 use crate::i18n::{t, use_i18n};
 use crate::server::get_seo_base_url;
-use rustineverything_module_blog::server::{get_blog_content, list_blog_posts};
-use rustineverything_widgets::{inject_seo, parse_mdx, Markdown};
-use rustineverything_module_course::course::{
-    AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
-};
 use rustineverything_module_admin::admin::{
-    AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminPluginsPage, AdminTopicsPage,
-    AdminUsersPage,
+  AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminPluginsPage, AdminTopicsPage,
+  AdminUsersPage,
 };
-use rustineverything_module_docs::docs::{Docs as DocsView, DocPage as DocPageView};
+use rustineverything_module_ai::ai::{AiArticlePage, AiIndexPage};
+use rustineverything_module_blog::server::{get_blog_content, list_blog_posts};
+use rustineverything_module_cases::cases::{CaseDetailPage, CasesIndexPage};
+use rustineverything_module_cli::cli::{CliArticlePage, CliIndexPage};
+use rustineverything_module_course::course::{
+  AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
+};
+use rustineverything_module_docs::docs::{DocPage as DocPageView, Docs as DocsView};
+use rustineverything_module_embedded::embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
 use rustineverything_module_forum::forum::{
-    DiscussionPanel, MyTopicsPage, NewTopicPage, TopicDetailPage, TopicsByTagPage,
-    TopicsIndexPage,
+  DiscussionPanel, MyTopicsPage, NewTopicPage, TopicDetailPage, TopicsByTagPage, TopicsIndexPage,
 };
 use rustineverything_module_podcast::podcast::PodcastPage;
-use rustineverything_module_cases::cases::{CaseDetailPage, CasesIndexPage};
-use rustineverything_module_embedded::embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
-use rustineverything_module_ai::ai::{AiArticlePage, AiIndexPage};
-use rustineverything_module_web3::web3::{Web3ArticlePage, Web3IndexPage};
 use rustineverything_module_wasm::wasm::{WasmArticlePage, WasmIndexPage};
-use rustineverything_module_cli::cli::{CliArticlePage, CliIndexPage};
+use rustineverything_module_web3::web3::{Web3ArticlePage, Web3IndexPage};
+use rustineverything_widgets::{inject_seo, parse_mdx, Markdown};
 
 /// Application routes
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -198,9 +197,7 @@ pub fn BlogIndex() -> Element {
 fn BlogIndexInner() -> Element {
   let lang = use_i18n();
 
-  let posts_res = use_resource(move || async move {
-      list_blog_posts().await.unwrap_or_default()
-  });
+  let posts_res = use_resource(move || async move { list_blog_posts().await.unwrap_or_default() });
   let posts = posts_res.read().as_ref().cloned().unwrap_or_default();
 
   let mut active_tag = use_signal::<Option<String>>(|| None);
@@ -209,23 +206,26 @@ fn BlogIndexInner() -> Element {
 
   // 汇总全部标签
   let all_tags: Vec<String> = {
-      let mut seen = std::collections::BTreeSet::new();
-      for post in posts.iter() {
-          for t in post.tags.iter() { seen.insert(t.clone()); }
+    let mut seen = std::collections::BTreeSet::new();
+    for post in posts.iter() {
+      for t in post.tags.iter() {
+        seen.insert(t.clone());
       }
-      seen.into_iter().collect()
+    }
+    seen.into_iter().collect()
   };
 
   // 按标签过滤
   let filtered: Vec<_> = match active_tag() {
-      Some(ref tag) => posts.iter().filter(|p| p.tags.contains(tag)).cloned().collect(),
-      None => posts.clone(),
+    Some(ref tag) => posts.iter().filter(|p| p.tags.contains(tag)).cloned().collect(),
+    None => posts.clone(),
   };
 
   // 分页
   let total_pages = ((filtered.len() + PAGE_SIZE - 1) / PAGE_SIZE).max(1);
   let safe_page = current_page().min(total_pages - 1);
-  let paged: Vec<_> = filtered.iter().skip(safe_page * PAGE_SIZE).take(PAGE_SIZE).cloned().collect();
+  let paged: Vec<_> =
+    filtered.iter().skip(safe_page * PAGE_SIZE).take(PAGE_SIZE).cloned().collect();
 
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950",
@@ -386,8 +386,8 @@ fn BlogInner(id: String) -> Element {
   // 修复：在闭包外先克隆一次 id 用于 resource，保留原 id 用于后续组件
   let id_for_res = id.clone();
   let blog_content = use_resource(move || {
-      let inner_id = id_for_res.clone();
-      async move { get_blog_content(inner_id).await }
+    let inner_id = id_for_res.clone();
+    async move { get_blog_content(inner_id).await }
   });
   // 标注资源路径：resource_kind="blog"，resource_path = 博客 id
   let anno_path = id.clone();
@@ -417,10 +417,10 @@ fn BlogInner(id: String) -> Element {
                                   resource_path: anno_path.clone(),
                               }
                           },
-                          Some(Err(e)) => rsx! { 
+                          Some(Err(e)) => rsx! {
                               div { class: "p-4 bg-red-50 text-red-700 rounded-lg", "Error loading post: {e}" }
                           },
-                          None => rsx! { 
+                          None => rsx! {
                               div { class: "flex items-center justify-center py-20",
                                   div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
                               }

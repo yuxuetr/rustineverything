@@ -233,14 +233,8 @@ pub unsafe extern "C" fn moderation_build_prompt(ptr: *mut u8, len: usize) -> u6
   }
 
   let messages = vec![
-    WireMessage {
-      role: "system",
-      content: vec![WireContent::Text { text: SYSTEM_PROMPT }],
-    },
-    WireMessage {
-      role: "user",
-      content: user_blocks,
-    },
+    WireMessage { role: "system", content: vec![WireContent::Text { text: SYSTEM_PROMPT }] },
+    WireMessage { role: "user", content: user_blocks },
   ];
   pack_json(&messages)
 }
@@ -258,18 +252,14 @@ pub unsafe extern "C" fn moderation_parse_verdict(ptr: *mut u8, len: usize) -> u
   let raw = read_input(ptr, len);
   let text = std::str::from_utf8(raw).unwrap_or("").trim();
 
-  let parsed: Option<RawVerdict> = serde_json::from_str(text)
-    .ok()
-    .or_else(|| extract_first_json_object(text).and_then(|inner| serde_json::from_str(&inner).ok()));
+  let parsed: Option<RawVerdict> = serde_json::from_str(text).ok().or_else(|| {
+    extract_first_json_object(text).and_then(|inner| serde_json::from_str(&inner).ok())
+  });
 
   match parsed {
     Some(v) => {
       let label = normalize_label(&v.label);
-      pack_json(&Verdict {
-        score: clamp01(v.score),
-        label,
-        reason: v.reason.unwrap_or_default(),
-      })
+      pack_json(&Verdict { score: clamp01(v.score), label, reason: v.reason.unwrap_or_default() })
     }
     None => {
       // 解析失败 → fail-open

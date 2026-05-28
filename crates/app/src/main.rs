@@ -32,295 +32,352 @@ fn main() {
   // Server: customize the Axum router to serve blog post static assets
   #[cfg(feature = "server")]
   dioxus::serve(|| async move {
-      use tower_http::services::ServeDir;
-      use axum::routing::get;
-      use axum::extract::{Path, Query};
-      use axum::response::{IntoResponse, Redirect};
+    use axum::extract::{Path, Query};
+    use axum::response::{IntoResponse, Redirect};
+    use axum::routing::get;
+    use tower_http::services::ServeDir;
 
-      // 加载 .env 环境变量
-      dotenvy::dotenv().ok();
+    // 加载 .env 环境变量
+    dotenvy::dotenv().ok();
 
-      // Phase 7.5：初始化 tracing 订阅。日志级别由 `RUST_LOG` 控制
-      // （默认 `info`），格式为人可读 + 含 target。
-      tracing_subscriber::fmt()
-          .with_env_filter(
-              tracing_subscriber::EnvFilter::try_from_default_env()
-                  .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-          )
-          .with_target(true)
-          .init();
+    // Phase 7.5：初始化 tracing 订阅。日志级别由 `RUST_LOG` 控制
+    // （默认 `info`），格式为人可读 + 含 target。
+    tracing_subscriber::fmt()
+      .with_env_filter(
+        tracing_subscriber::EnvFilter::try_from_default_env()
+          .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+      )
+      .with_target(true)
+      .init();
 
-      // 安全门禁：启动时必须提供关键环境变量，避免 fallback 到不安全默认值
-      // 1) JWT_SECRET必须配置（panic on missing）
-      let _ = rustineverything_core::session::get_jwt_secret();
-      // 2) BASE_URL 必须配置为可访问的公网 / 内网地址
-      let base_url = std::env::var("BASE_URL")
-          .expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
-      let cookie_is_secure = base_url.starts_with("https://");
+    // 安全门禁：启动时必须提供关键环境变量，避免 fallback 到不安全默认值
+    // 1) JWT_SECRET必须配置（panic on missing）
+    let _ = rustineverything_core::session::get_jwt_secret();
+    // 2) BASE_URL 必须配置为可访问的公网 / 内网地址
+    let base_url =
+      std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
+    let cookie_is_secure = base_url.starts_with("https://");
 
-      // 3) 提前初始化数据库连接池，后续 server fn 都走共享连接。
-      //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
-      //    成功连上数据库后再跑 sea-orm-migration（Phase 7.1）。
-      if let Ok(db_url) = std::env::var("DATABASE_URL") {
-          match rustineverything_core::db::init_pool(&db_url).await {
-              Err(e) => tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)"),
-              Ok(()) => {
-                  tracing::info!("startup: DB pool initialized");
-                  // 自动迁移：用同一连接池跑 sea-orm-migration。
-                  // 失败仅日志，不退出，避免因为 schema 已存在的细节差异（例如
-                  // init.sql 已手动落地）阻塞启动；运维通过日志确认即可。
-                  match rustineverything_core::db::get_or_init_pool().await {
-                      Err(e) => tracing::error!(error = %e, "startup: cannot get pool for migration"),
-                      Ok(db) => {
-                          use rustineverything_migration::MigratorTrait;
-                          match rustineverything_migration::Migrator::up(&db, None).await {
-                              Ok(()) => tracing::info!("startup: schema migrations applied"),
-                              Err(e) => tracing::error!(error = %e, "startup: migration failed"),
-                          }
-                      }
-                  }
+    // 3) 提前初始化数据库连接池，后续 server fn 都走共享连接。
+    //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
+    //    成功连上数据库后再跑 sea-orm-migration（Phase 7.1）。
+    if let Ok(db_url) = std::env::var("DATABASE_URL") {
+      match rustineverything_core::db::init_pool(&db_url).await {
+        Err(e) => {
+          tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)")
+        }
+        Ok(()) => {
+          tracing::info!("startup: DB pool initialized");
+          // 自动迁移：用同一连接池跑 sea-orm-migration。
+          // 失败仅日志，不退出，避免因为 schema 已存在的细节差异（例如
+          // init.sql 已手动落地）阻塞启动；运维通过日志确认即可。
+          match rustineverything_core::db::get_or_init_pool().await {
+            Err(e) => tracing::error!(error = %e, "startup: cannot get pool for migration"),
+            Ok(db) => {
+              use rustineverything_migration::MigratorTrait;
+              match rustineverything_migration::Migrator::up(&db, None).await {
+                Ok(()) => tracing::info!("startup: schema migrations applied"),
+                Err(e) => tracing::error!(error = %e, "startup: migration failed"),
               }
+            }
           }
-      } else {
-          tracing::warn!("startup: DATABASE_URL not set; DB-backed features will error on first call");
+        }
       }
+    } else {
+      tracing::warn!("startup: DATABASE_URL not set; DB-backed features will error on first call");
+    }
 
-      // 使用 core::utils::get_asset_root 返回的 PathBuf，保证与
-      // 其他 server fn 扫描资产的逻辑一致。转换为 String
-      // 并 `Box::leak` 为静态生命周期字符串，方便下面 ServeDir
-      // format! 调用（启动期仅泄露一次，不会被锁定。）
-      let assets_root: &'static str = Box::leak(
-          rustineverything_core::utils::get_asset_root()
-              .to_string_lossy()
-              .into_owned()
-              .into_boxed_str()
+    // 使用 core::utils::get_asset_root 返回的 PathBuf，保证与
+    // 其他 server fn 扫描资产的逻辑一致。转换为 String
+    // 并 `Box::leak` 为静态生命周期字符串，方便下面 ServeDir
+    // format! 调用（启动期仅泄露一次，不会被锁定。）
+    let assets_root: &'static str = Box::leak(
+      rustineverything_core::utils::get_asset_root()
+        .to_string_lossy()
+        .into_owned()
+        .into_boxed_str(),
+    );
+
+    let router = dioxus::server::router(App)
+      // 1. 处理登录跳转
+      .route(
+        "/api/auth/login/{provider}",
+        get(|Path(provider): Path<String>| async move {
+          if let Ok(url) = crate::server::get_login_url(provider).await {
+            Redirect::temporary(&url).into_response()
+          } else {
+            Redirect::temporary("/").into_response()
+          }
+        }),
+      )
+      // 2. 处理 OAuth 回调：验证 + 签发 JWT Cookie + 跳转
+      .route(
+        "/api/auth/callback/{provider}",
+        get(
+          move |Path(provider): Path<String>,
+                Query(params): Query<std::collections::HashMap<String, String>>| async move {
+            let code = params.get("code").cloned().unwrap_or_default();
+            let state = params.get("state").cloned();
+            match crate::server::auth_callback_internal(code, provider, state).await {
+              Ok((_message, jwt_token)) => {
+                // 生产环境 (https) 增加 Secure 标志防止明文传输
+                let secure_flag = if cookie_is_secure { "; Secure" } else { "" };
+                let cookie = format!(
+                  "session={}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax{}",
+                  jwt_token, secure_flag
+                );
+                let mut response = Redirect::temporary("/").into_response();
+                if let Ok(cookie_val) = cookie.parse() {
+                  response.headers_mut().insert(axum::http::header::SET_COOKIE, cookie_val);
+                }
+                response
+              }
+              Err(e) => {
+                tracing::error!(error = %e, "auth callback failed");
+                Redirect::temporary("/?error=auth_failed").into_response()
+              }
+            }
+          },
+        ),
+      )
+      // 3. 登出：清除 Cookie
+      .route(
+        "/api/auth/logout",
+        get(move || async move {
+          let secure_flag = if cookie_is_secure { "; Secure" } else { "" };
+          let cookie_str =
+            format!("session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax{}", secure_flag);
+          let mut response = Redirect::temporary("/").into_response();
+          if let Ok(cookie_val) = cookie_str.parse() {
+            response.headers_mut().insert(axum::http::header::SET_COOKIE, cookie_val);
+          }
+          response
+        }),
+      )
+      .nest_service("/images", ServeDir::new(format!("{}/images", assets_root)))
+      .nest_service("/posts", ServeDir::new(format!("{}/posts", assets_root)))
+      .nest_service("/js", ServeDir::new(format!("{}/js", assets_root)))
+      .nest_service("/uploads", ServeDir::new(format!("{}/uploads", assets_root)))
+      .nest_service("/audio", ServeDir::new(format!("{}/audio", assets_root)))
+      .nest_service("/podcasts", ServeDir::new(format!("{}/podcasts", assets_root)))
+      .nest_service("/courses", ServeDir::new(format!("{}/courses", assets_root)))
+      .nest_service("/cases", ServeDir::new(format!("{}/cases", assets_root)))
+      .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)));
+
+    // Phase 2.4: 公开 SEO 路由
+    // 为 sitemap / feed 构造 base_url。复用上面已读取的 base_url 变量，
+    // 避免重复读 env。router 各闭包需要拥有该字符串，这里 clone
+    // 三份分别交给 sitemap / feed / robots。
+    let base_url_for_routes = base_url.clone();
+    let sitemap_base = base_url.clone();
+    let feed_base = base_url.clone();
+    let robots_base = base_url_for_routes.clone();
+    let _ = base_url_for_routes; // 仅为下面闭包提供变量名锁定
+
+    let router = router
+      .route(
+        "/sitemap.xml",
+        get(move || {
+          let base = sitemap_base.clone();
+          async move {
+            use rustineverything_widgets::{build_sitemap_xml, ContentEntry};
+            // Phase 3.4：按模块开关过滤静态路径与博客条目。
+            let module_engine = rustineverything_core::engines::module::default_module_engine();
+            let enabled = module_engine.enabled_ids();
+            let is_on = |id: &str| enabled.iter().any(|s| s == id);
+
+            // 仅在 blog 启用时枚举博客条目（避免无谓 IO）
+            let mut entries: Vec<ContentEntry> = if is_on("blog") {
+              let posts =
+                rustineverything_module_blog::server::list_blog_posts().await.unwrap_or_default();
+              posts
+                .into_iter()
+                .map(|p| ContentEntry {
+                  url_path: format!("/blog/{}", p.slug),
+                  title: p.title,
+                  description: p.description,
+                  date: p.date,
+                  tags: p.tags,
+                })
+                .collect()
+            } else {
+              Vec::new()
+            };
+
+            // Phase 6：内容板块文章条目，按开关收录。
+            macro_rules! collect_board {
+              ($id:literal, $list:path, $route:literal) => {
+                if is_on($id) {
+                  for a in $list().await.unwrap_or_default() {
+                    entries.push(ContentEntry {
+                      url_path: format!(concat!($route, "/{}"), a.slug),
+                      title: a.title,
+                      description: a.description,
+                      date: a.date,
+                      tags: a.tags,
+                    });
+                  }
+                }
+              };
+            }
+            collect_board!(
+              "embedded",
+              rustineverything_module_embedded::server::list_embedded_articles,
+              "/embedded"
+            );
+            collect_board!("ai", rustineverything_module_ai::server::list_ai_articles, "/ai");
+            collect_board!(
+              "web3",
+              rustineverything_module_web3::server::list_web3_articles,
+              "/web3"
+            );
+            collect_board!(
+              "wasm",
+              rustineverything_module_wasm::server::list_wasm_articles,
+              "/wasm"
+            );
+            collect_board!("cli", rustineverything_module_cli::server::list_cli_articles, "/cli");
+
+            // 静态路径：首页恒收录；其它模块按开关动态拼接。
+            let mut static_paths: Vec<&'static str> = vec!["/"];
+            if is_on("blog") {
+              static_paths.push("/blog");
+            }
+            if is_on("podcast") {
+              static_paths.push("/podcast");
+            }
+            if is_on("course") {
+              static_paths.push("/course");
+            }
+            if is_on("cases") {
+              static_paths.push("/case");
+            }
+            if is_on("docs") {
+              static_paths.push("/docs");
+            }
+            if is_on("forum") {
+              static_paths.push("/topics");
+            }
+            if is_on("embedded") {
+              static_paths.push("/embedded");
+            }
+            if is_on("ai") {
+              static_paths.push("/ai");
+            }
+            if is_on("web3") {
+              static_paths.push("/web3");
+            }
+            if is_on("wasm") {
+              static_paths.push("/wasm");
+            }
+            if is_on("cli") {
+              static_paths.push("/cli");
+            }
+
+            let xml = build_sitemap_xml(&entries, &static_paths, &base);
+            axum::response::Response::builder()
+              .header("content-type", "application/xml; charset=utf-8")
+              .body(axum::body::Body::from(xml))
+              .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
+          }
+        }),
+      )
+      .route(
+        "/feed.xml",
+        get(move || {
+          let base = feed_base.clone();
+          async move {
+            use rustineverything_widgets::{build_atom_feed, ContentEntry};
+            // Phase 3.4：blog 关闭时输出空 feed，但保留站点元信息。
+            let module_engine = rustineverything_core::engines::module::default_module_engine();
+            let blog_on = module_engine.is_enabled("blog");
+
+            let is_on = |id: &str| module_engine.enabled_ids().iter().any(|s| s == id);
+            let mut entries: Vec<ContentEntry> = if blog_on {
+              rustineverything_module_blog::server::list_blog_posts()
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|p| ContentEntry {
+                  url_path: format!("/blog/{}", p.slug),
+                  title: p.title,
+                  description: p.description,
+                  date: p.date,
+                  tags: p.tags,
+                })
+                .collect()
+            } else {
+              Vec::new()
+            };
+
+            // Phase 6：内容板块文章也进 feed。
+            macro_rules! collect_board {
+              ($id:literal, $list:path, $route:literal) => {
+                if is_on($id) {
+                  for a in $list().await.unwrap_or_default() {
+                    entries.push(ContentEntry {
+                      url_path: format!(concat!($route, "/{}"), a.slug),
+                      title: a.title,
+                      description: a.description,
+                      date: a.date,
+                      tags: a.tags,
+                    });
+                  }
+                }
+              };
+            }
+            collect_board!(
+              "embedded",
+              rustineverything_module_embedded::server::list_embedded_articles,
+              "/embedded"
+            );
+            collect_board!("ai", rustineverything_module_ai::server::list_ai_articles, "/ai");
+            collect_board!(
+              "web3",
+              rustineverything_module_web3::server::list_web3_articles,
+              "/web3"
+            );
+            collect_board!(
+              "wasm",
+              rustineverything_module_wasm::server::list_wasm_articles,
+              "/wasm"
+            );
+            collect_board!("cli", rustineverything_module_cli::server::list_cli_articles, "/cli");
+
+            // 全站按日期降序，取最近 50 篇。
+            entries.sort_by(|a, b| b.date.cmp(&a.date));
+            entries.truncate(50);
+            // 取站点元信息：如取不到 site.json 则走默认。
+            let cfg = rustineverything_core::settings::SiteConfig::from_file(
+              rustineverything_core::utils::get_asset_root()
+                .join("site.json")
+                .to_str()
+                .unwrap_or_default(),
+            )
+            .unwrap_or_default();
+            let xml = build_atom_feed(&entries, &cfg.site_name, &cfg.site_description, &base);
+            axum::response::Response::builder()
+              .header("content-type", "application/atom+xml; charset=utf-8")
+              .body(axum::body::Body::from(xml))
+              .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
+          }
+        }),
+      )
+      .route(
+        "/robots.txt",
+        get(move || {
+          let base = robots_base.clone();
+          async move {
+            let body = rustineverything_widgets::build_robots_txt(&base);
+            axum::response::Response::builder()
+              .header("content-type", "text/plain; charset=utf-8")
+              .body(axum::body::Body::from(body))
+              .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
+          }
+        }),
       );
 
-      let router = dioxus::server::router(App)
-          // 1. 处理登录跳转
-          .route("/api/auth/login/{provider}", get(|Path(provider): Path<String>| async move {
-              if let Ok(url) = crate::server::get_login_url(provider).await {
-                  Redirect::temporary(&url).into_response()
-              } else {
-                  Redirect::temporary("/").into_response()
-              }
-          }))
-          // 2. 处理 OAuth 回调：验证 + 签发 JWT Cookie + 跳转
-          .route("/api/auth/callback/{provider}", get(move |Path(provider): Path<String>, Query(params): Query<std::collections::HashMap<String, String>>| async move {
-              let code = params.get("code").cloned().unwrap_or_default();
-              let state = params.get("state").cloned();
-              match crate::server::auth_callback_internal(code, provider, state).await {
-                  Ok((_message, jwt_token)) => {
-                      // 生产环境 (https) 增加 Secure 标志防止明文传输
-                      let secure_flag = if cookie_is_secure { "; Secure" } else { "" };
-                      let cookie = format!(
-                          "session={}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax{}",
-                          jwt_token,
-                          secure_flag
-                      );
-                      let mut response = Redirect::temporary("/").into_response();
-                      if let Ok(cookie_val) = cookie.parse() {
-                          response.headers_mut().insert(
-                              axum::http::header::SET_COOKIE,
-                              cookie_val,
-                          );
-                      }
-                      response
-                  }
-                  Err(e) => {
-                      tracing::error!(error = %e, "auth callback failed");
-                      Redirect::temporary("/?error=auth_failed").into_response()
-                  }
-              }
-          }))
-          // 3. 登出：清除 Cookie
-          .route("/api/auth/logout", get(move || async move {
-              let secure_flag = if cookie_is_secure { "; Secure" } else { "" };
-              let cookie_str = format!(
-                  "session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax{}",
-                  secure_flag
-              );
-              let mut response = Redirect::temporary("/").into_response();
-              if let Ok(cookie_val) = cookie_str.parse() {
-                  response.headers_mut().insert(
-                      axum::http::header::SET_COOKIE,
-                      cookie_val,
-                  );
-              }
-              response
-          }))
-          .nest_service("/images", ServeDir::new(format!("{}/images", assets_root)))
-          .nest_service("/posts", ServeDir::new(format!("{}/posts", assets_root)))
-          .nest_service("/js", ServeDir::new(format!("{}/js", assets_root)))
-          .nest_service("/uploads", ServeDir::new(format!("{}/uploads", assets_root)))
-          .nest_service("/audio", ServeDir::new(format!("{}/audio", assets_root)))
-          .nest_service("/podcasts", ServeDir::new(format!("{}/podcasts", assets_root)))
-          .nest_service("/courses", ServeDir::new(format!("{}/courses", assets_root)))
-          .nest_service("/cases", ServeDir::new(format!("{}/cases", assets_root)))
-          .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)));
-
-      // Phase 2.4: 公开 SEO 路由
-      // 为 sitemap / feed 构造 base_url。复用上面已读取的 base_url 变量，
-      // 避免重复读 env。router 各闭包需要拥有该字符串，这里 clone
-      // 三份分别交给 sitemap / feed / robots。
-      let base_url_for_routes = base_url.clone();
-      let sitemap_base = base_url.clone();
-      let feed_base = base_url.clone();
-      let robots_base = base_url_for_routes.clone();
-      let _ = base_url_for_routes; // 仅为下面闭包提供变量名锁定
-
-      let router = router
-          .route("/sitemap.xml", get(move || {
-              let base = sitemap_base.clone();
-              async move {
-                  use rustineverything_widgets::{build_sitemap_xml, ContentEntry};
-                  // Phase 3.4：按模块开关过滤静态路径与博客条目。
-                  let module_engine = rustineverything_core::engines::module::default_module_engine();
-                  let enabled = module_engine.enabled_ids();
-                  let is_on = |id: &str| enabled.iter().any(|s| s == id);
-
-                  // 仅在 blog 启用时枚举博客条目（避免无谓 IO）
-                  let mut entries: Vec<ContentEntry> = if is_on("blog") {
-                      let posts = rustineverything_module_blog::server::list_blog_posts()
-                          .await
-                          .unwrap_or_default();
-                      posts
-                          .into_iter()
-                          .map(|p| ContentEntry {
-                              url_path: format!("/blog/{}", p.slug),
-                              title: p.title,
-                              description: p.description,
-                              date: p.date,
-                              tags: p.tags,
-                          })
-                          .collect()
-                  } else {
-                      Vec::new()
-                  };
-
-                  // Phase 6：内容板块文章条目，按开关收录。
-                  macro_rules! collect_board {
-                      ($id:literal, $list:path, $route:literal) => {
-                          if is_on($id) {
-                              for a in $list().await.unwrap_or_default() {
-                                  entries.push(ContentEntry {
-                                      url_path: format!(concat!($route, "/{}"), a.slug),
-                                      title: a.title,
-                                      description: a.description,
-                                      date: a.date,
-                                      tags: a.tags,
-                                  });
-                              }
-                          }
-                      };
-                  }
-                  collect_board!("embedded", rustineverything_module_embedded::server::list_embedded_articles, "/embedded");
-                  collect_board!("ai", rustineverything_module_ai::server::list_ai_articles, "/ai");
-                  collect_board!("web3", rustineverything_module_web3::server::list_web3_articles, "/web3");
-                  collect_board!("wasm", rustineverything_module_wasm::server::list_wasm_articles, "/wasm");
-                  collect_board!("cli", rustineverything_module_cli::server::list_cli_articles, "/cli");
-
-                  // 静态路径：首页恒收录；其它模块按开关动态拼接。
-                  let mut static_paths: Vec<&'static str> = vec!["/"];
-                  if is_on("blog") { static_paths.push("/blog"); }
-                  if is_on("podcast") { static_paths.push("/podcast"); }
-                  if is_on("course") { static_paths.push("/course"); }
-                  if is_on("cases") { static_paths.push("/case"); }
-                  if is_on("docs") { static_paths.push("/docs"); }
-                  if is_on("forum") { static_paths.push("/topics"); }
-                  if is_on("embedded") { static_paths.push("/embedded"); }
-                  if is_on("ai") { static_paths.push("/ai"); }
-                  if is_on("web3") { static_paths.push("/web3"); }
-                  if is_on("wasm") { static_paths.push("/wasm"); }
-                  if is_on("cli") { static_paths.push("/cli"); }
-
-                  let xml = build_sitemap_xml(&entries, &static_paths, &base);
-                  axum::response::Response::builder()
-                      .header("content-type", "application/xml; charset=utf-8")
-                      .body(axum::body::Body::from(xml))
-                      .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-              }
-          }))
-          .route("/feed.xml", get(move || {
-              let base = feed_base.clone();
-              async move {
-                  use rustineverything_widgets::{build_atom_feed, ContentEntry};
-                  // Phase 3.4：blog 关闭时输出空 feed，但保留站点元信息。
-                  let module_engine = rustineverything_core::engines::module::default_module_engine();
-                  let blog_on = module_engine.is_enabled("blog");
-
-                  let is_on = |id: &str| module_engine.enabled_ids().iter().any(|s| s == id);
-                  let mut entries: Vec<ContentEntry> = if blog_on {
-                      rustineverything_module_blog::server::list_blog_posts()
-                          .await
-                          .unwrap_or_default()
-                          .into_iter()
-                          .map(|p| ContentEntry {
-                              url_path: format!("/blog/{}", p.slug),
-                              title: p.title,
-                              description: p.description,
-                              date: p.date,
-                              tags: p.tags,
-                          })
-                          .collect()
-                  } else {
-                      Vec::new()
-                  };
-
-                  // Phase 6：内容板块文章也进 feed。
-                  macro_rules! collect_board {
-                      ($id:literal, $list:path, $route:literal) => {
-                          if is_on($id) {
-                              for a in $list().await.unwrap_or_default() {
-                                  entries.push(ContentEntry {
-                                      url_path: format!(concat!($route, "/{}"), a.slug),
-                                      title: a.title,
-                                      description: a.description,
-                                      date: a.date,
-                                      tags: a.tags,
-                                  });
-                              }
-                          }
-                      };
-                  }
-                  collect_board!("embedded", rustineverything_module_embedded::server::list_embedded_articles, "/embedded");
-                  collect_board!("ai", rustineverything_module_ai::server::list_ai_articles, "/ai");
-                  collect_board!("web3", rustineverything_module_web3::server::list_web3_articles, "/web3");
-                  collect_board!("wasm", rustineverything_module_wasm::server::list_wasm_articles, "/wasm");
-                  collect_board!("cli", rustineverything_module_cli::server::list_cli_articles, "/cli");
-
-                  // 全站按日期降序，取最近 50 篇。
-                  entries.sort_by(|a, b| b.date.cmp(&a.date));
-                  entries.truncate(50);
-                  // 取站点元信息：如取不到 site.json 则走默认。
-                  let cfg = rustineverything_core::settings::SiteConfig::from_file(
-                      rustineverything_core::utils::get_asset_root().join("site.json").to_str().unwrap_or_default(),
-                  )
-                  .unwrap_or_default();
-                  let xml = build_atom_feed(
-                      &entries,
-                      &cfg.site_name,
-                      &cfg.site_description,
-                      &base,
-                  );
-                  axum::response::Response::builder()
-                      .header("content-type", "application/atom+xml; charset=utf-8")
-                      .body(axum::body::Body::from(xml))
-                      .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-              }
-          }))
-          .route("/robots.txt", get(move || {
-              let base = robots_base.clone();
-              async move {
-                  let body = rustineverything_widgets::build_robots_txt(&base);
-                  axum::response::Response::builder()
-                      .header("content-type", "text/plain; charset=utf-8")
-                      .body(axum::body::Body::from(body))
-                      .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-              }
-          }));
-
-      Ok(router)
+    Ok(router)
   });
 
   // Client: standard launch
@@ -358,41 +415,37 @@ fn App() -> Element {
   // 加载当前用户
   let mut user_signal = user;
   use_effect(move || {
-      spawn(async move {
-          if let Ok(Some(u)) = get_current_user().await {
-              user_signal.set(Some(u));
-          }
-      });
+    spawn(async move {
+      if let Ok(Some(u)) = get_current_user().await {
+        user_signal.set(Some(u));
+      }
+    });
   });
 
   // Fetch aggregated theme CSS from WASM plugins。订阅 theme_version 以便切换重拉。
   let theme_css = use_resource(move || {
-      let _ = theme_version();
-      async move {
-          let result = get_aggregated_theme_css().await;
-          match &result {
-              Ok(css) => tracing::debug!(len = css.len(), "frontend: fetched theme CSS"),
-              Err(e) => tracing::warn!(error = ?e, "frontend: failed to fetch theme"),
-          }
-          result.unwrap_or_default()
+    let _ = theme_version();
+    async move {
+      let result = get_aggregated_theme_css().await;
+      match &result {
+        Ok(css) => tracing::debug!(len = css.len(), "frontend: fetched theme CSS"),
+        Err(e) => tracing::warn!(error = ?e, "frontend: failed to fetch theme"),
       }
+      result.unwrap_or_default()
+    }
   });
 
   // 原生渲染：读取当前 theme CSS，由下面的 RSX 直接输出为 <style> 节点。
   // 避免 dioxus::document::eval(...) 这种依赖浏览器 DOM API 的街道，
   // 从而保留 desktop / mobile 等跨平台能力。
-  let theme_css_value: String = theme_css
-      .read()
-      .as_ref()
-      .cloned()
-      .unwrap_or_default();
+  let theme_css_value: String = theme_css.read().as_ref().cloned().unwrap_or_default();
 
   rsx! {
       // Head links
       document::Link { rel: "icon", href: FAVICON }
       document::Link { rel: "stylesheet", href: MAIN_CSS }
       document::Link { rel: "stylesheet", href: TAILWIND_CSS }
-      
+
       // Global Fixed Styles (Static)
       document::Style { "
         body {{ 

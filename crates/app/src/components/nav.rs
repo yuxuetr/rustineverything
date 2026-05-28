@@ -17,20 +17,17 @@ use crate::server::get_active_layout;
 /// 等待 server fn 返回前先按 `classic` 渲染，避免布局闪烁。
 #[component]
 pub fn Navbar() -> Element {
-    let layout_res = use_resource(|| async move {
-        get_active_layout().await.unwrap_or_else(|_| "classic".to_string())
-    });
-    let layout: String = layout_res
-        .read()
-        .as_ref()
-        .cloned()
-        .unwrap_or_else(|| "classic".to_string());
+  let layout_res =
+    use_resource(
+      || async move { get_active_layout().await.unwrap_or_else(|_| "classic".to_string()) },
+    );
+  let layout: String = layout_res.read().as_ref().cloned().unwrap_or_else(|| "classic".to_string());
 
-    rsx! {
-        if layout == "minimal" {
-            MinimalShell {}
-        } else {
-            ClassicShell {}
-        }
-    }
+  rsx! {
+      if layout == "minimal" {
+          MinimalShell {}
+      } else {
+          ClassicShell {}
+      }
+  }
 }

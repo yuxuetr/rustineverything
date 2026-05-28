@@ -79,10 +79,7 @@ async fn benign_comment_returns_allow() {
     )
     .await;
 
-  println!(
-    "[benign] label={:?} score={} reason={}",
-    v.label, v.score, v.reason
-  );
+  println!("[benign] label={:?} score={} reason={}", v.label, v.score, v.reason);
   // 友善评论应当 allow；阈值升级后也不应是 Block
   assert_eq!(v.label, ModerationLabel::Allow, "正常内容不应被拒绝: {:?}", v);
 }
@@ -98,22 +95,13 @@ async fn abusive_comment_is_flagged_or_blocked() {
   // 明显的辱骂内容
   let v = stage
     .evaluate(
-      &ModerationSubmission::new("你这个 sb，写的什么垃圾文章，你妈死了吗")
-        .with_kind("comment"),
+      &ModerationSubmission::new("你这个 sb，写的什么垃圾文章，你妈死了吗").with_kind("comment"),
     )
     .await;
 
-  println!(
-    "[abusive] label={:?} score={} reason={}",
-    v.label, v.score, v.reason
-  );
+  println!("[abusive] label={:?} score={} reason={}", v.label, v.score, v.reason);
   // 不强行断言 Block，因为 LLM 输出有随机性；但至少要 Flag 以上
-  assert_ne!(
-    v.label,
-    ModerationLabel::Allow,
-    "明显辱骂应至少 Flag: {:?}",
-    v
-  );
+  assert_ne!(v.label, ModerationLabel::Allow, "明显辱骂应至少 Flag: {:?}", v);
 }
 
 /// URL 黑名单：完全本地，无 LLM 依赖。即使 `.env` 没配 LLM 也应当通过。
@@ -136,30 +124,21 @@ async fn url_blocklist_pipeline_blocks_scam_link() {
   );
 
   // 命中精确域名
-  let v = pipeline
-    .evaluate(ModerationSubmission::new(
-      "点 https://scam.example/x 领奖",
-    ))
-    .await;
+  let v = pipeline.evaluate(ModerationSubmission::new("点 https://scam.example/x 领奖")).await;
   println!("[url-block exact] label={:?} reason={}", v.label, v.reason);
   assert_eq!(v.label, ModerationLabel::Block);
   assert!(v.reason.contains("scam.example"));
 
   // 命中通配子域
   let v = pipeline
-    .evaluate(ModerationSubmission::new(
-      "https://login.phishing.example/verify 紧急确认",
-    ))
+    .evaluate(ModerationSubmission::new("https://login.phishing.example/verify 紧急确认"))
     .await;
   println!("[url-block wildcard] label={:?} reason={}", v.label, v.reason);
   assert_eq!(v.label, ModerationLabel::Block);
 
   // 干净链接通过
-  let v = pipeline
-    .evaluate(ModerationSubmission::new(
-      "see https://github.com/rust-lang/rust",
-    ))
-    .await;
+  let v =
+    pipeline.evaluate(ModerationSubmission::new("see https://github.com/rust-lang/rust")).await;
   assert_eq!(v.label, ModerationLabel::Allow);
 }
 
@@ -183,16 +162,8 @@ async fn comment_with_benign_image_returns_allow() {
     )
     .await;
 
-  println!(
-    "[benign+image] label={:?} score={} reason={}",
-    v.label, v.score, v.reason
-  );
-  assert_eq!(
-    v.label,
-    ModerationLabel::Allow,
-    "中立图片不应被拒: {:?}",
-    v
-  );
+  println!("[benign+image] label={:?} score={} reason={}", v.label, v.score, v.reason);
+  assert_eq!(v.label, ModerationLabel::Allow, "中立图片不应被拒: {:?}", v);
 }
 
 /// `extract_image_urls` 在真实 markdown 评论上正确抽取站内 + 外站图片。
@@ -225,20 +196,12 @@ async fn phishing_link_context_flags_or_blocks_via_llm() {
   let v = stage
     .evaluate(
       &ModerationSubmission::new(
-        "您的 PayPal 账户已被冻结，请立即登录 https://paypa1-security.com/verify 解冻"
+        "您的 PayPal 账户已被冻结，请立即登录 https://paypa1-security.com/verify 解冻",
       )
       .with_kind("comment"),
     )
     .await;
 
-  println!(
-    "[phishing] label={:?} score={} reason={}",
-    v.label, v.score, v.reason
-  );
-  assert_ne!(
-    v.label,
-    ModerationLabel::Allow,
-    "钓鱼仿冒域名应至少 Flag: {:?}",
-    v
-  );
+  println!("[phishing] label={:?} score={} reason={}", v.label, v.score, v.reason);
+  assert_ne!(v.label, ModerationLabel::Allow, "钓鱼仿冒域名应至少 Flag: {:?}", v);
 }

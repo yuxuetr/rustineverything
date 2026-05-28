@@ -10,7 +10,7 @@ use rustineverything_sdk::AppModule;
 pub struct CliModule;
 
 impl AppModule for CliModule {
-    fn name(&self) -> &'static str {
-        "CLI"
-    }
+  fn name(&self) -> &'static str {
+    "CLI"
+  }
 }

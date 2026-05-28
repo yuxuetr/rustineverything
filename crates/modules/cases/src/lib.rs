@@ -7,7 +7,7 @@ use rustineverything_sdk::AppModule;
 pub struct CasesModule;
 
 impl AppModule for CasesModule {
-    fn name(&self) -> &'static str {
-        "Cases"
-    }
+  fn name(&self) -> &'static str {
+    "Cases"
+  }
 }

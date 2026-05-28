@@ -45,14 +45,12 @@ fn workspace_root() -> std::path::PathBuf {
 async fn openai_compatible_chat_round_trip() {
   load_env();
   let cfg = LlmConfig::from_env();
-  let (Some(url), Some(key)) = (cfg.openai_base_url.as_deref(), cfg.openai_api_key.as_deref()) else {
+  let (Some(url), Some(key)) = (cfg.openai_base_url.as_deref(), cfg.openai_api_key.as_deref())
+  else {
     eprintln!("跳过 openai live test：OPENAI_LLM_BASE_URL / OPENAI_LLM_API_KEY 未配置");
     return;
   };
-  let model = cfg
-    .openai_model
-    .clone()
-    .unwrap_or_else(|| "deepseek-chat".to_string());
+  let model = cfg.openai_model.clone().unwrap_or_else(|| "deepseek-chat".to_string());
 
   let client = OpenAiChat::new(url, key, &model);
   assert_eq!(client.provider(), LlmProvider::OpenAi);
@@ -74,19 +72,13 @@ async fn openai_compatible_chat_round_trip() {
 async fn anthropic_compatible_chat_round_trip() {
   load_env();
   let cfg = LlmConfig::from_env();
-  let (Some(url), Some(key)) = (
-    cfg.anthropic_base_url.as_deref(),
-    cfg.anthropic_api_key.as_deref(),
-  ) else {
-    eprintln!(
-      "跳过 anthropic live test：ANTHROPIC_LLM_BASE_URL / ANTHROPIC_LLM_API_KEY 未配置"
-    );
+  let (Some(url), Some(key)) =
+    (cfg.anthropic_base_url.as_deref(), cfg.anthropic_api_key.as_deref())
+  else {
+    eprintln!("跳过 anthropic live test：ANTHROPIC_LLM_BASE_URL / ANTHROPIC_LLM_API_KEY 未配置");
     return;
   };
-  let model = cfg
-    .anthropic_model
-    .clone()
-    .unwrap_or_else(|| "deepseek-chat".to_string());
+  let model = cfg.anthropic_model.clone().unwrap_or_else(|| "deepseek-chat".to_string());
 
   let client = AnthropicChat::new(url, key, &model);
   assert_eq!(client.provider(), LlmProvider::Anthropic);

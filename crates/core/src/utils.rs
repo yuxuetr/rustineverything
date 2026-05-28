@@ -10,23 +10,23 @@ use std::path::PathBuf;
 ///
 /// 返回的 `PathBuf` 不保证存在；调用方需根据上下文做存在性检查。
 pub fn get_asset_root() -> PathBuf {
-    let mut path = PathBuf::from("assets");
-    if !path.exists() {
-        path = PathBuf::from("../../assets");
-    }
-    path
+  let mut path = PathBuf::from("assets");
+  if !path.exists() {
+    path = PathBuf::from("../../assets");
+  }
+  path
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+  use super::*;
 
-    #[test]
-    fn returns_a_path_buf() {
-        // 不能假设具体内容（依赖运行目录），只验证返回 PathBuf 即可
-        let p = get_asset_root();
-        // 一定是 "assets" 或 "../../assets" 之一
-        let s = p.to_string_lossy();
-        assert!(s == "assets" || s == "../../assets");
-    }
+  #[test]
+  fn returns_a_path_buf() {
+    // 不能假设具体内容（依赖运行目录），只验证返回 PathBuf 即可
+    let p = get_asset_root();
+    // 一定是 "assets" 或 "../../assets" 之一
+    let s = p.to_string_lossy();
+    assert!(s == "assets" || s == "../../assets");
+  }
 }

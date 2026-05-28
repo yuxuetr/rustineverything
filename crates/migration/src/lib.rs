@@ -44,10 +44,7 @@ mod tests {
 
   #[test]
   fn migrations_have_expected_names() {
-    let names: Vec<String> = Migrator::migrations()
-      .iter()
-      .map(|m| m.name().to_string())
-      .collect();
+    let names: Vec<String> = Migrator::migrations().iter().map(|m| m.name().to_string()).collect();
     assert_eq!(
       names,
       vec![

@@ -1,7 +1,7 @@
-use rustineverything_widgets::Markdown;
+use dioxus::prelude::*;
 use rustineverything_module_comments::server::{get_comments, post_comment};
 use rustineverything_module_uploads::server::upload_image;
-use dioxus::prelude::*;
+use rustineverything_widgets::Markdown;
 
 #[derive(PartialEq, Props, Clone)]
 pub struct CommentBoxProps {
@@ -19,10 +19,8 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
   // Fetch comments
   let blog_id_for_res = props.blog_id.clone();
   let mut comments = use_resource(move || {
-      let id = blog_id_for_res.clone();
-      async move {
-          get_comments(id).await.unwrap_or_default()
-      }
+    let id = blog_id_for_res.clone();
+    async move { get_comments(id).await.unwrap_or_default() }
   });
 
   let blog_id_for_submit = props.blog_id.clone();
@@ -51,22 +49,22 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
   };
 
   let handle_upload = move |evt: Event<FormData>| {
-      spawn(async move {
-          let files = evt.data().files();
-          for file in files {
-              if let Ok(data) = file.read_bytes().await {
-                  use base64::Engine as _;
-                  let base64_data = base64::engine::general_purpose::STANDARD.encode(data);
-                  let data_url = format!("data:image/png;base64,{}", base64_data);
+    spawn(async move {
+      let files = evt.data().files();
+      for file in files {
+        if let Ok(data) = file.read_bytes().await {
+          use base64::Engine as _;
+          let base64_data = base64::engine::general_purpose::STANDARD.encode(data);
+          let data_url = format!("data:image/png;base64,{}", base64_data);
 
-                  if let Ok(url) = upload_image(file.name(), data_url).await {
-                      let markdown_image = format!("\n![Image]({})", url);
-                      content.with_mut(|c| c.push_str(&markdown_image));
-                      content.set(content());
-                  }
-              }
+          if let Ok(url) = upload_image(file.name(), data_url).await {
+            let markdown_image = format!("\n![Image]({})", url);
+            content.with_mut(|c| c.push_str(&markdown_image));
+            content.set(content());
           }
-      });
+        }
+      }
+    });
   };
 
   let is_logged_in = session_user().is_some();

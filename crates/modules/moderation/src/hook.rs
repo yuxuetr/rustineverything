@@ -46,10 +46,7 @@ static SHARED: OnceLock<RwLock<Arc<ModerationPipeline>>> = OnceLock::new();
 /// 从 `site.json` + env 重新构造一条 pipeline。
 fn build_pipeline() -> ModerationPipeline {
   let site = SiteConfig::from_file(
-    rustineverything_core::utils::get_asset_root()
-      .join("site.json")
-      .to_str()
-      .unwrap_or_default(),
+    rustineverything_core::utils::get_asset_root().join("site.json").to_str().unwrap_or_default(),
   )
   .unwrap_or_default();
 
@@ -115,10 +112,8 @@ pub async fn evaluate_with_images(
   image_urls: impl IntoIterator<Item = String>,
 ) -> Verdict {
   let images: Vec<ImageRef> = image_urls.into_iter().map(ImageRef::url).collect();
-  let submission = ModerationSubmission::new(content)
-    .with_kind(kind)
-    .with_ref_path(ref_path)
-    .with_images(images);
+  let submission =
+    ModerationSubmission::new(content).with_kind(kind).with_ref_path(ref_path).with_images(images);
   evaluate_submission(submission).await
 }
 
@@ -148,11 +143,8 @@ pub async fn enqueue_if_flagged(
   use rustineverything_core::entities::moderation_queue;
   use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
-  let images_json = if image_urls.is_empty() {
-    None
-  } else {
-    serde_json::to_string(image_urls).ok()
-  };
+  let images_json =
+    if image_urls.is_empty() { None } else { serde_json::to_string(image_urls).ok() };
 
   let am = moderation_queue::ActiveModel {
     kind: Set(kind.to_string()),

@@ -22,90 +22,84 @@ use crate::error::AppResult;
 
 /// AuthEngine：重命名后的 AuthService 包装，提供 [`Engine`] 接口。
 pub struct AuthEngine {
-    inner: AuthService,
+  inner: AuthService,
 }
 
 impl AuthEngine {
-    pub fn new(config: AuthConfig, plugin_dir: PathBuf) -> Self {
-        Self {
-            inner: AuthService::new(config, plugin_dir),
-        }
-    }
+  pub fn new(config: AuthConfig, plugin_dir: PathBuf) -> Self {
+    Self { inner: AuthService::new(config, plugin_dir) }
+  }
 
-    /// 拿到内部的 `AuthService` 引用，便于复用现有 server fn。
-    pub fn service(&self) -> &AuthService {
-        &self.inner
-    }
+  /// 拿到内部的 `AuthService` 引用，便于复用现有 server fn。
+  pub fn service(&self) -> &AuthService {
+    &self.inner
+  }
 
-    /// 当 hot reload 等场景需要替换 service 时使用。
-    pub fn replace_service(&mut self, service: AuthService) {
-        self.inner = service;
-    }
+  /// 当 hot reload 等场景需要替换 service 时使用。
+  pub fn replace_service(&mut self, service: AuthService) {
+    self.inner = service;
+  }
 }
 
 impl Engine for AuthEngine {
-    fn name(&self) -> &'static str {
-        "auth"
-    }
+  fn name(&self) -> &'static str {
+    "auth"
+  }
 
-    fn init(&mut self, ctx: &EngineContext) -> AppResult<()> {
-        // 当 site_config.auth.enabled 为 false 时仅发个日志提示；
-        // AuthService 内部 list_available_providers 会自然返回空列表。
-        if !ctx.site_config.auth.enabled {
-            tracing::warn!("auth: site.json::auth.enabled=false, login disabled");
-        }
-        Ok(())
+  fn init(&mut self, ctx: &EngineContext) -> AppResult<()> {
+    // 当 site_config.auth.enabled 为 false 时仅发个日志提示；
+    // AuthService 内部 list_available_providers 会自然返回空列表。
+    if !ctx.site_config.auth.enabled {
+      tracing::warn!("auth: site.json::auth.enabled=false, login disabled");
     }
+    Ok(())
+  }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+  fn as_any(&self) -> &dyn std::any::Any {
+    self
+  }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
+  fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+    self
+  }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+  use super::*;
 
-    fn make() -> AuthEngine {
-        AuthEngine::new(
-            AuthConfig {
-                base_url: "http://localhost:8080".to_string(),
-            },
-            PathBuf::from("assets/plugins"),
-        )
-    }
+  fn make() -> AuthEngine {
+    AuthEngine::new(
+      AuthConfig { base_url: "http://localhost:8080".to_string() },
+      PathBuf::from("assets/plugins"),
+    )
+  }
 
-    #[test]
-    fn engine_name_is_auth() {
-        let e = make();
-        assert_eq!(<AuthEngine as Engine>::name(&e), "auth");
-    }
+  #[test]
+  fn engine_name_is_auth() {
+    let e = make();
+    assert_eq!(<AuthEngine as Engine>::name(&e), "auth");
+  }
 
-    #[test]
-    fn init_ok_with_default_ctx() {
-        let mut e = make();
-        let ctx = EngineContext::for_tests();
-        assert!(e.init(&ctx).is_ok());
-    }
+  #[test]
+  fn init_ok_with_default_ctx() {
+    let mut e = make();
+    let ctx = EngineContext::for_tests();
+    assert!(e.init(&ctx).is_ok());
+  }
 
-    #[test]
-    fn service_accessor_returns_underlying_auth_service() {
-        let e = make();
-        // 验证 service() 返回的对象上能调用现有方法
-        assert_eq!(e.service().config.base_url, "http://localhost:8080");
-    }
+  #[test]
+  fn service_accessor_returns_underlying_auth_service() {
+    let e = make();
+    // 验证 service() 返回的对象上能调用现有方法
+    assert_eq!(e.service().config.base_url, "http://localhost:8080");
+  }
 
-    #[test]
-    fn list_available_providers_empty_when_no_config() {
-        let e = make();
-        // SiteConfig::default() auth.enabled=false → 必然空
-        let providers = e
-            .service()
-            .list_available_providers(&crate::settings::SiteConfig::default());
-        assert!(providers.is_empty());
-    }
+  #[test]
+  fn list_available_providers_empty_when_no_config() {
+    let e = make();
+    // SiteConfig::default() auth.enabled=false → 必然空
+    let providers = e.service().list_available_providers(&crate::settings::SiteConfig::default());
+    assert!(providers.is_empty());
+  }
 }

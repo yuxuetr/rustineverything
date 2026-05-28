@@ -10,7 +10,7 @@ use rustineverything_sdk::AppModule;
 pub struct BlogModule;
 
 impl AppModule for BlogModule {
-    fn name(&self) -> &'static str {
-        "Blog"
-    }
+  fn name(&self) -> &'static str {
+    "Blog"
+  }
 }

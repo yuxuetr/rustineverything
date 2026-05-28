@@ -240,18 +240,9 @@ mod tests {
 
   #[test]
   fn strips_uppercase_and_mixed_case_script() {
-    for variant in &[
-      "<SCRIPT>x</SCRIPT>",
-      "<Script>y</Script>",
-      "<sCrIpT>z</sCrIpT>",
-    ] {
+    for variant in &["<SCRIPT>x</SCRIPT>", "<Script>y</Script>", "<sCrIpT>z</sCrIpT>"] {
       let out = sanitize_user_html(variant);
-      assert!(
-        !out.to_lowercase().contains("<script"),
-        "variant {} → {}",
-        variant,
-        out
-      );
+      assert!(!out.to_lowercase().contains("<script"), "variant {} → {}", variant, out);
     }
   }
 

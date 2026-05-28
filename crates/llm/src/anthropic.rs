@@ -65,7 +65,11 @@ pub struct AnthropicChat {
 }
 
 impl AnthropicChat {
-  pub fn new(base_url: impl Into<String>, api_key: impl Into<String>, model: impl Into<String>) -> Self {
+  pub fn new(
+    base_url: impl Into<String>,
+    api_key: impl Into<String>,
+    model: impl Into<String>,
+  ) -> Self {
     let base_url = base_url.into().trim_end_matches('/').to_string();
     let client = Client::builder()
       .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
@@ -125,11 +129,7 @@ fn split_system_and_messages(messages: &[LlmMessage]) -> (Option<String>, Vec<&L
       _ => conv.push(m),
     }
   }
-  let system = if systems.is_empty() {
-    None
-  } else {
-    Some(systems.join("\n"))
-  };
+  let system = if systems.is_empty() { None } else { Some(systems.join("\n")) };
   (system, conv)
 }
 
@@ -152,24 +152,15 @@ struct WireMessage<'a> {
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum AnthropicContentBlock<'a> {
-  Text {
-    text: &'a str,
-  },
-  Image {
-    source: AnthropicImageSource<'a>,
-  },
+  Text { text: &'a str },
+  Image { source: AnthropicImageSource<'a> },
 }
 
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum AnthropicImageSource<'a> {
-  Base64 {
-    media_type: &'a str,
-    data: &'a str,
-  },
-  Url {
-    url: &'a str,
-  },
+  Base64 { media_type: &'a str, data: &'a str },
+  Url { url: &'a str },
 }
 
 /// 把内容块转 Anthropic 协议 wire 形态。
@@ -185,13 +176,9 @@ fn build_anthropic_content<'a>(blocks: &'a [LlmContentBlock]) -> Vec<AnthropicCo
       LlmContentBlock::ImageUrl { url } => {
         // 如果是 data URL，拆成 base64 source；否则走 url source
         if let Some((media_type, data)) = parse_data_url(url) {
-          AnthropicContentBlock::Image {
-            source: AnthropicImageSource::Base64 { media_type, data },
-          }
+          AnthropicContentBlock::Image { source: AnthropicImageSource::Base64 { media_type, data } }
         } else {
-          AnthropicContentBlock::Image {
-            source: AnthropicImageSource::Url { url: url.as_str() },
-          }
+          AnthropicContentBlock::Image { source: AnthropicImageSource::Url { url: url.as_str() } }
         }
       }
       LlmContentBlock::ImageBase64 { media_type, data } => AnthropicContentBlock::Image {
@@ -264,17 +251,12 @@ impl LlmClient for AnthropicChat {
     }
     // Anthropic 要求 conversation 以 user 开头
     if conv.first().map(|m| m.role) != Some(LlmRole::User) {
-      return Err(AppError::validation(
-        "Anthropic 协议要求 messages 列表首条必须为 user",
-      ));
+      return Err(AppError::validation("Anthropic 协议要求 messages 列表首条必须为 user"));
     }
 
     let wire: Vec<WireMessage> = conv
       .iter()
-      .map(|m| WireMessage {
-        role: m.role.as_str(),
-        content: build_anthropic_content(&m.content),
-      })
+      .map(|m| WireMessage { role: m.role.as_str(), content: build_anthropic_content(&m.content) })
       .collect();
 
     let body = MessagesRequest {
@@ -299,32 +281,23 @@ impl LlmClient for AnthropicChat {
       .map_err(|e| AppError::other(format!("LLM HTTP 请求失败: {}", e)))?;
 
     let status = resp.status();
-    let text = resp
-      .text()
-      .await
-      .map_err(|e| AppError::other(format!("LLM 响应读取失败: {}", e)))?;
+    let text =
+      resp.text().await.map_err(|e| AppError::other(format!("LLM 响应读取失败: {}", e)))?;
 
     if !status.is_success() {
       tracing::warn!(provider = "anthropic", status = %status, body = %text, "llm: non-2xx response");
-      return Err(AppError::other(format!(
-        "LLM 服务返回 {}: {}",
-        status,
-        truncate(&text, 500)
-      )));
+      return Err(AppError::other(format!("LLM 服务返回 {}: {}", status, truncate(&text, 500))));
     }
 
-    let parsed: MessagesResponse = serde_json::from_str(&text)
-      .map_err(|e| AppError::other(format!("LLM 响应不是合法 JSON: {} (body={})", e, truncate(&text, 200))))?;
+    let parsed: MessagesResponse = serde_json::from_str(&text).map_err(|e| {
+      AppError::other(format!("LLM 响应不是合法 JSON: {} (body={})", e, truncate(&text, 200)))
+    })?;
 
     if parsed.resp_type == "error" {
-      let err = parsed.error.unwrap_or(ApiError {
-        kind: "unknown".to_string(),
-        message: "未知错误".to_string(),
-      });
-      return Err(AppError::other(format!(
-        "LLM 服务返回错误（{}）: {}",
-        err.kind, err.message
-      )));
+      let err = parsed
+        .error
+        .unwrap_or(ApiError { kind: "unknown".to_string(), message: "未知错误".to_string() });
+      return Err(AppError::other(format!("LLM 服务返回错误（{}）: {}", err.kind, err.message)));
     }
 
     let answer = parsed
@@ -398,10 +371,7 @@ mod tests {
       .await;
 
     let client = build_chat(&server.url());
-    let answer = client
-      .chat(vec![LlmMessage::user("你好")])
-      .await
-      .expect("chat ok");
+    let answer = client.chat(vec![LlmMessage::user("你好")]).await.expect("chat ok");
     assert_eq!(answer, "你好，我是 Claude 兼容端点。");
     mock.assert_async().await;
   }
@@ -424,10 +394,7 @@ mod tests {
 
     let client = build_chat(&server.url());
     let _ = client
-      .chat(vec![
-        LlmMessage::system("你是审核员"),
-        LlmMessage::user("hi"),
-      ])
+      .chat(vec![LlmMessage::system("你是审核员"), LlmMessage::user("hi")])
       .await
       .expect("chat ok");
     mock.assert_async().await;
@@ -438,9 +405,7 @@ mod tests {
     let mut server = mockito::Server::new_async().await;
     let mock = server
       .mock("POST", "/v1/messages")
-      .match_body(mockito::Matcher::Regex(
-        "\"system\":\"line1\\\\nline2\"".to_string(),
-      ))
+      .match_body(mockito::Matcher::Regex("\"system\":\"line1\\\\nline2\"".to_string()))
       .with_status(200)
       .with_body(r#"{"type":"message","content":[{"type":"text","text":"ok"}]}"#)
       .create_async()
@@ -448,11 +413,7 @@ mod tests {
 
     let client = build_chat(&server.url());
     let _ = client
-      .chat(vec![
-        LlmMessage::system("line1"),
-        LlmMessage::system("line2"),
-        LlmMessage::user("hi"),
-      ])
+      .chat(vec![LlmMessage::system("line1"), LlmMessage::system("line2"), LlmMessage::user("hi")])
       .await
       .expect("chat ok");
     mock.assert_async().await;
@@ -462,20 +423,14 @@ mod tests {
   async fn empty_user_messages_rejected() {
     let client = build_chat("http://unreachable.invalid");
     // 只有 system 没有 user → 拒绝
-    let err = client
-      .chat(vec![LlmMessage::system("policy")])
-      .await
-      .unwrap_err();
+    let err = client.chat(vec![LlmMessage::system("policy")]).await.unwrap_err();
     assert!(matches!(err, AppError::Validation(_)));
   }
 
   #[tokio::test]
   async fn conversation_not_starting_with_user_rejected() {
     let client = build_chat("http://unreachable.invalid");
-    let err = client
-      .chat(vec![LlmMessage::assistant("我先讲")])
-      .await
-      .unwrap_err();
+    let err = client.chat(vec![LlmMessage::assistant("我先讲")]).await.unwrap_err();
     assert!(matches!(err, AppError::Validation(_)));
   }
 
@@ -485,7 +440,9 @@ mod tests {
     let _m = server
       .mock("POST", "/v1/messages")
       .with_status(400)
-      .with_body(r#"{"type":"error","error":{"type":"invalid_request_error","message":"bad model"}}"#)
+      .with_body(
+        r#"{"type":"error","error":{"type":"invalid_request_error","message":"bad model"}}"#,
+      )
       .create_async()
       .await;
 
@@ -522,11 +479,7 @@ mod tests {
 
   #[test]
   fn split_system_joins_multiple() {
-    let msgs = vec![
-      LlmMessage::system("a"),
-      LlmMessage::system("b"),
-      LlmMessage::user("u"),
-    ];
+    let msgs = vec![LlmMessage::system("a"), LlmMessage::system("b"), LlmMessage::user("u")];
     let (sys, conv) = split_system_and_messages(&msgs);
     assert_eq!(sys, Some("a\nb".to_string()));
     assert_eq!(conv.len(), 1);
@@ -596,9 +549,7 @@ mod tests {
       .match_body(mockito::Matcher::AllOf(vec![
         mockito::Matcher::Regex("\"type\":\"image\"".to_string()),
         mockito::Matcher::Regex("\"type\":\"url\"".to_string()),
-        mockito::Matcher::Regex(
-          "\"url\":\"https://example.com/a.jpg\"".to_string(),
-        ),
+        mockito::Matcher::Regex("\"url\":\"https://example.com/a.jpg\"".to_string()),
       ]))
       .with_status(200)
       .with_body(r#"{"type":"message","content":[{"type":"text","text":"a"}]}"#)

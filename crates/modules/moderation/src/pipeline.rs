@@ -15,9 +15,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use rustineverything_core::engines::moderation::{
-  ModerationLabel, ModerationThresholds, Verdict,
-};
+use rustineverything_core::engines::moderation::{ModerationLabel, ModerationThresholds, Verdict};
 use rustineverything_core::settings::SiteConfig;
 use rustineverything_llm::LlmClient;
 use rustineverything_sdk::ModerationSubmission;
@@ -38,10 +36,7 @@ impl Default for ModerationPipeline {
 
 impl ModerationPipeline {
   pub fn new() -> Self {
-    Self {
-      stages: Vec::new(),
-      thresholds: ModerationThresholds::default(),
-    }
+    Self { stages: Vec::new(), thresholds: ModerationThresholds::default() }
   }
 
   pub fn with_thresholds(mut self, t: ModerationThresholds) -> Self {
@@ -100,9 +95,7 @@ impl ModerationPipeline {
     // ── Layer 2：LLM 插件 stages ──
     if site.moderation.plugins.is_empty() {
       if pipeline.is_empty() {
-        tracing::info!(
-          "moderation: enabled but no plugins / no URL blocklist → empty pipeline"
-        );
+        tracing::info!("moderation: enabled but no plugins / no URL blocklist → empty pipeline");
       } else {
         tracing::info!("moderation: enabled with URL blocklist only (no LLM stages)");
       }
@@ -114,9 +107,7 @@ impl ModerationPipeline {
           "moderation: enabled but no LLM configured (env OPENAI_LLM_* / ANTHROPIC_LLM_* 都未设) 且无 URL blocklist → empty pipeline"
         );
       } else {
-        tracing::warn!(
-          "moderation: LLM 未配置 → 只跑 URL 黑名单，跳过插件 stages"
-        );
+        tracing::warn!("moderation: LLM 未配置 → 只跑 URL 黑名单，跳过插件 stages");
       }
       return pipeline;
     };
@@ -209,15 +200,12 @@ mod tests {
 
   #[tokio::test]
   async fn thresholds_upgrade_allow_to_block() {
-    let mut p = ModerationPipeline::new().with_thresholds(ModerationThresholds {
-      block_above: 0.9,
-      flag_above: 0.5,
-    });
-    p.register(StubStage("a", Verdict {
-      score: 0.95,
-      label: ModerationLabel::Allow,
-      reason: "weak signal".to_string(),
-    }));
+    let mut p = ModerationPipeline::new()
+      .with_thresholds(ModerationThresholds { block_above: 0.9, flag_above: 0.5 });
+    p.register(StubStage(
+      "a",
+      Verdict { score: 0.95, label: ModerationLabel::Allow, reason: "weak signal".to_string() },
+    ));
     let v = p.evaluate(ModerationSubmission::new("x")).await;
     assert_eq!(v.label, ModerationLabel::Block);
   }
@@ -240,11 +228,7 @@ mod tests {
   #[test]
   fn enabled_but_no_plugins_yields_empty_pipeline() {
     let mut site = SiteConfig::default();
-    site.moderation = ModerationSettings {
-      enabled: true,
-      plugins: vec![],
-      ..Default::default()
-    };
+    site.moderation = ModerationSettings { enabled: true, plugins: vec![], ..Default::default() };
     let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
     assert!(p.is_empty());
   }
@@ -252,11 +236,8 @@ mod tests {
   #[test]
   fn enabled_with_plugins_but_no_llm_yields_empty_pipeline() {
     let mut site = SiteConfig::default();
-    site.moderation = ModerationSettings {
-      enabled: true,
-      plugins: vec!["x.wasm".into()],
-      ..Default::default()
-    };
+    site.moderation =
+      ModerationSettings { enabled: true, plugins: vec!["x.wasm".into()], ..Default::default() };
     // 即使插件存在，没有 LLM 也无法工作 → URL blocklist 也为空 → 整体空 pipeline
     let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
     assert!(p.is_empty());
@@ -286,9 +267,7 @@ mod tests {
       ..Default::default()
     };
     let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
-    let v = p
-      .evaluate(ModerationSubmission::new("点 https://scam.com/x 拿福利"))
-      .await;
+    let v = p.evaluate(ModerationSubmission::new("点 https://scam.com/x 拿福利")).await;
     assert_eq!(v.label, ModerationLabel::Block);
   }
 

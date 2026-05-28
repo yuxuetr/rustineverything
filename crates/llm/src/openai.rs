@@ -43,7 +43,11 @@ pub struct OpenAiChat {
 
 impl OpenAiChat {
   /// 构造一个新客户端。`base_url` 不应含尾斜杠（构造时自动 trim）。
-  pub fn new(base_url: impl Into<String>, api_key: impl Into<String>, model: impl Into<String>) -> Self {
+  pub fn new(
+    base_url: impl Into<String>,
+    api_key: impl Into<String>,
+    model: impl Into<String>,
+  ) -> Self {
     let base_url = base_url.into().trim_end_matches('/').to_string();
     // 项目约定（CLAUDE.md::Rust HTTP Testing）：测试场景需用 `.no_proxy()`
     // 避免本地代理拦截 loopback；生产环境保持默认 client 行为。
@@ -52,12 +56,7 @@ impl OpenAiChat {
       .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
       .build()
       .unwrap_or_else(|_| Client::new());
-    Self {
-      base_url,
-      api_key: api_key.into(),
-      model: model.into(),
-      client,
-    }
+    Self { base_url, api_key: api_key.into(), model: model.into(), client }
   }
 
   /// 注入自定义 [`reqwest::Client`]。供测试用 `.no_proxy()` 构造，避免
@@ -109,12 +108,8 @@ enum OpenAiContent<'a> {
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum OpenAiContentBlock<'a> {
-  Text {
-    text: &'a str,
-  },
-  ImageUrl {
-    image_url: OpenAiImageUrl<'a>,
-  },
+  Text { text: &'a str },
+  ImageUrl { image_url: OpenAiImageUrl<'a> },
 }
 
 #[derive(Serialize)]
@@ -159,27 +154,18 @@ impl LlmClient for OpenAiChat {
     if messages.is_empty() {
       return Err(AppError::validation("LLM 请求 messages 不能为空"));
     }
-    let has_meaningful_input = messages
-      .iter()
-      .any(|m| matches!(m.role, LlmRole::System | LlmRole::User));
+    let has_meaningful_input =
+      messages.iter().any(|m| matches!(m.role, LlmRole::System | LlmRole::User));
     if !has_meaningful_input {
-      return Err(AppError::validation(
-        "LLM 请求 messages 至少需要包含 system 或 user 角色",
-      ));
+      return Err(AppError::validation("LLM 请求 messages 至少需要包含 system 或 user 角色"));
     }
 
     let wire: Vec<WireMessage> = messages
       .iter()
-      .map(|m| WireMessage {
-        role: m.role.as_str(),
-        content: build_openai_content(&m.content),
-      })
+      .map(|m| WireMessage { role: m.role.as_str(), content: build_openai_content(&m.content) })
       .collect();
 
-    let body = ChatRequest {
-      model: &self.model,
-      messages: &wire,
-    };
+    let body = ChatRequest { model: &self.model, messages: &wire };
     let url = self.endpoint();
 
     tracing::debug!(provider = "openai", url = %url, model = %self.model, "llm: chat request");
@@ -195,36 +181,23 @@ impl LlmClient for OpenAiChat {
       .map_err(|e| AppError::other(format!("LLM HTTP 请求失败: {}", e)))?;
 
     let status = resp.status();
-    let text = resp
-      .text()
-      .await
-      .map_err(|e| AppError::other(format!("LLM 响应读取失败: {}", e)))?;
+    let text =
+      resp.text().await.map_err(|e| AppError::other(format!("LLM 响应读取失败: {}", e)))?;
 
     if !status.is_success() {
       tracing::warn!(provider = "openai", status = %status, body = %text, "llm: non-2xx response");
-      return Err(AppError::other(format!(
-        "LLM 服务返回 {}: {}",
-        status,
-        truncate(&text, 500)
-      )));
+      return Err(AppError::other(format!("LLM 服务返回 {}: {}", status, truncate(&text, 500))));
     }
 
-    let parsed: ChatResponse = serde_json::from_str(&text)
-      .map_err(|e| AppError::other(format!("LLM 响应不是合法 JSON: {} (body={})", e, truncate(&text, 200))))?;
+    let parsed: ChatResponse = serde_json::from_str(&text).map_err(|e| {
+      AppError::other(format!("LLM 响应不是合法 JSON: {} (body={})", e, truncate(&text, 200)))
+    })?;
 
     if let Some(err) = parsed.error {
-      return Err(AppError::other(format!(
-        "LLM 服务返回错误（{}）: {}",
-        err.kind, err.message
-      )));
+      return Err(AppError::other(format!("LLM 服务返回错误（{}）: {}", err.kind, err.message)));
     }
 
-    let answer = parsed
-      .choices
-      .into_iter()
-      .next()
-      .map(|c| c.message.content)
-      .unwrap_or_default();
+    let answer = parsed.choices.into_iter().next().map(|c| c.message.content).unwrap_or_default();
 
     if answer.is_empty() {
       return Err(AppError::other(
@@ -250,9 +223,7 @@ fn build_openai_content(blocks: &[LlmContentBlock]) -> OpenAiContent<'_> {
         .map(|b| match b {
           LlmContentBlock::Text { text } => OpenAiContentBlock::Text { text: text.as_str() },
           LlmContentBlock::ImageUrl { url } => OpenAiContentBlock::ImageUrl {
-            image_url: OpenAiImageUrl {
-              url: std::borrow::Cow::Borrowed(url.as_str()),
-            },
+            image_url: OpenAiImageUrl { url: std::borrow::Cow::Borrowed(url.as_str()) },
           },
           LlmContentBlock::ImageBase64 { media_type, data } => OpenAiContentBlock::ImageUrl {
             image_url: OpenAiImageUrl {
@@ -314,10 +285,7 @@ mod tests {
       .await;
 
     let client = build_chat(&server.url());
-    let answer = client
-      .chat(vec![LlmMessage::user("你好")])
-      .await
-      .expect("chat ok");
+    let answer = client.chat(vec![LlmMessage::user("你好")]).await.expect("chat ok");
     assert_eq!(answer, "你好，我是 DeepSeek。");
     mock.assert_async().await;
   }
@@ -336,16 +304,10 @@ mod tests {
     assert_eq!(with_v1.endpoint(), "https://api.openai.com/v1/chat/completions");
 
     let with_v1_slash = OpenAiChat::new("https://api.openai.com/v1/", "k", "m");
-    assert_eq!(
-      with_v1_slash.endpoint(),
-      "https://api.openai.com/v1/chat/completions"
-    );
+    assert_eq!(with_v1_slash.endpoint(), "https://api.openai.com/v1/chat/completions");
 
     let without_v1 = OpenAiChat::new("https://api.openai.com", "k", "m");
-    assert_eq!(
-      without_v1.endpoint(),
-      "https://api.openai.com/v1/chat/completions"
-    );
+    assert_eq!(without_v1.endpoint(), "https://api.openai.com/v1/chat/completions");
   }
 
   #[tokio::test]
@@ -365,13 +327,8 @@ mod tests {
       .await;
 
     let client = build_chat(&server.url());
-    let _ = client
-      .chat(vec![
-        LlmMessage::system("你是审核员"),
-        LlmMessage::user("hello"),
-      ])
-      .await
-      .unwrap();
+    let _ =
+      client.chat(vec![LlmMessage::system("你是审核员"), LlmMessage::user("hello")]).await.unwrap();
     mock.assert_async().await;
   }
 
@@ -419,10 +376,7 @@ mod tests {
   #[tokio::test]
   async fn assistant_only_messages_rejected() {
     let client = build_chat("http://unreachable.invalid");
-    let err = client
-      .chat(vec![LlmMessage::assistant("我已经回答过")])
-      .await
-      .unwrap_err();
+    let err = client.chat(vec![LlmMessage::assistant("我已经回答过")]).await.unwrap_err();
     assert!(matches!(err, AppError::Validation(_)));
   }
 
@@ -434,9 +388,9 @@ mod tests {
     let mut server = mockito::Server::new_async().await;
     let mock = server
       .mock("POST", "/v1/chat/completions")
-      .match_body(mockito::Matcher::AllOf(vec![
-        mockito::Matcher::Regex("\"content\":\"hi\"".to_string()),
-      ]))
+      .match_body(mockito::Matcher::AllOf(vec![mockito::Matcher::Regex(
+        "\"content\":\"hi\"".to_string(),
+      )]))
       .with_status(200)
       .with_body(r#"{"choices":[{"message":{"role":"assistant","content":"OK"}}]}"#)
       .create_async()
@@ -456,9 +410,7 @@ mod tests {
         mockito::Matcher::Regex("\"type\":\"text\"".to_string()),
         mockito::Matcher::Regex("\"text\":\"what is this\\?\"".to_string()),
         mockito::Matcher::Regex("\"type\":\"image_url\"".to_string()),
-        mockito::Matcher::Regex(
-          "\"url\":\"https://example.com/a.jpg\"".to_string(),
-        ),
+        mockito::Matcher::Regex("\"url\":\"https://example.com/a.jpg\"".to_string()),
       ]))
       .with_status(200)
       .with_body(r#"{"choices":[{"message":{"role":"assistant","content":"a cat"}}]}"#)
@@ -481,9 +433,7 @@ mod tests {
     let mut server = mockito::Server::new_async().await;
     let mock = server
       .mock("POST", "/v1/chat/completions")
-      .match_body(mockito::Matcher::Regex(
-        "\"url\":\"data:image/png;base64,iVBORw0K\"".to_string(),
-      ))
+      .match_body(mockito::Matcher::Regex("\"url\":\"data:image/png;base64,iVBORw0K\"".to_string()))
       .with_status(200)
       .with_body(r#"{"choices":[{"message":{"role":"assistant","content":"png"}}]}"#)
       .create_async()

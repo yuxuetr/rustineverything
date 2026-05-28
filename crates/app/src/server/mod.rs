@@ -1,52 +1,44 @@
 use dioxus::fullstack::{post, ServerFnError};
 use dioxus::prelude::*;
-use serde::{Deserialize, Serialize};
-use rustineverything_core::settings::SiteConfig;
 use rustineverything_core::session::SessionUser;
+use rustineverything_core::settings::SiteConfig;
 #[cfg(feature = "server")]
 use rustineverything_core::utils::get_asset_root;
+use serde::{Deserialize, Serialize};
 
 // ========== 辅助：从 FullstackContext 读取 Cookie 中的用户 ==========
 
 /// server-only: 从当前请求上下文的 Cookie 中解析 SessionUser
 #[cfg(feature = "server")]
 fn current_session_user() -> Option<SessionUser> {
-    use dioxus::fullstack::FullstackContext;
-    use rustineverything_core::session::parse_session_from_cookie_header;
+  use dioxus::fullstack::FullstackContext;
+  use rustineverything_core::session::parse_session_from_cookie_header;
 
-    let ctx = FullstackContext::current()?;
-    let parts = ctx.parts_mut();
-    let cookie_str = parts
-        .headers
-        .get("cookie")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    drop(parts);
-    parse_session_from_cookie_header(cookie_str.as_deref())
+  let ctx = FullstackContext::current()?;
+  let parts = ctx.parts_mut();
+  let cookie_str = parts.headers.get("cookie").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+  drop(parts);
+  parse_session_from_cookie_header(cookie_str.as_deref())
 }
 
 /// server-only: 读当前请求 Cookie 头中指定 key 的值（Phase 3.1 主题覆盖用）。
 #[cfg(feature = "server")]
 fn read_request_cookie(name: &str) -> Option<String> {
-    use dioxus::fullstack::FullstackContext;
-    let ctx = FullstackContext::current()?;
-    let parts = ctx.parts_mut();
-    let cookie_str = parts
-        .headers
-        .get("cookie")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    drop(parts);
-    let raw = cookie_str?;
-    for pair in raw.split(';') {
-        let pair = pair.trim();
-        if let Some((k, v)) = pair.split_once('=') {
-            if k == name && !v.is_empty() {
-                return Some(v.to_string());
-            }
-        }
+  use dioxus::fullstack::FullstackContext;
+  let ctx = FullstackContext::current()?;
+  let parts = ctx.parts_mut();
+  let cookie_str = parts.headers.get("cookie").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+  drop(parts);
+  let raw = cookie_str?;
+  for pair in raw.split(';') {
+    let pair = pair.trim();
+    if let Some((k, v)) = pair.split_once('=') {
+      if k == name && !v.is_empty() {
+        return Some(v.to_string());
+      }
     }
-    None
+  }
+  None
 }
 
 /// Cookie 名（Phase 3.1）：存储用户选择的主题插件文件名。
@@ -57,35 +49,41 @@ pub const THEME_COOKIE_NAME: &str = "site_theme";
 
 #[post("/api/site/config")]
 pub async fn get_site_config() -> Result<SiteConfig, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        let config_path = get_asset_root().join("site.json");
-        SiteConfig::from_file(config_path.to_str().unwrap_or_default())
-            .map_err(|e| ServerFnError::new(format!("配置文件加载失败: {}", e)))
-    }
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(SiteConfig::default())
-    }
+  #[cfg(feature = "server")]
+  {
+    let config_path = get_asset_root().join("site.json");
+    SiteConfig::from_file(config_path.to_str().unwrap_or_default())
+      .map_err(|e| ServerFnError::new(format!("配置文件加载失败: {}", e)))
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(SiteConfig::default())
+  }
 }
 
 // ========== i18n ==========
 
 #[post("/api/i18n/translate")]
 pub async fn translate_server(key: String, lang: String) -> Result<String, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        let plugin_dir = get_asset_root().join("plugins");
-        let wasm_path = plugin_dir.join("i18n_fluent_plugin.wasm");
+  #[cfg(feature = "server")]
+  {
+    let plugin_dir = get_asset_root().join("plugins");
+    let wasm_path = plugin_dir.join("i18n_fluent_plugin.wasm");
 
-        if !wasm_path.exists() { return Ok(key); }
-        let manager = rustineverything_core::shared_plugin_manager();
-        let input = serde_json::json!({ "key": key, "lang": lang }).to_string();
-        manager.call_path_with_string(&wasm_path, "translate", &input)
-            .map_err(|e| ServerFnError::new(e.to_string()))
+    if !wasm_path.exists() {
+      return Ok(key);
     }
-    #[cfg(not(feature = "server"))]
-    { let _ = (key, lang); Ok(String::new()) }
+    let manager = rustineverything_core::shared_plugin_manager();
+    let input = serde_json::json!({ "key": key, "lang": lang }).to_string();
+    manager
+      .call_path_with_string(&wasm_path, "translate", &input)
+      .map_err(|e| ServerFnError::new(e.to_string()))
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = (key, lang);
+    Ok(String::new())
+  }
 }
 
 // ========== 主题 ==========
@@ -93,50 +91,47 @@ pub async fn translate_server(key: String, lang: String) -> Result<String, Serve
 /// 可选主题的展示信息（Phase 3.1）。前端 ThemePicker 用。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ThemeInfo {
-    /// 插件文件名（如 `theme_ocean_plugin.wasm`），概括 cookie 存储的值。
-    pub filename: String,
-    /// 从插件 manifest 读到的 id（如 `theme-ocean`），不可用时以文件名去后缀代替。
-    pub id: String,
-    /// 展示名（如 `Theme Ocean`）；没读到 manifest 时同 id。
-    pub label: String,
-    /// 在当前 site.json::themes 栈中是否默认激活的最顶层主题。
-    pub is_active: bool,
+  /// 插件文件名（如 `theme_ocean_plugin.wasm`），概括 cookie 存储的值。
+  pub filename: String,
+  /// 从插件 manifest 读到的 id（如 `theme-ocean`），不可用时以文件名去后缀代替。
+  pub id: String,
+  /// 展示名（如 `Theme Ocean`）；没读到 manifest 时同 id。
+  pub label: String,
+  /// 在当前 site.json::themes 栈中是否默认激活的最顶层主题。
+  pub is_active: bool,
 }
 
 #[post("/api/theme/aggregated-css")]
 pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        use rustineverything_core::engines::theme::theme_with_override;
+  #[cfg(feature = "server")]
+  {
+    use rustineverything_core::engines::theme::theme_with_override;
 
-        let asset_root = get_asset_root();
-        let config = SiteConfig::from_file(
-            asset_root
-                .join("site.json")
-                .to_str()
-                .unwrap_or_default(),
-        )
-        .unwrap_or_default();
-        let plugin_dir = asset_root.join("plugins");
+    let asset_root = get_asset_root();
+    let config = SiteConfig::from_file(asset_root.join("site.json").to_str().unwrap_or_default())
+      .unwrap_or_default();
+    let plugin_dir = asset_root.join("plugins");
 
-        // Phase 3.1：主题栈 + 可选 cookie 覆盖。
-        let stack: Vec<std::path::PathBuf> = config
-            .theme_stack()
-            .into_iter()
-            .filter(|name| !name.is_empty())
-            .map(|name| plugin_dir.join(name))
-            .collect();
-        let cookie = read_request_cookie(THEME_COOKIE_NAME);
-        let resolved = theme_with_override(&stack, &plugin_dir, cookie.as_deref());
+    // Phase 3.1：主题栈 + 可选 cookie 覆盖。
+    let stack: Vec<std::path::PathBuf> = config
+      .theme_stack()
+      .into_iter()
+      .filter(|name| !name.is_empty())
+      .map(|name| plugin_dir.join(name))
+      .collect();
+    let cookie = read_request_cookie(THEME_COOKIE_NAME);
+    let resolved = theme_with_override(&stack, &plugin_dir, cookie.as_deref());
 
-        if resolved.is_empty() {
-            return Ok(String::new());
-        }
-        let manager = rustineverything_core::shared_plugin_manager();
-        Ok(manager.aggregate_theme_css_paths(&resolved))
+    if resolved.is_empty() {
+      return Ok(String::new());
     }
-    #[cfg(not(feature = "server"))]
-    { Ok("".to_string()) }
+    let manager = rustineverything_core::shared_plugin_manager();
+    Ok(manager.aggregate_theme_css_paths(&resolved))
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok("".to_string())
+  }
 }
 
 /// Phase 3.1：枚举 `assets/plugins/` 下声明为 `theme` 的插件。
@@ -145,76 +140,63 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
 /// 失败不 manifest 的插件以“文件名含 `theme`”启发式判定为主题，以保证老插件可见。
 #[post("/api/theme/list")]
 pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        use rustineverything_core::{capabilities, PluginManifest};
+  #[cfg(feature = "server")]
+  {
+    use rustineverything_core::{capabilities, PluginManifest};
 
-        let asset_root = get_asset_root();
-        let plugin_dir = asset_root.join("plugins");
-        let config = SiteConfig::from_file(
-            asset_root
-                .join("site.json")
-                .to_str()
-                .unwrap_or_default(),
-        )
-        .unwrap_or_default();
-        let stack = config.theme_stack();
-        let active_top = stack.last().cloned().unwrap_or_default();
+    let asset_root = get_asset_root();
+    let plugin_dir = asset_root.join("plugins");
+    let config = SiteConfig::from_file(asset_root.join("site.json").to_str().unwrap_or_default())
+      .unwrap_or_default();
+    let stack = config.theme_stack();
+    let active_top = stack.last().cloned().unwrap_or_default();
 
-        let manager = rustineverything_core::shared_plugin_manager();
+    let manager = rustineverything_core::shared_plugin_manager();
 
-        let entries = match std::fs::read_dir(&plugin_dir) {
-            Ok(e) => e,
-            Err(_) => return Ok(vec![]),
+    let entries = match std::fs::read_dir(&plugin_dir) {
+      Ok(e) => e,
+      Err(_) => return Ok(vec![]),
+    };
+
+    let mut out: Vec<ThemeInfo> = Vec::new();
+    for entry in entries.flatten() {
+      let name = match entry.file_name().to_str() {
+        Some(s) => s.to_string(),
+        None => continue,
+      };
+      if !name.ends_with(".wasm") {
+        continue;
+      }
+      let path = entry.path();
+
+      // 读 manifest。读不到时以启发式判定。
+      let manifest_json = manager.call_path_with_string(&path, "get_manifest", "").ok();
+      let (id, label, is_theme) =
+        match manifest_json.as_deref().and_then(|s| serde_json::from_str::<PluginManifest>(s).ok())
+        {
+          Some(m) => {
+            let is_theme = m.has_capability(capabilities::THEME);
+            (m.id.clone(), m.name.clone(), is_theme)
+          }
+          None => {
+            let lower = name.to_lowercase();
+            let is_theme = lower.contains("theme");
+            let stem = name.trim_end_matches(".wasm").to_string();
+            (stem.clone(), stem, is_theme)
+          }
         };
-
-        let mut out: Vec<ThemeInfo> = Vec::new();
-        for entry in entries.flatten() {
-            let name = match entry.file_name().to_str() {
-                Some(s) => s.to_string(),
-                None => continue,
-            };
-            if !name.ends_with(".wasm") {
-                continue;
-            }
-            let path = entry.path();
-
-            // 读 manifest。读不到时以启发式判定。
-            let manifest_json = manager
-                .call_path_with_string(&path, "get_manifest", "")
-                .ok();
-            let (id, label, is_theme) = match manifest_json
-                .as_deref()
-                .and_then(|s| serde_json::from_str::<PluginManifest>(s).ok())
-            {
-                Some(m) => {
-                    let is_theme = m.has_capability(capabilities::THEME);
-                    (m.id.clone(), m.name.clone(), is_theme)
-                }
-                None => {
-                    let lower = name.to_lowercase();
-                    let is_theme = lower.contains("theme");
-                    let stem = name.trim_end_matches(".wasm").to_string();
-                    (stem.clone(), stem, is_theme)
-                }
-            };
-            if !is_theme {
-                continue;
-            }
-            out.push(ThemeInfo {
-                filename: name.clone(),
-                id,
-                label,
-                is_active: name == active_top,
-            });
-        }
-        out.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
-        Ok(out)
+      if !is_theme {
+        continue;
+      }
+      out.push(ThemeInfo { filename: name.clone(), id, label, is_active: name == active_top });
     }
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(vec![])
-    }
+    out.sort_by(|a, b| a.label.to_lowercase().cmp(&b.label.to_lowercase()));
+    Ok(out)
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
 }
 
 /// Phase 3.1：设置用户主题 cookie（覆盖主题栈最后一项）。
@@ -227,150 +209,148 @@ pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
 /// 生产环境（`BASE_URL` 以 https 开头）额外附加 `Secure`。
 #[post("/api/theme/set")]
 pub async fn set_user_theme(filename: String) -> Result<(), ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        use dioxus::fullstack::FullstackContext;
+  #[cfg(feature = "server")]
+  {
+    use dioxus::fullstack::FullstackContext;
 
-        let trimmed = filename.trim();
-        let cookie_value = if trimmed.is_empty() {
-            // 清除 cookie
-            String::new()
-        } else {
-            // 校验输入
-            if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
-                return Err(ServerFnError::new("主题名包含非法字符".to_string()));
-            }
-            if !trimmed.ends_with(".wasm") {
-                return Err(ServerFnError::new("主题名必须以 .wasm 结尾".to_string()));
-            }
-            let path = get_asset_root().join("plugins").join(trimmed);
-            if !path.exists() {
-                return Err(ServerFnError::new(format!(
-                    "主题插件不存在: {}",
-                    trimmed
-                )));
-            }
-            trimmed.to_string()
-        };
+    let trimmed = filename.trim();
+    let cookie_value = if trimmed.is_empty() {
+      // 清除 cookie
+      String::new()
+    } else {
+      // 校验输入
+      if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
+        return Err(ServerFnError::new("主题名包含非法字符".to_string()));
+      }
+      if !trimmed.ends_with(".wasm") {
+        return Err(ServerFnError::new("主题名必须以 .wasm 结尾".to_string()));
+      }
+      let path = get_asset_root().join("plugins").join(trimmed);
+      if !path.exists() {
+        return Err(ServerFnError::new(format!("主题插件不存在: {}", trimmed)));
+      }
+      trimmed.to_string()
+    };
 
-        let secure_flag = std::env::var("BASE_URL")
-            .ok()
-            .filter(|u| u.starts_with("https://"))
-            .map(|_| "; Secure")
-            .unwrap_or("");
+    let secure_flag = std::env::var("BASE_URL")
+      .ok()
+      .filter(|u| u.starts_with("https://"))
+      .map(|_| "; Secure")
+      .unwrap_or("");
 
-        let header_value = if cookie_value.is_empty() {
-            format!(
-                "{}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax{}",
-                THEME_COOKIE_NAME, secure_flag
-            )
-        } else {
-            format!(
-                "{}={}; HttpOnly; Path=/; Max-Age=31536000; SameSite=Lax{}",
-                THEME_COOKIE_NAME, cookie_value, secure_flag
-            )
-        };
+    let header_value = if cookie_value.is_empty() {
+      format!("{}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax{}", THEME_COOKIE_NAME, secure_flag)
+    } else {
+      format!(
+        "{}={}; HttpOnly; Path=/; Max-Age=31536000; SameSite=Lax{}",
+        THEME_COOKIE_NAME, cookie_value, secure_flag
+      )
+    };
 
-        let parsed: axum::http::HeaderValue = header_value
-            .parse()
-            .map_err(|e| ServerFnError::new(format!("不合法 Cookie 头: {}", e)))?;
-        if let Some(ctx) = FullstackContext::current() {
-            ctx.add_response_header(axum::http::header::SET_COOKIE, parsed);
-        }
-        Ok(())
+    let parsed: axum::http::HeaderValue =
+      header_value.parse().map_err(|e| ServerFnError::new(format!("不合法 Cookie 头: {}", e)))?;
+    if let Some(ctx) = FullstackContext::current() {
+      ctx.add_response_header(axum::http::header::SET_COOKIE, parsed);
     }
-    #[cfg(not(feature = "server"))]
-    {
-        let _ = filename;
-        Ok(())
-    }
+    Ok(())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = filename;
+    Ok(())
+  }
 }
 
 // ========== Auth 辅助 (server-only) ==========
 
 #[cfg(feature = "server")]
 fn build_auth_service() -> (rustineverything_core::auth::AuthService, SiteConfig) {
-    use rustineverything_core::auth::{AuthService, AuthConfig};
+  use rustineverything_core::auth::{AuthConfig, AuthService};
 
-    // BASE_URL 未配置时 panic，避免生产环境误用 localhost
-    let base_url = std::env::var("BASE_URL")
-        .expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
-    let config = AuthConfig { base_url };
-    let site_config = SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap()).unwrap_or_default();
-    let auth_service = AuthService::new(config, get_asset_root().join("plugins"));
-    (auth_service, site_config)
+  // BASE_URL 未配置时 panic，避免生产环境误用 localhost
+  let base_url =
+    std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
+  let config = AuthConfig { base_url };
+  let site_config =
+    SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap()).unwrap_or_default();
+  let auth_service = AuthService::new(config, get_asset_root().join("plugins"));
+  (auth_service, site_config)
 }
 
 #[cfg(feature = "server")]
 fn find_plugin_filename(site_config: &SiteConfig, provider: &str) -> Option<String> {
-    site_config.auth.providers.iter()
-        .find(|p| p.id == provider)
-        .map(|p| p.plugin.clone())
+  site_config.auth.providers.iter().find(|p| p.id == provider).map(|p| p.plugin.clone())
 }
 
 // ========== Auth 端点 ==========
 
 #[post("/api/auth/providers")]
-pub async fn get_auth_providers() -> Result<Vec<rustineverything_core::AuthProviderDisplay>, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        let (auth_service, site_config) = build_auth_service();
-        Ok(auth_service.list_available_providers(&site_config))
-    }
-    #[cfg(not(feature = "server"))]
-    { Ok(vec![]) }
+pub async fn get_auth_providers(
+) -> Result<Vec<rustineverything_core::AuthProviderDisplay>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    let (auth_service, site_config) = build_auth_service();
+    Ok(auth_service.list_available_providers(&site_config))
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
 }
 
 #[post("/api/auth/login-url")]
 pub async fn get_login_url(provider: String) -> Result<String, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        let (auth_service, site_config) = build_auth_service();
-        let plugin_filename = find_plugin_filename(&site_config, &provider)
-            .ok_or_else(|| ServerFnError::new(format!("未在 site.json 中配置 provider: {}", provider)))?;
-        auth_service.get_auth_url(&provider, &plugin_filename)
-            .map_err(|e| ServerFnError::new(e.to_string()))
-    }
-    #[cfg(not(feature = "server"))]
-    { Ok("".to_string()) }
+  #[cfg(feature = "server")]
+  {
+    let (auth_service, site_config) = build_auth_service();
+    let plugin_filename = find_plugin_filename(&site_config, &provider)
+      .ok_or_else(|| ServerFnError::new(format!("未在 site.json 中配置 provider: {}", provider)))?;
+    auth_service
+      .get_auth_url(&provider, &plugin_filename)
+      .map_err(|e| ServerFnError::new(e.to_string()))
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok("".to_string())
+  }
 }
 
 /// 内部 auth callback — 仅 server 端调用，返回 (welcome_message, jwt_token)
 #[cfg(feature = "server")]
 pub async fn auth_callback_internal(
-    code: String,
-    provider: String,
-    state: Option<String>,
+  code: String,
+  provider: String,
+  state: Option<String>,
 ) -> Result<(String, String), Box<dyn std::error::Error>> {
-    use rustineverything_core::db::get_or_init_pool;
-    use rustineverything_core::session::create_jwt;
+  use rustineverything_core::db::get_or_init_pool;
+  use rustineverything_core::session::create_jwt;
 
-    let (auth_service, site_config) = build_auth_service();
-    let plugin_filename = find_plugin_filename(&site_config, &provider)
-        .ok_or_else(|| format!("未在 site.json 中配置 provider: {}", provider))?;
+  let (auth_service, site_config) = build_auth_service();
+  let plugin_filename = find_plugin_filename(&site_config, &provider)
+    .ok_or_else(|| format!("未在 site.json 中配置 provider: {}", provider))?;
 
-    tracing::debug!(provider = %provider, code_len = code.len(), state = ?state, "auth callback received");
+  tracing::debug!(provider = %provider, code_len = code.len(), state = ?state, "auth callback received");
 
-    let db = get_or_init_pool().await?;
+  let db = get_or_init_pool().await?;
 
-    let user = auth_service
-        .handle_callback(&db, &provider, &plugin_filename, code, state)
-        .await?;
+  let user = auth_service.handle_callback(&db, &provider, &plugin_filename, code, state).await?;
 
-    let jwt_token = create_jwt(&user)?;
-    tracing::info!(user = %user.nickname, "auth callback login success");
-    Ok((format!("欢迎回来, {}!", user.nickname), jwt_token))
+  let jwt_token = create_jwt(&user)?;
+  tracing::info!(user = %user.nickname, "auth callback login success");
+  Ok((format!("欢迎回来, {}!", user.nickname), jwt_token))
 }
 
 /// 获取当前登录用户 — 前端调用
 #[post("/api/auth/me")]
 pub async fn get_current_user() -> Result<Option<SessionUser>, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        Ok(current_session_user())
-    }
-    #[cfg(not(feature = "server"))]
-    { Ok(None) }
+  #[cfg(feature = "server")]
+  {
+    Ok(current_session_user())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(None)
+  }
 }
 
 // ========== SEO ==========
@@ -380,14 +360,14 @@ pub async fn get_current_user() -> Result<Option<SessionUser>, ServerFnError> {
 /// 设置时返回空串（不报错，由 inject_seo 降级使用相对路径）。
 #[post("/api/seo/base-url")]
 pub async fn get_seo_base_url() -> Result<String, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        Ok(std::env::var("BASE_URL").unwrap_or_default())
-    }
-    #[cfg(not(feature = "server"))]
-    {
-        Ok(String::new())
-    }
+  #[cfg(feature = "server")]
+  {
+    Ok(std::env::var("BASE_URL").unwrap_or_default())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(String::new())
+  }
 }
 
 // ========== 模块开关（Phase 3.4） ==========
@@ -402,38 +382,38 @@ pub async fn get_seo_base_url() -> Result<String, ServerFnError> {
 /// - 各页面（`ModuleGate`）根据列表判定是否显示“该模块已停用”占位
 #[post("/api/modules/enabled")]
 pub async fn enabled_module_ids() -> Result<Vec<String>, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        let engine = rustineverything_core::engines::module::default_module_engine();
-        Ok(engine.enabled_ids())
-    }
-    #[cfg(not(feature = "server"))]
-    {
-        // 客户端 fallback：默认全开，避免 hydration 闪烁。
-        Ok(vec![
-            "blog".to_string(),
-            "podcast".to_string(),
-            "cases".to_string(),
-            "forum".to_string(),
-            "course".to_string(),
-            "docs".to_string(),
-        ])
-    }
+  #[cfg(feature = "server")]
+  {
+    let engine = rustineverything_core::engines::module::default_module_engine();
+    Ok(engine.enabled_ids())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    // 客户端 fallback：默认全开，避免 hydration 闪烁。
+    Ok(vec![
+      "blog".to_string(),
+      "podcast".to_string(),
+      "cases".to_string(),
+      "forum".to_string(),
+      "course".to_string(),
+      "docs".to_string(),
+    ])
+  }
 }
 
 /// Phase 3.4：单模块开关查询。便于页面级 ModuleGate 调用。
 #[post("/api/modules/is-enabled")]
 pub async fn is_module_enabled(id: String) -> Result<bool, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        let engine = rustineverything_core::engines::module::default_module_engine();
-        Ok(engine.is_enabled(&id))
-    }
-    #[cfg(not(feature = "server"))]
-    {
-        let _ = id;
-        Ok(true)
-    }
+  #[cfg(feature = "server")]
+  {
+    let engine = rustineverything_core::engines::module::default_module_engine();
+    Ok(engine.is_enabled(&id))
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = id;
+    Ok(true)
+  }
 }
 
 // ========== 布局 ==========
@@ -441,24 +421,22 @@ pub async fn is_module_enabled(id: String) -> Result<bool, ServerFnError> {
 /// Phase 3.3：返回 `site.json::active_layout`（空字符串回退到 `"classic"`）。
 #[post("/api/layout/active")]
 pub async fn get_active_layout() -> Result<String, ServerFnError> {
-    #[cfg(feature = "server")]
-    {
-        let cfg = SiteConfig::from_file(
-            get_asset_root()
-                .join("site.json")
-                .to_str()
-                .unwrap_or_default(),
-        )
+  #[cfg(feature = "server")]
+  {
+    let cfg =
+      SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap_or_default())
         .unwrap_or_default();
-        Ok(cfg.active_layout_or_default().to_string())
-    }
-    #[cfg(not(feature = "server"))]
-    {
-        Ok("classic".to_string())
-    }
+    Ok(cfg.active_layout_or_default().to_string())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok("classic".to_string())
+  }
 }
 
 // ========== Echo ==========
 
 #[post("/api/echo")]
-pub async fn echo_server(input: String) -> Result<String, ServerFnError> { Ok(input) }
+pub async fn echo_server(input: String) -> Result<String, ServerFnError> {
+  Ok(input)
+}

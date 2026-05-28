@@ -40,12 +40,7 @@ pub struct PluginModerationStage {
 
 impl PluginModerationStage {
   pub fn new(name: impl Into<String>, plugin_path: PathBuf, llm: Arc<dyn LlmClient>) -> Self {
-    Self {
-      name: name.into(),
-      plugin_path,
-      plugin_manager: Arc::new(PluginManager::new()),
-      llm,
-    }
+    Self { name: name.into(), plugin_path, plugin_manager: Arc::new(PluginManager::new()), llm }
   }
 
   /// 测试 / 共享场景：注入已存在的 PluginManager（一般是 shared singleton）。
@@ -73,11 +68,7 @@ fn map_label(s: &str) -> ModerationLabel {
 
 /// 把 SDK Verdict 转 core Verdict。score 二次 clamp 防御。
 fn into_core_verdict(v: ModerationVerdict) -> Verdict {
-  Verdict {
-    score: v.score.clamp(0.0, 1.0),
-    label: map_label(&v.label),
-    reason: v.reason,
-  }
+  Verdict { score: v.score.clamp(0.0, 1.0), label: map_label(&v.label), reason: v.reason }
 }
 
 #[async_trait]
@@ -223,9 +214,7 @@ mod tests {
         response: Some(r#"{"score":0.9,"label":"block","reason":"x"}"#.to_string()),
       }),
     );
-    let v = stage
-      .evaluate(&ModerationSubmission::new("anything"))
-      .await;
+    let v = stage.evaluate(&ModerationSubmission::new("anything")).await;
     assert_eq!(v.label, ModerationLabel::Allow);
     assert_eq!(v.score, 0.0);
   }
