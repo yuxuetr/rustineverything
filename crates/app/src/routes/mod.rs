@@ -8,6 +8,7 @@ use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
 use crate::i18n::{t, use_i18n};
 use crate::server::get_seo_base_url;
+use crate::server::{list_public_plugins, PublicPluginInfo};
 use rustineverything_module_admin::admin::{
   AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminPluginsPage, AdminTopicsPage,
   AdminUsersPage,
@@ -89,6 +90,10 @@ pub enum Route {
         Cli {},
         #[route("/cli/:slug")]
         CliArticle { slug: String },
+
+        // Phase 5.5：公开插件浏览页
+        #[route("/plugins")]
+        PluginsPublic {},
 
         // 论坛：注意路由顺序，静态路径优先于 i32 动态参数
         #[route("/topics")]
@@ -530,6 +535,84 @@ pub fn Cli() -> Element {
 #[component]
 pub fn CliArticle(slug: String) -> Element {
   rsx! { ModuleGate { id: "cli".to_string(), CliArticlePage { slug } } }
+}
+
+/// Phase 5.5：公开插件浏览页 `/plugins`。列出已安装且声明了 manifest 的 WASM 插件。
+#[component]
+pub fn PluginsPublic() -> Element {
+  let res = use_resource(|| async move { list_public_plugins().await.unwrap_or_default() });
+  let plugins: Vec<PublicPluginInfo> = res.read().as_ref().cloned().unwrap_or_default();
+
+  rsx! {
+      section { class: "py-12 bg-white dark:bg-slate-950",
+          div { class: "max-w-4xl mx-auto px-4 sm:px-6",
+              div { class: "mb-10",
+                  h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white", "插件" }
+                  p { class: "mt-3 text-lg text-slate-500 dark:text-slate-400",
+                      "本站基于 WASM 插件运行时构建：主题 / 多语言 / 登录 / 审核 均由沙箱化插件提供。以下是当前已安装的插件。"
+                  }
+              }
+              match res.read().as_ref() {
+                  None => rsx! {
+                      div { class: "flex items-center justify-center py-20",
+                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                      }
+                  },
+                  Some(_) if plugins.is_empty() => rsx! {
+                      div { class: "py-16 text-center text-slate-400", "没有发现已声明 manifest 的插件" }
+                  },
+                  Some(_) => rsx! {
+                      div { class: "grid grid-cols-1 sm:grid-cols-2 gap-4",
+                          for p in plugins.iter() {
+                              PublicPluginCard { key: "{p.filename}", plugin: p.clone() }
+                          }
+                      }
+                  },
+              }
+          }
+      }
+  }
+}
+
+fn capability_label(cap: &str) -> &'static str {
+  match cap {
+    "auth-provider" => "登录",
+    "theme" => "主题",
+    "i18n" => "多语言",
+    "moderation-provider" => "审核",
+    "notification" => "通知",
+    "layout" => "布局",
+    "mdx-component" => "MDX 组件",
+    _ => "其它",
+  }
+}
+
+#[component]
+fn PublicPluginCard(plugin: PublicPluginInfo) -> Element {
+  rsx! {
+      div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 p-5",
+          div { class: "flex items-center justify-between gap-2 mb-1",
+              h3 { class: "text-base font-bold text-slate-900 dark:text-white", "{plugin.name}" }
+              span { class: "text-xs font-mono text-slate-400", "v{plugin.version}" }
+          }
+          div { class: "text-xs font-mono text-slate-500 dark:text-slate-400 mb-2", "{plugin.id}" }
+          if !plugin.description.is_empty() {
+              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "{plugin.description}" }
+          }
+          div { class: "flex flex-wrap items-center gap-1.5",
+              for cap in plugin.capabilities.iter() {
+                  span { class: "text-xs px-2 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300",
+                      "{capability_label(cap)}"
+                  }
+              }
+              if !plugin.abi_compatible {
+                  span { class: "text-xs px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300",
+                      "ABI 不兼容"
+                  }
+              }
+          }
+      }
+  }
 }
 
 #[component]

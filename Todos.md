@@ -339,9 +339,9 @@
 - [x] ABI 不兼容被拒绝并提示升级：上传时读 `get_manifest`，`!manifest.is_compatible()` → 返回「ABI 版本不兼容：期望 N，得到 M。请用最新 SDK 重新构建。」
 
 ### 5.5 插件市场（开源后启用，优先级低）
-- [ ] `assets/plugins/registry.json` 已审核插件清单
-- [ ] `/plugins` 前端浏览页
-- [ ] 提交审核流程文档
+- [ ] `assets/plugins/registry.json` 已审核插件清单（外部插件市场清单，开源后做）
+- [x] `/plugins` 前端浏览页：公开页，列出已安装且声明 manifest 的插件（name / id / version / description + 能力徽章 + ABI 兼容标识）。`list_public_plugins` server fn 扫 `assets/plugins/*.wasm` 读 manifest（无 manifest 老插件跳过，无需登录）。已浏览器实测：9 个插件正确分组展示（4 登录 / 多语言 / 审核 / 3 主题），0 console error
+- [ ] 提交审核流程文档（开源后做）
 
 ---
 
