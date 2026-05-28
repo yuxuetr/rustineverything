@@ -42,13 +42,18 @@ fn main() {
 
     // Phase 7.5：初始化 tracing 订阅。日志级别由 `RUST_LOG` 控制
     // （默认 `info`），格式为人可读 + 含 target。
-    tracing_subscriber::fmt()
+    //
+    // 用 `try_init`（而非 `init`）：在 `dx serve` 等开发运行时下，
+    // dioxus-devtools 可能已安装全局 subscriber，`init` 会 panic
+    // （"a global default trace dispatcher has already been set"）。
+    // 已存在时静默跳过，生产 `dx bundle` 产物里没有冲突 subscriber，正常生效。
+    let _ = tracing_subscriber::fmt()
       .with_env_filter(
         tracing_subscriber::EnvFilter::try_from_default_env()
           .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
       )
       .with_target(true)
-      .init();
+      .try_init();
 
     // 安全门禁：启动时必须提供关键环境变量，避免 fallback 到不安全默认值
     // 1) JWT_SECRET必须配置（panic on missing）
