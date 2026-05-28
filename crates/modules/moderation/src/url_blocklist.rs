@@ -181,9 +181,7 @@ pub fn host_of(url: &str) -> Option<&str> {
     _ => after_scheme,
   };
   // 截到 path / query / fragment / port 之前
-  let end = after_userinfo
-    .find(['/', '?', '#', ':'])
-    .unwrap_or(after_userinfo.len());
+  let end = after_userinfo.find(['/', '?', '#', ':']).unwrap_or(after_userinfo.len());
   let host = &after_userinfo[..end];
   if host.is_empty() {
     None

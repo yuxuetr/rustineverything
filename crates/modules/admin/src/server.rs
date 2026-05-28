@@ -1040,7 +1040,9 @@ async fn reject_one(
   admin_id: i32,
   row: rustineverything_core::entities::moderation_queue::Model,
 ) -> Result<(), ServerFnError> {
-  use rustineverything_core::entities::{annotation, comment, moderation_queue, topic, topic_reply};
+  use rustineverything_core::entities::{
+    annotation, comment, moderation_queue, topic, topic_reply,
+  };
   use sea_orm::{ActiveValue::Set, EntityTrait};
 
   let now = chrono::Utc::now().fixed_offset();

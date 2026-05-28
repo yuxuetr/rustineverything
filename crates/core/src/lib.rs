@@ -44,9 +44,9 @@ pub struct PluginManager {
 }
 
 impl Default for PluginManager {
-    fn default() -> Self {
-        Self::new()
-    }
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl PluginManager {

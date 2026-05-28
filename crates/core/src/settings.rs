@@ -86,13 +86,11 @@ pub struct NavItem {
 }
 
 /// 授权登录配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthSettings {
   pub enabled: bool,
   pub providers: Vec<AuthProviderEntry>,
 }
-
 
 /// 单个授权提供者配置项
 #[derive(Debug, Clone, Serialize, Deserialize)]

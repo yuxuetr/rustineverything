@@ -750,8 +750,7 @@ pub fn AdminModerationPage() -> Element {
     }
   });
   let rows: Vec<ModerationQueueRow> = res.read().as_ref().cloned().flatten().unwrap_or_default();
-  let pending_ids: Vec<i64> =
-    rows.iter().filter(|r| r.status == "pending").map(|r| r.id).collect();
+  let pending_ids: Vec<i64> = rows.iter().filter(|r| r.status == "pending").map(|r| r.id).collect();
   let selected_count = selected().len();
   let all_pending_selected =
     !pending_ids.is_empty() && pending_ids.iter().all(|id| selected().contains(id));
