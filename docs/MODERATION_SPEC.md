@@ -323,9 +323,11 @@ docker compose restart app
 4. 走 `evaluate_submission` 流过 [`shared_pipeline`]
 5. 按 Verdict label 决定返回 / 标记 / 通过
 
-[`shared_pipeline`] 是进程级 `OnceLock<Arc<ModerationPipeline>>`，首次访问
-时读 `site.json` + env 装载；改 site.json 后**需要重启进程**（Phase 5.1
-hot reload 未落地前的限制）。
+[`shared_pipeline`] 是进程级 `OnceLock<RwLock<Arc<ModerationPipeline>>>`，首次
+访问时读 `site.json` + env 装载。**Phase 5.1 后支持 hot reload**：`reload_pipeline()`
+原子替换全局 pipeline（重读 site.json + 插件目录），admin 上传审核插件或点
+「重新载入」即生效，无需重启进程。阈值在装载时经 `ModerationThresholds::validate()`
+校验（越界 / NaN / block<flag → 回退默认 + 告警）。
 
 ### 3.9 审核队列（Phase 4.5）
 
@@ -377,10 +379,11 @@ already exists`）。一次性修复：
 | 项 | 说明 |
 | --- | --- |
 | `moderation_log` 表 | 持久化所有判定记录（用户 + 内容 + verdict + LLM 原文） |
-| `moderation_queue` 表 | Flag 状态的内容入队，Admin 复核界面消费 |
-| Admin 队列页 | 列表 + 批量 approve/reject |
-| 阈值在线调整 | 当前需要改 site.json + 重启；可加 admin server fn 写回 |
-| 评论 / 话题 / 标注 提交路径接入 | 目前流水线已就绪但还没 hook 到具体 server fn |
+| `moderation_queue` 表 | ✅ Flag 状态的内容入队，Admin 复核界面消费 |
+| Admin 队列页 + 批量 approve/reject | ✅ 单条 + 批量通过/拒绝 + 作者历史违规徽章 |
+| 阈值 schema 校验 | ✅ `ModerationThresholds::validate()`（范围/NaN/block≥flag），装载时校验 |
+| 阈值在线图形编辑 | ⏳ hot reload 后改 site.json 点「重新载入」即生效；图形编辑器待补 |
+| 评论 / 话题 / 回复 / 标注 / 上传 提交路径接入 | ✅ 5 条提交路径全部 hook 到 ModerationPipeline |
 
 ## 4. 与其他引擎的关系
 
@@ -402,6 +405,6 @@ already exists`）。一次性修复：
 | Cookie Secure flag (生产) | ✅ Phase 1A |
 | **用户 Markdown XSS 防护** | ✅ Phase 4.2 |
 | **`dangerous_inner_html` 审计** | ✅ Phase 4.2（仅 2 处，pulldown-latex 输出，无用户字面回显） |
-| LLM 内容审核（插件 + 默认 disabled） | ✅ Phase 4.3-4.4（基础设施完成；4.5 DB/Admin 待补 + comment/forum hook 待接） |
+| LLM 内容审核（插件 + 默认 disabled） | ✅ Phase 4.3-4.5（基础设施 + DB/Admin + 5 条 hook 全部就绪） |
 | 视觉审核（图片评论） | ✅ 通过 `ModerationSubmission.images` + 多模态 LlmMessage，已对 gpt-4o-mini 实测 |
-| Hot Reload 内存回收验证 | ⏳ Phase 5.1 |
+| Hot Reload 内存回收验证 | ✅ Phase 5.1（invalidate 即 Drop 旧 Module，单测验证缓存恒为 1；RSS 长跑见 OPERATIONS.md §2.4） |

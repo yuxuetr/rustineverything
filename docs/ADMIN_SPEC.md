@@ -44,6 +44,12 @@ Navbar 用户下拉菜单中,只有 admin 可见 "🛡️ 管理后台" 链接�
 | `POST /api/admin/replies/delete` | `id: i32` | `()` |
 | `POST /api/admin/plugins/list` | - | `Vec<AdminPluginRow>` |
 | `POST /api/admin/plugins/reload` | - | `String` |
+| `POST /api/admin/plugins/upload` | `name: String, data_base64: String` | `PluginUploadResult` |
+| `POST /api/admin/moderation/list` | `filter_status: Option<String>, limit: Option<u64>` | `Vec<ModerationQueueRow>` |
+| `POST /api/admin/moderation/approve` | `id: i64` | `()` |
+| `POST /api/admin/moderation/reject` | `id: i64` | `()` |
+| `POST /api/admin/moderation/bulk-approve` | `ids: Vec<i64>` | `u64`（更新条数） |
+| `POST /api/admin/moderation/bulk-reject` | `ids: Vec<i64>` | `u64`（处理条数） |
 
 `AdminPage<T>` 字段:`items, total, page, page_size`。`ADMIN_PAGE_SIZE = 50`,`MAX_PAGE = 10000`。
 
@@ -62,12 +68,26 @@ DATABASE_URL=postgres://postgres:password@localhost/rustineverything \
 
 脚本将 `users.role` 改为 `admin`,然后重新登录一次,新签发的 JWT 即带 admin 角色。
 
-## 7. 插件视图
+## 7. 插件视图（含 Phase 5.1 hot reload）
 - 数据来源:`assets/site.json`(auth providers + active_theme) + `assets/plugins/*.wasm` 实际文件。
 - 字段:`kind / id / filename / configured / credentials_ready / present / size_bytes / modified`。
-- "重新载入"按钮:当前 `PluginManager` 每次调用都重新读 wasm,无缓存可清,接口仅返回成功 + 打日志,用作未来缓存接入点。
+- **"重新载入"按钮**(`admin_reload_plugins`):清空共享 `PluginManager` 的 Module 缓存
+  (i18n/主题/auth 下次调用按 mtime 重新加载) + 重建审核流水线(`reload_pipeline()`)。
+  改 `site.json` 后点一下即生效,无需重启。
+- **"上传 .wasm"按钮**(`admin_upload_plugin`):上传插件 → `safe_plugin_filename` 清洗
+  (杜绝路径穿越) → 16MB 上限 → 沙箱校验(临时 wasmi Store 编译 + 实例化 + 校验
+  `memory`/`alloc`/`dealloc` 导出) → 读 `get_manifest` 校验 ABI 版本(不兼容拒绝) →
+  备份 `<name>.bak` + 原子 rename 替换(IO 失败回滚) → 失效缓存。审核类插件额外触发
+  `reload_pipeline()`。详见 `docs/OPERATIONS.md §2.4`。
 
-## 8. 不在本期范围
+## 8. 审核队列复核(`/admin/moderation`,Phase 4.5 + 增强)
+- 列表按状态 Tab 过滤(待复核/已通过/已拒绝/全部),每行展示状态徽章/类型/路径/作者/
+  评分/理由/内容快照/图片缩略图,以及**作者历史违规徽章**(累计命中数 + 已拒绝确认违规数)。
+- 单条操作:「通过」(保留内容)/「拒绝(删除内容)」(按 kind+ref_id 删业务行)。
+- **批量操作**:全选/单选 checkbox + 「批量通过」(单条 `UPDATE … WHERE id IN`)/
+  「批量拒绝(删除内容)」(逐条复用 `reject_one`)。
+
+## 9. 不在本期范围
 - 软删除 / 操作审计 / 通知。
 - 用户禁言、IP 封禁、邀请码。
 - 文章发布(博客继续走 `assets/posts/` git 工作流)。

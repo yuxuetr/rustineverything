@@ -43,7 +43,8 @@ let spec = ModuleSpec::new("blog", "Blog")
 
 ## 3. 内置模块清单
 
-`default_module_specs()`（`engines/module.rs:101`）返回 6 个内置模块：
+`default_module_specs()`（`engines/module.rs:101`）返回 11 个内置模块（Phase 6
+新增 5 个内容板块）：
 
 | ID | 显示名 | 路由 | nav_position |
 | --- | --- | --- | --- |
@@ -51,8 +52,17 @@ let spec = ModuleSpec::new("blog", "Blog")
 | `podcast` | Podcast | `/podcast` | 20 |
 | `cases` | 案例 | `/case`, `/case/:slug` | 30 |
 | `forum` | 论坛 | `/topics`, `/topics/new`, `/topics/tag/:tag`, `/topics/:id` | 40 |
+| `embedded` | 嵌入式 | `/embedded`, `/embedded/:slug` | 50 |
+| `ai` | AI | `/ai`, `/ai/:slug` | 60 |
+| `web3` | Web3 | `/web3`, `/web3/:slug` | 70 |
+| `wasm` | WASM | `/wasm`, `/wasm/:slug` | 80 |
+| `cli` | CLI | `/cli`, `/cli/:slug` | 90 |
 | `course` | 课程 | `/course`, `/course/:slug`, `/course/:slug/:chapter/:lesson` | — |
 | `docs`  | 文档 | `/docs`, `/docs/*` | — |
+
+内容板块（embedded/ai/web3/wasm/cli）是独立 crate（`crates/modules/<board>`），
+各扫描 `assets/topics/<board>/*/index.md`，落地页提供子主题筛选 + 精选 crate
+侧栏，详情页复用 `widgets::Markdown`。
 
 > `nav_position = None` 的模块不出现在 Navbar 主导航中，但仍可以独立路由、
 > 出现在 sitemap / 搜索源。`docs` 在主导航以「Get Started」CTA 进入。
@@ -159,7 +169,7 @@ pub fn BlogIndex() -> Element {
 - `crates/core/src/engines/module.rs`：13 个单测
   - ModuleSpec builder / 注册查询 / 重复 id 拒绝
   - site.json 关闭 / navigation 过滤 / 搜索源过滤
-  - `default_module_specs` 含 6 内置 / nav 仅 4 项 / 关闭传导到 nav 与 enabled_ids
+  - `default_module_specs` 含 11 内置 / nav 9 项 / 关闭传导到 nav 与 enabled_ids
 - `crates/modules/search/src/indexer.rs`：3 个 filter 测试
   - 仅保留 enabled 模块文档
   - 空 enabled → 全部丢弃
@@ -217,6 +227,6 @@ pub fn BlogIndex() -> Element {
 
 ## 10. 后续阶段
 
-- **Phase 6**：新增 5 个内容模块（embedded / ai / web3 / wasm / cli），均通过 `default_module_specs` 注册，享受同样的开关能力。
-- **Phase 5**：Admin 页面提供 UI 切换 `modules.<id>.enabled`，写回 site.json（目前只能手改文件）。
+- **Phase 6**（已完成）：5 个内容板块（embedded / ai / web3 / wasm / cli）已通过 `default_module_specs` 注册，享受同样的开关能力（nav / 路由 gate / sitemap / feed）。
+- **Phase 5**：Admin 页面提供 UI 切换 `modules.<id>.enabled`，写回 site.json（目前只能手改文件 + hot reload「重新载入」生效）。
 - **Phase 7**：CI/CD 在不同环境（staging / prod）通过 site.json 控制模块灰度。
