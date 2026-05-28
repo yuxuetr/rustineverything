@@ -369,7 +369,7 @@
 - [x] 5 模块 `cargo test -p` 通过：每个 15 单测（13 text + 2 server）全绿
 - [x] ModuleEngine 一键开关：`site.json::modules.<board>.enabled` 控制 nav / 路由 gate / sitemap / feed
 - [x] sitemap / feed 包含新模块内容：`/sitemap.xml` 与 `/feed.xml` 均按开关收录 5 板块静态路径 + 文章条目（feed 全站按日期降序取最近 50）
-- [-] 搜索源接入：Tantivy indexer 暂未加板块源（blog/docs/case/forum 现有），留待后续
+- [x] 搜索源接入：`indexer.rs::collect_boards()` 扫 `assets/topics/<board>/*/index.md`，5 板块文章进 Tantivy 索引（kind = 板块 id，url `/<board>/<slug>`）；`collect_documents` / `filter_documents_by_enabled` 按模块开关门禁（关板块即从搜索剔除）；搜索结果加靛蓝板块徽章 + 占位符提示「专题」。1 个新单测覆盖板块门禁
 
 ---
 

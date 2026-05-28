@@ -111,6 +111,51 @@ fn collect_blogs() -> Vec<IndexedDocument> {
   out
 }
 
+/// Phase 6 内容板块（embedded/ai/web3/wasm/cli）。每个板块的 `kind` 即其
+/// module id，url 形如 `/<board>/<slug>`。文章来自 `assets/topics/<board>/`。
+const BOARD_IDS: &[&str] = &["embedded", "ai", "web3", "wasm", "cli"];
+
+fn collect_boards() -> Vec<IndexedDocument> {
+  let mut out = Vec::new();
+  for board in BOARD_IDS {
+    let dir = get_asset_root().join("topics").join(board);
+    let entries = match std::fs::read_dir(&dir) {
+      Ok(e) => e,
+      Err(_) => continue,
+    };
+    for entry in entries.flatten() {
+      let path = entry.path();
+      if !path.is_dir() {
+        continue;
+      }
+      let slug = match path.file_name().and_then(|s| s.to_str()) {
+        Some(s) => s.to_string(),
+        None => continue,
+      };
+      let mdx = path.join("index.mdx");
+      let md = path.join("index.md");
+      let chosen = if mdx.exists() {
+        mdx
+      } else if md.exists() {
+        md
+      } else {
+        continue;
+      };
+      if let Some((title, body, date)) = read_md_file(&chosen) {
+        out.push(IndexedDocument {
+          kind: board.to_string(),
+          ref_id: slug.clone(),
+          title,
+          body,
+          url: format!("/{}/{}", board, slug),
+          created_at: date,
+        });
+      }
+    }
+  }
+  out
+}
+
 fn collect_docs() -> Vec<IndexedDocument> {
   let mut out = Vec::new();
   let root = get_asset_root().join("docs");
@@ -222,6 +267,7 @@ fn collect_cases() -> Vec<IndexedDocument> {
 pub async fn collect_documents() -> Result<Vec<IndexedDocument>, String> {
   let mut all = Vec::new();
   all.extend(collect_blogs());
+  all.extend(collect_boards());
   all.extend(collect_docs());
   #[cfg(feature = "server")]
   {
@@ -242,6 +288,8 @@ pub async fn collect_documents() -> Result<Vec<IndexedDocument>, String> {
       "doc" => is_on("docs"),
       "topic" => is_on("forum"),
       "case" => is_on("cases"),
+      // 内容板块：kind 即 module id（embedded/ai/web3/wasm/cli）。
+      k if BOARD_IDS.contains(&k) => is_on(k),
       // 未知 kind 默认保留：搜索引擎不应该错误地丢弃数据。
       _ => true,
     });
@@ -266,6 +314,7 @@ pub fn filter_documents_by_enabled(
       "doc" => is_on("docs"),
       "topic" => is_on("forum"),
       "case" => is_on("cases"),
+      k if BOARD_IDS.contains(&k) => is_on(k),
       _ => true,
     })
     .collect()
@@ -399,5 +448,17 @@ mod tests {
     let all = vec![doc("lesson", "a"), doc("podcast", "b")];
     let filtered = filter_documents_by_enabled(all, &["blog".to_string()]);
     assert_eq!(filtered.len(), 2);
+  }
+
+  #[test]
+  fn filter_documents_gates_content_boards_by_module() {
+    // Phase 6 板块：kind 即 module id，关闭即从搜索剔除。
+    let all = vec![doc("embedded", "x"), doc("ai", "y"), doc("web3", "z")];
+    let enabled = vec!["embedded".to_string(), "ai".to_string()];
+    let filtered = filter_documents_by_enabled(all, &enabled);
+    let kinds: Vec<&str> = filtered.iter().map(|d| d.kind.as_str()).collect();
+    assert!(kinds.contains(&"embedded"));
+    assert!(kinds.contains(&"ai"));
+    assert!(!kinds.contains(&"web3"));
   }
 }

@@ -164,7 +164,7 @@ pub fn SearchModal() -> Element {
                       r#type: "text",
                       value: "{query}",
                       autofocus: true,
-                      placeholder: "搜索博客、文档、论坛、案例...",
+                      placeholder: "搜索博客、文档、论坛、案例、专题...",
                       class: "flex-1 bg-transparent border-0 focus:ring-0 outline-none text-base text-slate-900 dark:text-slate-100 placeholder-slate-400",
                       oninput: move |e| query.set(e.value()),
                   }
@@ -245,6 +245,14 @@ fn HitRow(hit: SearchHit) -> Element {
       ("TOPIC", "bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300")
     }
     "case" => ("CASE", "bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"),
+    // Phase 6 内容板块：统一靛蓝徽章
+    "embedded" => {
+      ("嵌入式", "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300")
+    }
+    "ai" => ("AI", "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"),
+    "web3" => ("WEB3", "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"),
+    "wasm" => ("WASM", "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"),
+    "cli" => ("CLI", "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"),
     _ => ("?", "bg-slate-100 dark:bg-slate-800 text-slate-500"),
   };
   rsx! {
