@@ -390,7 +390,7 @@
 
 ### 7.4 部署
 - [x] `Dockerfile`（多阶段 alpine）：builder = `rust:1-alpine` + node/npm + dx CLI + wasm32 target，串接 Tailwind v4 编译 → `scripts/build_themes.sh` 主题构建 → `dx bundle --platform web --release` 全栈打包；runtime = `alpine:3.20` + `ca-certificates` + `tini`，非 root 用户 `app` 运行 `dx bundle` 产物。`docker buildx build --check` 验证 0 warning；通过 `CARGO_TARGET_DIR=/tmp/target` 覆盖 `.cargo/config.toml` 开发者本地路径。配套 `.dockerignore` 排除 target/node_modules/.git/docs 等大目录，控制构建上下文体积
-- [x] `docker-compose.yml`：app + postgres + ollama。postgres 16-alpine 持久卷 + 健康检查 (`pg_isready`) gate app 启动；ollama 持久卷 (`/root/.ollama`) + GPU 段（默认注释，Linux + nvidia-container-toolkit 时启用）；app 服务通过 `service_healthy` 等 postgres 后由 sea-orm-migration 自动跑迁移。`.env.example` 文档化所有环境变量（JWT_SECRET / BASE_URL 必填校验 + OAuth 凭据 + RUST_LOG）。`docker compose config` 验证 0 错误
+- [x] `docker-compose.yml`：app + postgres（**已移除 ollama** —— 小站无需自托管 GPU 视觉模型；审核走托管 LLM API，ollama 想用也是经其 `/v1` OpenAI 兼容端点由 `OPENAI_LLM_BASE_URL` 接入，无需单独服务）。postgres 16-alpine 持久卷 + 健康检查 (`pg_isready`) gate app 启动；app 经 `service_healthy` 等 postgres 后 sea-orm-migration 自动迁移。app 环境透传可选 `OPENAI_LLM_*` / `ANTHROPIC_LLM_*`（审核默认关 → 零开销）。`.env.example` 文档化所有变量。`docker compose config` 验证 0 错误
 - [x] `.github/workflows/ci.yml`：fmt + clippy + test + build。5 jobs：fmt（report-only，待全量 reformat 后切强校验）/ clippy（report-only，~130 warnings 收敛中）/ test（强校验 `--features server --workspace --test-threads=1`）/ build-server（`cargo check`）/ build-wasm-plugins（`scripts/build_themes.sh` + plugin-theme-purple）。提交 `rustfmt.toml` 作为团队 2-space 缩进声明配置；CI 通过 `CARGO_TARGET_DIR: target` env 覆盖 `.cargo/config.toml` 中的开发者本地路径
 
 ### 7.5 日志

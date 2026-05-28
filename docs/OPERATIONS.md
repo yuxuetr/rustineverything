@@ -11,7 +11,6 @@
 ```bash
 docker compose logs -f app           # app 服务
 docker compose logs -f postgres      # 数据库
-docker compose logs -f ollama        # LLM
 docker compose logs -f               # 全部
 ```
 
@@ -254,15 +253,19 @@ docker compose logs app | grep -i theme
 - `assets/plugins/<theme>.wasm` 是否存在
 - ThemePicker 下拉用 `list_available_themes` server fn 扫 manifest；检查 wasm `get_manifest` capability 是否含 `theme`
 
-### 5.6 ollama 不响应
+### 5.6 内容审核 LLM 不可用
 
-Phase 4 LLM 审核接入后才直接影响业务。当前若 ollama 容器掉线，app 继续运行，moderation fail-open（详 [`MODERATION_SPEC.md`](MODERATION_SPEC.md)）。
+审核走托管 LLM API（`OPENAI_LLM_*` / `ANTHROPIC_LLM_*`，可指向 OpenAI / DeepSeek /
+… 或自托管 ollama 的 `/v1`）。若该 API 超时 / 限流 / 掉线，pipeline **fail-open**：
+当前 stage 记 warning 并放行，不阻塞用户提交（详 [`MODERATION_SPEC.md`](MODERATION_SPEC.md)）。
 
+排查：
 ```bash
-docker compose ps ollama
-docker compose restart ollama
-docker compose exec ollama ollama list      # 看本地模型清单
+docker compose logs app | grep -i moderation   # 看 fail-open / 调用失败日志
+# 直接探活所配置的 LLM 端点（示例）：
+curl -sS "$OPENAI_LLM_BASE_URL/v1/models" -H "Authorization: Bearer $OPENAI_LLM_API_KEY" | head
 ```
+默认 `site.json::moderation.enabled=false` 时审核关闭，本节不适用。
 
 ## 6. Rollback
 
@@ -341,7 +344,7 @@ export RUSTC_WRAPPER=sccache
 | --- | --- |
 | `JWT_SECRET` 轮换 | 季度（旋转时所有用户被踢下线） |
 | postgres 密码轮换 | 季度 |
-| `docker compose pull` upstream 镜像 | 月度（postgres / ollama 安全补丁） |
+| `docker compose pull` upstream 镜像 | 月度（postgres 安全补丁） |
 | 备份恢复演练 | 季度（确认 dump 可用） |
 | OAuth 凭据轮换 | 按 provider 推荐 |
 | 审查 `seaql_migrations` 与 git 是否一致 | 每次发布 |

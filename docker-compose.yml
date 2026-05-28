@@ -1,4 +1,4 @@
-# Phase 7.4.2：一键启动整套站点（app + postgres + ollama）。
+# Phase 7.4.2：一键启动整站（app + postgres）。
 #
 # 使用：
 #   cp .env.example .env       # 编辑 JWT_SECRET / BASE_URL 等
@@ -8,14 +8,15 @@
 # 设计：
 # - **postgres 16** 提供主存储。健康检查通过后，app 才启动 + 自动跑
 #   `sea-orm-migration` (Phase 7.1)。
-# - **ollama** 用于 Phase 4 LLM 审核（`moderation-llamaguard` 等本地
-#   fallback）。镜像启动后通过 `ollama pull` 拉模型；compose 不强制预拉
-#   以缩短首启时间。GPU 段默认注释，按需启用。
 # - **app** 通过 `service: postgres` DNS 名连数据库，避免硬编码 IP。
 #   `restart: unless-stopped` 让生产滚动重启时不丢启动状态。
+# - **内容审核（可选）**：默认关闭（`site.json::moderation.enabled=false`）。
+#   开启时，LLM 客户端读 `OPENAI_LLM_*` / `ANTHROPIC_LLM_*` 环境变量，指向
+#   任意 OpenAI / Anthropic 兼容 API（托管的 OpenAI / DeepSeek / …，或自托管
+#   的 ollama —— ollama 暴露 `/v1` OpenAI 兼容端点，把 `OPENAI_LLM_BASE_URL`
+#   指过去即可，无需在本编排里单独跑一个 ollama 服务）。
 # - 持久化：
 #     postgres-data → /var/lib/postgresql/data
-#     ollama-data   → /root/.ollama（模型权重，按需 GB 级）
 #     app-uploads   → /app/assets/uploads（用户上传图片，挂卷而非镜像层）
 
 name: rustineverything
@@ -45,32 +46,6 @@ services:
     networks:
       - rie-net
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: rie-ollama
-    restart: unless-stopped
-    volumes:
-      - ollama-data:/root/.ollama
-    ports:
-      # 仅 dev/调试暴露；生产可改为同 docker network 内访问。
-      - "127.0.0.1:11434:11434"
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    # GPU 支持（Linux + nvidia-container-toolkit）。Mac/Windows 默认 CPU。
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-    networks:
-      - rie-net
-
   app:
     build:
       context: .
@@ -81,9 +56,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama:
-        # 不阻塞 app 启动；ollama 慢启动时 LLM 审核会自然降级（fail-open）。
-        condition: service_started
     environment:
       # 数据库：连到 compose 内部的 postgres 服务名。
       DATABASE_URL: postgres://${POSTGRES_USER:-rie}:${POSTGRES_PASSWORD:-rie-dev-password}@postgres:5432/${POSTGRES_DB:-rie}
@@ -99,8 +71,14 @@ services:
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
       TWITTER_CLIENT_ID: ${TWITTER_CLIENT_ID:-}
       TWITTER_CLIENT_SECRET: ${TWITTER_CLIENT_SECRET:-}
-      # ollama 端点（Phase 4 审核插件读取）
-      OLLAMA_BASE_URL: http://ollama:11434
+      # 可选：内容审核 LLM（指向任意 OpenAI / Anthropic 兼容 API；含自托管
+      # ollama 的 /v1）。留空 + moderation.enabled=false → 审核关闭、零开销。
+      OPENAI_LLM_BASE_URL: ${OPENAI_LLM_BASE_URL:-}
+      OPENAI_LLM_API_KEY: ${OPENAI_LLM_API_KEY:-}
+      OPENAI_LLM_MODEL: ${OPENAI_LLM_MODEL:-}
+      ANTHROPIC_LLM_BASE_URL: ${ANTHROPIC_LLM_BASE_URL:-}
+      ANTHROPIC_LLM_API_KEY: ${ANTHROPIC_LLM_API_KEY:-}
+      ANTHROPIC_LLM_MODEL: ${ANTHROPIC_LLM_MODEL:-}
       # tracing 输出级别
       RUST_LOG: ${RUST_LOG:-info}
     volumes:
@@ -117,5 +95,4 @@ networks:
 
 volumes:
   postgres-data:
-  ollama-data:
   app-uploads:

@@ -353,7 +353,7 @@ pub unsafe extern "C" fn map_profile(ptr: *mut u8, len: usize) -> u64 {
 - Auth 加固：state CSRF（短 TTL）、PKCE 加密 cookie 持久化、JWT 密钥强制 env
 - 搜索持久化：`MmapDirectory` + 增量索引
 - 简单审计日志：admin 写操作 / 审核决策落表
-- `Dockerfile` + `docker-compose.yml`（app + postgres + ollama）
+- `Dockerfile` + `docker-compose.yml`（app + postgres；审核走托管 LLM API）
 - GitHub Actions CI：fmt + clippy + test + build wasm + build app
 - 基础结构化日志：`tracing` + `tracing-subscriber`
 

@@ -9,7 +9,7 @@
 
 | 方式 | 适用场景 | 路径 |
 | --- | --- | --- |
-| `docker compose` (推荐) | 一键起整站（app + postgres + ollama），生产小规模 / staging / 自测 | §3 |
+| `docker compose` (推荐) | 一键起整站（app + postgres），生产小规模 / staging / 自测 | §3 |
 | 单 Docker 镜像 | 已有 postgres / 数据库托管，仅跑 app | §4 |
 | 裸机 `dx serve` | 本地开发（含热重载） | [README.md](../README.md) |
 
@@ -18,7 +18,7 @@
 ## 2. 前置条件
 
 - Docker 24+（含 buildx 与 compose v2）
-- ≥ 2 CPU / 4 GB RAM / 10 GB 磁盘（含 postgres + ollama 模型缓存）
+- ≥ 1 CPU / 1 GB RAM / 5 GB 磁盘（app + postgres；内容审核走托管 LLM API，无需本地 GPU/模型）
 - 一组 OAuth 凭据（GitHub / Google / Discord / Twitter）— **可选**，不配置时登录页自动隐藏对应入口
 - HTTPS 反向代理（线上）：Caddy / nginx / Traefik 任意，详见 §6
 
@@ -231,7 +231,7 @@ git pull
 # 2. 重新构建镜像（增量；deps 不变时 builder 阶段大半走缓存）
 docker compose build app
 
-# 3. 滚动重启（postgres + ollama 容器不动；仅 app）
+# 3. 滚动重启（postgres 容器不动；仅 app）
 docker compose up -d app
 
 # 4. 跟日志确认 migrations 成功
@@ -251,7 +251,7 @@ docker compose logs -f app | grep "schema migrations"
 | 反向代理 | TLS 终止 + `X-Forwarded-Proto: https` |
 | `RUST_LOG=info` | 而非 `debug`，避免敏感请求参数进日志 |
 | Admin 升级 | 创建第一个 admin 后**移除** `users` 表的开放写权限脚本 |
-| 容器更新 | 定期 `docker compose pull` 后台镜像（postgres / ollama） |
+| 容器更新 | 定期 `docker compose pull` 后台镜像（postgres） |
 
 ## 11. 已知限制
 

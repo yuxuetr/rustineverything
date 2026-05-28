@@ -52,7 +52,7 @@
 
 ## 7. 部署 / CI / 运维（Phase 7）
 
-- ✅ 多阶段 Alpine Dockerfile + `docker-compose.yml`（app + postgres + ollama）
+- ✅ 多阶段 Alpine Dockerfile + `docker-compose.yml`（app + postgres；审核走托管 LLM API，无 ollama/GPU 依赖）
 - ✅ CI：fmt + clippy **强校验**（clippy `-D warnings` 零告警）+ test + build + wasm 插件构建
 - ✅ tracing 日志（`RUST_LOG`），全工作区无 `println!` 调试输出
 - ✅ runbook：`DEPLOY_GUIDE.md`（部署）+ `OPERATIONS.md`（day-2 运维，含 hot reload §2.4）
