@@ -121,13 +121,13 @@
 - [x] 实现 `From<AppError> for ServerFnError`（仅 server feature），From<sea_orm::DbErr / std::io::Error / String / &str / serde_json::Error / serde_yaml::Error>
 - [x] 错误信息不向客户端暴露内部细节：Db / Io 变体转 ServerFnError 后仅返回“内部错误”，原始详情走 eprintln 日志（6 个 tests 验证）
 - [x] 示范迁移：`SiteConfig::from_file()` 从 `Box<dyn Error>` 改为 `AppResult<Self>`，调用方 (3 处) 无需修改（`unwrap_or_default` / `Display` formatting 兼容）
-- [ ] 后续逐步迁移剩余 13 处 `Box<dyn Error>` 返回值：session::create_jwt / verify_jwt、auth::*（6 函数）、PluginManager::* 与 app `auth_callback_internal`（跨模块联动，拆到单独 PR）
+- [x] 迁移剩余 `Box<dyn Error>` 返回值到 `AppResult`：session::create_jwt/verify_jwt、auth::*（get_credentials/get_auth_url/validate_state/handle_callback/sync_user_to_db）、PluginManager::*（get_or_load_module/call_with_string/call_path_with_string/invoke_module）、app `auth_callback_internal`。新增 `From<wasmi::Error>`(→Plugin) + `From<reqwest::Error>`(→Auth, server) 让 `?` 自动转换;jwt/memory/utf8 等用 `map_err` 精确归类。全工作区 `Box<dyn Error>` 仅剩 sdk 的 `AppModule::init`（sdk 不依赖 core，无法用 AppError，保留）
 
 ### 1B.6 验收门禁
 - [x] `wc -l crates/app/src/server/mod.rs` ≤ 200（实际 162）
 - [x] `cargo test --features server --workspace` 全绿（192 tests passed; 0 failed，含新增的 docs / uploads / AppError 测试）
 - [x] 所有页面功能不变（仅代码位置调整 + 依赖重接，路由与组件外部 API 不变）
-- [-] `grep -rE 'Box<dyn .*Error' crates/` 从 15 减到 14，剩余 13 个函数返回值在 1B.5 后续 PR 批量迁移（本阶段仅迁移 `SiteConfig::from_file` 作为示范）
+- [x] `grep -rE 'Box<dyn .*Error' crates/` 从 15 → **1**：仅剩 `crates/sdk/src/lib.rs` 的 `AppModule::init`（sdk 是插件 ABI crate，不依赖 core，故保留 `Box<dyn Error>`）。其余全部迁到 `AppResult`
 
 ---
 

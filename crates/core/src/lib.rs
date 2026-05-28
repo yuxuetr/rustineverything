@@ -58,7 +58,7 @@ impl PluginManager {
 
   /// 从缓存中取出 wasm 路径对应的 `Module`；mtime 变化时会重新加载。
   /// 调用者传入实际 wasm 文件路径，有助于跨调用复用。
-  pub fn get_or_load_module(&self, path: &Path) -> Result<Module, Box<dyn std::error::Error>> {
+  pub fn get_or_load_module(&self, path: &Path) -> crate::error::AppResult<Module> {
     let mtime = std::fs::metadata(path)?.modified()?;
 
     // 读路径与当前 mtime 后在锁外进行预编译，避免重调时锁占用率过高。
@@ -102,7 +102,7 @@ impl PluginManager {
     wasm_bytes: &[u8],
     func_name: &str,
     input: &str,
-  ) -> Result<String, Box<dyn std::error::Error>> {
+  ) -> crate::error::AppResult<String> {
     let module = Module::new(&self.engine, wasm_bytes)?;
     self.invoke_module(&module, func_name, input)
   }
@@ -114,7 +114,7 @@ impl PluginManager {
     path: &Path,
     func_name: &str,
     input: &str,
-  ) -> Result<String, Box<dyn std::error::Error>> {
+  ) -> crate::error::AppResult<String> {
     let module = self.get_or_load_module(path)?;
     self.invoke_module(&module, func_name, input)
   }
@@ -125,12 +125,16 @@ impl PluginManager {
     module: &Module,
     func_name: &str,
     input: &str,
-  ) -> Result<String, Box<dyn std::error::Error>> {
+  ) -> crate::error::AppResult<String> {
+    use crate::error::AppError;
+
     let mut store = Store::new(&self.engine, ());
     let instance = self.linker.instantiate(&mut store, module)?.start(&mut store)?;
 
     // 1. 获取插件的线性内存
-    let memory = instance.get_memory(&store, "memory").ok_or("WASM module has no memory export")?;
+    let memory = instance
+      .get_memory(&store, "memory")
+      .ok_or_else(|| AppError::plugin("WASM module has no memory export"))?;
 
     // 2. 获取插件导出的分配函数
     let alloc_fn = instance.get_typed_func::<i32, i32>(&store, "alloc")?;
@@ -140,7 +144,9 @@ impl PluginManager {
     let input_bytes = input.as_bytes();
     let input_len = input_bytes.len() as i32;
     let input_ptr = alloc_fn.call(&mut store, input_len)?;
-    memory.write(&mut store, input_ptr as usize, input_bytes)?;
+    memory
+      .write(&mut store, input_ptr as usize, input_bytes)
+      .map_err(|e| AppError::plugin(format!("wasm memory write failed: {}", e)))?;
 
     // 4. 调用目标函数 (ptr, len) -> u64
     let target_fn = instance.get_typed_func::<(i32, i32), u64>(&store, func_name)?;
@@ -151,8 +157,11 @@ impl PluginManager {
     let result_len = (packed_result & 0xFFFFFFFF) as i32;
 
     let mut result_buf = vec![0u8; result_len as usize];
-    memory.read(&store, result_ptr as usize, &mut result_buf)?;
-    let result_str = String::from_utf8(result_buf)?;
+    memory
+      .read(&store, result_ptr as usize, &mut result_buf)
+      .map_err(|e| AppError::plugin(format!("wasm memory read failed: {}", e)))?;
+    let result_str = String::from_utf8(result_buf)
+      .map_err(|e| AppError::plugin(format!("plugin output not valid UTF-8: {}", e)))?;
 
     // 6. 清理内存
     dealloc_fn.call(&mut store, (input_ptr, input_len))?;

@@ -54,14 +54,13 @@ pub fn get_jwt_secret() -> String {
 
 /// 根据用户模型签发 JWT
 #[cfg(feature = "server")]
-pub fn create_jwt(
-  user: &crate::entities::user::Model,
-) -> Result<String, Box<dyn std::error::Error>> {
+pub fn create_jwt(user: &crate::entities::user::Model) -> crate::error::AppResult<String> {
+  use crate::error::AppError;
   use jsonwebtoken::{encode, EncodingKey, Header};
 
   let expiration = chrono::Utc::now()
     .checked_add_signed(chrono::Duration::days(7))
-    .ok_or("计算过期时间失败")?
+    .ok_or_else(|| AppError::auth("计算过期时间失败"))?
     .timestamp() as usize;
 
   let claims = Claims {
@@ -73,21 +72,24 @@ pub fn create_jwt(
   };
 
   let token =
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(get_jwt_secret().as_bytes()))?;
+    encode(&Header::default(), &claims, &EncodingKey::from_secret(get_jwt_secret().as_bytes()))
+      .map_err(|e| AppError::auth(format!("JWT 签发失败: {}", e)))?;
 
   Ok(token)
 }
 
 /// 验证 JWT 并返回 SessionUser
 #[cfg(feature = "server")]
-pub fn verify_jwt(token: &str) -> Result<SessionUser, Box<dyn std::error::Error>> {
+pub fn verify_jwt(token: &str) -> crate::error::AppResult<SessionUser> {
+  use crate::error::AppError;
   use jsonwebtoken::{decode, DecodingKey, Validation};
 
   let token_data = decode::<Claims>(
     token,
     &DecodingKey::from_secret(get_jwt_secret().as_bytes()),
     &Validation::default(),
-  )?;
+  )
+  .map_err(|e| AppError::auth(format!("JWT 校验失败: {}", e)))?;
 
   Ok(SessionUser {
     id: token_data.claims.sub,

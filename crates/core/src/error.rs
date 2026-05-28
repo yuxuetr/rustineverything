@@ -144,6 +144,21 @@ impl From<serde_yaml::Error> for AppError {
   }
 }
 
+/// wasmi 运行时错误（编译 / 实例化 / 调用 wasm）统一归到 `Plugin`。
+impl From<wasmi::Error> for AppError {
+  fn from(e: wasmi::Error) -> Self {
+    AppError::Plugin(format!("wasm runtime error: {}", e))
+  }
+}
+
+/// reqwest 错误（仅 core 内 OAuth HTTP 调用使用）归到 `Auth`。
+#[cfg(feature = "server")]
+impl From<reqwest::Error> for AppError {
+  fn from(e: reqwest::Error) -> Self {
+    AppError::Auth(format!("HTTP 请求失败: {}", e))
+  }
+}
+
 #[cfg(feature = "server")]
 impl From<AppError> for dioxus::fullstack::ServerFnError {
   fn from(e: AppError) -> Self {

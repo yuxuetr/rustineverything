@@ -321,7 +321,7 @@ pub async fn auth_callback_internal(
   code: String,
   provider: String,
   state: Option<String>,
-) -> Result<(String, String), Box<dyn std::error::Error>> {
+) -> Result<(String, String), rustineverything_core::error::AppError> {
   use rustineverything_core::db::get_or_init_pool;
   use rustineverything_core::session::create_jwt;
 

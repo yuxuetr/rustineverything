@@ -72,7 +72,7 @@ impl AuthConfig {
   /// 从环境变量动态读取 provider 的 client_id 和 client_secret
   /// 约定：{PROVIDER}_CLIENT_ID, {PROVIDER}_CLIENT_SECRET (全大写)
   #[cfg(feature = "server")]
-  pub fn get_credentials(provider: &str) -> Result<(String, String), Box<dyn std::error::Error>> {
+  pub fn get_credentials(provider: &str) -> crate::error::AppResult<(String, String)> {
     let upper = provider.to_uppercase();
     let client_id = std::env::var(format!("{}_CLIENT_ID", upper))
       .map_err(|_| format!("未配置环境变量: {}_CLIENT_ID", upper))?;
@@ -157,7 +157,7 @@ impl AuthService {
     &self,
     provider: &str,
     plugin_filename: &str,
-  ) -> Result<String, Box<dyn std::error::Error>> {
+  ) -> crate::error::AppResult<String> {
     let plugin_path = self.plugin_dir.join(plugin_filename);
     if !plugin_path.exists() {
       return Err(format!("未找到插件: {:?}", plugin_path).into());
@@ -217,10 +217,7 @@ impl AuthService {
   }
 
   /// 验证 OAuth state。如果 state 合法，从存储中移除并返回 Ok；否则返回错误。
-  pub fn validate_state(
-    state: &str,
-    expected_provider: &str,
-  ) -> Result<(), Box<dyn std::error::Error>> {
+  pub fn validate_state(state: &str, expected_provider: &str) -> crate::error::AppResult<()> {
     let mut store = STATE_STORE.lock().map_err(|_| "state 存储互斥异常")?;
     cleanup_expired_states(&mut store);
     let entry = store.remove(state).ok_or("不合法或已过期的 state")?;
@@ -240,7 +237,7 @@ impl AuthService {
     plugin_filename: &str,
     code: String,
     state: Option<String>,
-  ) -> Result<user::Model, Box<dyn std::error::Error>> {
+  ) -> crate::error::AppResult<user::Model> {
     // 0. CSRF 防御：验证 state
     let state_str = state.as_deref().ok_or("缺失 state 参数")?;
     Self::validate_state(state_str, provider)?;
@@ -360,7 +357,7 @@ impl AuthService {
     nickname: String,
     avatar_url: Option<String>,
     token: String,
-  ) -> Result<user::Model, Box<dyn std::error::Error>> {
+  ) -> crate::error::AppResult<user::Model> {
     let identity = user_identity::Entity::find()
       .filter(user_identity::Column::Provider.eq(provider))
       .filter(user_identity::Column::ProviderUid.eq(&uid))
