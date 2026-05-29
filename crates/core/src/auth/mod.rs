@@ -512,4 +512,72 @@ mod tests {
     assert_eq!(local.len(), 1);
     assert!(local.contains_key("fresh"));
   }
+
+  // ── Live-DB 集成测试：验证 sync_user_to_db 的事务回滚 ──
+  //
+  // 默认 ignored；需一个可写的测试库（建议一次性 docker postgres，勿指向生产库）：
+  //   DATABASE_URL=postgres://... \
+  //     cargo test --features server -p rustineverything-core -- --ignored \
+  //     sync_user_to_db_rolls_back
+  //
+  // 用例利用「provider_uid 超出 varchar(255)」制造确定性的事务中途失败：
+  // find() 用 300 字符 uid 命中不到（返回 None）→ 进入插入分支 → user 先插入
+  // 成功 → identity 因 "value too long" 插入失败 → `?` 传播 → 事务被 Drop（回滚）。
+  // 若回滚正确，则不应残留以该唯一 nickname 创建的孤儿 user。
+  #[tokio::test]
+  #[ignore = "Live DB. Run with --ignored after setting DATABASE_URL (use a throwaway postgres)"]
+  async fn sync_user_to_db_rolls_back_on_identity_insert_failure() {
+    use rustineverything_migration::{Migrator, MigratorTrait};
+    use sea_orm::Database;
+
+    let Ok(db_url) = std::env::var("DATABASE_URL") else {
+      eprintln!("跳过 rollback live test：DATABASE_URL 未配置");
+      return;
+    };
+    // sync_user_to_db 会用 JWT_SECRET 派生密钥加密 access_token；测试自带一个
+    std::env::set_var("JWT_SECRET", "test-secret-for-rollback-tests-1234");
+    let db = Database::connect(&db_url).await.expect("连接测试数据库失败");
+    Migrator::up(&db, None).await.expect("应用迁移失败");
+
+    let service = AuthService::new(
+      AuthConfig { base_url: "http://localhost:8080".to_string() },
+      std::path::PathBuf::from("."),
+    );
+
+    // 唯一标记：避免与既有数据冲突，并能精确断言/清理
+    let marker = Utc::now().timestamp_micros();
+    let nickname = format!("rollback-orphan-{}", marker);
+
+    // 负向：identity 插入必失败（uid 超长），事务必须回滚
+    let over_long_uid = "u".repeat(300);
+    let failed = service
+      .sync_user_to_db(
+        &db,
+        "rollback_test_provider",
+        over_long_uid,
+        nickname.clone(),
+        None,
+        "tok".to_string(),
+      )
+      .await;
+    assert!(failed.is_err(), "超长 provider_uid 的 identity 插入应当失败");
+
+    let orphans = user::Entity::find()
+      .filter(user::Column::Nickname.eq(&nickname))
+      .all(&db)
+      .await
+      .expect("查询 user 失败");
+    assert!(orphans.is_empty(), "事务应回滚：不应残留孤儿 user，实际残留 {} 行", orphans.len());
+
+    // 正向对照：正常 uid 应成功创建 user+identity，证明失败仅源于约束而非环境
+    let ok_uid = format!("uid-{}", marker);
+    let ok_nick = format!("rollback-ok-{}", marker);
+    let created = service
+      .sync_user_to_db(&db, "rollback_test_provider", ok_uid, ok_nick, None, "tok".to_string())
+      .await
+      .expect("正常 uid 应成功创建用户");
+
+    // 清理：删 user 即可级联删 identity（FK ON DELETE CASCADE）
+    user::Entity::delete_by_id(created.id).exec(&db).await.expect("清理测试 user 失败");
+  }
 }

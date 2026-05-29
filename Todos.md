@@ -50,7 +50,7 @@
   - [x] `modules/forum/src/server.rs`
   - [x] `modules/course/src/server.rs`
   - [x] `modules/admin/src/server.rs`
-  - [ ] `modules/cases/src/server.rs`（cases 不依赖 DB）
+  - [x] `modules/cases/src/server.rs`（N/A：cases 纯磁盘 markdown 扫描，无 `init_db`/`DatabaseConnection` 调用，无需替换）
   - [x] `modules/search/src/indexer.rs`
 - [x] 性能基准：`scripts/bench_comments.sh`（压 `POST /api/comments/list`；有 `oha` 用 oha，否则 curl 循环 + awk 算 P50/P95/P99；参数化 N/blog_id/base_url，脚本头含种子+清理说明）。已对本地 postgres 实跑验证（种子 5000 评论 → p95≈111ms@dx-serve 调试构建 → 清理）。注：调试构建数值偏高，release 会显著更低；"前后对比"基线已失效（连接池 1A.2 早已落地）
 - [x] `docs/DEVELOPER.md` DB 章节更新：新增 §2.3「数据库层与连接池」，文档化 SeaORM+PG + sea-orm-migration 自动迁移 + `init_pool/get_or_init_pool/pool` 连接池单例 API + 旧 `init_db` 兼容说明
@@ -69,7 +69,7 @@
 - [x] **`access_token` 加密存表**：`user_identities.access_token` 当前明文落库；用 `JWT_SECRET` 派生密钥做 AES-GCM 加密；解密失败时强制重新登录
 - [x] **删除 dead code**：`crates/plugins/prefix-plugin/` 是 hello-world demo，未在 site.json 引用；移到 `examples/` 或直接删除
 - [x] 单测：state 校验失败拒绝登录（`auth/mod.rs` 3 例：非法/provider 不符/一次性消费）/ 大文件上传拒绝（`uploads/server.rs::check_upload_size` 3 例）/ 非白名单 MIME 拒绝（sniff + safe_filename 5 例）/ 加密 token 可解密回原值（`auth/crypto.rs` 3 例：roundtrip/唯一 nonce/篡改失败）
-  - [ ] 事务回滚正确 — 需 live DB（本地 postgres 已关，待重启后验证）
+  - [x] 事务回滚正确 — `auth/mod.rs::tests::sync_user_to_db_rolls_back_on_identity_insert_failure`（`#[ignore]` live-DB 集成测试）：用 300 字符超长 `provider_uid` 制造确定性的 identity 插入失败，断言 user 已回滚无孤儿 + 正向对照成功。2026-05-29 对一次性 docker postgres 实跑通过。运行：`DATABASE_URL=... cargo test --features server -p rustineverything-core -- --ignored`
 
 ### 1A.5 Dioxus 渲染原生化（去 JS 依赖）
 - [x] `app/src/main.rs`：移除通过 `dioxus::document::eval` 动态创建 `<style>` 标签的 JavaScript 注入逻辑
