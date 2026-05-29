@@ -9,7 +9,7 @@
 - ✅ SeaORM + PostgreSQL，启动期 `sea-orm-migration` 自动迁移（8 张表：initial_schema 7 + moderation_queue 1）
 - ✅ 全局 DB 连接池单例（`init_pool` / `get_or_init_pool`）
 - ✅ 8 引擎架构（plugin/module/auth/theme/layout/content/moderation/search）
-- ✅ 测试：`cargo test --features server --workspace -- --test-threads=1` → **558 passed / 0 failed / 18 ignored**（ignored 为 live-LLM + live-DB 集成测试，分别需 API key / `DATABASE_URL`）
+- ✅ 测试：`cargo test --features server --workspace -- --test-threads=1` → **559 passed / 0 failed / 18 ignored**（ignored 为 live-LLM + live-DB 集成测试，分别需 API key / `DATABASE_URL`）
 
 ## 2. 安全（Phase 1A）
 
