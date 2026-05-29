@@ -125,7 +125,7 @@ pub trait LlmClient: Send + Sync {
 
 ### 6.1 Mock（默认）
 
-`cargo test --features server -p app-core llm` — 30 个单测
+`cargo test -p llm` — 46 个单测
 用 `mockito` 走完整 round-trip，验证：
 - 请求 body 形状（model / messages / system / max_tokens）
 - 鉴权 header 正确
@@ -140,7 +140,7 @@ pub trait LlmClient: Send + Sync {
 
 ### 6.2 Live（需 env）
 
-`cargo test --features server -p app-core --test llm_live -- --ignored --nocapture`
+`cargo test -p llm --test llm_live -- --ignored --nocapture`
 
 读取仓库根 `.env`，对两个协议各发一次「一加一等于几？」并断言非空回复。
 任一 env 不全则跳过对应测试。
