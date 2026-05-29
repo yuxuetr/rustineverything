@@ -549,4 +549,21 @@ mod tests {
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].slug, "b");
   }
+
+  #[test]
+  fn every_board_domain_has_at_least_three_real_cases() {
+    // 验收 Phase 6.6：用真实 parser 扫描仓库 assets/cases，每板块需 ≥3 真实案例。
+    // 同时校验全部 case.yaml 能被 serde_yaml 正确解析（解析失败的目录会被跳过，
+    // 从而使对应板块计数不足而触发断言）。板块归类：embedded/ai/web3/cli 用
+    // category，wasm 用 tag。
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../assets/cases");
+    let cases = scan_cases_from_root(&root);
+    assert!(!cases.is_empty(), "应能从 {} 扫描到案例", root.display());
+    for domain in ["embedded", "ai", "web3", "cli"] {
+      let n = cases.iter().filter(|c| c.category == domain).count();
+      assert!(n >= 3, "板块 {domain} 应有 ≥3 真实案例，实际 {n}");
+    }
+    let wasm = cases.iter().filter(|c| c.tags.iter().any(|t| t == "wasm")).count();
+    assert!(wasm >= 3, "wasm 板块（tag）应有 ≥3 真实案例，实际 {wasm}");
+  }
 }
