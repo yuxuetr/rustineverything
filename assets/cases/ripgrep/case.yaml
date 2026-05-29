@@ -1,0 +1,16 @@
+name: ripgrep
+slug: ripgrep
+description: 递归搜索目录的超高速命令行工具（grep 替代），用 Rust + 正则引擎实现，默认尊重 .gitignore。
+category: cli
+tags:
+  - cli
+  - tool
+  - opensource
+repo: https://github.com/BurntSushi/ripgrep
+website:
+author: Andrew Gallant
+author_url: https://github.com/BurntSushi
+language: rust
+stars: 0
+favorite: true
+date_added: 2026-05-29

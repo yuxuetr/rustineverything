@@ -1,0 +1,17 @@
+name: Foundry
+slug: foundry
+description: 用 Rust 写的以太坊智能合约开发工具链（forge / cast / anvil），编译、测试、部署一条龙。
+category: web3
+tags:
+  - web3
+  - cli
+  - tool
+  - opensource
+repo: https://github.com/foundry-rs/foundry
+website: https://getfoundry.sh
+author: Foundry
+author_url: https://github.com/foundry-rs
+language: rust
+stars: 0
+favorite: true
+date_added: 2026-05-29

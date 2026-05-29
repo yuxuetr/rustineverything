@@ -1,0 +1,16 @@
+name: Alloy
+slug: alloy
+description: 以太坊的高性能 Rust 库集合（ethers-rs 的继任者），覆盖 RPC、ABI、签名与合约绑定。
+category: web3
+tags:
+  - web3
+  - library
+  - opensource
+repo: https://github.com/alloy-rs/alloy
+website:
+author: Alloy
+author_url: https://github.com/alloy-rs
+language: rust
+stars: 0
+favorite: false
+date_added: 2026-05-29

@@ -1,0 +1,16 @@
+name: RTIC
+slug: rtic
+description: Real-Time Interrupt-driven Concurrency——基于硬件中断优先级的 Rust 实时并发框架。
+category: embedded
+tags:
+  - embedded
+  - library
+  - opensource
+repo: https://github.com/rtic-rs/rtic
+website: https://rtic.rs
+author: RTIC
+author_url: https://github.com/rtic-rs
+language: rust
+stars: 0
+favorite: false
+date_added: 2026-05-29

@@ -1,0 +1,17 @@
+name: probe-rs
+slug: probe-rs
+description: 纯 Rust 实现的嵌入式调试与烧录工具链，替代 OpenOCD，支持 cargo 集成与 RTT 日志。
+category: embedded
+tags:
+  - embedded
+  - cli
+  - tool
+  - opensource
+repo: https://github.com/probe-rs/probe-rs
+website: https://probe.rs
+author: probe-rs
+author_url: https://github.com/probe-rs
+language: rust
+stars: 0
+favorite: false
+date_added: 2026-05-29

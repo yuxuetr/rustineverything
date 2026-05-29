@@ -1,0 +1,16 @@
+name: Yew
+slug: yew
+description: 受 React / Elm 启发的 Rust 前端框架，编译到 WebAssembly，组件化构建单页应用。
+category: frontend
+tags:
+  - wasm
+  - frontend
+  - opensource
+repo: https://github.com/yewstack/yew
+website: https://yew.rs
+author: Yew Stack
+author_url: https://github.com/yewstack
+language: rust
+stars: 0
+favorite: false
+date_added: 2026-05-29

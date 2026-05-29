@@ -1,0 +1,16 @@
+name: tch-rs
+slug: tch-rs
+description: LibTorch（PyTorch C++ 后端）的 Rust 绑定，直接复用 PyTorch 生态做训练与推理。
+category: ai
+tags:
+  - ai
+  - library
+  - opensource
+repo: https://github.com/LaurentMazare/tch-rs
+website:
+author: Laurent Mazare
+author_url: https://github.com/LaurentMazare
+language: rust
+stars: 0
+favorite: false
+date_added: 2026-05-29

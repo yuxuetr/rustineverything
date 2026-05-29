@@ -1,0 +1,16 @@
+name: bat
+slug: bat
+description: 带语法高亮与 Git 集成的 cat 替代品，用 Rust 实现，自动分页、显示行号。
+category: cli
+tags:
+  - cli
+  - tool
+  - opensource
+repo: https://github.com/sharkdp/bat
+website:
+author: David Peter
+author_url: https://github.com/sharkdp
+language: rust
+stars: 0
+favorite: false
+date_added: 2026-05-29

@@ -1,0 +1,16 @@
+name: Reth
+slug: reth
+description: Paradigm 出品的模块化以太坊执行客户端，用 Rust 实现，强调性能与可组合性。
+category: web3
+tags:
+  - web3
+  - library
+  - opensource
+repo: https://github.com/paradigmxyz/reth
+website: https://reth.rs
+author: Paradigm
+author_url: https://github.com/paradigmxyz
+language: rust
+stars: 0
+favorite: false
+date_added: 2026-05-29

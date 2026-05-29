@@ -1,0 +1,16 @@
+name: wasm-bindgen
+slug: wasm-bindgen
+description: Rust 与 JavaScript 在 WebAssembly 边界互操作的基础设施，是几乎所有 Rust 前端方案的底座。
+category: library
+tags:
+  - wasm
+  - library
+  - opensource
+repo: https://github.com/rustwasm/wasm-bindgen
+website: https://rustwasm.github.io/wasm-bindgen/
+author: Rust and WebAssembly
+author_url: https://github.com/rustwasm
+language: rust
+stars: 0
+favorite: true
+date_added: 2026-05-29

@@ -1,0 +1,17 @@
+name: Embassy
+slug: embassy
+description: Rust 嵌入式异步运行时与 HAL 框架，用 async/await 在裸机（RTOS-free）环境编写并发固件。
+category: embedded
+tags:
+  - embedded
+  - async
+  - library
+  - opensource
+repo: https://github.com/embassy-rs/embassy
+website: https://embassy.dev
+author: Embassy
+author_url: https://github.com/embassy-rs
+language: rust
+stars: 0
+favorite: true
+date_added: 2026-05-29

@@ -1,0 +1,16 @@
+name: Wasmtime
+slug: wasmtime
+description: Bytecode Alliance 的高性能 WebAssembly 运行时，支持 WASI，可把 WASM 作为安全沙箱嵌入宿主。
+category: library
+tags:
+  - wasm
+  - library
+  - opensource
+repo: https://github.com/bytecodealliance/wasmtime
+website: https://wasmtime.dev
+author: Bytecode Alliance
+author_url: https://github.com/bytecodealliance
+language: rust
+stars: 0
+favorite: false
+date_added: 2026-05-29

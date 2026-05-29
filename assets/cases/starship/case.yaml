@@ -1,0 +1,16 @@
+name: Starship
+slug: starship
+description: 跨 shell 的极简、可定制命令行提示符，用 Rust 实现，毫秒级渲染。
+category: cli
+tags:
+  - cli
+  - tool
+  - opensource
+repo: https://github.com/starship/starship
+website: https://starship.rs
+author: Starship
+author_url: https://github.com/starship
+language: rust
+stars: 0
+favorite: false
+date_added: 2026-05-29

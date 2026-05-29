@@ -1,0 +1,17 @@
+name: Candle
+slug: candle
+description: Hugging Face 出品的极简 Rust 机器学习框架，主打小巧二进制与 serverless / 边缘推理。
+category: ai
+tags:
+  - ai
+  - library
+  - wasm
+  - opensource
+repo: https://github.com/huggingface/candle
+website:
+author: Hugging Face
+author_url: https://github.com/huggingface
+language: rust
+stars: 0
+favorite: true
+date_added: 2026-05-29

@@ -26,7 +26,7 @@
 - ✅ 11 个内置模块，`site.json::modules.<id>.enabled` 一键开关（nav/路由 gate/sitemap/feed 一致）
 - ✅ 5 个新内容板块：embedded / ai / web3 / wasm / cli（各独立 crate，≥15 单测，含真实长文）
 - ✅ 板块文章接入 Tantivy 全文搜索（`collect_boards()` 索引 `assets/topics/<board>/`，kind=板块 id，受 `site.json` 模块开关 gate）
-- 🟡 每板块 ≥3 真实案例（cases 联动）— 机制就绪，案例内容待补
+- ✅ 每板块 ≥3 真实案例（cases 联动）：15 个真实 Rust 项目 case（embedded/ai/web3/cli 各 3 + wasm 标签 ≥3），按 `category`/`tag` 归类，`/cases` 可按板块筛选
 
 ## 4. 内容审核（Phase 4）
 
@@ -73,6 +73,6 @@
 ## 9. 已知限制（v1 可接受）
 
 - 审核阈值在线图形编辑器未做（改 site.json + 「重新载入」生效）。
-- cases 每板块 ≥3 真实案例为内容待补（搜索索引已接入板块文章）。
+- cases 案例的 star 数统一为 0（不抓取实时 GitHub 数据，避免展示陈旧/虚假计数）。
 - 评论硬删除，无软删除 / 操作审计。
 - hot reload 写入运行中容器的 `assets/plugins/`，容器重建会回到镜像版本（除非挂卷）。

@@ -364,8 +364,8 @@
 - [x] 接线：workspace + app Cargo.toml、`default_module_specs`（nav 50–90）、app routes（落地 + `/<board>/:slug` 详情，复用原 `/ai` `/web3` 占位）、ClassicShell nav、sitemap + feed
 
 ### 6.6 Cases 联动
-- [-] 按 module 自动归类：cases 已有 `category` 字段（含 embedded/ai/web3/cli）+ tag（wasm），分类机制就绪；板块页「相关案例」展示与每板块 ≥3 真实案例属内容补充，留待后续
-- [ ] 每模块至少 3 个真实案例（内容撰写，后续补）
+- [x] 按 module 自动归类：cases 用 `category`（embedded/ai/web3/cli）+ tag（wasm）归类，`list_cases(tags, category, q)` 过滤；按板块筛选即得该域案例
+- [x] 每板块至少 3 个真实案例（2026-05-29 补 15 个真实 Rust 项目 case：embedded=Embassy/RTIC/probe-rs，ai=Candle/Burn/tch-rs，web3=Foundry/Reth/Alloy，cli=ripgrep/bat/Starship，wasm=wasm-bindgen/Yew/Wasmtime；各域 ≥3，含真实 repo/作者元数据 + 中文 README）
 
 ### 6.7 验收门禁
 - [x] 5 模块 `cargo test -p` 通过：每个 15 单测（13 text + 2 server）全绿
