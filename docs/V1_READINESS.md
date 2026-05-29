@@ -1,15 +1,15 @@
 # v1 上线就绪清单（v1 Readiness Checklist）
 
-> 截至 2026-05-28。汇总当前能力、验收状态与上线前待办。
+> 截至 2026-05-29。汇总当前能力、验收状态与上线前待办。
 > 图例：✅ 已完成并测试 · 🟡 已实现但需真实环境验证 · ⏳ 未做（v1 可选）
 
 ## 1. 核心平台
 
 - ✅ Dioxus 0.7 全栈（SSR + hydration）+ Axum 自定义路由
-- ✅ SeaORM + PostgreSQL，启动期 `sea-orm-migration` 自动迁移（7 张表）
+- ✅ SeaORM + PostgreSQL，启动期 `sea-orm-migration` 自动迁移（8 张表：initial_schema 7 + moderation_queue 1）
 - ✅ 全局 DB 连接池单例（`init_pool` / `get_or_init_pool`）
 - ✅ 8 引擎架构（plugin/module/auth/theme/layout/content/moderation/search）
-- ✅ 测试：`cargo test --features server --workspace -- --test-threads=1` → **554 passed / 0 failed**（live-LLM 测试 `#[ignore]`，需 API key）
+- ✅ 测试：`cargo test --features server --workspace -- --test-threads=1` → **558 passed / 0 failed / 18 ignored**（ignored 为 live-LLM + live-DB 集成测试，分别需 API key / `DATABASE_URL`）
 
 ## 2. 安全（Phase 1A）
 
@@ -43,7 +43,8 @@
 - ✅ wasmi 插件运行时 + ABI 版本协商 + 输出大小上限（8MB）
 - ✅ Hot reload：admin 上传 wasm（沙箱校验 + ABI 校验 + 备份 + 原子替换 + 回滚）→ 失效缓存 / 重建审核流水线，无需重启
 - ✅ 内存回收：invalidate 即 Drop 旧 Module（单测验证缓存恒为 1）
-- ⏳ 插件市场 `/plugins` 浏览页（开源后启用）
+- ✅ `/plugins` 公开浏览页：扫 `assets/plugins/*.wasm` 读 manifest 展示（已浏览器实测 9 插件，0 console error）
+- ⏳ 插件市场 `registry.json` 已审核清单 + 提交流程文档（开源后做）
 
 ## 6. SEO / 内容分发
 
