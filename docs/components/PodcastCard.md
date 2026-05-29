@@ -38,7 +38,7 @@
 
 - 实现：`crates/modules/podcast/src/podcast.rs::PodcastCard`
 - MDX 包装：`crates/modules/podcast/src/lib.rs::PodcastCardComponent`
-- 注册：`rustineverything_module_podcast::register_components()` 在
+- 注册：`module_podcast::register_components()` 在
   `crates/app/src/main.rs` 启动期调用一次
 
 ## 与 widgets 的解耦

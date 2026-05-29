@@ -61,7 +61,7 @@ assets/tailwind.css                ← git 跟踪的 SoT
 
 ### 1.4 Release 构建
 
-`dx build --release --package rustineverything-app` 打包 `crates/app/assets/` 下的文件。`tailwind-input.css`、`node_modules/` 不会进入 release 产物。
+`dx build --release --package app` 打包 `crates/app/assets/` 下的文件。`tailwind-input.css`、`node_modules/` 不会进入 release 产物。
 
 ---
 

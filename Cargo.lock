@@ -147,6 +147,72 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "app"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "axum",
+ "base64",
+ "chrono",
+ "dioxus",
+ "dotenvy",
+ "migration",
+ "module-admin",
+ "module-ai",
+ "module-blog",
+ "module-cases",
+ "module-cli",
+ "module-comments",
+ "module-course",
+ "module-docs",
+ "module-embedded",
+ "module-forum",
+ "module-podcast",
+ "module-search",
+ "module-uploads",
+ "module-wasm",
+ "module-web3",
+ "oauth2",
+ "pulldown-cmark",
+ "rand 0.9.3",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "widgets",
+]
+
+[[package]]
+name = "app-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "base64",
+ "chrono",
+ "dioxus",
+ "jsonwebtoken",
+ "migration",
+ "oauth2",
+ "rand 0.9.3",
+ "reqwest",
+ "sdk",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "wasmi",
+]
+
+[[package]]
 name = "arc-swap"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1974,7 +2040,7 @@ dependencies = [
 name = "discord-auth-plugin"
 version = "0.1.0"
 dependencies = [
- "rustineverything-sdk",
+ "sdk",
  "serde",
  "serde_json",
 ]
@@ -2694,7 +2760,7 @@ dependencies = [
 name = "github-auth-plugin"
 version = "0.1.0"
 dependencies = [
- "rustineverything-sdk",
+ "sdk",
  "serde",
  "serde_json",
 ]
@@ -2830,7 +2896,7 @@ dependencies = [
 name = "google-auth-plugin"
 version = "0.1.0"
 dependencies = [
- "rustineverything-sdk",
+ "sdk",
  "serde",
  "serde_json",
 ]
@@ -3193,7 +3259,7 @@ name = "i18n-fluent-plugin"
 version = "0.1.0"
 dependencies = [
  "fluent-bundle",
- "rustineverything-sdk",
+ "sdk",
  "serde_json",
  "unic-langid",
 ]
@@ -3823,6 +3889,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
 
 [[package]]
+name = "llm"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "async-trait",
+ "dotenvy",
+ "mockito",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4044,6 +4125,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "migration"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "sea-orm-migration",
+ "tracing",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4109,6 +4199,274 @@ dependencies = [
  "serde_urlencoded",
  "similar",
  "tokio",
+]
+
+[[package]]
+name = "module-admin"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "base64",
+ "chrono",
+ "dioxus",
+ "module-moderation",
+ "sdk",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "module-ai"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "sdk",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
+ "widgets",
+]
+
+[[package]]
+name = "module-blog"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "sdk",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tokio",
+]
+
+[[package]]
+name = "module-cases"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "module-blog",
+ "module-forum",
+ "sdk",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
+ "widgets",
+]
+
+[[package]]
+name = "module-cli"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "sdk",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
+ "widgets",
+]
+
+[[package]]
+name = "module-comments"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "module-moderation",
+ "sdk",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "module-course"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "module-blog",
+ "module-moderation",
+ "sdk",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "widgets",
+]
+
+[[package]]
+name = "module-docs"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "module-blog",
+ "module-course",
+ "module-forum",
+ "sdk",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "widgets",
+]
+
+[[package]]
+name = "module-embedded"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "sdk",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
+ "widgets",
+]
+
+[[package]]
+name = "module-forum"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "module-blog",
+ "module-course",
+ "module-moderation",
+ "sdk",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "widgets",
+]
+
+[[package]]
+name = "module-moderation"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "async-trait",
+ "chrono",
+ "dotenvy",
+ "llm",
+ "migration",
+ "mockito",
+ "sdk",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "module-podcast"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "sdk",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "widgets",
+]
+
+[[package]]
+name = "module-search"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "module-cases",
+ "sdk",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tantivy",
+ "tantivy-jieba",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "module-uploads"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "base64",
+ "chrono",
+ "dioxus",
+ "module-moderation",
+ "rand 0.9.3",
+ "sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "module-wasm"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "sdk",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
+ "widgets",
+]
+
+[[package]]
+name = "module-web3"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "sdk",
+ "serde",
+ "serde_yaml",
+ "tempfile",
+ "tracing",
+ "widgets",
 ]
 
 [[package]]
@@ -4915,7 +5273,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 name = "plugin-moderation-deepseek"
 version = "0.1.0"
 dependencies = [
- "rustineverything-sdk",
+ "sdk",
  "serde",
  "serde_json",
 ]
@@ -4924,7 +5282,7 @@ dependencies = [
 name = "plugin-theme-purple"
 version = "0.1.0"
 dependencies = [
- "rustineverything-sdk",
+ "sdk",
 ]
 
 [[package]]
@@ -5648,389 +6006,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustineverything-app"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64",
- "chrono",
- "dioxus",
- "dotenvy",
- "oauth2",
- "pulldown-cmark",
- "rand 0.9.3",
- "rustineverything-core",
- "rustineverything-migration",
- "rustineverything-module-admin",
- "rustineverything-module-ai",
- "rustineverything-module-blog",
- "rustineverything-module-cases",
- "rustineverything-module-cli",
- "rustineverything-module-comments",
- "rustineverything-module-course",
- "rustineverything-module-docs",
- "rustineverything-module-embedded",
- "rustineverything-module-forum",
- "rustineverything-module-podcast",
- "rustineverything-module-search",
- "rustineverything-module-uploads",
- "rustineverything-module-wasm",
- "rustineverything-module-web3",
- "rustineverything-widgets",
- "sea-orm",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "rustineverything-core"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "base64",
- "chrono",
- "dioxus",
- "jsonwebtoken",
- "oauth2",
- "rand 0.9.3",
- "reqwest",
- "rustineverything-migration",
- "rustineverything-sdk",
- "sea-orm",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "tempfile",
- "tokio",
- "tracing",
- "wasmi",
-]
-
-[[package]]
-name = "rustineverything-llm"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "dotenvy",
- "mockito",
- "reqwest",
- "rustineverything-core",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-migration"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "sea-orm-migration",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-admin"
-version = "0.1.0"
-dependencies = [
- "base64",
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-module-moderation",
- "rustineverything-sdk",
- "sea-orm",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-ai"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-sdk",
- "rustineverything-widgets",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-blog"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-sdk",
- "serde",
- "serde_json",
- "serde_yaml",
- "tokio",
-]
-
-[[package]]
-name = "rustineverything-module-cases"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-module-blog",
- "rustineverything-module-forum",
- "rustineverything-sdk",
- "rustineverything-widgets",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-cli"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-sdk",
- "rustineverything-widgets",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-comments"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-module-moderation",
- "rustineverything-sdk",
- "sea-orm",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-course"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-module-blog",
- "rustineverything-module-moderation",
- "rustineverything-sdk",
- "rustineverything-widgets",
- "sea-orm",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-docs"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-module-blog",
- "rustineverything-module-course",
- "rustineverything-module-forum",
- "rustineverything-sdk",
- "rustineverything-widgets",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "rustineverything-module-embedded"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-sdk",
- "rustineverything-widgets",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-forum"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-module-blog",
- "rustineverything-module-course",
- "rustineverything-module-moderation",
- "rustineverything-sdk",
- "rustineverything-widgets",
- "sea-orm",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-moderation"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "dotenvy",
- "mockito",
- "rustineverything-core",
- "rustineverything-llm",
- "rustineverything-migration",
- "rustineverything-sdk",
- "sea-orm",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-podcast"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-sdk",
- "rustineverything-widgets",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "rustineverything-module-search"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-module-cases",
- "rustineverything-sdk",
- "sea-orm",
- "serde",
- "serde_json",
- "serde_yaml",
- "tantivy",
- "tantivy-jieba",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-uploads"
-version = "0.1.0"
-dependencies = [
- "base64",
- "chrono",
- "dioxus",
- "rand 0.9.3",
- "rustineverything-core",
- "rustineverything-module-moderation",
- "rustineverything-sdk",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-wasm"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-sdk",
- "rustineverything-widgets",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-module-web3"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "rustineverything-core",
- "rustineverything-sdk",
- "rustineverything-widgets",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "rustineverything-sdk"
-version = "0.1.0"
-dependencies = [
- "fluent-bundle",
- "intl-memoizer",
- "serde",
- "serde_json",
- "unic-langid",
-]
-
-[[package]]
-name = "rustineverything-widgets"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dioxus",
- "pulldown-cmark",
- "pulldown-latex",
- "serde",
- "serde_json",
- "serde_yaml",
- "tracing",
-]
-
-[[package]]
 name = "rustix"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6113,6 +6088,17 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sdk"
+version = "0.1.0"
+dependencies = [
+ "fluent-bundle",
+ "intl-memoizer",
+ "serde",
+ "serde_json",
+ "unic-langid",
+]
 
 [[package]]
 name = "sea-bae"
@@ -7353,21 +7339,21 @@ dependencies = [
 name = "theme-catppuccin-plugin"
 version = "0.1.0"
 dependencies = [
- "rustineverything-sdk",
+ "sdk",
 ]
 
 [[package]]
 name = "theme-ocean-plugin"
 version = "0.1.0"
 dependencies = [
- "rustineverything-sdk",
+ "sdk",
 ]
 
 [[package]]
 name = "theme-sunset-plugin"
 version = "0.1.0"
 dependencies = [
- "rustineverything-sdk",
+ "sdk",
 ]
 
 [[package]]
@@ -7844,7 +7830,7 @@ dependencies = [
 name = "twitter-auth-plugin"
 version = "0.1.0"
 dependencies = [
- "rustineverything-sdk",
+ "sdk",
  "serde",
  "serde_json",
 ]
@@ -8459,6 +8445,20 @@ checksum = "5d4a4db5077702ca3015d3d02d74974948aba2ad9e12ab7df718ee64ccd7e97d"
 dependencies = [
  "libredox",
  "wasite",
+]
+
+[[package]]
+name = "widgets"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dioxus",
+ "pulldown-cmark",
+ "pulldown-latex",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tracing",
 ]
 
 [[package]]

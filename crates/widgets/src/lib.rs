@@ -1,4 +1,4 @@
-//! `rustineverything-widgets`：内容渲染共享组件。
+//! `widgets`：内容渲染共享组件。
 //!
 //! ## 内容
 //! - [`mdx`]：MDX 渲染管道（GFM / 数学 / Mermaid / 代码 + Copy / 标注 block-id）。
@@ -10,10 +10,10 @@
 //! ## 典型用法
 //! ```ignore
 //! // 在 app/src/main.rs 启动期：
-//! rustineverything_module_podcast::register_components();
+//! module_podcast::register_components();
 //!
 //! // 各内容页：
-//! use rustineverything_widgets::Markdown;
+//! use widgets::Markdown;
 //! rsx! { Markdown { content: text, blog_id: "welcome".to_string() } }
 //! ```
 

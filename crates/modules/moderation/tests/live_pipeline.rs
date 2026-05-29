@@ -3,7 +3,7 @@
 //!
 //! 默认 `#[ignore]`，仅当显式指定 `--ignored` 时运行：
 //! ```sh
-//! cargo test --features server -p rustineverything-module-moderation \
+//! cargo test --features server -p module-moderation \
 //!   --test live_pipeline -- --ignored --nocapture --test-threads=1
 //! ```
 //!
@@ -17,12 +17,12 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use rustineverything_core::settings::{ModerationSettings, SiteConfig};
-use rustineverything_llm::{default_client_from_env, LlmConfig};
-use rustineverything_module_moderation::{
+use app_core::settings::{ModerationSettings, SiteConfig};
+use llm::{default_client_from_env, LlmConfig};
+use module_moderation::{
   AsyncModerationStage, ModerationLabel, ModerationPipeline, PluginModerationStage,
 };
-use rustineverything_sdk::{ImageRef, ModerationSubmission};
+use sdk::{ImageRef, ModerationSubmission};
 
 fn workspace_root() -> PathBuf {
   // crates/modules/moderation/ → 上溯 3 级
@@ -42,7 +42,7 @@ fn load_env() {
   let _ = dotenvy::from_path(workspace_root().join(".env"));
 }
 
-fn check_prereqs() -> Option<Arc<dyn rustineverything_llm::LlmClient>> {
+fn check_prereqs() -> Option<Arc<dyn llm::LlmClient>> {
   load_env();
   if !plugin_path().exists() {
     eprintln!(
@@ -167,7 +167,7 @@ async fn comment_with_benign_image_returns_allow() {
 /// `extract_image_urls` 在真实 markdown 评论上正确抽取站内 + 外站图片。
 #[test]
 fn extract_image_urls_from_realistic_comment() {
-  use rustineverything_module_moderation::extract_image_urls;
+  use module_moderation::extract_image_urls;
   let body = r#"我在博客里看到了这张图：
 
 ![截图](/uploads/abc.png)

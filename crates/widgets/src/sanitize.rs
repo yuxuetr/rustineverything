@@ -17,7 +17,7 @@
 //!
 //! ## 使用方式
 //! ```ignore
-//! use rustineverything_widgets::Markdown;
+//! use widgets::Markdown;
 //!
 //! rsx! { Markdown {
 //!   content: comment.body,

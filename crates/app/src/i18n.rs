@@ -1,7 +1,7 @@
 use crate::server::translate_server;
 use dioxus::prelude::*;
 
-pub use rustineverything_core::i18n::Language;
+pub use app_core::i18n::Language;
 
 pub fn use_i18n() -> Signal<Language> {
   use_context::<Signal<Language>>()

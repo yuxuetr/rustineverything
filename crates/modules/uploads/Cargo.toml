@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-module-uploads"
+name = "module-uploads"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,9 +11,9 @@ chrono = { workspace = true, features = ["serde"] }
 base64 = { workspace = true }
 tokio = { workspace = true, features = ["full"], optional = true }
 rand = { workspace = true, optional = true }
-rustineverything-sdk = { path = "../../sdk" }
-rustineverything-core = { path = "../../core" }
-rustineverything-module-moderation = { path = "../moderation", optional = true }
+sdk = { path = "../../sdk" }
+app-core = { path = "../../core" }
+module-moderation = { path = "../moderation", optional = true }
 tracing = { workspace = true }
 
 [features]
@@ -21,6 +21,6 @@ server = [
     "dioxus/server",
     "dep:tokio",
     "dep:rand",
-    "rustineverything-core/server",
-    "dep:rustineverything-module-moderation",
+    "app-core/server",
+    "dep:module-moderation",
 ]

@@ -2,7 +2,7 @@ pub mod cases;
 pub mod server;
 pub mod text;
 
-use rustineverything_sdk::AppModule;
+use sdk::AppModule;
 
 pub struct CasesModule;
 

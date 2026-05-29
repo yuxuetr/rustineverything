@@ -99,5 +99,5 @@ DATABASE_URL=postgres://postgres:password@localhost/rustineverything \
 跑测试:
 
 ```sh
-cargo test --features server -p rustineverything-module-admin
+cargo test --features server -p module-admin
 ```

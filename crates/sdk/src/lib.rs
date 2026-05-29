@@ -235,7 +235,7 @@ impl ModerationSubmission {
 
 /// 插件 [`moderation::FN_PARSE_VERDICT`] 的返回结构。SDK 用纯字符串
 /// label 以避免跨 crate 枚举耦合；宿主侧再映射到
-/// `rustineverything_core::engines::moderation::ModerationLabel`。
+/// `app_core::engines::moderation::ModerationLabel`。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ModerationVerdict {
   /// 0.0 ~ 1.0；插件越确信越大。宿主会 clamp。

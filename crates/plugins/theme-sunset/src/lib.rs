@@ -7,7 +7,7 @@
 
 use std::slice;
 
-use rustineverything_sdk::{alloc, capabilities, dealloc, pack_json, PluginManifest};
+use sdk::{alloc, capabilities, dealloc, pack_json, PluginManifest};
 
 #[no_mangle]
 pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {

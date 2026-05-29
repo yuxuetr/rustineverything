@@ -78,7 +78,7 @@
 - `reindex` 接口由 `core::session::require_admin` 保护。
 
 ## 10. 测试覆盖
-`cargo test --features server -p rustineverything-module-search` 共 34 个单元测试:
+`cargo test --features server -p module-search` 共 34 个单元测试:
 - `text`:frontmatter / 标题 / 链接 / 图片 / 中文 / 截断(11)
 - `indexer`:frontmatter kv / md 解析 / 递归扫描 / 跳过隐藏目录(5)
 - `engine`:schema 字段 / 转义 / snippet / 实际查询(英文/中文/kind 过滤/特殊字符/空查询)(13)

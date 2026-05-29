@@ -126,7 +126,7 @@ pub struct NewTopicInput {
 
 - `crates/modules/forum/src/server.rs` 内置 18 个单元测试覆盖 `validate_new_topic` 边界、`validate_new_reply`、`normalize_tag`、`extract_title_line`。
   ```
-  cargo test -p rustineverything-module-forum --features server
+  cargo test -p module-forum --features server
   ```
 - `scripts/test_forum.sh`：端到端冒烟（创建 / 引用 / 反查 / 回复 / 个人列表），需要 `RIE_COOKIE` 环境变量。
 

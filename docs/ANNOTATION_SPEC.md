@@ -117,7 +117,7 @@ window.RIE_ANNO = {
 ## 测试
 ### 服务端单元测试（39 项）
 ```sh path=null start=null
-cargo test -p rustineverything-module-course --features server -- --test-threads=1
+cargo test -p module-course --features server -- --test-threads=1
 ```
 覆盖：
 - `parse_order_prefix` / `humanize_title` / `lang_from_ext`（课程扫描）

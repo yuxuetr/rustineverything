@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-module-comments"
+name = "module-comments"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,10 +10,10 @@ serde_json.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
 sea-orm = { workspace = true, optional = true }
-rustineverything-sdk = { path = "../../sdk" }
-rustineverything-core = { path = "../../core" }
+sdk = { path = "../../sdk" }
+app-core = { path = "../../core" }
 # 仅 server feature 下启用：插件审核流水线，可选 / 默认 disabled。
-rustineverything-module-moderation = { path = "../moderation", optional = true }
+module-moderation = { path = "../moderation", optional = true }
 tracing = { workspace = true }
 
 [features]
@@ -21,6 +21,6 @@ server = [
     "dioxus/server",
     "dep:tokio",
     "dep:sea-orm",
-    "rustineverything-core/server",
-    "dep:rustineverything-module-moderation",
+    "app-core/server",
+    "dep:module-moderation",
 ]

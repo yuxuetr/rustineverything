@@ -1,18 +1,18 @@
 [package]
-name = "rustineverything-module-podcast"
+name = "module-podcast"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rustineverything-widgets = { path = "../../widgets" }
+widgets = { path = "../../widgets" }
 dioxus = { workspace = true, features = ["fullstack"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml = { workspace = true, optional = true }
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
-rustineverything-sdk = { path = "../../sdk" }
-rustineverything-core = { path = "../../core" }
+sdk = { path = "../../sdk" }
+app-core = { path = "../../core" }
 
 [dev-dependencies]
 tempfile = "3"
@@ -22,5 +22,5 @@ server = [
     "dioxus/server",
     "dep:tokio",
     "dep:serde_yaml",
-    "rustineverything-widgets/server",
+    "widgets/server",
 ]

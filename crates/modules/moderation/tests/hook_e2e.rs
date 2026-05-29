@@ -9,18 +9,18 @@
 //!
 //! 需要 LLM 的用例标 `#[ignore]`，可单独跑：
 //! ```sh
-//! cargo test -p rustineverything-module-moderation --test hook_e2e \
+//! cargo test -p module-moderation --test hook_e2e \
 //!   -- --ignored --nocapture --test-threads=1
 //! ```
 
 use std::sync::Arc;
 
-use rustineverything_core::settings::{ModerationSettings, SiteConfig};
-use rustineverything_llm::{default_client_from_env, LlmClient};
-use rustineverything_module_moderation::{
+use app_core::settings::{ModerationSettings, SiteConfig};
+use llm::{default_client_from_env, LlmClient};
+use module_moderation::{
   absolutize_image_url, extract_image_urls, ModerationLabel, ModerationPipeline,
 };
-use rustineverything_sdk::{ImageRef, ModerationSubmission};
+use sdk::{ImageRef, ModerationSubmission};
 
 fn workspace_root() -> std::path::PathBuf {
   std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

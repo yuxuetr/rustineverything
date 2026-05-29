@@ -1,7 +1,7 @@
 //! MDX 渲染管道（Phase 2.1 从 `crates/modules/blog/src/markdown.rs` 迁移过来）。
 //!
 //! 与原版的差异：
-//! 1. 不再直接 `use rustineverything_module_podcast::podcast::PodcastCard`，
+//! 1. 不再直接 `use module_podcast::podcast::PodcastCard`，
 //!    改为通过 [`crate::registry`] 查表渲染，避免 widgets crate 依赖具体业务模块。
 //! 2. 其余渲染逻辑（GFM / 数学 / Mermaid / 代码块 + Copy / 颜色组件 / 标注 block-id）
 //!    保持与原版一致，welcome 示例和现有快照仍可像素级回归。

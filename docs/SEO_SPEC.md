@@ -216,7 +216,7 @@ Sitemap: https://example.com/sitemap.xml
 
 ## 7. 验收门禁
 
-- ✅ `cargo test -p rustineverything-widgets` —— seo + feed 共 18 单测全绿
+- ✅ `cargo test -p widgets` —— seo + feed 共 18 单测全绿
 - ✅ 缺失字段不注入空 meta（`json_ld_skips_missing_optional_fields`）
 - ✅ 空字符串字段不注入（`json_ld_skips_empty_string_optional_fields`）
 - ✅ canonical 自动派生（`build_canonical_appends_path` 等 5 测）
@@ -226,6 +226,6 @@ Sitemap: https://example.com/sitemap.xml
 
 ## 8. 测试样例
 
-`cargo test -p rustineverything-widgets seo`（11 测）+
-`cargo test -p rustineverything-widgets feed`（7 测）覆盖了所有边角
+`cargo test -p widgets seo`（11 测）+
+`cargo test -p widgets feed`（7 测）覆盖了所有边角
 情况。可以直接以这些测试作为 SEO 行为变化时的回归门禁。

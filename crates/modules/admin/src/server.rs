@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use rustineverything_core::session::{is_known_role, ROLE_ADMIN};
+use app_core::session::{is_known_role, ROLE_ADMIN};
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use std::path::PathBuf;
@@ -211,7 +211,7 @@ fn get_asset_root() -> PathBuf {
 
 #[cfg(feature = "server")]
 async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
-  rustineverything_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
+  app_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[cfg(feature = "server")]
@@ -233,10 +233,10 @@ fn fmt_system_time(t: std::time::SystemTime) -> Option<String> {
 pub async fn admin_overview() -> Result<AdminOverview, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{
+    use app_core::entities::{
       annotation, comment, moderation_queue, topic, topic_reply, user as user_entity,
     };
-    use rustineverything_core::session::require_admin;
+    use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
     let _ = require_admin()?;
@@ -287,8 +287,8 @@ pub async fn admin_overview() -> Result<AdminOverview, ServerFnError> {
 pub async fn admin_list_users(page: Option<u32>) -> Result<AdminPage<AdminUserRow>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{user as user_entity, user_identity};
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::{user as user_entity, user_identity};
+    use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
     let _ = require_admin()?;
@@ -351,8 +351,8 @@ pub async fn admin_set_user_role(
   #[cfg(feature = "server")]
   {
     use chrono::Utc;
-    use rustineverything_core::entities::user as user_entity;
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::user as user_entity;
+    use app_core::session::require_admin;
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
     validate_role(&role).map_err(ServerFnError::new)?;
@@ -406,8 +406,8 @@ pub async fn admin_list_comments(
 ) -> Result<AdminPage<AdminCommentRow>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{comment, user as user_entity};
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::{comment, user as user_entity};
+    use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
     let _ = require_admin()?;
@@ -464,8 +464,8 @@ pub async fn admin_list_comments(
 pub async fn admin_delete_comment(id: i32) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::comment;
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::comment;
+    use app_core::session::require_admin;
     use sea_orm::EntityTrait;
 
     let _ = require_admin()?;
@@ -489,8 +489,8 @@ pub async fn admin_list_topics(
 ) -> Result<AdminPage<AdminTopicRow>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{topic, user as user_entity};
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::{topic, user as user_entity};
+    use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
     let _ = require_admin()?;
@@ -549,8 +549,8 @@ pub async fn admin_list_topics(
 pub async fn admin_delete_topic(id: i32) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::topic;
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::topic;
+    use app_core::session::require_admin;
     use sea_orm::EntityTrait;
 
     let _ = require_admin()?;
@@ -573,8 +573,8 @@ pub async fn admin_delete_topic(id: i32) -> Result<(), ServerFnError> {
 pub async fn admin_delete_reply(id: i32) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{topic, topic_reply};
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::{topic, topic_reply};
+    use app_core::session::require_admin;
     use sea_orm::{
       ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, TransactionTrait,
     };
@@ -627,8 +627,8 @@ pub async fn admin_delete_reply(id: i32) -> Result<(), ServerFnError> {
 pub async fn admin_list_plugins() -> Result<Vec<AdminPluginRow>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::session::require_admin;
-    use rustineverything_core::settings::SiteConfig;
+    use app_core::session::require_admin;
+    use app_core::settings::SiteConfig;
 
     let _ = require_admin()?;
 
@@ -725,13 +725,13 @@ fn stat_plugin(path: &std::path::Path) -> (bool, u64, Option<String>) {
 pub async fn admin_reload_plugins() -> Result<String, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::session::require_admin;
+    use app_core::session::require_admin;
 
     let _ = require_admin()?;
     // 清空共享 PluginManager 的 Module 缓存（i18n / 主题 / auth 下次调用
     // 会重新从磁盘加载），并重建审核流水线（重读 site.json + 插件目录）。
-    rustineverything_core::shared_plugin_manager().invalidate_all();
-    rustineverything_module_moderation::reload_pipeline();
+    app_core::shared_plugin_manager().invalidate_all();
+    module_moderation::reload_pipeline();
     tracing::info!("admin: plugin caches invalidated + moderation pipeline reloaded");
     Ok("已清空插件缓存并重建审核流水线（无需重启）".to_string())
   }
@@ -764,8 +764,8 @@ pub async fn admin_upload_plugin(
   #[cfg(feature = "server")]
   {
     use base64::Engine as _;
-    use rustineverything_core::session::require_admin;
-    use rustineverything_core::{
+    use app_core::session::require_admin;
+    use app_core::{
       capabilities, shared_plugin_manager, PluginManifest, SDK_ABI_VERSION,
     };
 
@@ -842,7 +842,7 @@ pub async fn admin_upload_plugin(
 
     // 7. 审核类插件 → 重建审核流水线立即生效
     if manifest.has_capability(capabilities::MODERATION_PROVIDER) {
-      rustineverything_module_moderation::reload_pipeline();
+      module_moderation::reload_pipeline();
     }
 
     tracing::info!(
@@ -880,8 +880,8 @@ pub async fn admin_list_moderation_queue(
 ) -> Result<Vec<ModerationQueueRow>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{moderation_queue, user as user_entity};
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::{moderation_queue, user as user_entity};
+    use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 
     let _ = require_admin()?;
@@ -1001,8 +1001,8 @@ pub async fn admin_list_moderation_queue(
 pub async fn admin_approve_moderation(id: i64) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::moderation_queue;
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::moderation_queue;
+    use app_core::session::require_admin;
     use sea_orm::{ActiveValue::Set, EntityTrait};
 
     let admin = require_admin()?;
@@ -1038,9 +1038,9 @@ pub async fn admin_approve_moderation(id: i64) -> Result<(), ServerFnError> {
 async fn reject_one(
   db: &sea_orm::DatabaseConnection,
   admin_id: i32,
-  row: rustineverything_core::entities::moderation_queue::Model,
+  row: app_core::entities::moderation_queue::Model,
 ) -> Result<(), ServerFnError> {
-  use rustineverything_core::entities::{
+  use app_core::entities::{
     annotation, comment, moderation_queue, topic, topic_reply,
   };
   use sea_orm::{ActiveValue::Set, EntityTrait};
@@ -1083,8 +1083,8 @@ async fn reject_one(
 pub async fn admin_reject_moderation(id: i64) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::moderation_queue;
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::moderation_queue;
+    use app_core::session::require_admin;
     use sea_orm::EntityTrait;
 
     let admin = require_admin()?;
@@ -1108,8 +1108,8 @@ pub async fn admin_reject_moderation(id: i64) -> Result<(), ServerFnError> {
 pub async fn admin_bulk_approve_moderation(ids: Vec<i64>) -> Result<u64, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::moderation_queue;
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::moderation_queue;
+    use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let admin = require_admin()?;
@@ -1142,8 +1142,8 @@ pub async fn admin_bulk_approve_moderation(ids: Vec<i64>) -> Result<u64, ServerF
 pub async fn admin_bulk_reject_moderation(ids: Vec<i64>) -> Result<u64, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::moderation_queue;
-    use rustineverything_core::session::require_admin;
+    use app_core::entities::moderation_queue;
+    use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let admin = require_admin()?;

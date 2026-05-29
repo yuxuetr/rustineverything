@@ -82,7 +82,7 @@ Event::Html(html) | Event::InlineHtml(html) => {
 ### 1.5 启用方式
 
 ```rust
-use rustineverything_widgets::Markdown;
+use widgets::Markdown;
 
 // 评论 / 话题 / 标注 等用户内容：
 rsx! { Markdown {
@@ -118,7 +118,7 @@ rsx! { Markdown {
 - ✅ Markdown 围栏（` ``` `）中的字面 `<script>` 也被清洗（已知 trade-off）
 - ✅ 误伤防护：text 中孤立 `onenote` 不剥离
 
-`cargo test --features server -p rustineverything-widgets sanitize` → 15 passed; 0 failed.
+`cargo test --features server -p widgets sanitize` → 15 passed; 0 failed.
 
 ## 2. ModerationEngine 骨架（Phase 1C.4）
 
@@ -245,7 +245,7 @@ Block 决定必须由完整成功的流水线产出。这保证了 LLM 故障期
 **调用方式**：
 
 ```rust
-use rustineverything_sdk::{ImageRef, ModerationSubmission};
+use sdk::{ImageRef, ModerationSubmission};
 
 let submission = ModerationSubmission::new(comment_body)
   .with_kind("comment")
@@ -285,7 +285,7 @@ user message，并升级 system prompt 加入视觉审核维度（色情 / 血�
 
 复现命令：
 ```sh
-cargo test -p rustineverything-module-moderation --test live_pipeline \
+cargo test -p module-moderation --test live_pipeline \
   -- --ignored --nocapture --test-threads=1
 ```
 要求 `.env` 配好任一对 LLM env，且 wasm 已 `cp` 到 `assets/plugins/`。

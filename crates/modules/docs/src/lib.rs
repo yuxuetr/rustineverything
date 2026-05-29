@@ -1,7 +1,7 @@
 pub mod docs;
 pub mod server;
 
-use rustineverything_sdk::AppModule;
+use sdk::AppModule;
 
 pub struct DocsModule;
 

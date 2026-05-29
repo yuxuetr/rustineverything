@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-module-course"
+name = "module-course"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,11 +10,11 @@ serde_json.workspace = true
 serde_yaml = { workspace = true, optional = true }
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
-rustineverything-sdk = { path = "../../sdk" }
-rustineverything-widgets = { path = "../../widgets" }
-rustineverything-module-blog = { path = "../blog" }
-rustineverything-core = { path = "../../core" }
-rustineverything-module-moderation = { path = "../moderation", optional = true }
+sdk = { path = "../../sdk" }
+widgets = { path = "../../widgets" }
+module-blog = { path = "../blog" }
+app-core = { path = "../../core" }
+module-moderation = { path = "../moderation", optional = true }
 sea-orm = { workspace = true, optional = true }
 tracing = { workspace = true }
 
@@ -27,8 +27,8 @@ server = [
     "dep:tokio",
     "dep:serde_yaml",
     "dep:sea-orm",
-    "rustineverything-widgets/server",
-    "rustineverything-module-blog/server",
-    "rustineverything-core/server",
-    "dep:rustineverything-module-moderation",
+    "widgets/server",
+    "module-blog/server",
+    "app-core/server",
+    "dep:module-moderation",
 ]

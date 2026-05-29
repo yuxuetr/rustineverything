@@ -8,7 +8,7 @@ use crate::settings::SiteConfig;
 use crate::PluginManager;
 #[cfg(feature = "server")]
 use chrono::Utc;
-use rustineverything_sdk::{AuthProviderConfig, AuthProviderDisplay, StandardUser};
+use sdk::{AuthProviderConfig, AuthProviderDisplay, StandardUser};
 #[cfg(feature = "server")]
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
@@ -321,7 +321,7 @@ impl AuthService {
     let profile_response: Value = http_client
       .get(&provider_config.profile_url)
       .header("Authorization", format!("Bearer {}", access_token))
-      .header("User-Agent", "rustineverything-app")
+      .header("User-Agent", "app")
       .send()
       .await?
       .json()
@@ -517,7 +517,7 @@ mod tests {
   //
   // 默认 ignored；需一个可写的测试库（建议一次性 docker postgres，勿指向生产库）：
   //   DATABASE_URL=postgres://... \
-  //     cargo test --features server -p rustineverything-core -- --ignored \
+  //     cargo test --features server -p app-core -- --ignored \
   //     sync_user_to_db_rolls_back
   //
   // 用例利用「provider_uid 超出 varchar(255)」制造确定性的事务中途失败：
@@ -527,7 +527,7 @@ mod tests {
   #[tokio::test]
   #[ignore = "Live DB. Run with --ignored after setting DATABASE_URL (use a throwaway postgres)"]
   async fn sync_user_to_db_rolls_back_on_identity_insert_failure() {
-    use rustineverything_migration::{Migrator, MigratorTrait};
+    use migration::{Migrator, MigratorTrait};
     use sea_orm::Database;
 
     let Ok(db_url) = std::env::var("DATABASE_URL") else {

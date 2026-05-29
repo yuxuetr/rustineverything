@@ -26,5 +26,5 @@
 
 `crates/widgets/src/components.rs::YouTubeComponent`。
 
-由 `rustineverything_widgets::register_default_components()` 在 app
+由 `widgets::register_default_components()` 在 app
 启动期注册。

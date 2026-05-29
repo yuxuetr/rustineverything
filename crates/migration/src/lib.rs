@@ -19,7 +19,7 @@
 //! ## 测试
 //! - 单测：[`tests::migrations_have_expected_names`] 确保 [`Migrator`] 与
 //!   预期的迁移列表对齐。
-//! - 集成测试（需 DATABASE_URL）：`cargo test -p rustineverything-migration -- --ignored`
+//! - 集成测试（需 DATABASE_URL）：`cargo test -p migration -- --ignored`
 
 pub use sea_orm_migration::prelude::*;
 

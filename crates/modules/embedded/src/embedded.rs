@@ -4,7 +4,7 @@
 //! ——这与 docs / cases 模块的做法一致。
 
 use dioxus::prelude::*;
-use rustineverything_widgets::{parse_mdx, Markdown};
+use widgets::{parse_mdx, Markdown};
 
 use crate::server::{get_embedded_article, list_embedded_articles, ArticleSummary};
 use crate::text::{

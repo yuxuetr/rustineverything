@@ -18,7 +18,7 @@
 //!
 //! ## 用法
 //! ```ignore
-//! use rustineverything_widgets::{parse_mdx, inject_seo};
+//! use widgets::{parse_mdx, inject_seo};
 //! let (meta, _body) = parse_mdx(&content);
 //! rsx! {
 //!     {inject_seo(&meta, "/blog/welcome", "https://example.com")}

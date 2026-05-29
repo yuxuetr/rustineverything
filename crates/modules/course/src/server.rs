@@ -928,9 +928,9 @@ pub struct LessonProgress {
 
 /// server-only: 从请求 cookie 提取当前用户
 #[cfg(feature = "server")]
-fn current_session_user() -> Option<rustineverything_core::session::SessionUser> {
+fn current_session_user() -> Option<app_core::session::SessionUser> {
   use dioxus::fullstack::FullstackContext;
-  use rustineverything_core::session::parse_session_from_cookie_header;
+  use app_core::session::parse_session_from_cookie_header;
 
   let ctx = FullstackContext::current()?;
   let parts = ctx.parts_mut();
@@ -941,7 +941,7 @@ fn current_session_user() -> Option<rustineverything_core::session::SessionUser>
 
 /// 限制：仅 admin / member 可写进度与标注
 #[cfg(feature = "server")]
-fn require_writer() -> Result<rustineverything_core::session::SessionUser, ServerFnError> {
+fn require_writer() -> Result<app_core::session::SessionUser, ServerFnError> {
   let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
   if user.role == "admin" || user.role == "member" {
     Ok(user)
@@ -952,14 +952,14 @@ fn require_writer() -> Result<rustineverything_core::session::SessionUser, Serve
 
 #[cfg(feature = "server")]
 async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
-  rustineverything_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
+  app_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[post("/api/courses/progress/list")]
 pub async fn get_progress(slug: String) -> Result<Vec<LessonProgress>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::course_progress;
+    use app_core::entities::course_progress;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
     let user = match current_session_user() {
       Some(u) => u,
@@ -999,7 +999,7 @@ pub async fn mark_lesson_complete(
   #[cfg(feature = "server")]
   {
     use chrono::Utc;
-    use rustineverything_core::entities::course_progress;
+    use app_core::entities::course_progress;
     use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
     let user = require_writer()?;
     let db = open_db().await?;
@@ -1037,7 +1037,7 @@ pub async fn mark_lesson_complete(
 pub async fn get_last_lesson(slug: String) -> Result<Option<String>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::course_progress;
+    use app_core::entities::course_progress;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
     let user = match current_session_user() {
       Some(u) => u,
@@ -1164,7 +1164,7 @@ pub async fn get_annotations_config() -> Result<AnnotationsConfig, ServerFnError
 }
 
 #[cfg(feature = "server")]
-fn model_to_annotation(m: rustineverything_core::entities::annotation::Model) -> Annotation {
+fn model_to_annotation(m: app_core::entities::annotation::Model) -> Annotation {
   Annotation {
     id: m.id,
     user_id: m.user_id,
@@ -1190,7 +1190,7 @@ fn model_to_annotation(m: rustineverything_core::entities::annotation::Model) ->
 pub async fn list_my_annotations() -> Result<Vec<Annotation>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::annotation;
+    use app_core::entities::annotation;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
     let user = match current_session_user() {
       Some(u) => u,
@@ -1221,7 +1221,7 @@ pub async fn list_annotations(
     if !read_annotations_switch(&resource_kind) {
       return Ok(vec![]);
     }
-    use rustineverything_core::entities::{annotation, user as user_entity};
+    use app_core::entities::{annotation, user as user_entity};
     use sea_orm::{sea_query::Expr, ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder};
     let me = current_session_user();
     let db = open_db().await?;
@@ -1288,10 +1288,10 @@ pub async fn create_annotation(payload: AnnotationCreate) -> Result<Annotation, 
       return Err(ServerFnError::new("当前资源未启用标注".to_string()));
     }
     use chrono::Utc;
-    use rustineverything_core::engines::moderation::ModerationLabel;
-    use rustineverything_core::entities::annotation;
-    use rustineverything_module_moderation::{enqueue_if_flagged, evaluate_submission};
-    use rustineverything_sdk::ModerationSubmission;
+    use app_core::engines::moderation::ModerationLabel;
+    use app_core::entities::annotation;
+    use module_moderation::{enqueue_if_flagged, evaluate_submission};
+    use sdk::ModerationSubmission;
     use sea_orm::{ActiveValue::Set, EntityTrait};
     let user = require_writer()?;
 
@@ -1378,7 +1378,7 @@ pub async fn create_annotation(payload: AnnotationCreate) -> Result<Annotation, 
 pub async fn delete_annotation(id: i64) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::annotation;
+    use app_core::entities::annotation;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
     let user = require_writer()?;
     let db = open_db().await?;
@@ -1407,7 +1407,7 @@ pub async fn update_annotation(
   #[cfg(feature = "server")]
   {
     use chrono::Utc;
-    use rustineverything_core::entities::annotation;
+    use app_core::entities::annotation;
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
     let user = require_writer()?;
     let db = open_db().await?;

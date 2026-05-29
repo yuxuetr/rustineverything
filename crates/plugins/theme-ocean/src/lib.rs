@@ -1,5 +1,5 @@
 #![allow(clippy::missing_safety_doc)] // WASM ABI exports: 安全契约见 docs/PLUGIN_ABI.md
-use rustineverything_sdk::{alloc, capabilities, dealloc, pack_json, PluginManifest};
+use sdk::{alloc, capabilities, dealloc, pack_json, PluginManifest};
 use std::slice;
 
 #[no_mangle]

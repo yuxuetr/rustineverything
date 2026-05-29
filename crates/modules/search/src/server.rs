@@ -89,7 +89,7 @@ pub async fn search_query(
 pub async fn search_reindex() -> Result<String, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::session::require_admin;
+    use app_core::session::require_admin;
     let _ = require_admin()?;
     crate::engine::rebuild().await.map_err(ServerFnError::new)?;
     Ok("索引已重建".to_string())

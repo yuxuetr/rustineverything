@@ -21,7 +21,7 @@ App 用 [`tracing`](https://docs.rs/tracing) + [`tracing-subscriber`](https://do
 
 ```dotenv
 # 调试单个模块
-RUST_LOG=info,rustineverything_core::auth=debug
+RUST_LOG=info,app_core::auth=debug
 
 # 静音吵闹的 sqlx 心跳
 RUST_LOG=info,sqlx=warn
@@ -79,14 +79,14 @@ cat backup-2026-05-27-1430.dump | \
 `app-uploads` 卷只在 docker 节点本地。异地备份：
 
 ```bash
-docker run --rm -v rustineverything_app-uploads:/data -v $(pwd):/out \
+docker run --rm -v app-uploads:/data -v $(pwd):/out \
   alpine tar czf /out/uploads-$(date +%F).tgz -C /data .
 ```
 
 恢复：
 
 ```bash
-docker run --rm -v rustineverything_app-uploads:/data -v $(pwd):/in \
+docker run --rm -v app-uploads:/data -v $(pwd):/in \
   alpine sh -c 'cd /data && tar xzf /in/uploads-2026-05-27.tgz'
 ```
 

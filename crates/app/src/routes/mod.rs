@@ -9,26 +9,26 @@ use crate::components::view::{Container, SectionTitle};
 use crate::i18n::{t, use_i18n};
 use crate::server::get_seo_base_url;
 use crate::server::{list_public_plugins, PublicPluginInfo};
-use rustineverything_module_admin::admin::{
+use module_admin::admin::{
   AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminPluginsPage, AdminTopicsPage,
   AdminUsersPage,
 };
-use rustineverything_module_ai::ai::{AiArticlePage, AiIndexPage};
-use rustineverything_module_blog::server::{get_blog_content, list_blog_posts};
-use rustineverything_module_cases::cases::{CaseDetailPage, CasesIndexPage};
-use rustineverything_module_cli::cli::{CliArticlePage, CliIndexPage};
-use rustineverything_module_course::course::{
+use module_ai::ai::{AiArticlePage, AiIndexPage};
+use module_blog::server::{get_blog_content, list_blog_posts};
+use module_cases::cases::{CaseDetailPage, CasesIndexPage};
+use module_cli::cli::{CliArticlePage, CliIndexPage};
+use module_course::course::{
   AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
 };
-use rustineverything_module_docs::docs::{DocPage as DocPageView, Docs as DocsView};
-use rustineverything_module_embedded::embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
-use rustineverything_module_forum::forum::{
+use module_docs::docs::{DocPage as DocPageView, Docs as DocsView};
+use module_embedded::embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
+use module_forum::forum::{
   DiscussionPanel, MyTopicsPage, NewTopicPage, TopicDetailPage, TopicsByTagPage, TopicsIndexPage,
 };
-use rustineverything_module_podcast::podcast::PodcastPage;
-use rustineverything_module_wasm::wasm::{WasmArticlePage, WasmIndexPage};
-use rustineverything_module_web3::web3::{Web3ArticlePage, Web3IndexPage};
-use rustineverything_widgets::{inject_seo, parse_mdx, Markdown};
+use module_podcast::podcast::PodcastPage;
+use module_wasm::wasm::{WasmArticlePage, WasmIndexPage};
+use module_web3::web3::{Web3ArticlePage, Web3IndexPage};
+use widgets::{inject_seo, parse_mdx, Markdown};
 
 /// Application routes
 #[derive(Debug, Clone, Routable, PartialEq)]

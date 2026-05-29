@@ -1,6 +1,6 @@
 #![allow(clippy::missing_safety_doc)] // WASM ABI exports: 安全契约见 docs/PLUGIN_ABI.md
 use fluent_bundle::{FluentBundle, FluentResource};
-use rustineverything_sdk::{alloc, capabilities, pack_json, PluginManifest};
+use sdk::{alloc, capabilities, pack_json, PluginManifest};
 use std::slice;
 use unic_langid::langid;
 

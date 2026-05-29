@@ -149,7 +149,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-rustineverything-sdk = { path = "../../sdk" }
+sdk = { path = "../../sdk" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -161,7 +161,7 @@ serde_json = "1.0"
 #### `get_provider_config` — 返回 OAuth 端点配置
 
 ```rust
-use rustineverything_sdk::{alloc, dealloc, AuthProviderConfig, AuthProviderDisplay, StandardUser};
+use sdk::{alloc, dealloc, AuthProviderConfig, AuthProviderDisplay, StandardUser};
 use std::slice;
 use serde_json::Value;
 

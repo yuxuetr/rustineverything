@@ -31,7 +31,7 @@ pub extern "C" fn alloc(size: usize) -> *mut u8;
 pub unsafe extern "C" fn dealloc(ptr: *mut u8, size: usize);
 ```
 
-由 [`rustineverything-sdk`](../crates/sdk/src/lib.rs) 提供默认实现，
+由 [`sdk`](../crates/sdk/src/lib.rs) 提供默认实现，
 通常无需重写。功能：在 wasm 线性内存中分配 / 释放字节段，让宿主能写入
 输入参数 / 读出返回值。
 
@@ -49,7 +49,7 @@ pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64;
 示例：
 
 ```rust
-use rustineverything_sdk::{capabilities, pack_json, PluginManifest};
+use sdk::{capabilities, pack_json, PluginManifest};
 
 #[no_mangle]
 pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {

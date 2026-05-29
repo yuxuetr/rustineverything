@@ -23,7 +23,7 @@ seo::inject_seo(meta, …)      pulldown-cmark Parser
 
 实现位于 `crates/widgets/src/mdx.rs`，由 [`Markdown`] 组件统一暴露。
 所有内容页（Blog / DocPage / Lesson / Comments / Cases / Forum）
-都通过 `use rustineverything_widgets::Markdown` 引入。
+都通过 `use widgets::Markdown` 引入。
 
 ## 2. Frontmatter
 
@@ -132,7 +132,7 @@ tags: [rust, welcome]
 ```rust
 use std::collections::HashMap;
 use dioxus::prelude::*;
-use rustineverything_widgets::{register, MdxComponent};
+use widgets::{register, MdxComponent};
 
 struct TweetComponent;
 impl MdxComponent for TweetComponent {
@@ -181,7 +181,7 @@ pub trait MdxComponent: Send + Sync {
 
 ## 7. 测试
 
-`cargo test -p rustineverything-widgets` 涵盖：
+`cargo test -p widgets` 涵盖：
 
 - `mdx::tests`（13）：parse_mdx / convert_admonitions / detect_registered_tag /
   parse_attrs / extract_attr / latex_to_mathml

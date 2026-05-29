@@ -1,7 +1,7 @@
 pub mod podcast;
 pub mod server;
 
-use rustineverything_sdk::AppModule;
+use sdk::AppModule;
 
 pub struct PodcastModule;
 
@@ -16,13 +16,13 @@ impl AppModule for PodcastModule {
 /// 调用点：`crates/app/src/main.rs` 启动期一次。该函数幂等。
 pub fn register_components() {
   // PodcastCard：读入 `id`，调 server fn 拉取详情，同步原本逻辑。
-  rustineverything_widgets::register(Box::new(PodcastCardComponent));
+  widgets::register(Box::new(PodcastCardComponent));
 }
 
 /// `<PodcastCard id="3" />` 在 MDX 中的渲染实现。
 struct PodcastCardComponent;
 
-impl rustineverything_widgets::MdxComponent for PodcastCardComponent {
+impl widgets::MdxComponent for PodcastCardComponent {
   fn name(&self) -> &'static str {
     "PodcastCard"
   }

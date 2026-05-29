@@ -11,7 +11,7 @@ use crate::components::view::Container;
 use crate::i18n::{t, use_i18n, Language};
 use crate::routes::Route;
 use dioxus::document::eval;
-use rustineverything_module_search::search::SearchButton;
+use module_search::search::SearchButton;
 
 /// Minimal shell：极简顶部条，`Outlet::<Route>` 主导内容；无 Footer。
 #[component]

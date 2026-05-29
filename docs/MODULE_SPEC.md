@@ -100,7 +100,7 @@ let search_sources: Vec<String> = engine.enabled_ids();
 便捷帮手 `default_module_engine()` 已在 server feature 下封装上面 4 行：
 
 ```rust
-let engine = rustineverything_core::engines::module::default_module_engine();
+let engine = app_core::engines::module::default_module_engine();
 let ids = engine.enabled_ids();
 ```
 

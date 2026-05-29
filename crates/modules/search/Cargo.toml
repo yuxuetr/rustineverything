@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-module-search"
+name = "module-search"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,9 +9,9 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
-rustineverything-sdk = { path = "../../sdk" }
-rustineverything-core = { path = "../../core" }
-rustineverything-module-cases = { path = "../cases" }
+sdk = { path = "../../sdk" }
+app-core = { path = "../../core" }
+module-cases = { path = "../cases" }
 sea-orm = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }
 tantivy = { workspace = true, optional = true }
@@ -29,6 +29,6 @@ server = [
     "dep:serde_yaml",
     "dep:tantivy",
     "dep:tantivy-jieba",
-    "rustineverything-core/server",
-    "rustineverything-module-cases/server",
+    "app-core/server",
+    "module-cases/server",
 ]

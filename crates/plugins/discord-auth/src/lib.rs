@@ -1,5 +1,5 @@
 #![allow(clippy::missing_safety_doc)] // WASM ABI exports: 安全契约见 docs/PLUGIN_ABI.md
-use rustineverything_sdk::{
+use sdk::{
   AuthProviderConfig, AuthProviderDisplay, PluginManifest, StandardUser, alloc, capabilities,
   dealloc, pack_json,
 };

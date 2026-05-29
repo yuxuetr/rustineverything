@@ -9,7 +9,7 @@
 //!
 //! ## 用法
 //! ```rust
-//! # use rustineverything_core::error::{AppError, AppResult};
+//! # use app_core::error::{AppError, AppResult};
 //! fn parse_id(s: &str) -> AppResult<i64> {
 //!     s.parse::<i64>()
 //!         .map_err(|e| AppError::validation(format!("invalid id: {}", e)))

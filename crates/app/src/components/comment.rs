@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
-use rustineverything_module_comments::server::{get_comments, post_comment};
-use rustineverything_module_uploads::server::upload_image;
-use rustineverything_widgets::Markdown;
+use module_comments::server::{get_comments, post_comment};
+use module_uploads::server::upload_image;
+use widgets::Markdown;
 
 #[derive(PartialEq, Props, Clone)]
 pub struct CommentBoxProps {

@@ -3,9 +3,9 @@ use crate::server::{
 };
 use dioxus::prelude::try_use_context;
 use dioxus::prelude::*;
-use rustineverything_core::i18n::Language;
-use rustineverything_module_forum::forum::DiscussionPanel;
-use rustineverything_widgets::Markdown;
+use app_core::i18n::Language;
+use module_forum::forum::DiscussionPanel;
+use widgets::Markdown;
 
 fn use_language_ctx() -> Language {
   try_use_context::<Signal<Language>>().map(|s| s()).unwrap_or(Language::Zh)

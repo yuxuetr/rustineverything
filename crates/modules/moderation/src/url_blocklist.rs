@@ -28,8 +28,8 @@
 
 use async_trait::async_trait;
 
-use rustineverything_core::engines::moderation::Verdict;
-use rustineverything_sdk::ModerationSubmission;
+use app_core::engines::moderation::Verdict;
+use sdk::ModerationSubmission;
 
 use crate::stage::AsyncModerationStage;
 
@@ -217,7 +217,7 @@ pub fn match_blocklist<'a>(host: &str, patterns: &'a [String]) -> Option<&'a str
 #[cfg(test)]
 mod tests {
   use super::*;
-  use rustineverything_core::engines::moderation::ModerationLabel;
+  use app_core::engines::moderation::ModerationLabel;
 
   // ── URL 提取 ─────────────────────────────────────────────
 

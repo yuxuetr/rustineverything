@@ -30,7 +30,7 @@
 //! }
 //! ```
 
-use rustineverything_sdk::{capabilities, pack_json, read_input, PluginManifest};
+use sdk::{capabilities, pack_json, read_input, PluginManifest};
 use serde::{Deserialize, Serialize};
 
 // ────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ struct WireMessage<'a> {
   content: Vec<WireContent<'a>>,
 }
 
-/// 与 `rustineverything_llm::LlmContentBlock` 字面对齐的内容块。
+/// 与 `llm::LlmContentBlock` 字面对齐的内容块。
 /// 插件 crate 不依赖 llm crate（避免 wasm 体积爆炸），手写同字面 JSON。
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

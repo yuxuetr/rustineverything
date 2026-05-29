@@ -10,9 +10,9 @@
 //!
 //! ## 调用模板
 //! ```ignore
-//! use rustineverything_module_moderation::hook::evaluate_submission;
-//! use rustineverything_module_moderation::ModerationLabel;
-//! use rustineverything_sdk::ModerationSubmission;
+//! use module_moderation::hook::evaluate_submission;
+//! use module_moderation::ModerationLabel;
+//! use sdk::ModerationSubmission;
 //!
 //! let verdict = evaluate_submission(
 //!   ModerationSubmission::new(comment_body)
@@ -32,10 +32,10 @@
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, RwLock};
 
-use rustineverything_core::engines::moderation::{ModerationLabel, Verdict};
-use rustineverything_core::settings::SiteConfig;
-use rustineverything_llm::{default_client_from_env, LlmClient};
-use rustineverything_sdk::{ImageRef, ModerationSubmission};
+use app_core::engines::moderation::{ModerationLabel, Verdict};
+use app_core::settings::SiteConfig;
+use llm::{default_client_from_env, LlmClient};
+use sdk::{ImageRef, ModerationSubmission};
 
 use crate::pipeline::ModerationPipeline;
 
@@ -46,11 +46,11 @@ static SHARED: OnceLock<RwLock<Arc<ModerationPipeline>>> = OnceLock::new();
 /// 从 `site.json` + env 重新构造一条 pipeline。
 fn build_pipeline() -> ModerationPipeline {
   let site = SiteConfig::from_file(
-    rustineverything_core::utils::get_asset_root().join("site.json").to_str().unwrap_or_default(),
+    app_core::utils::get_asset_root().join("site.json").to_str().unwrap_or_default(),
   )
   .unwrap_or_default();
 
-  let plugin_dir: PathBuf = rustineverything_core::utils::get_asset_root().join("plugins");
+  let plugin_dir: PathBuf = app_core::utils::get_asset_root().join("plugins");
   let llm: Option<Arc<dyn LlmClient>> = default_client_from_env().map(Arc::from);
 
   let pipeline = ModerationPipeline::from_site_config(&site, &plugin_dir, llm);
@@ -141,7 +141,7 @@ pub async fn enqueue_if_flagged(
   if verdict.label != ModerationLabel::Flag {
     return;
   }
-  use rustineverything_core::entities::moderation_queue;
+  use app_core::entities::moderation_queue;
   use sea_orm::{ActiveModelTrait, ActiveValue::Set};
 
   let images_json =

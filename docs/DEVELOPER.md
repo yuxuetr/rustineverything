@@ -59,10 +59,10 @@ clone 只复制一个 `Arc`，因此全局用一个 `OnceCell` 复用，避免�
 
 ```rust
 // 启动时调用一次（main.rs，读 DATABASE_URL）
-rustineverything_core::db::init_pool(&db_url).await?;
+app_core::db::init_pool(&db_url).await?;
 
 // 任意 server fn 里获取共享连接（已初始化则直接返回 clone）
-let db = rustineverything_core::db::get_or_init_pool().await?;
+let db = app_core::db::get_or_init_pool().await?;
 ```
 
 API：
@@ -85,7 +85,7 @@ API：
 由于 WASM 沙箱无法直接理解 Rust 的 `String` 或 `Vec<u8>`，插件必须遵循一套底层的内存管理协议来与宿主通信。
 
 #### 必须导出的底层函数
-每个插件必须导出以下三个 C 兼容接口（推荐直接使用 `rustineverything-sdk` 提供的默认实现）：
+每个插件必须导出以下三个 C 兼容接口（推荐直接使用 `sdk` 提供的默认实现）：
 
 1.  **`alloc(size: usize) -> *mut u8`**
     *   **作用**：由宿主调用，在插件内存中为输入数据预留空间。
@@ -125,13 +125,13 @@ API：
 crate-type = ["cdylib"]
 
 [dependencies]
-rustineverything-sdk = { path = "../../sdk" }
+sdk = { path = "../../sdk" }
 serde_json = "1.0"
 ```
 
 #### 第二步：实现逻辑 (src/lib.rs)
 ```rust
-use rustineverything_sdk::{alloc, dealloc};
+use sdk::{alloc, dealloc};
 use std::slice;
 
 #[no_mangle]

@@ -157,5 +157,5 @@ pub struct Episode {
 运行测试：
 
 ```bash
-cargo test -p rustineverything-module-podcast --features server --lib
+cargo test -p module-podcast --features server --lib
 ```

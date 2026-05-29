@@ -7,7 +7,7 @@ use crate::server::{
   ModerationQueueRow, ADMIN_PAGE_SIZE,
 };
 use dioxus::prelude::*;
-use rustineverything_core::session::{SessionUser, ALL_ROLES};
+use app_core::session::{SessionUser, ALL_ROLES};
 
 // =============================================================
 // 共享上下文 hooks

@@ -5,7 +5,7 @@ use crate::server::{
   MediaRef,
 };
 use dioxus::prelude::*;
-use rustineverything_widgets::Markdown;
+use widgets::Markdown;
 
 // ============================================================
 // Local layout helpers (本模块自用，不污染上层组件树)

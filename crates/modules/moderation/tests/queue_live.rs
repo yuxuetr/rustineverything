@@ -3,14 +3,14 @@
 //!
 //! 默认 `#[ignore]`：要求 `DATABASE_URL` 可用。
 //! ```sh
-//! cargo test -p rustineverything-module-moderation --test queue_live \
+//! cargo test -p module-moderation --test queue_live \
 //!   -- --ignored --nocapture --test-threads=1
 //! ```
 
 use std::path::PathBuf;
 
-use rustineverything_core::engines::moderation::Verdict;
-use rustineverything_module_moderation::enqueue_if_flagged;
+use app_core::engines::moderation::Verdict;
+use module_moderation::enqueue_if_flagged;
 
 fn workspace_root() -> PathBuf {
   PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -43,8 +43,8 @@ async fn setup_db() -> Option<sea_orm::DatabaseConnection> {
   };
   // 跑迁移：可能失败（init.sql 已建过表 / seaql_migrations 表错位），
   // 但只要 moderation_queue 表存在就继续。
-  use rustineverything_migration::MigratorTrait;
-  if let Err(e) = rustineverything_migration::Migrator::up(&db, None).await {
+  use migration::MigratorTrait;
+  if let Err(e) = migration::Migrator::up(&db, None).await {
     eprintln!("warn：sea-orm migration 整体报错: {}", e);
   }
   // 双保险：手动 CREATE TABLE IF NOT EXISTS，不依赖 sea-orm migrator 状态。
@@ -155,7 +155,7 @@ async fn block_verdict_is_noop() {
 }
 
 async fn count_pending(db: &sea_orm::DatabaseConnection) -> u64 {
-  use rustineverything_core::entities::moderation_queue;
+  use app_core::entities::moderation_queue;
   use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
   moderation_queue::Entity::find()
     .filter(moderation_queue::Column::Status.eq("pending"))
@@ -165,7 +165,7 @@ async fn count_pending(db: &sea_orm::DatabaseConnection) -> u64 {
 }
 
 async fn cleanup_test_rows(db: &sea_orm::DatabaseConnection) {
-  use rustineverything_core::entities::moderation_queue;
+  use app_core::entities::moderation_queue;
   use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
   let _ = moderation_queue::Entity::delete_many()
     .filter(moderation_queue::Column::RefPath.eq("blog:live-test"))

@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-module-cases"
+name = "module-cases"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,11 +8,11 @@ dioxus = { workspace = true, features = ["fullstack", "router"] }
 serde = { workspace = true, features = ["derive"] }
 serde_yaml = { workspace = true, optional = true }
 chrono = { workspace = true, features = ["serde"] }
-rustineverything-sdk = { path = "../../sdk" }
-rustineverything-widgets = { path = "../../widgets" }
-rustineverything-core = { path = "../../core" }
-rustineverything-module-blog = { path = "../blog" }
-rustineverything-module-forum = { path = "../forum" }
+sdk = { path = "../../sdk" }
+widgets = { path = "../../widgets" }
+app-core = { path = "../../core" }
+module-blog = { path = "../blog" }
+module-forum = { path = "../forum" }
 tracing = { workspace = true }
 
 [dev-dependencies]
@@ -22,6 +22,6 @@ tempfile = "3"
 server = [
     "dioxus/server",
     "dep:serde_yaml",
-    "rustineverything-widgets/server",
-    "rustineverything-module-forum/server",
+    "widgets/server",
+    "module-forum/server",
 ]

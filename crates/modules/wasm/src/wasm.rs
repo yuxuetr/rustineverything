@@ -1,7 +1,7 @@
 //! Wasm 板块的落地页与文章详情页。导航用 `<a href>`，避免对 app `Route` 的循环依赖。
 
 use dioxus::prelude::*;
-use rustineverything_widgets::{parse_mdx, Markdown};
+use widgets::{parse_mdx, Markdown};
 
 use crate::server::{get_wasm_article, list_wasm_articles, ArticleSummary};
 use crate::text::{

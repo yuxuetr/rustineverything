@@ -111,13 +111,13 @@ RUN cd crates/app && npm run build
 RUN bash scripts/build_themes.sh
 
 # 3. dx bundle：web 全栈 + release 优化，
-#    产物在 /tmp/target/dx/rustineverything-app/release/web/{public,server}
-RUN cd crates/app && dx bundle --platform web --release --package rustineverything-app
+#    产物在 /tmp/target/dx/app/release/web/{public,server}
+RUN cd crates/app && dx bundle --platform web --release --package app
 
 # 4. 收敛产物到统一目录，方便 runtime 阶段单层 COPY
 RUN mkdir -p /out \
- && cp -r /tmp/target/dx/rustineverything-app/release/web/public /out/public \
- && cp /tmp/target/dx/rustineverything-app/release/web/server /out/server \
+ && cp -r /tmp/target/dx/app/release/web/public /out/public \
+ && cp /tmp/target/dx/app/release/web/server /out/server \
  && cp -r assets /out/assets
 
 

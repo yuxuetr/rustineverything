@@ -211,10 +211,10 @@ fn walk_docs(base: &Path, dir: &Path, out: &mut Vec<IndexedDocument>) {
 
 #[cfg(feature = "server")]
 async fn collect_topics() -> Result<Vec<IndexedDocument>, String> {
-  use rustineverything_core::entities::topic;
+  use app_core::entities::topic;
   use sea_orm::EntityTrait;
 
-  let db = match rustineverything_core::db::get_or_init_pool().await {
+  let db = match app_core::db::get_or_init_pool().await {
     Ok(db) => db,
     Err(e) => {
       // 数据库不可用时不应阻塞索引构建
@@ -240,7 +240,7 @@ async fn collect_topics() -> Result<Vec<IndexedDocument>, String> {
 
 #[cfg(feature = "server")]
 fn collect_cases() -> Vec<IndexedDocument> {
-  use rustineverything_module_cases::server::scan_cases;
+  use module_cases::server::scan_cases;
 
   scan_cases()
     .into_iter()
@@ -280,7 +280,7 @@ pub async fn collect_documents() -> Result<Vec<IndexedDocument>, String> {
 
   #[cfg(feature = "server")]
   {
-    let engine = rustineverything_core::engines::module::default_module_engine();
+    let engine = app_core::engines::module::default_module_engine();
     let enabled = engine.enabled_ids();
     let is_on = |module_id: &str| enabled.iter().any(|s| s == module_id);
     all.retain(|d| match d.kind.as_str() {
@@ -300,7 +300,7 @@ pub async fn collect_documents() -> Result<Vec<IndexedDocument>, String> {
 
 /// Phase 3.4：按 module id 过滤已汇总的索引文档，便于上层显式调用。
 ///
-/// `enabled_module_ids` 来自 [`rustineverything_core::engines::module::ModuleEngine::enabled_ids`]。
+/// `enabled_module_ids` 来自 [`app_core::engines::module::ModuleEngine::enabled_ids`]。
 /// kind → module id 同 [`collect_documents`]。该函数纯逻辑，便于单测覆盖。
 pub fn filter_documents_by_enabled(
   docs: Vec<IndexedDocument>,

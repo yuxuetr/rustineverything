@@ -2,7 +2,7 @@
 //!
 //! 这些测试 **默认 ignored**，仅当显式指定 `--ignored` 时运行：
 //! ```sh
-//! cargo test --features server -p rustineverything-core -- --ignored --test-threads=1
+//! cargo test --features server -p app-core -- --ignored --test-threads=1
 //! ```
 //!
 //! ## 要求
@@ -22,7 +22,7 @@
 //! 如果对应的 env 未配置，测试 `early return` 并提示。这样可在不同 CI
 //! / 本地环境下「只跑配置好的那一种」。
 
-use rustineverything_llm::{
+use llm::{
   AnthropicChat, LlmClient, LlmConfig, LlmMessage, LlmProvider, OpenAiChat,
 };
 

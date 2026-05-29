@@ -6,7 +6,7 @@ pub mod search;
 pub mod server;
 pub mod text;
 
-use rustineverything_sdk::AppModule;
+use sdk::AppModule;
 
 pub struct SearchModule;
 

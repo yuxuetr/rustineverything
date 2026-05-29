@@ -90,10 +90,10 @@ pub async fn upload_image(name: String, data_base64: String) -> Result<String, S
   #[cfg(feature = "server")]
   {
     use base64::Engine as _;
-    use rustineverything_core::engines::moderation::ModerationLabel;
-    use rustineverything_core::session::current_session_user;
-    use rustineverything_module_moderation::{enqueue_if_flagged, evaluate_submission};
-    use rustineverything_sdk::{ImageRef, ModerationSubmission};
+    use app_core::engines::moderation::ModerationLabel;
+    use app_core::session::current_session_user;
+    use module_moderation::{enqueue_if_flagged, evaluate_submission};
+    use sdk::{ImageRef, ModerationSubmission};
 
     // 1. 取出 Base64 负载并按长度估算提前拒绝超大负载（写盘前第一道防线）
     let base64_str = check_upload_size(&data_base64).map_err(ServerFnError::new)?;
@@ -169,7 +169,7 @@ pub async fn upload_image(name: String, data_base64: String) -> Result<String, S
 
     // 9. Flag → 入审核队列。ref_id 留 None（upload 无独立业务表）；
     //    队列里记录保存后的 URL 让 admin 可以直接预览。
-    let db_opt = rustineverything_core::db::get_or_init_pool().await.ok();
+    let db_opt = app_core::db::get_or_init_pool().await.ok();
     if let Some(db) = db_opt {
       enqueue_if_flagged(
         &db,

@@ -10,8 +10,8 @@ use crate::components::theme_picker::use_theme_version_provider;
 use crate::i18n::init_i18n;
 use crate::routes::Route;
 use crate::server::{get_aggregated_theme_css, get_current_user};
-use rustineverything_core::session::SessionUser;
-use rustineverything_module_search::search::{use_search_open_provider, SearchModal};
+use app_core::session::SessionUser;
+use module_search::search::{use_search_open_provider, SearchModal};
 
 /// Static assets used by the application.
 // Dioxus 0.7 默认在 crate root 的 assets 目录下寻找
@@ -25,9 +25,9 @@ fn main() {
   // Phase 2.1 / 2.2: 启动期一次性注册 MDX 嵌入组件。
   // 在 server 和 client 两边都调用，用于 SSR + hydration 双边 registry 一致。
   // 1) widgets 内置 9 个默认组件 (YouTube / Bilibili / 5 色 / Underline / Strikethrough)
-  rustineverything_widgets::register_default_components();
+  widgets::register_default_components();
   // 2) 各业务模块注册自身提供的组件 (PodcastCard ...)
-  rustineverything_module_podcast::register_components();
+  module_podcast::register_components();
 
   // Server: customize the Axum router to serve blog post static assets
   #[cfg(feature = "server")]
@@ -57,7 +57,7 @@ fn main() {
 
     // 安全门禁：启动时必须提供关键环境变量，避免 fallback 到不安全默认值
     // 1) JWT_SECRET必须配置（panic on missing）
-    let _ = rustineverything_core::session::get_jwt_secret();
+    let _ = app_core::session::get_jwt_secret();
     // 2) BASE_URL 必须配置为可访问的公网 / 内网地址
     let base_url =
       std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
@@ -67,7 +67,7 @@ fn main() {
     //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
     //    成功连上数据库后再跑 sea-orm-migration（Phase 7.1）。
     if let Ok(db_url) = std::env::var("DATABASE_URL") {
-      match rustineverything_core::db::init_pool(&db_url).await {
+      match app_core::db::init_pool(&db_url).await {
         Err(e) => {
           tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)")
         }
@@ -76,11 +76,11 @@ fn main() {
           // 自动迁移：用同一连接池跑 sea-orm-migration。
           // 失败仅日志，不退出，避免因为 schema 已存在的细节差异（例如
           // init.sql 已手动落地）阻塞启动；运维通过日志确认即可。
-          match rustineverything_core::db::get_or_init_pool().await {
+          match app_core::db::get_or_init_pool().await {
             Err(e) => tracing::error!(error = %e, "startup: cannot get pool for migration"),
             Ok(db) => {
-              use rustineverything_migration::MigratorTrait;
-              match rustineverything_migration::Migrator::up(&db, None).await {
+              use migration::MigratorTrait;
+              match migration::Migrator::up(&db, None).await {
                 Ok(()) => tracing::info!("startup: schema migrations applied"),
                 Err(e) => tracing::error!(error = %e, "startup: migration failed"),
               }
@@ -97,7 +97,7 @@ fn main() {
     // 并 `Box::leak` 为静态生命周期字符串，方便下面 ServeDir
     // format! 调用（启动期仅泄露一次，不会被锁定。）
     let assets_root: &'static str = Box::leak(
-      rustineverything_core::utils::get_asset_root()
+      app_core::utils::get_asset_root()
         .to_string_lossy()
         .into_owned()
         .into_boxed_str(),
@@ -185,16 +185,16 @@ fn main() {
         get(move || {
           let base = sitemap_base.clone();
           async move {
-            use rustineverything_widgets::{build_sitemap_xml, ContentEntry};
+            use widgets::{build_sitemap_xml, ContentEntry};
             // Phase 3.4：按模块开关过滤静态路径与博客条目。
-            let module_engine = rustineverything_core::engines::module::default_module_engine();
+            let module_engine = app_core::engines::module::default_module_engine();
             let enabled = module_engine.enabled_ids();
             let is_on = |id: &str| enabled.iter().any(|s| s == id);
 
             // 仅在 blog 启用时枚举博客条目（避免无谓 IO）
             let mut entries: Vec<ContentEntry> = if is_on("blog") {
               let posts =
-                rustineverything_module_blog::server::list_blog_posts().await.unwrap_or_default();
+                module_blog::server::list_blog_posts().await.unwrap_or_default();
               posts
                 .into_iter()
                 .map(|p| ContentEntry {
@@ -227,21 +227,21 @@ fn main() {
             }
             collect_board!(
               "embedded",
-              rustineverything_module_embedded::server::list_embedded_articles,
+              module_embedded::server::list_embedded_articles,
               "/embedded"
             );
-            collect_board!("ai", rustineverything_module_ai::server::list_ai_articles, "/ai");
+            collect_board!("ai", module_ai::server::list_ai_articles, "/ai");
             collect_board!(
               "web3",
-              rustineverything_module_web3::server::list_web3_articles,
+              module_web3::server::list_web3_articles,
               "/web3"
             );
             collect_board!(
               "wasm",
-              rustineverything_module_wasm::server::list_wasm_articles,
+              module_wasm::server::list_wasm_articles,
               "/wasm"
             );
-            collect_board!("cli", rustineverything_module_cli::server::list_cli_articles, "/cli");
+            collect_board!("cli", module_cli::server::list_cli_articles, "/cli");
 
             // 静态路径：首页恒收录；其它模块按开关动态拼接。
             let mut static_paths: Vec<&'static str> = vec!["/"];
@@ -292,14 +292,14 @@ fn main() {
         get(move || {
           let base = feed_base.clone();
           async move {
-            use rustineverything_widgets::{build_atom_feed, ContentEntry};
+            use widgets::{build_atom_feed, ContentEntry};
             // Phase 3.4：blog 关闭时输出空 feed，但保留站点元信息。
-            let module_engine = rustineverything_core::engines::module::default_module_engine();
+            let module_engine = app_core::engines::module::default_module_engine();
             let blog_on = module_engine.is_enabled("blog");
 
             let is_on = |id: &str| module_engine.enabled_ids().iter().any(|s| s == id);
             let mut entries: Vec<ContentEntry> = if blog_on {
-              rustineverything_module_blog::server::list_blog_posts()
+              module_blog::server::list_blog_posts()
                 .await
                 .unwrap_or_default()
                 .into_iter()
@@ -333,28 +333,28 @@ fn main() {
             }
             collect_board!(
               "embedded",
-              rustineverything_module_embedded::server::list_embedded_articles,
+              module_embedded::server::list_embedded_articles,
               "/embedded"
             );
-            collect_board!("ai", rustineverything_module_ai::server::list_ai_articles, "/ai");
+            collect_board!("ai", module_ai::server::list_ai_articles, "/ai");
             collect_board!(
               "web3",
-              rustineverything_module_web3::server::list_web3_articles,
+              module_web3::server::list_web3_articles,
               "/web3"
             );
             collect_board!(
               "wasm",
-              rustineverything_module_wasm::server::list_wasm_articles,
+              module_wasm::server::list_wasm_articles,
               "/wasm"
             );
-            collect_board!("cli", rustineverything_module_cli::server::list_cli_articles, "/cli");
+            collect_board!("cli", module_cli::server::list_cli_articles, "/cli");
 
             // 全站按日期降序，取最近 50 篇。
             entries.sort_by(|a, b| b.date.cmp(&a.date));
             entries.truncate(50);
             // 取站点元信息：如取不到 site.json 则走默认。
-            let cfg = rustineverything_core::settings::SiteConfig::from_file(
-              rustineverything_core::utils::get_asset_root()
+            let cfg = app_core::settings::SiteConfig::from_file(
+              app_core::utils::get_asset_root()
                 .join("site.json")
                 .to_str()
                 .unwrap_or_default(),
@@ -373,7 +373,7 @@ fn main() {
         get(move || {
           let base = robots_base.clone();
           async move {
-            let body = rustineverything_widgets::build_robots_txt(&base);
+            let body = widgets::build_robots_txt(&base);
             axum::response::Response::builder()
               .header("content-type", "text/plain; charset=utf-8")
               .body(axum::body::Body::from(body))

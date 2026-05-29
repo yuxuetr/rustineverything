@@ -265,9 +265,9 @@ fn build_topic_ref(kind: Option<String>, path: Option<String>) -> Option<TopicRe
 }
 
 #[cfg(feature = "server")]
-fn current_session_user() -> Option<rustineverything_core::session::SessionUser> {
+fn current_session_user() -> Option<app_core::session::SessionUser> {
   use dioxus::fullstack::FullstackContext;
-  use rustineverything_core::session::parse_session_from_cookie_header;
+  use app_core::session::parse_session_from_cookie_header;
 
   let ctx = FullstackContext::current()?;
   let parts = ctx.parts_mut();
@@ -277,13 +277,13 @@ fn current_session_user() -> Option<rustineverything_core::session::SessionUser>
 }
 
 #[cfg(feature = "server")]
-fn require_session() -> Result<rustineverything_core::session::SessionUser, ServerFnError> {
+fn require_session() -> Result<app_core::session::SessionUser, ServerFnError> {
   current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))
 }
 
 #[cfg(feature = "server")]
 async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
-  rustineverything_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
+  app_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
 }
 
 #[cfg(feature = "server")]
@@ -293,8 +293,8 @@ fn fmt_dt(dt: chrono::DateTime<chrono::FixedOffset>) -> String {
 
 #[cfg(feature = "server")]
 fn topic_to_summary(
-  t: rustineverything_core::entities::topic::Model,
-  author: Option<&rustineverything_core::entities::user::Model>,
+  t: app_core::entities::topic::Model,
+  author: Option<&app_core::entities::user::Model>,
 ) -> TopicSummary {
   let reference = build_topic_ref(t.ref_kind.clone(), t.ref_path.clone());
   TopicSummary {
@@ -324,7 +324,7 @@ pub async fn list_topics(
 ) -> Result<Vec<TopicSummary>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{topic, user as user_entity};
+    use app_core::entities::{topic, user as user_entity};
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
     let db = open_db().await?;
     let page = page.unwrap_or(0) as u64;
@@ -357,7 +357,7 @@ pub async fn list_topics(
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
     };
-    let user_map: std::collections::HashMap<i32, rustineverything_core::entities::user::Model> =
+    let user_map: std::collections::HashMap<i32, app_core::entities::user::Model> =
       users.into_iter().map(|u| (u.id, u)).collect();
 
     Ok(
@@ -384,7 +384,7 @@ pub async fn list_topics_by_ref(
 ) -> Result<Vec<TopicSummary>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{topic, user as user_entity};
+    use app_core::entities::{topic, user as user_entity};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
     if kind.is_empty() || path.is_empty() {
@@ -412,7 +412,7 @@ pub async fn list_topics_by_ref(
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
     };
-    let user_map: std::collections::HashMap<i32, rustineverything_core::entities::user::Model> =
+    let user_map: std::collections::HashMap<i32, app_core::entities::user::Model> =
       users.into_iter().map(|u| (u.id, u)).collect();
 
     Ok(
@@ -436,7 +436,7 @@ pub async fn list_topics_by_ref(
 pub async fn list_tags() -> Result<Vec<TagSummary>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::topic;
+    use app_core::entities::topic;
     use sea_orm::{ColumnTrait, EntityTrait, FromQueryResult, Order, QueryOrder, QuerySelect};
 
     #[derive(FromQueryResult)]
@@ -469,7 +469,7 @@ pub async fn list_tags() -> Result<Vec<TagSummary>, ServerFnError> {
 pub async fn get_topic(id: i32) -> Result<Option<TopicDetail>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{topic, topic_reply, user as user_entity};
+    use app_core::entities::{topic, topic_reply, user as user_entity};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
     let db = open_db().await?;
@@ -510,7 +510,7 @@ pub async fn get_topic(id: i32) -> Result<Option<TopicDetail>, ServerFnError> {
     };
     let reply_user_map: std::collections::HashMap<
       i32,
-      rustineverything_core::entities::user::Model,
+      app_core::entities::user::Model,
     > = reply_users.into_iter().map(|u| (u.id, u)).collect();
 
     let replies: Vec<Reply> = reply_rows
@@ -556,7 +556,7 @@ pub async fn create_topic(input: NewTopicInput) -> Result<TopicSummary, ServerFn
   #[cfg(feature = "server")]
   {
     use chrono::Utc;
-    use rustineverything_core::entities::topic;
+    use app_core::entities::topic;
     use sea_orm::{ActiveValue::Set, EntityTrait};
 
     validate_new_topic(&input).map_err(ServerFnError::new)?;
@@ -594,7 +594,7 @@ pub async fn create_topic(input: NewTopicInput) -> Result<TopicSummary, ServerFn
     enqueue_after_insert(&db, &outcome, "topic", inserted.id as i64, &ref_path, user.id, &combined)
       .await;
 
-    let author = rustineverything_core::entities::user::Entity::find_by_id(user.id)
+    let author = app_core::entities::user::Entity::find_by_id(user.id)
       .one(&db)
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -612,7 +612,7 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
   #[cfg(feature = "server")]
   {
     use chrono::Utc;
-    use rustineverything_core::entities::{topic, topic_reply};
+    use app_core::entities::{topic, topic_reply};
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 
     validate_new_reply(&content).map_err(ServerFnError::new)?;
@@ -685,7 +685,7 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
 pub async fn list_my_topics() -> Result<Vec<TopicSummary>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::entities::{topic, user as user_entity};
+    use app_core::entities::{topic, user as user_entity};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
     let user = match current_session_user() {
@@ -871,7 +871,7 @@ mod tests {
 /// 给 `create_topic` / `post_reply` 复用的审核结果，便于复核入队。
 #[cfg(feature = "server")]
 struct ModerationOutcome {
-  verdict: rustineverything_core::engines::moderation::Verdict,
+  verdict: app_core::engines::moderation::Verdict,
   image_urls: Vec<String>,
 }
 
@@ -883,10 +883,10 @@ async fn moderate_or_reject(
   kind: &str,
   ref_path: &str,
 ) -> Result<ModerationOutcome, ServerFnError> {
-  use rustineverything_module_moderation::{
+  use module_moderation::{
     absolutize_image_url, evaluate_submission, extract_image_urls, ModerationLabel,
   };
-  use rustineverything_sdk::{ImageRef, ModerationSubmission};
+  use sdk::{ImageRef, ModerationSubmission};
 
   let base_url = std::env::var("BASE_URL").unwrap_or_default();
   let image_urls: Vec<String> =
@@ -930,7 +930,7 @@ async fn enqueue_after_insert(
   user_id: i32,
   content: &str,
 ) {
-  rustineverything_module_moderation::enqueue_if_flagged(
+  module_moderation::enqueue_if_flagged(
     db,
     &outcome.verdict,
     kind,

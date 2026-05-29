@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-module-blog"
+name = "module-blog"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,7 +7,7 @@ edition = "2021"
 dioxus = { workspace = true, features = ["fullstack", "router"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-rustineverything-sdk = { path = "../../sdk" }
+sdk = { path = "../../sdk" }
 serde_yaml = "0.9"
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }

@@ -26,7 +26,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use rustineverything_sdk::{PluginManifest, SDK_ABI_VERSION};
+use sdk::{PluginManifest, SDK_ABI_VERSION};
 
 use super::{Engine, EngineContext};
 use crate::error::{AppError, AppResult};
@@ -186,7 +186,7 @@ impl Engine for PluginEngine {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use rustineverything_sdk::{capabilities, PluginManifest};
+  use sdk::{capabilities, PluginManifest};
 
   fn make_engine() -> PluginEngine {
     PluginEngine::new(Arc::new(crate::PluginManager::new()))

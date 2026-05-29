@@ -9,6 +9,6 @@ authors = ["yuxuetr"]
 crate-type = ["cdylib"]
 
 [dependencies]
-rustineverything-sdk = { path = "../../crates/sdk" }
+sdk = { path = "../../crates/sdk" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

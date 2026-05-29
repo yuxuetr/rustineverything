@@ -86,8 +86,8 @@ jobs:
         with:
           shared-key: ci-server
       # 仅 check 而非完整 build，CI 速度更快；产物的最终编译由部署管线负责。
-      - name: cargo check --features server -p rustineverything-app
-        run: cargo check --features server -p rustineverything-app
+      - name: cargo check --features server -p app
+        run: cargo check --features server -p app
 
   build-wasm-plugins:
     name: Build wasm plugins

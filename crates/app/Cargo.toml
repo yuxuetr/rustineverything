@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-app"
+name = "app"
 version = "0.1.0"
 authors = ["yuxuetr <54.yeying@gmail.com>"]
 edition = "2021"
@@ -10,23 +10,23 @@ dioxus = { workspace = true, features = ["router", "fullstack", "html"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 # 核心库在前端不需要 server 特性
-rustineverything-core = { path = "../core" }
-rustineverything-widgets = { path = "../widgets" }
-rustineverything-module-blog = { path = "../modules/blog" }
-rustineverything-module-podcast = { path = "../modules/podcast" }
-rustineverything-module-course = { path = "../modules/course" }
-rustineverything-module-forum = { path = "../modules/forum" }
-rustineverything-module-admin = { path = "../modules/admin" }
-rustineverything-module-search = { path = "../modules/search" }
-rustineverything-module-cases = { path = "../modules/cases" }
-rustineverything-module-docs = { path = "../modules/docs" }
-rustineverything-module-comments = { path = "../modules/comments" }
-rustineverything-module-uploads = { path = "../modules/uploads" }
-rustineverything-module-embedded = { path = "../modules/embedded" }
-rustineverything-module-ai = { path = "../modules/ai" }
-rustineverything-module-web3 = { path = "../modules/web3" }
-rustineverything-module-wasm = { path = "../modules/wasm" }
-rustineverything-module-cli = { path = "../modules/cli" }
+app-core = { path = "../core" }
+widgets = { path = "../widgets" }
+module-blog = { path = "../modules/blog" }
+module-podcast = { path = "../modules/podcast" }
+module-course = { path = "../modules/course" }
+module-forum = { path = "../modules/forum" }
+module-admin = { path = "../modules/admin" }
+module-search = { path = "../modules/search" }
+module-cases = { path = "../modules/cases" }
+module-docs = { path = "../modules/docs" }
+module-comments = { path = "../modules/comments" }
+module-uploads = { path = "../modules/uploads" }
+module-embedded = { path = "../modules/embedded" }
+module-ai = { path = "../modules/ai" }
+module-web3 = { path = "../modules/web3" }
+module-wasm = { path = "../modules/wasm" }
+module-cli = { path = "../modules/cli" }
 pulldown-cmark = "0.13.0"
 chrono = { workspace = true, features = ["serde"] }
 
@@ -42,7 +42,7 @@ serde_yaml = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
-rustineverything-migration = { path = "../migration", optional = true }
+migration = { path = "../migration", optional = true }
 
 [features]
 default = ["web"]
@@ -52,23 +52,23 @@ mobile = ["dioxus/mobile"]
 # 仅在 server 特性开启时，激活后端依赖和 core 的 server 特性
 server = [
     "dioxus/server",
-    "rustineverything-core/server",
-    "rustineverything-widgets/server",
-    "rustineverything-module-blog/server",
-    "rustineverything-module-podcast/server",
-    "rustineverything-module-course/server",
-    "rustineverything-module-forum/server",
-    "rustineverything-module-admin/server",
-    "rustineverything-module-search/server",
-    "rustineverything-module-cases/server",
-    "rustineverything-module-docs/server",
-    "rustineverything-module-comments/server",
-    "rustineverything-module-uploads/server",
-    "rustineverything-module-embedded/server",
-    "rustineverything-module-ai/server",
-    "rustineverything-module-web3/server",
-    "rustineverything-module-wasm/server",
-    "rustineverything-module-cli/server",
+    "app-core/server",
+    "widgets/server",
+    "module-blog/server",
+    "module-podcast/server",
+    "module-course/server",
+    "module-forum/server",
+    "module-admin/server",
+    "module-search/server",
+    "module-cases/server",
+    "module-docs/server",
+    "module-comments/server",
+    "module-uploads/server",
+    "module-embedded/server",
+    "module-ai/server",
+    "module-web3/server",
+    "module-wasm/server",
+    "module-cli/server",
     "dep:tokio",
     "dep:axum",
     "dep:dotenvy",
@@ -78,7 +78,7 @@ server = [
     "dep:serde_yaml",
     "dep:rand",
     "dep:tracing-subscriber",
-    "dep:rustineverything-migration",
+    "dep:migration",
 ]
 
 [dev-dependencies]

@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-module-moderation"
+name = "module-moderation"
 version = "0.1.0"
 edition = "2021"
 description = "LLM 审核流水线：把 WASM 插件 (build_prompt + parse_verdict) 与 LlmClient 串起来"
@@ -8,7 +8,7 @@ description = "LLM 审核流水线：把 WASM 插件 (build_prompt + parse_verdi
 # 调用方按需在自己的 server feature 下显式启用。
 
 [lib]
-name = "rustineverything_module_moderation"
+name = "module_moderation"
 
 [dependencies]
 async-trait = "0.1"
@@ -24,11 +24,11 @@ tracing = { workspace = true }
 # - core::entities::moderation_queue 提供入队 entity
 # - llm 提供 LlmClient + LlmMessage / LlmRole
 # - sdk 提供 ABI 数据类型 (ModerationSubmission / ModerationVerdict)
-rustineverything-core = { path = "../../core", features = ["server"] }
-rustineverything-llm = { path = "../../llm" }
-rustineverything-sdk = { path = "../../sdk" }
+app-core = { path = "../../core", features = ["server"] }
+llm = { path = "../../llm" }
+sdk = { path = "../../sdk" }
 
 [dev-dependencies]
 mockito = "1.5"
 dotenvy = "0.15"
-rustineverything-migration = { path = "../../migration" }
+migration = { path = "../../migration" }

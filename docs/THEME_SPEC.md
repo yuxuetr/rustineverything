@@ -113,7 +113,7 @@ Cookie 名:  site_theme
 最小可行结构：
 
 ```rust
-use rustineverything_sdk::{pack_output, capabilities, PluginManifest};
+use sdk::{pack_output, capabilities, PluginManifest};
 
 #[no_mangle]
 pub extern "C" fn get_theme_css(_ptr: i32, _len: i32) -> u64 {
@@ -135,7 +135,7 @@ pub extern "C" fn get_theme_css(_ptr: i32, _len: i32) -> u64 {
 pub extern "C" fn get_manifest(_ptr: i32, _len: i32) -> u64 {
     let m = PluginManifest::new("theme-sunset", "Sunset", "0.1.0")
         .with_capability(capabilities::THEME);
-    rustineverything_sdk::pack_json(&m)
+    sdk::pack_json(&m)
 }
 ```
 
@@ -212,7 +212,7 @@ RSX 渲染对应壳，Outlet::<Route> 嵌入主内容
 - `crates/core/src/engines/theme.rs`：4 个 ThemeEngine 单测 + theme_with_override 11 个纯函数单测
 - `crates/core/src/engines/layout.rs`：4 个 LayoutEngine 单测（注册 / 当前 / 默认）
 
-全部 `cargo test --features server -p rustineverything-core` 绿。
+全部 `cargo test --features server -p app-core` 绿。
 
 ## 11. 后续阶段
 

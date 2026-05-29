@@ -6,7 +6,7 @@
 
 ## 内置组件（widgets crate 提供）
 
-由 `rustineverything_widgets::register_default_components()` 在 app
+由 `widgets::register_default_components()` 在 app
 启动期一次性注册。共 9 个：
 
 ### 视频嵌入

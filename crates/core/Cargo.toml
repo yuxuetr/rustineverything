@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-core"
+name = "app-core"
 version = "0.1.0"
 authors = ["yuxuetr <54.yeying@gmail.com>"]
 edition = "2021"
@@ -12,7 +12,7 @@ serde_json.workspace = true
 wasmi.workspace = true
 sea-orm = { workspace = true, optional = true, features = ["sqlx-postgres", "runtime-tokio-rustls", "macros", "with-chrono"] }
 chrono = { workspace = true, features = ["serde"] }
-rustineverything-sdk = { path = "../sdk" }
+sdk = { path = "../sdk" }
 serde_yaml = { workspace = true }
 oauth2 = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
@@ -30,4 +30,4 @@ server = ["dep:dioxus", "dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest",
 tempfile = "3"
 # 仅用于 live-DB 集成测试（#[ignore]）：在测试库上跑真实 schema 迁移。
 # migration crate 不依赖 core，故无依赖环。
-rustineverything-migration = { path = "../migration" }
+migration = { path = "../migration" }

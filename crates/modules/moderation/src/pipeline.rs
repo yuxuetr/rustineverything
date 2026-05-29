@@ -15,10 +15,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use rustineverything_core::engines::moderation::{ModerationLabel, ModerationThresholds, Verdict};
-use rustineverything_core::settings::SiteConfig;
-use rustineverything_llm::LlmClient;
-use rustineverything_sdk::ModerationSubmission;
+use app_core::engines::moderation::{ModerationLabel, ModerationThresholds, Verdict};
+use app_core::settings::SiteConfig;
+use llm::LlmClient;
+use sdk::ModerationSubmission;
 
 use crate::stage::AsyncModerationStage;
 use crate::{PluginModerationStage, UrlBlocklistStage};
@@ -163,7 +163,7 @@ impl ModerationPipeline {
 mod tests {
   use super::*;
   use async_trait::async_trait;
-  use rustineverything_core::settings::{ModerationSettings, ModerationThresholdsConfig};
+  use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
 
   struct StubStage(&'static str, Verdict);
 

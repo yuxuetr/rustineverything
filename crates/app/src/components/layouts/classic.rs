@@ -16,7 +16,7 @@ use crate::i18n::{t, use_i18n, use_t, Language};
 use crate::routes::Route;
 use crate::server::enabled_module_ids;
 use dioxus::document::eval;
-use rustineverything_module_search::search::SearchButton;
+use module_search::search::SearchButton;
 
 /// Classic shell：完整 Navbar+Footer。`Outlet::<Route>` 嵌于 main 中。
 #[component]

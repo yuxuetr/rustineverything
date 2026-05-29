@@ -20,7 +20,7 @@
 //! - 只导出最少 3 个函数：`get_manifest` / `get_theme_css` / `alloc / dealloc`（后者由 SDK 提供）
 //! - 含纯 Rust 单测（[`palette_has_violet_primary`]），与 wasm runtime 解耦
 
-use rustineverything_sdk::{alloc, capabilities, pack_json, PluginManifest};
+use sdk::{alloc, capabilities, pack_json, PluginManifest};
 use std::slice;
 
 /// Manifest：声明 capability=theme，复用当前 SDK ABI 版本。

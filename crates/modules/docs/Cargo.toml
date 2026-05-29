@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-module-docs"
+name = "module-docs"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,12 +10,12 @@ serde_json.workspace = true
 serde_yaml = { workspace = true, optional = true }
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
-rustineverything-sdk = { path = "../../sdk" }
-rustineverything-widgets = { path = "../../widgets" }
-rustineverything-core = { path = "../../core" }
-rustineverything-module-blog = { path = "../blog" }
-rustineverything-module-course = { path = "../course" }
-rustineverything-module-forum = { path = "../forum" }
+sdk = { path = "../../sdk" }
+widgets = { path = "../../widgets" }
+app-core = { path = "../../core" }
+module-blog = { path = "../blog" }
+module-course = { path = "../course" }
+module-forum = { path = "../forum" }
 
 [dev-dependencies]
 tempfile = "3"
@@ -25,9 +25,9 @@ server = [
     "dioxus/server",
     "dep:tokio",
     "dep:serde_yaml",
-    "rustineverything-widgets/server",
-    "rustineverything-core/server",
-    "rustineverything-module-blog/server",
-    "rustineverything-module-course/server",
-    "rustineverything-module-forum/server",
+    "widgets/server",
+    "app-core/server",
+    "module-blog/server",
+    "module-course/server",
+    "module-forum/server",
 ]

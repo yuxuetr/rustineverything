@@ -1,9 +1,9 @@
 use dioxus::fullstack::{post, ServerFnError};
 use dioxus::prelude::*;
-use rustineverything_core::session::SessionUser;
-use rustineverything_core::settings::SiteConfig;
+use app_core::session::SessionUser;
+use app_core::settings::SiteConfig;
 #[cfg(feature = "server")]
-use rustineverything_core::utils::get_asset_root;
+use app_core::utils::get_asset_root;
 use serde::{Deserialize, Serialize};
 
 // ========== 辅助：从 FullstackContext 读取 Cookie 中的用户 ==========
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "server")]
 fn current_session_user() -> Option<SessionUser> {
   use dioxus::fullstack::FullstackContext;
-  use rustineverything_core::session::parse_session_from_cookie_header;
+  use app_core::session::parse_session_from_cookie_header;
 
   let ctx = FullstackContext::current()?;
   let parts = ctx.parts_mut();
@@ -82,10 +82,10 @@ pub struct PublicPluginInfo {
 pub async fn list_public_plugins() -> Result<Vec<PublicPluginInfo>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::PluginManifest;
+    use app_core::PluginManifest;
 
     let plugin_dir = get_asset_root().join("plugins");
-    let manager = rustineverything_core::shared_plugin_manager();
+    let manager = app_core::shared_plugin_manager();
     let entries = match std::fs::read_dir(&plugin_dir) {
       Ok(e) => e,
       Err(_) => return Ok(vec![]),
@@ -140,7 +140,7 @@ pub async fn translate_server(key: String, lang: String) -> Result<String, Serve
     if !wasm_path.exists() {
       return Ok(key);
     }
-    let manager = rustineverything_core::shared_plugin_manager();
+    let manager = app_core::shared_plugin_manager();
     let input = serde_json::json!({ "key": key, "lang": lang }).to_string();
     manager
       .call_path_with_string(&wasm_path, "translate", &input)
@@ -172,7 +172,7 @@ pub struct ThemeInfo {
 pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::engines::theme::theme_with_override;
+    use app_core::engines::theme::theme_with_override;
 
     let asset_root = get_asset_root();
     let config = SiteConfig::from_file(asset_root.join("site.json").to_str().unwrap_or_default())
@@ -192,7 +192,7 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
     if resolved.is_empty() {
       return Ok(String::new());
     }
-    let manager = rustineverything_core::shared_plugin_manager();
+    let manager = app_core::shared_plugin_manager();
     Ok(manager.aggregate_theme_css_paths(&resolved))
   }
   #[cfg(not(feature = "server"))]
@@ -209,7 +209,7 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
 pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::{capabilities, PluginManifest};
+    use app_core::{capabilities, PluginManifest};
 
     let asset_root = get_asset_root();
     let plugin_dir = asset_root.join("plugins");
@@ -218,7 +218,7 @@ pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
     let stack = config.theme_stack();
     let active_top = stack.last().cloned().unwrap_or_default();
 
-    let manager = rustineverything_core::shared_plugin_manager();
+    let manager = app_core::shared_plugin_manager();
 
     let entries = match std::fs::read_dir(&plugin_dir) {
       Ok(e) => e,
@@ -331,8 +331,8 @@ pub async fn set_user_theme(filename: String) -> Result<(), ServerFnError> {
 // ========== Auth 辅助 (server-only) ==========
 
 #[cfg(feature = "server")]
-fn build_auth_service() -> (rustineverything_core::auth::AuthService, SiteConfig) {
-  use rustineverything_core::auth::{AuthConfig, AuthService};
+fn build_auth_service() -> (app_core::auth::AuthService, SiteConfig) {
+  use app_core::auth::{AuthConfig, AuthService};
 
   // BASE_URL 未配置时 panic，避免生产环境误用 localhost
   let base_url =
@@ -354,7 +354,7 @@ fn find_plugin_filename(site_config: &SiteConfig, provider: &str) -> Option<Stri
 
 #[post("/api/auth/providers")]
 pub async fn get_auth_providers(
-) -> Result<Vec<rustineverything_core::AuthProviderDisplay>, ServerFnError> {
+) -> Result<Vec<app_core::AuthProviderDisplay>, ServerFnError> {
   #[cfg(feature = "server")]
   {
     let (auth_service, site_config) = build_auth_service();
@@ -389,9 +389,9 @@ pub async fn auth_callback_internal(
   code: String,
   provider: String,
   state: Option<String>,
-) -> Result<(String, String), rustineverything_core::error::AppError> {
-  use rustineverything_core::db::get_or_init_pool;
-  use rustineverything_core::session::create_jwt;
+) -> Result<(String, String), app_core::error::AppError> {
+  use app_core::db::get_or_init_pool;
+  use app_core::session::create_jwt;
 
   let (auth_service, site_config) = build_auth_service();
   let plugin_filename = find_plugin_filename(&site_config, &provider)
@@ -452,7 +452,7 @@ pub async fn get_seo_base_url() -> Result<String, ServerFnError> {
 pub async fn enabled_module_ids() -> Result<Vec<String>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    let engine = rustineverything_core::engines::module::default_module_engine();
+    let engine = app_core::engines::module::default_module_engine();
     Ok(engine.enabled_ids())
   }
   #[cfg(not(feature = "server"))]
@@ -474,7 +474,7 @@ pub async fn enabled_module_ids() -> Result<Vec<String>, ServerFnError> {
 pub async fn is_module_enabled(id: String) -> Result<bool, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    let engine = rustineverything_core::engines::module::default_module_engine();
+    let engine = app_core::engines::module::default_module_engine();
     Ok(engine.is_enabled(&id))
   }
   #[cfg(not(feature = "server"))]

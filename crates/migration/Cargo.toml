@@ -1,5 +1,5 @@
 [package]
-name = "rustineverything-migration"
+name = "migration"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,7 +11,7 @@ edition = "2021"
 # 仅在 server feature 下编译；client/wasm 不需要数据库迁移。
 
 [lib]
-name = "rustineverything_migration"
+name = "migration"
 
 [dependencies]
 async-trait = "0.1"

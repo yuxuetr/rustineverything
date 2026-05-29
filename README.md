@@ -23,7 +23,7 @@ cd crates/app && npm install && cd ../..
 cd crates/app && npm run build && cd ../..
 
 # 4. 启动开发服务器
-dx serve --package rustineverything-app
+dx serve --package app
 ```
 
 ## Tailwind CSS 构建

@@ -1,9 +1,9 @@
 use dioxus::prelude::*;
 
 use crate::server::{get_doc_content, list_doc_tree, DocTreeNode};
-use rustineverything_module_course::course::AnnotationLayer;
-use rustineverything_module_forum::forum::DiscussionPanel;
-use rustineverything_widgets::Markdown;
+use module_course::course::AnnotationLayer;
+use module_forum::forum::DiscussionPanel;
+use widgets::Markdown;
 
 /// 给定文档路径段，构造 SPA URL（`/docs/<path>`）。
 fn doc_href(path: &str) -> String {

@@ -1,10 +1,10 @@
 //! 异步审核 stage trait。LLM 调用必须 async，所以与 core 中的同步
-//! [`rustineverything_core::engines::moderation::ModerationStage`] 平行存在。
+//! [`app_core::engines::moderation::ModerationStage`] 平行存在。
 
 use async_trait::async_trait;
 
-use rustineverything_core::engines::moderation::Verdict;
-use rustineverything_sdk::ModerationSubmission;
+use app_core::engines::moderation::Verdict;
+use sdk::ModerationSubmission;
 
 /// 异步 stage。流水线串行调用，可早停于 Block。
 #[async_trait]
@@ -19,7 +19,7 @@ pub trait AsyncModerationStage: Send + Sync {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use rustineverything_core::engines::moderation::ModerationLabel;
+  use app_core::engines::moderation::ModerationLabel;
 
   struct FixedStage(&'static str, Verdict);
 

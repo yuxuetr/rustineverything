@@ -1,6 +1,6 @@
 use dioxus::document::eval;
 use dioxus::prelude::*;
-use rustineverything_core::AuthProviderDisplay;
+use app_core::AuthProviderDisplay;
 
 use crate::i18n::{t, use_i18n, Language};
 use crate::server::get_auth_providers;

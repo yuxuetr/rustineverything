@@ -9,7 +9,7 @@
 //!         │
 //!         ├─ for each PluginModerationStage:
 //!         │     1. plugin.moderation_build_prompt(submission) → Vec<LlmMessage>
-//!         │     2. LlmClient.chat(messages) → LLM 文本（rustineverything-llm）
+//!         │     2. LlmClient.chat(messages) → LLM 文本（llm）
 //!         │     3. plugin.moderation_parse_verdict(text) → Verdict
 //!         │     4. ModerationThresholds::apply → label 升级
 //!         │     5. 早停：任一 Block 立刻返回
@@ -30,8 +30,8 @@
 //!
 //! ## 使用方式
 //! ```ignore
-//! use rustineverything_module_moderation::ModerationPipeline;
-//! use rustineverything_sdk::ModerationSubmission;
+//! use module_moderation::ModerationPipeline;
+//! use sdk::ModerationSubmission;
 //!
 //! // 启动期一次性构造（启用且配了插件才有内容）
 //! let pipeline = ModerationPipeline::from_site_config(&site_cfg, &asset_root);
@@ -62,7 +62,7 @@ pub use stage::AsyncModerationStage;
 pub use url_blocklist::UrlBlocklistStage;
 
 // 重导出常用类型，调用方只需要 use 本 crate 顶层。
-pub use rustineverything_core::engines::moderation::{
+pub use app_core::engines::moderation::{
   ModerationLabel, ModerationThresholds, Verdict,
 };
-pub use rustineverything_sdk::{ModerationSubmission, ModerationVerdict};
+pub use sdk::{ModerationSubmission, ModerationVerdict};

@@ -5,7 +5,7 @@ pub mod server;
 pub mod text;
 pub mod wasm;
 
-use rustineverything_sdk::AppModule;
+use sdk::AppModule;
 
 pub struct WasmModule;
 

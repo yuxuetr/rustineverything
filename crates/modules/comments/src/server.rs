@@ -18,8 +18,8 @@ pub struct Comment {
 pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use rustineverything_core::db::get_or_init_pool;
-    use rustineverything_core::entities::{comment, user};
+    use app_core::db::get_or_init_pool;
+    use app_core::entities::{comment, user};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 
     let db = get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -59,14 +59,14 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
   #[cfg(feature = "server")]
   {
     use chrono::Utc;
-    use rustineverything_core::db::get_or_init_pool;
-    use rustineverything_core::entities::comment;
-    use rustineverything_core::session::current_session_user;
-    use rustineverything_module_moderation::{
+    use app_core::db::get_or_init_pool;
+    use app_core::entities::comment;
+    use app_core::session::current_session_user;
+    use module_moderation::{
       absolutize_image_url, enqueue_if_flagged, evaluate_submission, extract_image_urls,
       ModerationLabel,
     };
-    use rustineverything_sdk::{ImageRef, ModerationSubmission};
+    use sdk::{ImageRef, ModerationSubmission};
     use sea_orm::{ActiveModelTrait, Set};
 
     let session_user =

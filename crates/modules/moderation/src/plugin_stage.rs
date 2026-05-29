@@ -16,10 +16,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use rustineverything_core::engines::moderation::{ModerationLabel, Verdict};
-use rustineverything_core::PluginManager;
-use rustineverything_llm::{LlmClient, LlmMessage};
-use rustineverything_sdk::{moderation as moderation_abi, ModerationSubmission, ModerationVerdict};
+use app_core::engines::moderation::{ModerationLabel, Verdict};
+use app_core::PluginManager;
+use llm::{LlmClient, LlmMessage};
+use sdk::{moderation as moderation_abi, ModerationSubmission, ModerationVerdict};
 
 use crate::stage::AsyncModerationStage;
 
@@ -31,7 +31,7 @@ pub struct PluginModerationStage {
   name: String,
   /// `assets/plugins/<x>.wasm` 绝对路径
   plugin_path: PathBuf,
-  /// 共享的 wasm runtime（默认 `rustineverything_core::shared_plugin_manager()`，
+  /// 共享的 wasm runtime（默认 `app_core::shared_plugin_manager()`，
   /// 测试时可注入 Mock-ish 替身）
   plugin_manager: Arc<PluginManager>,
   /// 上游 LLM 客户端。`crates/llm` 已封好两种协议。
@@ -144,9 +144,9 @@ impl AsyncModerationStage for PluginModerationStage {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use rustineverything_core::engines::moderation::ModerationLabel;
-  use rustineverything_core::error::{AppError, AppResult};
-  use rustineverything_llm::LlmProvider;
+  use app_core::engines::moderation::ModerationLabel;
+  use app_core::error::{AppError, AppResult};
+  use llm::LlmProvider;
 
   // ── 工具：手写 LlmClient 替身（避免真实 HTTP / mockito 在这层） ──
 

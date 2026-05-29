@@ -37,13 +37,13 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-rustineverything-sdk = { path = "../../sdk" }
+sdk = { path = "../../sdk" }
 ```
 
 关键点：
 - `name` 以 `-plugin` 结尾（与 build script 约定一致）。
 - `crate-type = ["cdylib"]` 必填，否则不会输出 `.wasm` 产物。
-- 依赖 `rustineverything-sdk` 拿到 `alloc/dealloc`、`pack_output`、`PluginManifest` 等辅助。
+- 依赖 `sdk` 拿到 `alloc/dealloc`、`pack_output`、`PluginManifest` 等辅助。
 
 ### 2.2 把 crate 加入 workspace
 
@@ -62,7 +62,7 @@ members = [
 `crates/plugins/theme-purple/src/lib.rs`：
 
 ```rust
-use rustineverything_sdk::{alloc, capabilities, pack_json, PluginManifest};
+use sdk::{alloc, capabilities, pack_json, PluginManifest};
 use std::slice;
 
 #[no_mangle]
@@ -161,7 +161,7 @@ ThemePicker 会自动通过 `list_available_themes` 扫到新插件
 ```rust
 #[no_mangle]
 pub unsafe extern "C" fn translate(ptr: *mut u8, len: usize) -> u64 {
-    use rustineverything_sdk::{pack_output, read_input};
+    use sdk::{pack_output, read_input};
 
     let input = read_input(ptr, len);
     let req: serde_json::Value = serde_json::from_slice(input).unwrap_or_default();
