@@ -74,6 +74,41 @@ API：
 > 本地用 `.env` 提供 `DATABASE_URL`；DB 不可用时仅 DB 相关 server fn 报错，静态/markdown
 > 页面（blog、内容板块等）仍可访问。
 
+### 2.4 本地构建产物路径（共享 target-dir）
+
+仓库根 `.cargo/config.toml` 配置了项目全局的 cargo target-dir：
+
+```toml
+[build]
+target-dir = "/Users/hal/.target"
+```
+
+**为什么**：本 workspace 已有 30+ crate × 几百个上游依赖，单独的 `target/` 在
+开发态可膨胀到 10–30 GB。把多个 Rust 项目共用一个 target 目录可以：
+
+- 跨项目共享 deps 编译产物（同版本的 `tokio` / `serde` 等只编一次）。
+- 把所有项目的临时产物集中在一个盘，方便清理（`du -sh ~/.target/*` → 定向 `cargo clean -p <crate> --target-dir ~/.target`）。
+- 让仓库本身保持轻量，避免编辑器索引 / `rg` 误扫进 target。
+
+**fork / 新机器 setup**：自己改 `~/.cargo/config.toml`（用户级别）落地相同配置，
+路径换成你本地的（macOS / Linux 任意目录均可，盘要够，目录可后续随时清空重建）：
+
+```toml
+[build]
+target-dir = "/Users/<your-username>/.target"   # 或 /home/<user>/.target
+```
+
+> 也可以**不**做这项设置，cargo 会回落到默认的 `<repo>/target/`，仅占用更多
+> 仓库目录空间，不影响功能。
+
+**CI / Docker 部署不能用本地路径**——它们覆盖该配置：
+
+- `.github/workflows/ci.yml`：`env: CARGO_TARGET_DIR: target`（写到 runner 工作目录，便于 cache action 收集）。
+- `Dockerfile`：`ENV CARGO_TARGET_DIR=/tmp/target`（写到容器 tmp，构建结束随多阶段镜像丢弃）。
+
+只要 `CARGO_TARGET_DIR` 环境变量被设置，就优先于 `.cargo/config.toml::build.target-dir`，
+所以 CI / Docker 不需要改本仓库的 config 文件。
+
 ---
 
 ## 3. 插件开发篇 (Plugin Development Guide)

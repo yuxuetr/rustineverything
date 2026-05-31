@@ -411,7 +411,7 @@
 ## 跨阶段持续任务
 
 - [-] **代码规范**：消除非测试代码中的 `unwrap` / `expect`。全量扫描后实际仅 ~5 处：已修 `app/server/mod.rs` 的 `.to_str().unwrap()`（→ `.and_then(to_str).ok().unwrap_or_default()`）+ i18n 插件 2 处 `expect`（→ `FluentResource::try_new(...).unwrap_or_else(|(r,_)| r)` + 忽略 add_resource 错误，已重建 wasm）。**剩余 2 处为有意为之的启动 fail-fast**：`main.rs` / `build_auth_service` 的 `std::env::var("BASE_URL").expect(...)`（与 `get_jwt_secret()` panic 同属 1A.1「缺配置即硬失败」设计，保留）。examples / tests / build.rs 按约定豁免
-- [ ] **Rust target dir**：构建产物路径 `/Users/hal/.target`
+- [x] **Rust target dir**：构建产物路径 `/Users/hal/.target` —— 文档化到 `docs/DEVELOPER.md §2.4`（机制 / 为什么共享 / 新机器 setup 步骤 / CI + Docker 通过 `CARGO_TARGET_DIR` env 覆盖的机制）；仓库根 `.cargo/config.toml` + `~/.target/` 已实际存在
 - [ ] **debug 习惯**：新增 server fn 打印请求/响应/DB 查询便于联调
 - [ ] **每个模块完成后**：更新本 Todos.md + 写 `docs/<MODULE>_SPEC.md`
 - [ ] **测试 + 编译通过**才允许 commit；commit 附 `Co-Authored-By: Oz <oz-agent@warp.dev>`
