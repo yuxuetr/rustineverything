@@ -1175,6 +1175,141 @@ pub async fn admin_bulk_reject_moderation(ids: Vec<i64>) -> Result<u64, ServerFn
 }
 
 // =============================================================
+// Phase 308：Moderation 配置在线编辑（admin UI 写回 site.json）
+// =============================================================
+
+/// 校验 [`app_core::settings::ModerationSettings`]。可能的失败：
+/// - thresholds 的 flag_above / block_above 超出 [0.0, 1.0]
+/// - flag_above > block_above（语义上不可能：flag 必须比 block 低）
+/// - url_blocklist 含空白 / 含 scheme（应只填 host 模式）
+///
+/// 纯函数，便于单测。在 `admin_set_moderation_settings` 内调用。
+pub fn validate_moderation_settings(
+  s: &app_core::settings::ModerationSettings,
+) -> Result<(), String> {
+  if let Some(th) = &s.thresholds {
+    if let Some(f) = th.flag_above {
+      if !(0.0..=1.0).contains(&f) {
+        return Err(format!("flag_above 必须在 0.0–1.0 之间，得到 {}", f));
+      }
+    }
+    if let Some(b) = th.block_above {
+      if !(0.0..=1.0).contains(&b) {
+        return Err(format!("block_above 必须在 0.0–1.0 之间，得到 {}", b));
+      }
+    }
+    if let (Some(f), Some(b)) = (th.flag_above, th.block_above) {
+      if f > b {
+        return Err(format!("flag_above ({}) 不能大于 block_above ({})", f, b));
+      }
+    }
+  }
+  for entry in &s.url_blocklist {
+    let trimmed = entry.trim();
+    if trimmed.is_empty() {
+      return Err("url_blocklist 含空字符串".to_string());
+    }
+    if trimmed.contains("://") {
+      return Err(format!("url_blocklist 条目不应含 scheme（只填 host）：{}", trimmed));
+    }
+    if trimmed.chars().any(char::is_whitespace) {
+      return Err(format!("url_blocklist 条目含空白字符：{}", trimmed));
+    }
+  }
+  Ok(())
+}
+
+/// 读取 site.json 中的 moderation 配置（admin 专属，用于面板初始填充）。
+#[post("/api/admin/moderation/settings/get")]
+pub async fn admin_get_moderation_settings(
+) -> Result<app_core::settings::ModerationSettings, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::session::require_admin;
+    use app_core::settings::SiteConfig;
+    let _ = require_admin()?;
+    let path = get_asset_root().join("site.json");
+    let config = SiteConfig::from_file(path.to_str().unwrap_or("assets/site.json"))
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(config.moderation)
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Err(ServerFnError::new("server only".to_string()))
+  }
+}
+
+/// 写回 moderation 配置 + 触发审核流水线热重载。
+///
+/// 流程：
+/// 1. require_admin
+/// 2. validate
+/// 3. read site.json 为 `serde_json::Value`，只替换 `moderation` 子树（保留所有
+///    其他字段，包括 SiteConfig struct 未声明的人工自定义字段）
+/// 4. 原子 tmp + rename 写回
+/// 5. `shared_plugin_manager().invalidate_all()` + `reload_pipeline()` 立即生效
+#[post("/api/admin/moderation/settings/set")]
+pub async fn admin_set_moderation_settings(
+  settings: app_core::settings::ModerationSettings,
+) -> Result<(), ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::session::require_admin;
+    let _ = require_admin()?;
+    validate_moderation_settings(&settings).map_err(ServerFnError::new)?;
+
+    let path = get_asset_root().join("site.json");
+    write_moderation_settings_to_site_json(&path, &settings).map_err(ServerFnError::new)?;
+
+    // 立即生效：插件缓存清空 + 审核 pipeline 重建（重读 site.json + 插件目录）
+    app_core::shared_plugin_manager().invalidate_all();
+    module_moderation::reload_pipeline();
+    tracing::info!(
+      enabled = settings.enabled,
+      plugins = settings.plugins.len(),
+      blocklist = settings.url_blocklist.len(),
+      "admin: moderation settings updated + pipeline reloaded"
+    );
+    Ok(())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = settings;
+    Err(ServerFnError::new("server only".to_string()))
+  }
+}
+
+/// 原子写：read full site.json → 替换 `moderation` 子树 → 写回。
+///
+/// 选择基于 `serde_json::Value` 而非 `SiteConfig` round-trip：保留人工 site.json
+/// 里可能存在的、SiteConfig struct 未声明的额外字段（向后兼容老配置 / 自定义
+/// 实验字段）。
+#[cfg(feature = "server")]
+fn write_moderation_settings_to_site_json(
+  path: &std::path::Path,
+  settings: &app_core::settings::ModerationSettings,
+) -> Result<(), String> {
+  let raw = std::fs::read_to_string(path)
+    .map_err(|e| format!("读取 {} 失败：{}", path.display(), e))?;
+  let mut value: serde_json::Value =
+    serde_json::from_str(&raw).map_err(|e| format!("site.json 不是合法 JSON：{}", e))?;
+  let moderation = serde_json::to_value(settings)
+    .map_err(|e| format!("序列化 ModerationSettings 失败：{}", e))?;
+  value["moderation"] = moderation;
+  let pretty =
+    serde_json::to_string_pretty(&value).map_err(|e| format!("序列化 site.json 失败：{}", e))?;
+
+  // tmp + rename：写盘失败时不会污染正式 site.json
+  let tmp_path = path.with_extension("json.tmp");
+  std::fs::write(&tmp_path, pretty).map_err(|e| format!("写入临时文件失败：{}", e))?;
+  std::fs::rename(&tmp_path, path).map_err(|e| {
+    let _ = std::fs::remove_file(&tmp_path);
+    format!("rename 替换 site.json 失败：{}", e)
+  })?;
+  Ok(())
+}
+
+// =============================================================
 // Tests（纯逻辑）
 // =============================================================
 
@@ -1289,5 +1424,145 @@ mod tests {
   #[test]
   fn safe_plugin_filename_strips_unsafe_chars() {
     assert_eq!(safe_plugin_filename("my plugin@v1!.wasm").unwrap(), "mypluginv1.wasm");
+  }
+
+  // ── Phase 308：moderation 配置校验 + 写回 ──
+
+  use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
+
+  fn thresholds(flag: Option<f32>, block: Option<f32>) -> ModerationSettings {
+    ModerationSettings {
+      thresholds: Some(ModerationThresholdsConfig { flag_above: flag, block_above: block }),
+      ..Default::default()
+    }
+  }
+
+  #[test]
+  fn validate_moderation_accepts_default_settings() {
+    assert!(validate_moderation_settings(&ModerationSettings::default()).is_ok());
+  }
+
+  #[test]
+  fn validate_moderation_accepts_valid_thresholds() {
+    assert!(validate_moderation_settings(&thresholds(Some(0.5), Some(0.9))).is_ok());
+    // 边界值都允许
+    assert!(validate_moderation_settings(&thresholds(Some(0.0), Some(1.0))).is_ok());
+    // 只设一个也允许
+    assert!(validate_moderation_settings(&thresholds(Some(0.3), None)).is_ok());
+    assert!(validate_moderation_settings(&thresholds(None, Some(0.8))).is_ok());
+  }
+
+  #[test]
+  fn validate_moderation_rejects_out_of_range_flag() {
+    assert!(validate_moderation_settings(&thresholds(Some(1.2), None)).is_err());
+    assert!(validate_moderation_settings(&thresholds(Some(-0.1), None)).is_err());
+  }
+
+  #[test]
+  fn validate_moderation_rejects_out_of_range_block() {
+    assert!(validate_moderation_settings(&thresholds(None, Some(1.5))).is_err());
+    assert!(validate_moderation_settings(&thresholds(None, Some(-0.5))).is_err());
+  }
+
+  #[test]
+  fn validate_moderation_rejects_flag_greater_than_block() {
+    let err = validate_moderation_settings(&thresholds(Some(0.9), Some(0.5)))
+      .expect_err("flag>block 应拒");
+    assert!(err.contains("flag_above"));
+    assert!(err.contains("block_above"));
+  }
+
+  #[test]
+  fn validate_moderation_rejects_empty_blocklist_entry() {
+    let s = ModerationSettings {
+      url_blocklist: vec!["scam.com".to_string(), "  ".to_string()],
+      ..Default::default()
+    };
+    assert!(validate_moderation_settings(&s).is_err());
+  }
+
+  #[test]
+  fn validate_moderation_rejects_blocklist_with_scheme() {
+    let s = ModerationSettings {
+      url_blocklist: vec!["https://scam.com".to_string()],
+      ..Default::default()
+    };
+    assert!(validate_moderation_settings(&s).is_err());
+  }
+
+  #[test]
+  fn validate_moderation_rejects_blocklist_with_whitespace() {
+    let s = ModerationSettings {
+      url_blocklist: vec!["scam .com".to_string()],
+      ..Default::default()
+    };
+    assert!(validate_moderation_settings(&s).is_err());
+  }
+
+  #[test]
+  fn validate_moderation_accepts_valid_blocklist() {
+    let s = ModerationSettings {
+      url_blocklist: vec!["scam.com".to_string(), "*.phishing.example".to_string()],
+      ..Default::default()
+    };
+    assert!(validate_moderation_settings(&s).is_ok());
+  }
+
+  #[cfg(feature = "server")]
+  #[test]
+  fn write_preserves_other_site_json_fields() {
+    use std::fs;
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("site.json");
+    // 故意包含 SiteConfig struct 没有的字段（"custom_x"），确保 round-trip 保留
+    let original = r#"{
+      "site_name": "保留",
+      "themes": ["t.wasm"],
+      "auth": {"enabled": true, "providers": []},
+      "moderation": {"enabled": false},
+      "custom_x": {"unknown": "field"}
+    }"#;
+    fs::write(&path, original).unwrap();
+
+    let new_settings = ModerationSettings {
+      enabled: true,
+      plugins: vec!["mod.wasm".to_string()],
+      thresholds: Some(ModerationThresholdsConfig {
+        flag_above: Some(0.4),
+        block_above: Some(0.85),
+      }),
+      url_blocklist: vec!["scam.com".to_string()],
+    };
+
+    write_moderation_settings_to_site_json(&path, &new_settings).expect("write");
+
+    let after: serde_json::Value =
+      serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    // 旧字段保留
+    assert_eq!(after["site_name"], "保留");
+    assert_eq!(after["themes"], serde_json::json!(["t.wasm"]));
+    assert_eq!(after["auth"]["enabled"], true);
+    assert_eq!(after["custom_x"]["unknown"], "field");
+    // moderation 已替换
+    assert_eq!(after["moderation"]["enabled"], true);
+    assert_eq!(after["moderation"]["plugins"], serde_json::json!(["mod.wasm"]));
+    assert_eq!(after["moderation"]["url_blocklist"], serde_json::json!(["scam.com"]));
+    // f32 → JSON 经 f64 序列化会引入精度尾噪（0.4 ≠ 0.4000000059604645），按近似比较
+    let flag = after["moderation"]["thresholds"]["flag_above"].as_f64().unwrap();
+    let block = after["moderation"]["thresholds"]["block_above"].as_f64().unwrap();
+    assert!((flag - 0.4).abs() < 1e-6);
+    assert!((block - 0.85).abs() < 1e-6);
+  }
+
+  #[cfg(feature = "server")]
+  #[test]
+  fn write_atomic_temp_does_not_linger_on_success() {
+    use std::fs;
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("site.json");
+    fs::write(&path, r#"{"site_name":"x","moderation":{}}"#).unwrap();
+    write_moderation_settings_to_site_json(&path, &ModerationSettings::default()).unwrap();
+    // .tmp 文件不应残留
+    assert!(!path.with_extension("json.tmp").exists());
   }
 }

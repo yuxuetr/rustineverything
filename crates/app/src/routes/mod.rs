@@ -10,8 +10,8 @@ use crate::i18n::{t, use_i18n};
 use crate::server::get_seo_base_url;
 use crate::server::{list_public_plugins, PublicPluginInfo};
 use module_admin::admin::{
-  AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminPluginsPage, AdminTopicsPage,
-  AdminUsersPage,
+  AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminModerationSettingsPage,
+  AdminPluginsPage, AdminTopicsPage, AdminUsersPage,
 };
 use module_ai::ai::{AiArticlePage, AiIndexPage};
 use module_blog::server::{get_blog_content, list_blog_posts};
@@ -124,6 +124,8 @@ pub enum Route {
         AdminPlugins {},
         #[route("/admin/moderation")]
         AdminModeration {},
+        #[route("/admin/moderation/settings")]
+        AdminModerationSettings {},
 }
 
 /// Home page
@@ -681,4 +683,9 @@ pub fn AdminPlugins() -> Element {
 #[component]
 pub fn AdminModeration() -> Element {
   rsx! { AdminModerationPage {} }
+}
+
+#[component]
+pub fn AdminModerationSettings() -> Element {
+  rsx! { AdminModerationSettingsPage {} }
 }

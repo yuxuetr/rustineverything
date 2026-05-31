@@ -1,11 +1,13 @@
 use crate::server::{
   admin_approve_moderation, admin_bulk_approve_moderation, admin_bulk_reject_moderation,
-  admin_delete_comment, admin_delete_reply, admin_delete_topic, admin_list_comments,
-  admin_list_moderation_queue, admin_list_plugins, admin_list_topics, admin_list_users,
-  admin_overview, admin_reject_moderation, admin_reload_plugins, admin_set_user_role,
-  admin_upload_plugin, AdminCommentRow, AdminPluginRow, AdminTopicRow, AdminUserRow,
-  ModerationQueueRow, ADMIN_PAGE_SIZE,
+  admin_delete_comment, admin_delete_reply, admin_delete_topic,
+  admin_get_moderation_settings, admin_list_comments, admin_list_moderation_queue,
+  admin_list_plugins, admin_list_topics, admin_list_users, admin_overview,
+  admin_reject_moderation, admin_reload_plugins, admin_set_moderation_settings,
+  admin_set_user_role, admin_upload_plugin, AdminCommentRow, AdminPluginRow, AdminTopicRow,
+  AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
 };
+use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
 use dioxus::prelude::*;
 use app_core::session::{SessionUser, ALL_ROLES};
 
@@ -63,6 +65,7 @@ fn AdminShell(active: String, children: Element) -> Element {
                       AdminNavLink { href: "/admin/comments", label: "评论".to_string(), key_id: "comments".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/topics", label: "话题".to_string(), key_id: "topics".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/moderation", label: "审核".to_string(), key_id: "moderation".to_string(), active: active.clone() }
+                      AdminNavLink { href: "/admin/moderation/settings", label: "审核设置".to_string(), key_id: "moderation-settings".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/plugins", label: "插件".to_string(), key_id: "plugins".to_string(), active: active.clone() }
                   }
               }
@@ -1045,6 +1048,260 @@ fn ModerationQueueRowView(
   }
 }
 
+// =============================================================
+// /admin/moderation/settings — Phase 308：审核阈值在线编辑
+// =============================================================
+
+/// 把 `Option<f32>` 转成输入框文本（None / NaN → 空串）。
+fn opt_f32_to_input(v: Option<f32>) -> String {
+  match v {
+    Some(x) if x.is_finite() => format!("{}", x),
+    _ => String::new(),
+  }
+}
+
+/// 把输入框文本反解为 `Option<f32>`：空串 → None；非合法浮点 → 返回 Err。
+fn input_to_opt_f32(raw: &str) -> Result<Option<f32>, String> {
+  let t = raw.trim();
+  if t.is_empty() {
+    return Ok(None);
+  }
+  t.parse::<f32>().map(Some).map_err(|_| format!("非合法数字：{}", t))
+}
+
+/// 按行拆分 textarea 文本，去重空行 + trim，得到 Vec<String>。
+fn lines_to_vec(text: &str) -> Vec<String> {
+  text
+    .lines()
+    .map(|s| s.trim().to_string())
+    .filter(|s| !s.is_empty())
+    .collect()
+}
+
+/// Vec<String> 拼回多行文本，便于初始化 textarea。
+fn vec_to_lines(items: &[String]) -> String {
+  items.join("\n")
+}
+
+#[component]
+pub fn AdminModerationSettingsPage() -> Element {
+  if !is_current_user_admin() {
+    return rsx! { ForbiddenPanel {} };
+  }
+
+  // 强制刷新计数：保存成功后 bump 让 use_resource 重跑。
+  let mut bump = use_signal(|| 0u32);
+  let res = use_resource(move || {
+    let _ = bump();
+    async move { admin_get_moderation_settings().await.ok() }
+  });
+
+  // 当前从服务端拿到的设置（None = 加载中 / 错误）
+  let current: Option<ModerationSettings> = res.read().as_ref().cloned().flatten();
+
+  // 表单本地状态：初始化时填入 current 的值
+  let mut enabled = use_signal(|| false);
+  let mut flag_text = use_signal(String::new);
+  let mut block_text = use_signal(String::new);
+  let mut plugins_text = use_signal(String::new);
+  let mut blocklist_text = use_signal(String::new);
+  // 一次性把 server 值灌进表单（仅当本地表单 untouched / current 刚到达）
+  let mut form_inited = use_signal(|| false);
+  if !form_inited() {
+    if let Some(s) = &current {
+      enabled.set(s.enabled);
+      let th = s.thresholds.as_ref();
+      flag_text.set(opt_f32_to_input(th.and_then(|t| t.flag_above)));
+      block_text.set(opt_f32_to_input(th.and_then(|t| t.block_above)));
+      plugins_text.set(vec_to_lines(&s.plugins));
+      blocklist_text.set(vec_to_lines(&s.url_blocklist));
+      form_inited.set(true);
+    }
+  }
+
+  let mut saving = use_signal(|| false);
+  let mut error = use_signal::<Option<String>>(|| None);
+  let mut saved_ok = use_signal(|| false);
+
+  let mut save = move |_| {
+    error.set(None);
+    saved_ok.set(false);
+    // 客户端先做与 server 端一致的解析 + 校验，给即时反馈
+    let flag_parsed = match input_to_opt_f32(&flag_text()) {
+      Ok(v) => v,
+      Err(e) => {
+        error.set(Some(format!("flag_above 解析失败：{}", e)));
+        return;
+      }
+    };
+    let block_parsed = match input_to_opt_f32(&block_text()) {
+      Ok(v) => v,
+      Err(e) => {
+        error.set(Some(format!("block_above 解析失败：{}", e)));
+        return;
+      }
+    };
+    let thresholds = match (flag_parsed, block_parsed) {
+      (None, None) => None,
+      (f, b) => Some(ModerationThresholdsConfig { flag_above: f, block_above: b }),
+    };
+    let settings = ModerationSettings {
+      enabled: enabled(),
+      plugins: lines_to_vec(&plugins_text()),
+      thresholds,
+      url_blocklist: lines_to_vec(&blocklist_text()),
+    };
+
+    spawn(async move {
+      saving.set(true);
+      match admin_set_moderation_settings(settings).await {
+        Ok(()) => {
+          saved_ok.set(true);
+          // 服务端值可能因 normalize 略微变化（trim 等），重拉一次。
+          bump.with_mut(|n| *n = n.wrapping_add(1));
+          form_inited.set(false); // 让初始化逻辑再灌一次
+        }
+        Err(e) => error.set(Some(format!("保存失败：{}", e))),
+      }
+      saving.set(false);
+    });
+  };
+
+  let label_cls = "block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1";
+  let help_cls = "text-xs text-slate-500 dark:text-slate-400 mt-1";
+  let input_cls = "w-full px-3 py-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm";
+  let area_cls = "w-full px-3 py-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono";
+
+  rsx! {
+      AdminShell { active: "moderation-settings".to_string(),
+          h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-2",
+              "审核设置"
+          }
+          p { class: "text-sm text-slate-500 dark:text-slate-400 mb-6",
+              "改动会原子写回 assets/site.json 并立即热重载审核流水线（无需重启进程）。"
+          }
+
+          if res.read().is_none() {
+              Spinner {}
+          } else if current.is_none() {
+              div { class: "rounded-lg border border-red-300 bg-red-50 text-red-800 p-4",
+                  "加载审核设置失败：请检查 server 日志。"
+              }
+          } else {
+              form {
+                  class: "space-y-6 max-w-2xl",
+                  onsubmit: move |evt| { evt.prevent_default(); save(()); },
+
+                  // enabled 总开关
+                  div { class: "flex items-center gap-3 p-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40",
+                      input {
+                          r#type: "checkbox",
+                          id: "moderation-enabled",
+                          checked: enabled(),
+                          class: "w-4 h-4",
+                          onchange: move |evt| {
+                              enabled.set(evt.value() == "true" || evt.value() == "on");
+                          },
+                      }
+                      label { r#for: "moderation-enabled", class: "text-sm font-semibold text-slate-800 dark:text-slate-200",
+                          "启用内容审核流水线"
+                      }
+                      span { class: "text-xs text-slate-500 dark:text-slate-400 ml-auto",
+                          "默认关闭。关闭 = 所有提交直接 Allow，零开销。"
+                      }
+                  }
+
+                  // 阈值
+                  div { class: "grid grid-cols-1 sm:grid-cols-2 gap-4",
+                      div {
+                          label { r#for: "flag-above", class: "{label_cls}", "flag_above (0.0–1.0)" }
+                          input {
+                              id: "flag-above",
+                              r#type: "number",
+                              step: "0.01",
+                              min: "0",
+                              max: "1",
+                              class: "{input_cls}",
+                              value: "{flag_text}",
+                              oninput: move |evt| flag_text.set(evt.value()),
+                          }
+                          p { class: "{help_cls}",
+                              "评分 ≥ 此值即标记 Flag（入审核队列）。留空 = 用默认 0.5。"
+                          }
+                      }
+                      div {
+                          label { r#for: "block-above", class: "{label_cls}", "block_above (0.0–1.0)" }
+                          input {
+                              id: "block-above",
+                              r#type: "number",
+                              step: "0.01",
+                              min: "0",
+                              max: "1",
+                              class: "{input_cls}",
+                              value: "{block_text}",
+                              oninput: move |evt| block_text.set(evt.value()),
+                          }
+                          p { class: "{help_cls}",
+                              "评分 ≥ 此值即直接拒绝（Block）。留空 = 用默认 0.9。需 ≥ flag_above。"
+                          }
+                      }
+                  }
+
+                  // plugins
+                  div {
+                      label { r#for: "plugins", class: "{label_cls}", "审核插件文件名（一行一个）" }
+                      textarea {
+                          id: "plugins",
+                          rows: "4",
+                          class: "{area_cls}",
+                          placeholder: "例如：plugin_moderation_deepseek.wasm",
+                          value: "{plugins_text}",
+                          oninput: move |evt| plugins_text.set(evt.value()),
+                      }
+                      p { class: "{help_cls}",
+                          "相对 assets/plugins/ 的 wasm 文件名。启用但列表为空 = 没有 stage，全部 Allow。"
+                      }
+                  }
+
+                  // url_blocklist
+                  div {
+                      label { r#for: "blocklist", class: "{label_cls}", "URL 域名黑名单（一行一个）" }
+                      textarea {
+                          id: "blocklist",
+                          rows: "5",
+                          class: "{area_cls}",
+                          placeholder: "scam.com\n*.phishing.example",
+                          value: "{blocklist_text}",
+                          oninput: move |evt| blocklist_text.set(evt.value()),
+                      }
+                      p { class: "{help_cls}",
+                          "命中即 Block（score = 1.0），不走 LLM。支持通配 *.example.com；只填 host，勿带 https://。"
+                      }
+                  }
+
+                  // 保存 + 状态
+                  div { class: "flex items-center gap-3",
+                      button {
+                          r#type: "submit",
+                          disabled: saving(),
+                          class: "px-4 py-2 rounded-md text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50",
+                          if saving() { "保存中…" } else { "保存并热重载" }
+                      }
+                      if saved_ok() {
+                          span { class: "text-sm text-green-600 dark:text-green-400 font-medium",
+                              "✓ 已保存并重载"
+                          }
+                      }
+                      if let Some(e) = error() {
+                          span { class: "text-sm text-red-600 dark:text-red-400", "{e}" }
+                      }
+                  }
+              }
+          }
+      }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -1068,5 +1325,52 @@ mod tests {
   fn total_pages_zero_size_safe() {
     // 防御:page_size 为 0 时返回 1,避免除零
     assert_eq!(compute_total_pages(123, 0), 1);
+  }
+
+  // ── Phase 308：moderation 表单 helpers ──
+
+  #[test]
+  fn opt_f32_to_input_handles_none_and_finite() {
+    assert_eq!(opt_f32_to_input(None), "");
+    assert_eq!(opt_f32_to_input(Some(0.5)), "0.5");
+    assert_eq!(opt_f32_to_input(Some(0.0)), "0");
+    // NaN / Inf 都视作 None：避免输入框出现 NaN 文本
+    assert_eq!(opt_f32_to_input(Some(f32::NAN)), "");
+    assert_eq!(opt_f32_to_input(Some(f32::INFINITY)), "");
+  }
+
+  #[test]
+  fn input_to_opt_f32_handles_empty_and_valid() {
+    assert_eq!(input_to_opt_f32("").unwrap(), None);
+    assert_eq!(input_to_opt_f32("   ").unwrap(), None);
+    assert_eq!(input_to_opt_f32("0.5").unwrap(), Some(0.5));
+    assert_eq!(input_to_opt_f32("  0.9  ").unwrap(), Some(0.9));
+  }
+
+  #[test]
+  fn input_to_opt_f32_rejects_garbage() {
+    assert!(input_to_opt_f32("abc").is_err());
+    assert!(input_to_opt_f32("0.5x").is_err());
+  }
+
+  #[test]
+  fn lines_to_vec_strips_blank_and_whitespace() {
+    let raw = "  scam.com\n\n*.evil.example\n   \nfoo.bar  \n";
+    assert_eq!(
+      lines_to_vec(raw),
+      vec!["scam.com".to_string(), "*.evil.example".to_string(), "foo.bar".to_string()]
+    );
+  }
+
+  #[test]
+  fn lines_to_vec_empty_input_returns_empty() {
+    assert!(lines_to_vec("").is_empty());
+    assert!(lines_to_vec("   \n\n   ").is_empty());
+  }
+
+  #[test]
+  fn vec_to_lines_round_trips_with_lines_to_vec() {
+    let items = vec!["a.com".to_string(), "b.com".to_string()];
+    assert_eq!(lines_to_vec(&vec_to_lines(&items)), items);
   }
 }

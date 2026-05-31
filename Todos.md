@@ -305,7 +305,7 @@
 - [x] 测试：3 个 live DB 测试验证 Allow no-op / Flag 入队 +1 / Block no-op（实跑 postgres，自带 schema bootstrap fallback）。workspace 全测 470+ passed
 - [x] **批量复核**：`admin_bulk_approve_moderation(ids)`（单条 UPDATE…WHERE id IN）+ `admin_bulk_reject_moderation(ids)`（逐条删业务内容 + 标 rejected，复用 `reject_one` helper）；`/admin/moderation` 加全选/单选 checkbox + 「批量通过」「批量拒绝（删除内容）」操作栏
 - [x] **作者违规历史聚合**：`admin_list_moderation_queue` 对本页内容作者聚合其队列累计命中数 + 已拒绝（确认违规）数，行内以徽章展示「历史 N 次命中 / M 次确认违规」，便于识别惯犯
-- [-] 阈值配置 admin UI 在线编辑：Phase 5.1 hot reload 后「重新载入」即可让改后的 `site.json` 阈值生效（无需重启）；图形化在线编辑器（写 site.json）仍未做，留待后续
+- [x] 阈值配置 admin UI 在线编辑：`AdminModerationSettingsPage`（路由 `/admin/moderation/settings`）+ 2 个 server fn `admin_get_moderation_settings` / `admin_set_moderation_settings`。表单含 enabled 总开关 / flag_above + block_above 数值输入（带客户端 + 服务端双重校验：0–1 范围、flag ≤ block）/ plugins textarea（一行一个 wasm 文件名）/ url_blocklist textarea（host 模式 + 拒 scheme + 拒空白）。写盘走「read full site.json 为 serde_json::Value → 仅替换 moderation 子树 → tmp+rename」保留 SiteConfig struct 未声明的人工字段；保存后自动 `shared_plugin_manager().invalidate_all()` + `module_moderation::reload_pipeline()` 即时生效，无需重启。10 个 server 校验/写盘单测 + 6 个 admin 表单 helper 单测；clippy `-D warnings` 全绿
 
 ### 4.6 文档
 - [x] `docs/MODERATION_SPEC.md`：XSS 攻击面审计 / sanitize_user_html / dangerous_inner_html 审计 / ModerationEngine 骨架 / Phase 4.3-4.5 路线图 / 安全清单
