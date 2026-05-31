@@ -386,7 +386,7 @@
 - [x] state CSRF 短 TTL（5 分钟）— `validate_state` 强制 `created_at.elapsed() > 300s` 拒绝 + `cleanup_expired_states` 清理（`crates/core/src/auth/mod.rs`）
 
 ### 7.3 搜索持久化
-- [ ] `MmapDirectory` 替代 `RAMDirectory`
+- [x] `MmapDirectory` 替代 `RAMDirectory`：`engine.rs` 改为 `Index::open_or_create(MmapDirectory::open(dir), schema)`；`SEARCH_INDEX_DIR` 环境变量控制路径（默认 `data/search-index`），目录不存在自动 `create_dir_all`；schema 不匹配（旧索引残留）自动清空目录重建（schema 迁移）；`init_or_load()` 启动期入口：非空 → 复用，空 → 全量填充；新增 6 个单测覆盖持久化（drop+reopen 数据保留 / 空目录初始化 / schema 不匹配清空重建 / 自定义路径解析 / 默认路径 / replace_all 全量替换）。全 45 个 module-search 单测通过
 - [ ] 增量索引
 
 ### 7.4 部署
