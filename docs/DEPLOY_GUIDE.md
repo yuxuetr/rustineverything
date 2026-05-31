@@ -125,7 +125,11 @@ app 自己不终止 TLS。生产部署把 8080 端口放在反向代理后面。
 
 ### 6.1 Pingora（推荐 — Rust 原生）
 
-新建一个独立 crate（可放在本仓库 `crates/gateway/`，也可作为外部部署组件），负责 TLS 终止 + 反代到 app 的 8080 端口。
+仓库已自带可用的 gateway 实现：**`crates/gateway/`**（独立 workspace，自带
+`[workspace]` 标签 + `exclude` 进父 workspace，避免 openssl/native deps 拖累
+主构建）。直接 `cd crates/gateway && cargo build --release` 即可拿到
+`target/release/rie-gateway` 二进制；下面的 Cargo.toml + main.rs 是同一份代码
+的展开说明，自行从零搭起也照此即可。
 
 #### Cargo.toml
 
@@ -137,10 +141,10 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1"
-pingora = { version = "0.3", features = ["lb"] }
-pingora-proxy = "0.3"
-pingora-core = "0.3"
-pingora-http = "0.3"
+pingora = { version = "0.8", features = ["lb"] }
+pingora-proxy = "0.8"
+pingora-core = "0.8"
+pingora-http = "0.8"
 log = "0.4"
 env_logger = "0.11"
 ```
@@ -215,7 +219,8 @@ impl ProxyHttp for HttpToHttps {
     let mut resp = ResponseHeader::build(301, None).unwrap();
     resp.append_header("Location", location).ok();
     resp.append_header("Content-Length", "0").ok();
-    session.write_response_header_ref(&resp).await.ok();
+    // end_of_stream = true：301 无 body，回写头即结束
+    session.write_response_header_ref(&resp, true).await.ok();
     Ok(true) // short-circuit, 不再去上游
   }
 

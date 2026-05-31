@@ -1,0 +1,23 @@
+[package]
+name = "rie-gateway"
+version = "0.1.0"
+edition = "2021"
+description = "Pingora-based TLS terminator + reverse proxy for rustineverything.app"
+
+# 独立 workspace：避免 Pingora 的 openssl / native deps 混入主 workspace 构建。
+# 主仓库 Cargo.toml 配套加 `[workspace] exclude = ["crates/gateway"]`。
+[workspace]
+
+[dependencies]
+async-trait = "0.1"
+pingora = { version = "0.8", features = ["lb"] }
+pingora-proxy = "0.8"
+pingora-core = "0.8"
+pingora-http = "0.8"
+log = "0.4"
+env_logger = "0.11"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

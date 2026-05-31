@@ -33,6 +33,9 @@ members = [
     "examples/plugin-theme-purple",
     "examples/plugin-moderation-deepseek",
 ]
+# Pingora gateway 是独立部署组件（自带 [workspace]），避免 openssl / native
+# deps 拖累主 workspace 构建；显式 exclude 以防误纳入 default-members。
+exclude = ["crates/gateway"]
 resolver = "2"
 
 [workspace.dependencies]
