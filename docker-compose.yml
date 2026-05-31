@@ -81,9 +81,14 @@ services:
       ANTHROPIC_LLM_MODEL: ${ANTHROPIC_LLM_MODEL:-}
       # tracing 输出级别
       RUST_LOG: ${RUST_LOG:-info}
+      # 搜索索引目录（Phase 7.3）：MmapDirectory 持久化路径。
+      # 不挂卷 → 容器每次重启都触发一次全量重建（仍能服务，只是冷启动慢）。
+      SEARCH_INDEX_DIR: /app/data/search-index
     volumes:
       # 用户上传图片：挂卷而非镜像层，便于备份与跨版本继承
       - app-uploads:/app/assets/uploads
+      # 搜索索引（Phase 7.3）：跨重启保留 tantivy 索引 + manifest.json
+      - app-search-index:/app/data/search-index
     ports:
       - "${APP_PORT:-8080}:8080"
     networks:
@@ -96,3 +101,4 @@ networks:
 volumes:
   postgres-data:
   app-uploads:
+  app-search-index:

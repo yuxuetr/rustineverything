@@ -20,7 +20,7 @@
 - Docker 24+（含 buildx 与 compose v2）
 - ≥ 1 CPU / 1 GB RAM / 5 GB 磁盘（app + postgres；内容审核走托管 LLM API，无需本地 GPU/模型）
 - 一组 OAuth 凭据（GitHub / Google / Discord / Twitter）— **可选**，不配置时登录页自动隐藏对应入口
-- HTTPS 反向代理（线上）：Caddy / nginx / Traefik 任意，详见 §6
+- HTTPS 反向代理（线上）：**Pingora**（推荐 — Rust 原生）/ Caddy / nginx / Traefik 任选，详见 §6
 
 ## 3. docker-compose 一键部署
 
@@ -121,7 +121,177 @@ docker run -d --name rie-app \
 
 app 自己不终止 TLS。生产部署把 8080 端口放在反向代理后面。
 
-### 6.1 Caddy（最简）
+> **选型原则**：本项目全栈 Rust，反代默认推荐 [**Pingora**](https://github.com/cloudflare/pingora)（Cloudflare 开源，纯 Rust，多线程异步，承载 Cloudflare 边缘）。同栈技术降低运维认知负担、便于内部贡献者上手。Caddy / nginx / Traefik 仍可用，作为不愿引入 Rust 工具链时的备选（§6.2–§6.4）。
+
+### 6.1 Pingora（推荐 — Rust 原生）
+
+新建一个独立 crate（可放在本仓库 `crates/gateway/`，也可作为外部部署组件），负责 TLS 终止 + 反代到 app 的 8080 端口。
+
+#### Cargo.toml
+
+```toml
+[package]
+name = "rie-gateway"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+pingora = { version = "0.3", features = ["lb"] }
+pingora-proxy = "0.3"
+pingora-core = "0.3"
+pingora-http = "0.3"
+log = "0.4"
+env_logger = "0.11"
+```
+
+#### src/main.rs
+
+```rust
+use async_trait::async_trait;
+use pingora::prelude::*;
+use pingora_core::server::Server;
+use pingora_core::upstreams::peer::HttpPeer;
+use pingora_http::{RequestHeader, ResponseHeader};
+use pingora_proxy::{http_proxy_service, ProxyHttp, Session};
+
+/// 反代上游 = 本机 app 容器；HTTP/1.1 + keep-alive。
+const UPSTREAM_ADDR: &str = "127.0.0.1:8080";
+const UPSTREAM_SNI: &str = "";   // 上游是 plain HTTP, 不需要 SNI
+
+struct AppGateway;
+
+#[async_trait]
+impl ProxyHttp for AppGateway {
+  type CTX = ();
+  fn new_ctx(&self) -> Self::CTX {}
+
+  /// 选定上游：恒为 app 容器（单 upstream，不做 LB）。
+  async fn upstream_peer(
+    &self,
+    _session: &mut Session,
+    _ctx: &mut (),
+  ) -> Result<Box<HttpPeer>> {
+    // tls=false → 与上游走明文（同主机回环）；SNI 留空
+    Ok(Box::new(HttpPeer::new(UPSTREAM_ADDR, false, UPSTREAM_SNI.into())))
+  }
+
+  /// 上游请求 header 改写：补 X-Forwarded-* 以便 app cookie 决定 `Secure` 标志、日志取真实 IP。
+  async fn upstream_request_filter(
+    &self,
+    session: &mut Session,
+    req: &mut RequestHeader,
+    _ctx: &mut (),
+  ) -> Result<()> {
+    req.insert_header("X-Forwarded-Proto", "https").ok();
+    if let Some(addr) = session.client_addr() {
+      let ip = addr.to_string();
+      req.insert_header("X-Real-IP", ip.clone()).ok();
+      // append 而不是 insert：保留上游可能已有的 chain
+      req.append_header("X-Forwarded-For", ip).ok();
+    }
+    Ok(())
+  }
+}
+
+/// 80 端口专用：所有请求 301 到 https://同一 host/同一 path。
+struct HttpToHttps;
+
+#[async_trait]
+impl ProxyHttp for HttpToHttps {
+  type CTX = ();
+  fn new_ctx(&self) -> Self::CTX {}
+
+  async fn request_filter(&self, session: &mut Session, _ctx: &mut ()) -> Result<bool> {
+    let req = session.req_header();
+    let host = req
+      .headers
+      .get("host")
+      .and_then(|v| v.to_str().ok())
+      .unwrap_or("");
+    let path = req.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
+    let location = format!("https://{}{}", host, path);
+
+    let mut resp = ResponseHeader::build(301, None).unwrap();
+    resp.append_header("Location", location).ok();
+    resp.append_header("Content-Length", "0").ok();
+    session.write_response_header_ref(&resp).await.ok();
+    Ok(true) // short-circuit, 不再去上游
+  }
+
+  // upstream_peer 永远不会被调用，但 trait 要求实现
+  async fn upstream_peer(
+    &self,
+    _session: &mut Session,
+    _ctx: &mut (),
+  ) -> Result<Box<HttpPeer>> {
+    Err(pingora::Error::new_str("unreachable: redirect短路 already returned"))
+  }
+}
+
+fn main() {
+  env_logger::init();
+  let mut server = Server::new(None).unwrap();
+  server.bootstrap();
+
+  // 443: TLS 终止 + 反代到 app
+  let mut proxy = http_proxy_service(&server.configuration, AppGateway);
+  let cert = std::env::var("TLS_CERT_PATH")
+    .expect("TLS_CERT_PATH 未配置：指向 fullchain.pem");
+  let key = std::env::var("TLS_KEY_PATH")
+    .expect("TLS_KEY_PATH 未配置：指向 privkey.pem");
+  let mut tls =
+    pingora_core::listeners::tls::TlsSettings::intermediate(&cert, &key).unwrap();
+  tls.enable_h2();
+  proxy.add_tls_with_settings("0.0.0.0:443", None, tls);
+  server.add_service(proxy);
+
+  // 80: HTTP→HTTPS 301
+  let mut redirect = http_proxy_service(&server.configuration, HttpToHttps);
+  redirect.add_tcp("0.0.0.0:80");
+  server.add_service(redirect);
+
+  server.run_forever();
+}
+```
+
+#### TLS 证书来源
+
+Pingora **不自带 ACME**，证书需外部提供。两种推荐路径：
+
+| 方式 | 推荐场景 | 命令 |
+| --- | --- | --- |
+| `certbot --standalone` | 单机部署；先停 Pingora、申请、再启动 | `certbot certonly --standalone -d example.com` |
+| [`lego`](https://github.com/go-acme/lego) | 容器化部署；可独立 sidecar 跑续期 | `lego --email you@example.com --domains example.com --http run` |
+| Rust 原生：[`instant-acme`](https://crates.io/crates/instant-acme) | 想纯 Rust 栈 | 需自己写续期脚本，~50 行 |
+
+证书续期后给 Pingora 进程发 `SIGHUP` 触发零停机热重载（Pingora 内置）：
+
+```bash
+systemctl reload rie-gateway   # 或：kill -HUP $(pidof rie-gateway)
+```
+
+#### 运行
+
+```bash
+sudo -E TLS_CERT_PATH=/etc/letsencrypt/live/example.com/fullchain.pem \
+        TLS_KEY_PATH=/etc/letsencrypt/live/example.com/privkey.pem \
+        ./target/release/rie-gateway
+```
+
+绑定 443/80 需要 root（或在 systemd unit 加 `AmbientCapabilities=CAP_NET_BIND_SERVICE`，避免长期 root）。推荐打成 systemd unit + `User=rie-gateway` 的非 root 用户跑。
+
+#### 上传体积
+
+app 已在 server fn 内强制 5 MB 限制（Phase 1A.4）。Pingora 默认对 body 大小无硬上限，依赖上游兜底；若需要在边缘提前丢弃超大请求，可在 `request_filter` 内读 `Content-Length` 头 + 拒绝。
+
+#### 与 docker-compose 的关系
+
+`docker-compose.yml` 仍只跑 `app` + `postgres`，并把 8080 绑到 `127.0.0.1:8080`（不暴露公网）。`rie-gateway` 作为**宿主机**进程（或独立容器）监听 443/80 → 转发到 127.0.0.1:8080。这样：
+- 升级 app：`docker compose pull app && docker compose up -d app`，Pingora 不受影响。
+- 升级网关：`cargo build --release && systemctl reload rie-gateway`，app 不受影响。
+
+### 6.2 Caddy（最简备选，零配置 ACME）
 
 ```Caddyfile
 example.com {
@@ -130,9 +300,9 @@ example.com {
 }
 ```
 
-Caddy 自动申请 + 续期 Let's Encrypt 证书。
+Caddy 自动申请 + 续期 Let's Encrypt 证书。无 Rust 工具链时最省心。
 
-### 6.2 nginx
+### 6.3 nginx
 
 ```nginx
 server {
@@ -155,7 +325,7 @@ server {
 }
 ```
 
-### 6.3 Traefik 标签（compose 集成）
+### 6.4 Traefik 标签（compose 集成）
 
 如果用 Traefik，在 `docker-compose.yml::app.labels` 加：
 
@@ -256,8 +426,7 @@ docker compose logs -f app | grep "schema migrations"
 ## 11. 已知限制
 
 - **uploads/ 不集中备份**：当前用户图片只在 `app-uploads` 卷里；若需异地备份，挂 NFS / S3-FUSE 或自行 `docker cp` 定时拷出。
-- **搜索索引 RAMDirectory**：每次重启重建全量索引。Phase 7.3 将切到 MmapDirectory 增量持久化。
-- **PKCE store 进程内**：app 容器重启会丢失正在进行的 OAuth state，未完成登录的用户需要重新点登录。Phase 7.2 计划改为加密 cookie 替代。
+- **搜索索引目录需挂卷**：Phase 7.3 起索引落盘到 `SEARCH_INDEX_DIR`（默认 `data/search-index`）。docker-compose 已为该路径配卷；裸机部署需自行确保该目录持久化，否则重启会触发一次全量重建（仍可正常对外服务，只是冷启动慢）。
 - **moderation provider**：当前 ModerationEngine 为骨架，未接入实际 LLM。Phase 4.3+ 落地。
 
 ## 12. 参考
