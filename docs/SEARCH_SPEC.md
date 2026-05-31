@@ -18,7 +18,8 @@
 ## 3. Schema
 | 字段 | 类型 | 用途 |
 |---|---|---|
-| `kind` | STRING + STORED + FAST | 过滤(blog/doc/topic) |
+| `doc_uid` | STRING + STORED | 唯一标识 `{kind}:{ref_id}`，供增量 upsert/delete 的 `delete_term` 命中（Phase 7.3.2） |
+| `kind` | STRING + STORED + FAST | 过滤(blog/doc/topic/case/embedded/ai/web3/wasm/cli) |
 | `ref_id` | STRING + STORED | 资源 id(slug/path/topic_id) |
 | `title` | TEXT(jieba) + STORED | 标题 |
 | `body` | TEXT(jieba) + STORED | 正文 |
@@ -53,7 +54,12 @@
 ```
 
 ### `POST /api/search/reindex`
-要求 admin。强制重建索引;返回中文成功消息。
+要求 admin。入参 `mode: Option<String>`：
+
+- `mode = None` / `"incremental"`（默认）：基于上一版 `IndexManifest` 与当前磁盘 / DB 状态做差分增量 upsert/delete。文件来源按 mtime 跳过未变；动态来源（cases/topics）全量 upsert 但按上次 uid 集合检测删除。
+- `mode = "full"`：清空索引并全量重写（与旧行为一致）。
+
+返回 `ReindexReport { mode, upserts, deletes, elapsed_ms }`。
 
 ## 6. 前端交互
 - 导航栏右上角放大镜按钮 `SearchButton` —— 显示"⌘K"提示。
@@ -63,9 +69,11 @@
 - 结果按 kind 显示彩色徽章(BLOG/DOC/TOPIC),命中片段最长 200 字符,标题 + URL + 日期 + 分数。
 
 ## 7. 索引生命周期
-- **Lazy 构建**:首次调用 `search_query` 时触发 `engine::get_or_build`,扫描资产目录 + DB,RAM 写入索引。
-- **强制重建**:管理员调 `search_reindex`(后续可在 `/admin/plugins` 旁追加按钮),`engine::rebuild` 替换全局单例。
-- **进程重启**:RAM 索引随进程消失,下次首查自动重建。当前单实例部署可接受;未来切磁盘 `MmapDirectory` 时只改 `engine::SearchEngine::build_with_documents`。
+- **持久化目录**（Phase 7.3.1）：`MmapDirectory` + `Index::open_or_create`，路径由 `SEARCH_INDEX_DIR` 环境变量控制，默认 `data/search-index`。目录不存在自动 `create_dir_all`；schema 不匹配自动清空目录重建（schema 迁移）。
+- **启动期 `init_or_load`**：非空目录直接复用（不重新扫描磁盘）；空目录走 `full_populate_with_manifest`：全量扫描 + 写 `manifest.json` 作为后续增量的基线。
+- **增量重建**（Phase 7.3.3）：`engine::reindex_incremental` 读 `IndexManifest`，与当前磁盘 / DB 状态算差分（`indexer::diff_for_reindex` 纯函数），按 `delete_term + add_document` 应用，最后原子写新 manifest（`.tmp` → rename）。文件来源 mtime 差分；动态来源（cases/topics）全量 upsert + 上次 uid 集合差分检测删除。
+- **强制全量**：`engine::rebuild`（或 `search_reindex` 传 `mode="full"`）走 `full_populate_with_manifest`，清空 + 重写 + 同步刷新 manifest。
+- **进程重启**:磁盘索引仍在，下次启动 `init_or_load` 直接复用。
 
 ## 8. 中文分词
 - `tantivy-jieba::JiebaTokenizer::default()` 注册为名为 `jieba` 的 tokenizer。
@@ -78,16 +86,16 @@
 - `reindex` 接口由 `core::session::require_admin` 保护。
 
 ## 10. 测试覆盖
-`cargo test --features server -p module-search` 共 34 个单元测试:
-- `text`:frontmatter / 标题 / 链接 / 图片 / 中文 / 截断(11)
-- `indexer`:frontmatter kv / md 解析 / 递归扫描 / 跳过隐藏目录(5)
-- `engine`:schema 字段 / 转义 / snippet / 实际查询(英文/中文/kind 过滤/特殊字符/空查询)(13)
-- `server`:`clamp_limit` / `normalize_kind` 范围与边界(5)
+`cargo test --features server -p module-search` 共 64 个单元测试（Phase 7.3 后）:
+- `text`:frontmatter / 标题 / 链接 / 图片 / 中文 / 截断
+- `indexer`:frontmatter kv / md 解析 / 递归扫描 / 跳过隐藏目录 / 模块开关过滤 / `IndexManifest` round-trip + 缺失/损坏 fallback / `diff_for_reindex` 6 个场景（added / modified / unchanged / removed / dyn upsert / dyn delete / mixed）
+- `engine`:schema 字段 / 转义 / snippet / 实际查询（英/中/kind 过滤/特殊字符/空）/ MmapDirectory 持久化（drop+reopen / 空目录 / schema 不匹配 / 自定义路径 / replace_all）/ 增量 API（upsert/delete/同 uid 去重/不同 kind 隔离）
+- `server`:`clamp_limit` / `normalize_kind`
 
 ## 11. 不在本期范围
 - 拼写容错(typo tolerance)
-- 索引磁盘持久化(MmapDirectory)
 - 评论/标注/课程 lesson 索引源
 - 高亮 HTML(目前 snippet 是纯文本)
 - 同义词字典 / 关键词高亮的服务端 hl 标签
 - `scripts/reindex.sh` 通过 admin 接口触发(后续可加 curl 命令封装)
+- 监听文件系统事件（inotify / FSEvents）自动触发增量；当前只在 admin 调 `search_reindex` 时跑一次

@@ -19,7 +19,10 @@ use tantivy::schema::{Field, Schema, TextFieldIndexing, TextOptions, FAST, STORE
 use tantivy::tokenizer::TextAnalyzer;
 use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, TantivyError, Term};
 
-use crate::indexer::{collect_documents, IndexedDocument};
+use crate::indexer::{
+  collect_dyn_documents, collect_file_documents, diff_for_reindex, filter_versioned_by_enabled,
+  IndexManifest, IndexedDocument,
+};
 use crate::text::truncate_chars;
 
 pub const TOKENIZER_NAME: &str = "jieba";
@@ -362,15 +365,14 @@ pub async fn get_or_build() -> Result<Arc<SearchEngine>, String> {
 /// 启动期入口：在 `dir` 上打开或创建索引。
 ///
 /// - 目录已存在索引（非空）→ 直接复用，**不**重新扫描磁盘。
-/// - 目录为空 / 首次启动 → 全量扫描 [`collect_documents`] 填充。
+/// - 目录为空 / 首次启动 → 全量扫描 + 写 [`IndexManifest`]，为后续增量索引备好基线。
 /// - schema 不匹配 → 自动清空重建（[`SearchEngine::open_or_create`]）后填充。
 pub async fn init_or_load(dir: &Path) -> Result<Arc<SearchEngine>, String> {
   let (engine, was_freshly_created) = SearchEngine::open_or_create(dir)?;
   let engine = Arc::new(engine);
 
   if was_freshly_created {
-    let docs = collect_documents().await?;
-    let count = engine.replace_all(docs)?;
+    let count = full_populate_with_manifest(&engine).await?;
     tracing::info!(
       dir = %dir.display(),
       documents = count,
@@ -390,7 +392,7 @@ pub async fn init_or_load(dir: &Path) -> Result<Arc<SearchEngine>, String> {
   Ok(engine)
 }
 
-/// 强制全量重建当前引擎的索引（保持持久化目录）。
+/// 强制全量重建当前引擎的索引（保持持久化目录），并同步刷新 manifest。
 pub async fn rebuild() -> Result<Arc<SearchEngine>, String> {
   let engine = match engine_slot().lock() {
     Ok(g) => g.as_ref().cloned(),
@@ -401,11 +403,70 @@ pub async fn rebuild() -> Result<Arc<SearchEngine>, String> {
     None => return init_or_load(&resolve_index_dir()).await,
   };
 
-  let docs = collect_documents().await?;
-  let count = engine.replace_all(docs)?;
-  tracing::info!(documents = count, dir = %engine.dir.display(), "search: index rebuilt");
+  let count = full_populate_with_manifest(&engine).await?;
+  tracing::info!(documents = count, dir = %engine.dir.display(), "search: index rebuilt (full)");
   Ok(engine)
 }
+
+/// Phase 7.3.3：mtime 差分 + 动态来源 diff 的增量 reindex 报告。
+#[derive(Debug, Clone, Default)]
+pub struct IncrementalReport {
+  pub upserts: usize,
+  pub deletes: usize,
+  pub elapsed_ms: u64,
+}
+
+/// 增量重建：基于上一版 [`IndexManifest`] 与当前磁盘 / DB 状态做差分。
+///
+/// 文件来源按 mtime 跳过未变文档；动态来源（cases / topics）全量 upsert，
+/// 但通过 manifest 检测删除。比 [`rebuild`] 显著更快，适合频繁调用。
+pub async fn reindex_incremental() -> Result<IncrementalReport, String> {
+  use std::time::Instant;
+
+  let engine = get_or_build().await?;
+  let started = Instant::now();
+  let prev = IndexManifest::load(&engine.dir);
+
+  let file_docs = collect_file_documents();
+  let dyn_docs = collect_dyn_documents().await;
+  let enabled = app_core::engines::module::default_module_engine().enabled_ids();
+  let file_docs = filter_versioned_by_enabled(file_docs, &enabled);
+  let dyn_docs = crate::indexer::filter_documents_by_enabled(dyn_docs, &enabled);
+
+  let diff = diff_for_reindex(&prev, file_docs, dyn_docs);
+  let upserts = diff.upserts.len();
+  let deletes = diff.deletes.len();
+  engine.upsert_documents(&diff.upserts)?;
+  engine.delete_documents(&diff.deletes)?;
+  diff.next.save(&engine.dir)?;
+
+  let elapsed_ms = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+  tracing::info!(
+    upserts,
+    deletes,
+    elapsed_ms,
+    dir = %engine.dir.display(),
+    "search: incremental reindex applied"
+  );
+  Ok(IncrementalReport { upserts, deletes, elapsed_ms })
+}
+
+/// 全量填充 + 同步写 manifest。`init_or_load` 和 `rebuild` 共用，保证
+/// 每次全量后 manifest 与索引状态一致，后续 `reindex_incremental` 才能正确 diff。
+async fn full_populate_with_manifest(engine: &SearchEngine) -> Result<usize, String> {
+  let file_docs = collect_file_documents();
+  let dyn_docs = collect_dyn_documents().await;
+  let enabled = app_core::engines::module::default_module_engine().enabled_ids();
+  let file_docs = filter_versioned_by_enabled(file_docs, &enabled);
+  let dyn_docs = crate::indexer::filter_documents_by_enabled(dyn_docs, &enabled);
+
+  // 复用纯函数算出新 manifest（prev=空 → 所有 uid 进 next）
+  let diff = diff_for_reindex(&IndexManifest::default(), file_docs, dyn_docs);
+  let count = engine.replace_all(diff.upserts)?;
+  diff.next.save(&engine.dir)?;
+  Ok(count)
+}
+
 
 #[cfg(test)]
 mod tests {

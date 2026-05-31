@@ -84,18 +84,55 @@ pub async fn search_query(
   }
 }
 
-/// 强制重建索引(管理员)。
+/// Reindex 结果（管理员调用 `search_reindex` 后的结构化报告）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ReindexReport {
+  /// `"incremental"` 或 `"full"`。
+  pub mode: String,
+  pub upserts: usize,
+  pub deletes: usize,
+  pub elapsed_ms: u64,
+}
+
+/// 重建索引（管理员）。Phase 7.3.3：默认走增量；`mode=full` 强制全量。
+///
+/// - `mode = None` 或 `"incremental"`：按 mtime + 动态来源差分增量 upsert/delete。
+/// - `mode = "full"`：清空索引 + 重新写入所有文档（与旧行为一致）。
 #[post("/api/search/reindex")]
-pub async fn search_reindex() -> Result<String, ServerFnError> {
+pub async fn search_reindex(mode: Option<String>) -> Result<ReindexReport, ServerFnError> {
   #[cfg(feature = "server")]
   {
     use app_core::session::require_admin;
     let _ = require_admin()?;
-    crate::engine::rebuild().await.map_err(ServerFnError::new)?;
-    Ok("索引已重建".to_string())
+    let mode_str = mode.as_deref().map(|s| s.trim()).unwrap_or("incremental");
+    match mode_str {
+      "full" => {
+        use std::time::Instant;
+        let started = Instant::now();
+        let engine = crate::engine::rebuild().await.map_err(ServerFnError::new)?;
+        let total = engine.reader.searcher().num_docs() as usize;
+        let elapsed_ms = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+        Ok(ReindexReport {
+          mode: "full".to_string(),
+          upserts: total,
+          deletes: 0,
+          elapsed_ms,
+        })
+      }
+      _ => {
+        let r = crate::engine::reindex_incremental().await.map_err(ServerFnError::new)?;
+        Ok(ReindexReport {
+          mode: "incremental".to_string(),
+          upserts: r.upserts,
+          deletes: r.deletes,
+          elapsed_ms: r.elapsed_ms,
+        })
+      }
+    }
   }
   #[cfg(not(feature = "server"))]
   {
+    let _ = mode;
     Err(ServerFnError::new("server only".to_string()))
   }
 }
