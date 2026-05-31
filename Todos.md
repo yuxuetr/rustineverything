@@ -387,7 +387,7 @@
 
 ### 7.3 搜索持久化
 - [x] `MmapDirectory` 替代 `RAMDirectory`：`engine.rs` 改为 `Index::open_or_create(MmapDirectory::open(dir), schema)`；`SEARCH_INDEX_DIR` 环境变量控制路径（默认 `data/search-index`），目录不存在自动 `create_dir_all`；schema 不匹配（旧索引残留）自动清空目录重建（schema 迁移）；`init_or_load()` 启动期入口：非空 → 复用，空 → 全量填充；新增 6 个单测覆盖持久化（drop+reopen 数据保留 / 空目录初始化 / schema 不匹配清空重建 / 自定义路径解析 / 默认路径 / replace_all 全量替换）。全 45 个 module-search 单测通过
-- [ ] 增量索引
+- [-] 增量索引：Phase 7.3.2 已落地增量 API（schema 加 `doc_uid` 字段 `{kind}:{ref_id}`；engine 新增 `upsert_document` / `upsert_documents` / `delete_documents` 走 `delete_term + add_document` + 单 writer/单 commit + reader reload；同 uid 更新原地替换不重复；不同 kind 同 ref_id 互不干扰；8 个新单测）。Phase 7.3.3 待补 mtime 差分扫描 + admin endpoint 切增量为默认
 
 ### 7.4 部署
 - [x] `Dockerfile`（多阶段 Debian/glibc）：builder = `rust:1-trixie` + node 20/npm + dx CLI(`=0.7.5`) + wasm32 target，串接 Tailwind v4 编译 → `scripts/build_themes.sh` 主题构建 → `dx bundle --platform web --release` 全栈打包；runtime = `debian:trixie-slim` + `ca-certificates` + `tini`，非 root 用户 `app` 运行 `dx bundle` 产物。**改用 Debian 而非 Alpine**：`dx bundle` release 下载 GitHub 预编译 glibc wasm-bindgen/wasm-opt，musl(Alpine) 上因缺 ld-linux 解释器 ENOENT 失败；builder/runtime 同为 trixie 保证 glibc 对齐。通过 `CARGO_TARGET_DIR=/tmp/target` 覆盖 `.cargo/config.toml` 开发者本地路径。配套 `.dockerignore` 排除 target/node_modules/.git/docs 等大目录，控制构建上下文体积

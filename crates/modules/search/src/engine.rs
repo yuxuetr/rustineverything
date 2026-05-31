@@ -17,7 +17,7 @@ use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Field, Schema, TextFieldIndexing, TextOptions, FAST, STORED, STRING};
 use tantivy::tokenizer::TextAnalyzer;
-use tantivy::{doc, Index, IndexReader, ReloadPolicy, TantivyDocument, TantivyError};
+use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, TantivyError, Term};
 
 use crate::indexer::{collect_documents, IndexedDocument};
 use crate::text::truncate_chars;
@@ -42,6 +42,8 @@ pub struct EngineHit {
 /// schema 字段引用集合。
 #[derive(Clone)]
 pub struct SearchFields {
+  /// 文档唯一标识 `{kind}:{ref_id}`，用于增量 upsert / delete（Phase 7.3.2）。
+  pub doc_uid: Field,
   pub kind: Field,
   pub ref_id: Field,
   pub title: Field,
@@ -58,6 +60,8 @@ pub fn build_schema() -> (Schema, SearchFields) {
     .set_index_option(tantivy::schema::IndexRecordOption::WithFreqsAndPositions);
   let text_options = TextOptions::default().set_indexing_options(text_indexing).set_stored();
 
+  // doc_uid 用 STRING（单 token，整串精确匹配）+ STORED，方便 `delete_term` 命中。
+  let doc_uid = builder.add_text_field("doc_uid", STRING | STORED);
   let kind = builder.add_text_field("kind", STRING | STORED | FAST);
   let ref_id = builder.add_text_field("ref_id", STRING | STORED);
   let title = builder.add_text_field("title", text_options.clone());
@@ -66,8 +70,13 @@ pub fn build_schema() -> (Schema, SearchFields) {
   let created_at = builder.add_text_field("created_at", STRING | STORED);
 
   let schema = builder.build();
-  let fields = SearchFields { kind, ref_id, title, body, url, created_at };
+  let fields = SearchFields { doc_uid, kind, ref_id, title, body, url, created_at };
   (schema, fields)
+}
+
+/// 文档 uid 拼接：`{kind}:{ref_id}`。供 indexer / engine 共用。
+pub fn doc_uid(kind: &str, ref_id: &str) -> String {
+  format!("{}:{}", kind, ref_id)
 }
 
 /// 解析持久化目录：优先 `SEARCH_INDEX_DIR`，否则用 [`DEFAULT_INDEX_DIR`]。
@@ -138,28 +147,81 @@ impl SearchEngine {
 
   /// 用给定文档全量替换当前索引内容（清空 → 写入 → commit → reload reader）。
   pub fn replace_all(&self, docs: Vec<IndexedDocument>) -> Result<usize, String> {
-    let mut writer =
-      self.index.writer(50_000_000).map_err(|e| format!("search: writer init failed: {}", e))?;
+    let mut writer = self.new_writer()?;
     writer
       .delete_all_documents()
       .map_err(|e| format!("search: delete_all_documents failed: {}", e))?;
 
     let count = docs.len();
     for d in docs {
-      writer
-        .add_document(doc!(
-            self.fields.kind => d.kind,
-            self.fields.ref_id => d.ref_id,
-            self.fields.title => d.title,
-            self.fields.body => d.body,
-            self.fields.url => d.url,
-            self.fields.created_at => d.created_at,
-        ))
-        .map_err(|e| format!("search: add_document failed: {}", e))?;
+      self.add_one(&mut writer, &d)?;
     }
     writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
     self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))?;
     Ok(count)
+  }
+
+  /// 增量 upsert 单篇文档（先按 `doc_uid` 删除旧版，再插入新版）。
+  ///
+  /// 适合单文档热更新；如需批量请用 [`Self::upsert_documents`]，单次 writer +
+  /// 单次 commit 显著更高效。
+  pub fn upsert_document(&self, doc: &IndexedDocument) -> Result<(), String> {
+    self.upsert_documents(std::slice::from_ref(doc)).map(|_| ())
+  }
+
+  /// 增量 upsert 一组文档：单 writer / 单 commit。返回写入的文档数。
+  ///
+  /// 语义：对每篇 `(kind, ref_id)` 已存在的旧文档 → 删除；然后写入新版。
+  /// 调用方需保证每个 `IndexedDocument` 的 `(kind, ref_id)` 在批内唯一，
+  /// 否则同 uid 的最后一篇会胜出。
+  pub fn upsert_documents(&self, docs: &[IndexedDocument]) -> Result<usize, String> {
+    if docs.is_empty() {
+      return Ok(0);
+    }
+    let mut writer = self.new_writer()?;
+    for d in docs {
+      let term = Term::from_field_text(self.fields.doc_uid, &doc_uid(&d.kind, &d.ref_id));
+      writer.delete_term(term);
+      self.add_one(&mut writer, d)?;
+    }
+    writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
+    self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))?;
+    Ok(docs.len())
+  }
+
+  /// 增量删除一组文档（按 `doc_uid`）。不存在的 uid 静默忽略。
+  pub fn delete_documents(&self, uids: &[String]) -> Result<usize, String> {
+    if uids.is_empty() {
+      return Ok(0);
+    }
+    let mut writer = self.new_writer()?;
+    for uid in uids {
+      let term = Term::from_field_text(self.fields.doc_uid, uid);
+      writer.delete_term(term);
+    }
+    writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
+    self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))?;
+    Ok(uids.len())
+  }
+
+  fn new_writer(&self) -> Result<IndexWriter, String> {
+    self.index.writer(50_000_000).map_err(|e| format!("search: writer init failed: {}", e))
+  }
+
+  fn add_one(&self, writer: &mut IndexWriter, d: &IndexedDocument) -> Result<(), String> {
+    let uid = doc_uid(&d.kind, &d.ref_id);
+    writer
+      .add_document(doc!(
+          self.fields.doc_uid => uid,
+          self.fields.kind => d.kind.clone(),
+          self.fields.ref_id => d.ref_id.clone(),
+          self.fields.title => d.title.clone(),
+          self.fields.body => d.body.clone(),
+          self.fields.url => d.url.clone(),
+          self.fields.created_at => d.created_at.clone(),
+      ))
+      .map(|_| ())
+      .map_err(|e| format!("search: add_document failed: {}", e))
   }
 
   /// 查询：返回按 BM25 分数排序的结果。
@@ -587,6 +649,146 @@ mod tests {
     std::env::remove_var("SEARCH_INDEX_DIR");
     let resolved = resolve_index_dir();
     assert_eq!(resolved, PathBuf::from(DEFAULT_INDEX_DIR));
+  }
+
+  // ---- Phase 7.3.2：增量 upsert / delete ----
+
+  fn doc_with(kind: &str, ref_id: &str, title: &str, body: &str) -> IndexedDocument {
+    IndexedDocument {
+      kind: kind.to_string(),
+      ref_id: ref_id.to_string(),
+      title: title.to_string(),
+      body: body.to_string(),
+      url: format!("/{}/{}", kind, ref_id),
+      created_at: String::new(),
+    }
+  }
+
+  #[test]
+  fn doc_uid_format() {
+    assert_eq!(doc_uid("blog", "hello"), "blog:hello");
+  }
+
+  #[test]
+  fn upsert_document_inserts_when_missing() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    eng.upsert_document(&doc_with("blog", "a", "First", "body a")).expect("upsert");
+    assert_eq!(eng.reader.searcher().num_docs(), 1);
+    let hits = eng.query("First", None, 10).expect("query");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].title, "First");
+  }
+
+  #[test]
+  fn upsert_document_replaces_in_place_for_same_uid() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    eng.upsert_document(&doc_with("blog", "a", "Original", "body v1")).expect("first");
+    eng.upsert_document(&doc_with("blog", "a", "Updated", "body v2")).expect("second");
+    // 同 uid，无重复
+    assert_eq!(eng.reader.searcher().num_docs(), 1);
+    // 旧标题 / 旧 body 已不可命中
+    assert!(eng.query("Original", None, 10).expect("query").is_empty());
+    let hits = eng.query("Updated", None, 10).expect("query");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].title, "Updated");
+  }
+
+  #[test]
+  fn upsert_documents_batches_inserts_and_updates() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    eng
+      .upsert_documents(&[
+        doc_with("blog", "a", "Alpha", "firstversion"),
+        doc_with("blog", "b", "Beta", "originalbody"),
+      ])
+      .expect("seed");
+    assert_eq!(eng.reader.searcher().num_docs(), 2);
+
+    // 批内一新增 (c) + 一更新 (b)。用完全不同的 body token 以保证旧文档真的消失。
+    eng
+      .upsert_documents(&[
+        doc_with("blog", "c", "Gamma", "thirdversion"),
+        doc_with("blog", "b", "Beta", "rewrittenbody"),
+      ])
+      .expect("incremental");
+    assert_eq!(eng.reader.searcher().num_docs(), 3);
+
+    // b 的旧 body token "originalbody" 必须查不到（旧版已删）
+    assert!(eng.query("originalbody", None, 10).expect("old b").is_empty());
+    // 新 body 可查
+    let hits_new = eng.query("rewrittenbody", None, 10).expect("new b");
+    assert_eq!(hits_new.len(), 1);
+    assert_eq!(hits_new[0].ref_id, "b");
+    // 新增的 c 也在
+    let hits_c = eng.query("thirdversion", None, 10).expect("c");
+    assert_eq!(hits_c.len(), 1);
+    assert_eq!(hits_c[0].ref_id, "c");
+  }
+
+  #[test]
+  fn upsert_documents_empty_input_is_noop() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    let n = eng.upsert_documents(&[]).expect("empty");
+    assert_eq!(n, 0);
+    assert_eq!(eng.reader.searcher().num_docs(), 0);
+  }
+
+  #[test]
+  fn delete_documents_removes_matching_uids_and_ignores_missing() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    eng
+      .upsert_documents(&[
+        doc_with("blog", "a", "A", "alpha"),
+        doc_with("blog", "b", "B", "beta"),
+        doc_with("doc", "x", "X", "x body"),
+      ])
+      .expect("seed");
+    assert_eq!(eng.reader.searcher().num_docs(), 3);
+
+    // 删一个存在 + 一个不存在；不存在的应静默忽略，不报错。
+    eng
+      .delete_documents(&[doc_uid("blog", "a"), doc_uid("blog", "does-not-exist")])
+      .expect("delete");
+    assert_eq!(eng.reader.searcher().num_docs(), 2);
+    assert!(eng.query("alpha", None, 10).expect("alpha").is_empty());
+    // 其余两篇仍可被命中
+    let hits_beta = eng.query("beta", None, 10).expect("beta");
+    assert_eq!(hits_beta.len(), 1);
+  }
+
+  #[test]
+  fn delete_documents_empty_input_is_noop() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    eng.upsert_document(&doc_with("blog", "a", "A", "alpha")).expect("seed");
+    let n = eng.delete_documents(&[]).expect("noop");
+    assert_eq!(n, 0);
+    assert_eq!(eng.reader.searcher().num_docs(), 1);
+  }
+
+  #[test]
+  fn doc_uid_distinguishes_kinds_with_same_ref_id() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    eng
+      .upsert_documents(&[
+        doc_with("blog", "shared", "Blog post", "shared body"),
+        doc_with("doc", "shared", "Doc page", "shared body"),
+      ])
+      .expect("seed");
+    assert_eq!(eng.reader.searcher().num_docs(), 2);
+
+    // 删除 blog:shared，不应影响 doc:shared
+    eng.delete_documents(&[doc_uid("blog", "shared")]).expect("delete");
+    assert_eq!(eng.reader.searcher().num_docs(), 1);
+    let remaining = eng.query("Doc", None, 10).expect("query");
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].kind, "doc");
   }
 
   #[test]
