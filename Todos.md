@@ -75,7 +75,7 @@
 - [x] `app/src/main.rs`：移除通过 `dioxus::document::eval` 动态创建 `<style>` 标签的 JavaScript 注入逻辑
 - [x] 使用原生 RSX 语法重构：在虚拟 DOM 中直接渲染 `<style id="wasm-theme-style">{theme_css}</style>`
 - [x] 验证：确保切换主题时无闪烁，且去除对浏览器 DOM API 的直接依赖
-- [ ] 同步排查：`markdown.rs` 中 Prism / Mermaid 的 `dioxus::document::eval` 调用是否可用 `document::Script` 或 hydration-safe 方式替代（desktop / mobile 平台需求）
+- [x] 同步排查：`widgets/src/mdx.rs` 中 Prism / Mermaid 的 `dioxus::document::eval` 已替换为 `document::Script` + 内联 JS 常量 `MARKDOWN_REHIGHLIGHT_SCRIPT`：声明式渲染 `<script>` 节点，SSR 直接随 HTML 流执行、客户端 Dioxus 挂载时同样触发、desktop/mobile 后端按普通节点忽略 → 不再依赖仅 web 可用的 `eval` JS 注入。脚本本身保留轮询（等 `/js/prism.min.js`、`/js/mermaid.min.js` 就绪）+ Mermaid `try/catch` 抗重复运行。同步修复 markdown 渲染回归：`assets/js/` 此前完全没有 vendor JS（prism 系列 + mermaid + annotations 都仅存于 `.gitignore` 的 `crates/app/assets/js/`，新克隆即缺失 → 代码高亮失效 + Mermaid 不渲染），本次把 Prism 1.30.0 core + 6 语言包 (rust/bash/toml/json/yaml/python) + Mermaid + annotations.js 全部 vendor 到 `assets/js/` 由 `build.rs` 同步
 
 ### 1A.6 验收门禁
 - [x] `cargo test --features server --workspace` 全绿（183 tests pass under —test-threads=1）
