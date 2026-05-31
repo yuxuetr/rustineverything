@@ -417,8 +417,11 @@ fn main() {
             }
 
             let xml = build_sitemap_xml(&entries, &static_paths, &base);
+            // Phase 8.5：sitemap 1 小时 Cache-Control，让爬虫与 CDN 不至于
+            // 每次请求都打满 list_* hot path。`public` 表示中间代理也能缓存。
             axum::response::Response::builder()
               .header("content-type", "application/xml; charset=utf-8")
+              .header("cache-control", "public, max-age=3600")
               .body(axum::body::Body::from(xml))
               .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
           }
@@ -498,8 +501,11 @@ fn main() {
             )
             .unwrap_or_default();
             let xml = build_atom_feed(&entries, &cfg.site_name, &cfg.site_description, &base);
+            // Phase 8.5：同 sitemap，feed 1 小时 Cache-Control 缓解 RSS reader
+            // 高频轮询带来的 server fn 调用压力。
             axum::response::Response::builder()
               .header("content-type", "application/atom+xml; charset=utf-8")
+              .header("cache-control", "public, max-age=3600")
               .body(axum::body::Body::from(xml))
               .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
           }
@@ -511,8 +517,10 @@ fn main() {
           let base = robots_base.clone();
           async move {
             let body = widgets::build_robots_txt(&base);
+            // robots.txt 几乎不变，6h 缓存。
             axum::response::Response::builder()
               .header("content-type", "text/plain; charset=utf-8")
+              .header("cache-control", "public, max-age=21600")
               .body(axum::body::Body::from(body))
               .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
           }

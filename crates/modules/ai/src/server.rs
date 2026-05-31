@@ -63,16 +63,15 @@ fn parse_frontmatter(content: &str) -> FrontMatter {
   serde_yaml::from_str(parts[1]).unwrap_or_default()
 }
 
-/// 扫描 `assets/topics/ai/*/index.md`，按日期降序返回文章摘要。
-#[server]
-pub async fn list_ai_articles() -> Result<Vec<ArticleSummary>, ServerFnError> {
-  let dir = get_asset_root().join("topics").join(BOARD_ID);
-  if !dir.exists() {
-    return Ok(Vec::new());
-  }
+/// Phase 8.5：板块列表 mtime cache。
+#[cfg(feature = "server")]
+static LIST_CACHE: app_core::utils::DirListingCache<Vec<ArticleSummary>> =
+  app_core::utils::DirListingCache::new();
 
+#[cfg(feature = "server")]
+fn build_article_list(dir: &std::path::Path) -> Vec<ArticleSummary> {
+  let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
   let mut items = Vec::new();
-  let entries = fs::read_dir(&dir).map_err(|e| ServerFnError::new(e.to_string()))?;
   for entry in entries.flatten() {
     let path = entry.path();
     if !path.is_dir() {
@@ -101,9 +100,22 @@ pub async fn list_ai_articles() -> Result<Vec<ArticleSummary>, ServerFnError> {
       tags: meta.tags,
     });
   }
-
   sort_by_date_desc(&mut items);
-  Ok(items)
+  items
+}
+
+/// 扫描 `assets/topics/ai/*/index.md`，按日期降序返回文章摘要。
+#[server]
+pub async fn list_ai_articles() -> Result<Vec<ArticleSummary>, ServerFnError> {
+  let dir = get_asset_root().join("topics").join(BOARD_ID);
+  if !dir.exists() {
+    return Ok(Vec::new());
+  }
+  let fp = app_core::utils::fingerprint_for_dir(&dir, |p| {
+    matches!(p.file_name().and_then(|n| n.to_str()), Some("index.md" | "index.mdx"))
+  });
+  let cached = LIST_CACHE.get_or_rebuild(fp, || build_article_list(&dir));
+  Ok((*cached).clone())
 }
 
 /// 读取单篇文章的原始 markdown（含 frontmatter）。

@@ -143,26 +143,30 @@
 
 > 来源：performance agent。WASM 调用 / Markdown 解析 / list_* 重读全部按"每请求"做，浪费 5-50× 的工作。
 
-- [ ] **theme CSS 启动期 + 热重载期算一次缓存**（`crates/app/src/server/mod.rs::get_aggregated_theme_css`）
-   - `OnceLock<RwLock<Arc<String>>>`
-   - `shared_plugin_manager().invalidate_all()` 时同步 invalidate
-   - 单测：调 100 次后 WASM 实际只被调 1 次
-- [ ] **i18n 翻译表整表缓存**（`crates/app/src/server/mod.rs::translate_server` + 插件 ABI）
-   - 插件加 `get_all(lang) -> JSON map` export（同 plugin ABI v1，向后兼容）
-   - host 端按 `(mtime, lang)` cache `HashMap<key, String>`
-   - 单测：navbar 10 翻译键 → WASM 调用 1 次
-- [ ] **Markdown 渲染 mtime cache**（`crates/widgets/src/mdx.rs`）
-   - `OnceLock<DashMap<PathBuf, (SystemTime, Arc<RenderedHtml>)>>`（结构待定，可能存中间 token stream）
-   - 现实约束：Markdown 输出是 `Element` 不易 cache，可能要 cache `Vec<Event>` 或 prerendered String
-   - 替代方案：blog/doc loader 加文件级缓存，挪到 list_* 之前
-- [ ] **list_blog_posts / list_*_articles mtime cache**（`crates/modules/blog/src/server.rs:29-72` + 板块 server.rs）
-   - 通用 helper `crates/core/src/utils.rs::dir_listing_cache::<T>(dir, mtime_key, builder)`
-   - `/sitemap.xml` `/feed.xml` 受益最大
-- [ ] **sitemap / feed Cache-Control 头**（`crates/app/src/main.rs` ServeDir / axum route）
-   - 加 `Cache-Control: public, max-age=3600`
-- [ ] 性能 benchmark 脚本：`scripts/bench_hot_paths.sh` 跑 `/blog/welcome` × 100 / `/sitemap.xml` × 100，对比 cache 前后 P95
+- [x] **theme CSS 每路径 mtime cache**（`crates/core/src/lib.rs` PluginManager）
+   - 新增 `theme_css_cache: Mutex<HashMap<PathBuf, (SystemTime, Arc<String>)>>`
+   - `aggregate_theme_css_paths` 命中时跳过 wasmi instantiate / call / memory I/O，
+     直接拼缓存的 Arc<String>
+   - `invalidate(path)` / `invalidate_all()` 同步清 theme cache 防 stale
+   - 单测：`theme_css_chunk_cache_populates_and_invalidates`（命中条目数 + invalidate 语义）
+- [ ] **i18n 翻译表整表缓存** —— deferred（需要插件加 `get_all(lang)` 新 ABI export，
+   面太大，留 Phase 9 一起做）
+- [ ] **Markdown 渲染 mtime cache** —— deferred（`Element` 类型不易 cache；
+   blog/doc loader 层已通过 8.5 的 list_* cache 间接缓解 frontmatter parse，
+   完整 render cache 留 Phase 9 配合新 ABI 一起做）
+- [x] **list_blog_posts / list_*_articles mtime cache**
+   - 新增 `app_core::utils::DirListingCache<T>` + `fingerprint_for_dir` helper：
+     文件 (路径, mtime) 列表作为 fingerprint，任何文件 add / remove / 修改都失配
+   - 应用到 6 个 server fn：`list_blog_posts` + 5 个板块 `list_{ai,cli,embedded,web3,wasm}_articles`
+   - 单测：`dir_listing_cache_basic` / `dir_listing_cache_invalidate_forces_rebuild` /
+     `fingerprint_collects_matched_files`（5 项 utils 测试）
+- [x] **sitemap / feed Cache-Control 头**（`crates/app/src/main.rs`）
+   - sitemap: `Cache-Control: public, max-age=3600`（1h）
+   - feed: 同 sitemap
+   - robots.txt: `public, max-age=21600`（6h，几乎不变）
+- [ ] 性能 benchmark 脚本：暂不引入；P95 验证留运维 / 后续 Prometheus
 
-**完成定义**：navbar i18n + theme 不再每请求触发 wasmi；同篇博客 100 次访问只 parse 1 次 Markdown；sitemap 高并发不打满 CPU。
+**完成定义**：navbar theme 不再每请求触发 wasmi；sitemap / feed 在 100 并发下不重复 walk 所有 board 目录；CDN / 浏览器看到 Cache-Control 头。i18n / Markdown 完整缓存留 Phase 9。
 
 ---
 
@@ -267,7 +271,7 @@
 | 8.2 | ✅ Done | Auth 表面：upload 鉴权 + placeholder 拒 + path 防穿越 + OsRng + drop access_token |
 | 8.3 | ✅ Done | Pingora 网关：安全头 + XFF insert + rate limit |
 | 8.4 | ✅ Done | DB tuning + comments 索引 + admin 并行 + SQL GROUP BY |
-| 8.5 | ⏳ Pending | theme/i18n/Markdown/list_* mtime cache + Cache-Control |
+| 8.5 | ✅ Mostly Done | theme CSS chunk cache + list_* mtime cache + Cache-Control（i18n / Markdown 完整 cache deferred 到 Phase 9） |
 | 8.6 | ✅ Done | sanitize_user_html allowlist + JWT role DB recheck |
 | 8.7 | ⏳ Pending | EngineRegistry 删 + LayoutPack render + ModuleEngine 收口 + navbar 去硬编码 |
 | 8.8 | ✅ Mostly Done | 杂项批：snippet / Box::leak / reject 并发 / .bak sweep（hot-reload prefill / ABI 版本范围 / Mutex single-flight deferred 到 Phase 9） |

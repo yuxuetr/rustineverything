@@ -17,7 +17,7 @@ pub use sdk::{capabilities, PluginManifest, SDK_ABI_VERSION};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::SystemTime;
 #[cfg(feature = "server")]
 use wasmi::Store;
@@ -94,6 +94,11 @@ pub struct PluginManager {
   /// 提供按路径复用 `Module` 的能力。在 i18n / 主题等高频调用场景下
   /// 可以避免重复读文件 + 重复调用 `Module::new`。
   cache: Mutex<HashMap<PathBuf, CachedModule>>,
+  /// Phase 8.5：theme CSS 输出按 (path, mtime) 缓存。
+  /// `get_theme_css("")` 的结果只取决于插件二进制本身，
+  /// 同 mtime 下永远返回同一 CSS，可以跨请求复用。
+  /// 命中时省掉一次 wasmi instantiate + 调用 + memory I/O。
+  theme_css_cache: Mutex<HashMap<PathBuf, (SystemTime, Arc<String>)>>,
   sandbox: SandboxConfig,
 }
 
@@ -113,6 +118,7 @@ impl PluginManager {
       engine,
       linker,
       cache: Mutex::new(HashMap::new()),
+      theme_css_cache: Mutex::new(HashMap::new()),
       sandbox: SandboxConfig::from_env(),
     }
   }
@@ -159,8 +165,14 @@ impl PluginManager {
   }
 
   /// 显式失效某个插件路径的缓存。供 admin 刷新 / hot reload 使用。
+  ///
+  /// 同时失效 Module 缓存 + theme CSS 输出缓存；如果上层将来添加更多
+  /// 路径维度的 output cache 也应在这里清。
   pub fn invalidate(&self, path: &Path) {
     if let Ok(mut cache) = self.cache.lock() {
+      cache.remove(path);
+    }
+    if let Ok(mut cache) = self.theme_css_cache.lock() {
       cache.remove(path);
     }
   }
@@ -168,6 +180,9 @@ impl PluginManager {
   /// 清空全部插件缓存。
   pub fn invalidate_all(&self) {
     if let Ok(mut cache) = self.cache.lock() {
+      cache.clear();
+    }
+    if let Ok(mut cache) = self.theme_css_cache.lock() {
       cache.clear();
     }
   }
@@ -248,12 +263,39 @@ impl PluginManager {
     aggregated_css
   }
 
-  /// 按路径聚合主题 CSS（走缓存）。
+  /// 按路径聚合主题 CSS：除了走 Module 缓存，还会在 mtime 不变的情况下
+  /// 直接复用上次的 CSS 输出（Phase 8.5）。
+  ///
+  /// 性能差：在 navbar 上每渲染一次页面会调用此 fn 一次；过去每次都跑
+  /// 一遍完整的 wasmi instantiate + alloc/dealloc。引入 mtime cache 后，
+  /// 同一插件二进制下只跑一次 wasm，后续都是 HashMap 查找。
   #[cfg(feature = "server")]
   pub async fn aggregate_theme_css_paths(&self, paths: &[PathBuf]) -> String {
     let mut aggregated_css = String::new();
     for path in paths {
+      // 取 mtime；拿不到（文件被删 / 权限错）也不报错，走 uncached 路径
+      let mtime = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
+
+      // 第一步：检查 cache
+      if let Some(mtime) = mtime {
+        if let Ok(cache) = self.theme_css_cache.lock() {
+          if let Some((cached_mtime, cached_css)) = cache.get(path) {
+            if *cached_mtime == mtime {
+              aggregated_css.push_str(cached_css);
+              aggregated_css.push('\n');
+              continue;
+            }
+          }
+        }
+      }
+
+      // 缓存未命中 / mtime 不一致 → 调插件 + 写回 cache
       if let Ok(css) = self.call_path_with_string(path, "get_theme_css", "").await {
+        if let Some(mtime) = mtime {
+          if let Ok(mut cache) = self.theme_css_cache.lock() {
+            cache.insert(path.to_path_buf(), (mtime, Arc::new(css.clone())));
+          }
+        }
         aggregated_css.push_str(&css);
         aggregated_css.push('\n');
       }
@@ -531,6 +573,47 @@ mod tests {
     assert_eq!(manager.fuel_limit(), DEFAULT_WASM_FUEL);
     assert_eq!(manager.memory_pages_limit(), DEFAULT_WASM_MEMORY_PAGES);
     assert_eq!(manager.output_limit(), DEFAULT_OUTPUT_LIMIT);
+  }
+
+  /// Phase 8.5：theme CSS chunk cache 命中验证。同一 path 调用 N 次后，
+  /// cache 内只会出现 1 个条目；测试不要求 wasmi 实际执行次数（mock 太重），
+  /// 只验证缓存条目层级 + invalidate 的语义。
+  #[tokio::test]
+  async fn theme_css_chunk_cache_populates_and_invalidates() {
+    let wasm_path = "../../assets/plugins/theme_ocean_plugin.wasm";
+    if !std::path::Path::new(wasm_path).exists() {
+      return;
+    }
+    let manager = PluginManager::new();
+    let path = std::path::Path::new(wasm_path);
+    // 第一次：填充 cache
+    let css1 = manager.aggregate_theme_css_paths(&[path.to_path_buf()]).await;
+    assert!(!css1.is_empty(), "首次应当产出真实 CSS");
+    assert_eq!(
+      manager.theme_css_cache.lock().unwrap().len(),
+      1,
+      "首次调用后 theme_css_cache 应该恰有 1 条"
+    );
+
+    // 第二次：命中 cache，结果应一致
+    let css2 = manager.aggregate_theme_css_paths(&[path.to_path_buf()]).await;
+    assert_eq!(css1, css2, "缓存命中应返回相同字节");
+    assert_eq!(manager.theme_css_cache.lock().unwrap().len(), 1, "命中不应新增条目");
+
+    // invalidate 后清空
+    manager.invalidate(path);
+    assert!(
+      manager.theme_css_cache.lock().unwrap().is_empty(),
+      "invalidate 应同时清 Module + theme CSS cache"
+    );
+
+    // 重新调用 → cache 重新填充
+    let _css3 = manager.aggregate_theme_css_paths(&[path.to_path_buf()]).await;
+    assert_eq!(manager.theme_css_cache.lock().unwrap().len(), 1);
+
+    // invalidate_all 清空
+    manager.invalidate_all();
+    assert!(manager.theme_css_cache.lock().unwrap().is_empty());
   }
 
   /// 沙箱：fuel 极小 → 真实插件无法完成 alloc/写入，wasmi 应返回 trap 错误，
