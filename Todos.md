@@ -382,8 +382,8 @@
 - [x] 启动时自动迁移：`crates/app/src/main.rs` 在 `init_pool` 成功后调 `rustineverything_migration::Migrator::up(&db, None)`，失败仅日志不退出（便于 schema 已存在场景）；root `init.sql` 加 DEPRECATED 警示但保留作参考。2 个单测：migrations_have_expected_names + migrator_can_be_constructed
 
 ### 7.2 Auth 进一步加固
-- [ ] PKCE 持久化：加密 cookie 替代进程内 HashMap
-- [x] state CSRF 短 TTL（5 分钟）— `validate_state` 强制 `created_at.elapsed() > 300s` 拒绝 + `cleanup_expired_states` 清理（`crates/core/src/auth/mod.rs`）
+- [x] PKCE 持久化：加密 cookie 替代进程内 HashMap。`PkceCookiePayload { provider, state, verifier_opt, issued_at_secs }` JSON → AES-256-GCM（复用 `auth/crypto.rs`，密钥从 `JWT_SECRET` 派生）→ base64url。`Set-Cookie: oauth_pkce=…; HttpOnly; Path=/api/auth; SameSite=Lax; Max-Age=300`（HTTPS 自动加 `Secure`）。`AuthService::prepare_login` 返回 `(url, payload)`、`handle_callback` 接收 payload 做 CSRF/provider/TTL 三重校验；axum `/api/auth/login/{provider}` 在 302 时下发 cookie，`/api/auth/callback/{provider}` 通过 `HeaderMap` 读 + 解密 cookie + 成功/失败都清空 cookie；auth_modal 改为直跳 `/api/auth/login/{provider}`（避免先取 URL 再跳的 race）。删除 `STATE_STORE` / `PKCE_STORE` / `validate_state` / `PkceEntry` / `StateEntry`。新增 11 个 cookie 单测（round-trip / 无 verifier / 篡改拒绝 / 乱码拒绝 / TTL 边界 / set-cookie 属性 secure / set-cookie 属性 http / 清空 cookie / extract 多 cookie / extract 缺失 / extract 容忍空白）。全 591 个 workspace 单测通过，clippy `-D warnings` 全绿
+- [x] state CSRF 短 TTL（5 分钟）— Phase 7.2 起由 `PkceCookiePayload::is_expired` 在 callback 端兜底（与 cookie `Max-Age=300` 双保险）；原 `validate_state` / `STATE_STORE` 随 HashMap 一同删除
 
 ### 7.3 搜索持久化
 - [x] `MmapDirectory` 替代 `RAMDirectory`：`engine.rs` 改为 `Index::open_or_create(MmapDirectory::open(dir), schema)`；`SEARCH_INDEX_DIR` 环境变量控制路径（默认 `data/search-index`），目录不存在自动 `create_dir_all`；schema 不匹配（旧索引残留）自动清空目录重建（schema 迁移）；`init_or_load()` 启动期入口：非空 → 复用，空 → 全量填充；新增 6 个单测覆盖持久化（drop+reopen 数据保留 / 空目录初始化 / schema 不匹配清空重建 / 自定义路径解析 / 默认路径 / replace_all 全量替换）。全 45 个 module-search 单测通过
@@ -431,7 +431,7 @@
 | 4 | ✅ 主体完成 (4.1 阈值+校验 / 4.2 XSS / 4.3 ABI / 4.4 插件+链接检测 / 4.5 队列+Admin批量+作者历史 / 4.6 文档 ✅；4.7 验收 7 个 live 用例实跑 OpenAI 全过,P95 视觉略高) | LLM/VLM 审核 + XSS 防护 |
 | 5 | 🔄 主体完成 (5.1 Hot Reload ✅ / 5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.2.2-5.2.3 示例插件、5.5 插件市场待开源后) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
 | 6 | ✅ 主体完成 (6.1–6.5 ✅ 5 板块 crate + 真实长文 / 6.7 ✅ 测试+开关+sitemap+feed + 板块文章已接入 Tantivy 搜索；6.6 仅 cases≥3 案例内容待补) | 5 新内容板块（embedded/ai/web3/wasm/cli） |
-| 7 | 🔄 主体完成 (7.1 migration / 7.4 Docker+compose / 7.5 tracing / 7.6 docs / 7.7 CI fmt+clippy 强校验 0-warning ✅；7.2/7.3 加固 + docker 实跑待补) | Docker + CI + 可部署 |
+| 7 | 🔄 主体完成 (7.1 migration / 7.2 PKCE 加密 cookie / 7.3 搜索持久化+增量 / 7.4 Docker+compose / 7.5 tracing / 7.6 docs / 7.7 CI fmt+clippy 强校验 0-warning ✅；docker 实跑待补) | Docker + CI + 可部署 |
 
 ## v2.1 变更记录（2026-05-09）
 

@@ -13,53 +13,112 @@ use sdk::{AuthProviderConfig, AuthProviderDisplay, StandardUser};
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-#[cfg(feature = "server")]
-use std::collections::HashMap;
 use std::path::PathBuf;
 #[cfg(feature = "server")]
-use std::sync::Mutex;
-#[cfg(feature = "server")]
-use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-/// PKCE / state 条目的过期时间（5 分钟）
+/// PKCE / state 条目的过期时间（5 分钟）。也是 oauth_pkce cookie 的 Max-Age。
 #[cfg(feature = "server")]
-const PKCE_TTL_SECS: u64 = 5 * 60;
+pub const PKCE_TTL_SECS: u64 = 5 * 60;
 
-/// PKCE 仓储条目：code_verifier + 创建时间
+/// 加密 OAuth 授权流程临时凭据的 cookie 名（Phase 7.2）。
 #[cfg(feature = "server")]
-struct PkceEntry {
-  verifier: String,
-  created_at: Instant,
-}
+pub const PKCE_COOKIE_NAME: &str = "oauth_pkce";
 
-/// state CSRF 仓储条目：provider + 创建时间
+/// Cookie 限定路径：只对 `/api/auth` 子路径回传。
 #[cfg(feature = "server")]
-struct StateEntry {
-  provider: String,
-  created_at: Instant,
-}
+pub const PKCE_COOKIE_PATH: &str = "/api/auth";
 
-/// 全局存储 PKCE code_verifier，key 为 state 参数
-#[cfg(feature = "server")]
-static PKCE_STORE: std::sync::LazyLock<Mutex<HashMap<String, PkceEntry>>> =
-  std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
-
-/// 全局存储 OAuth state（CSRF 防御），key 为 state 参数
-#[cfg(feature = "server")]
-static STATE_STORE: std::sync::LazyLock<Mutex<HashMap<String, StateEntry>>> =
-  std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
-
-/// 清理过期的 PKCE / state 条目（在每次插入 / 查询时调用）
-#[cfg(feature = "server")]
-fn cleanup_expired_pkce(store: &mut HashMap<String, PkceEntry>) {
-  let ttl = Duration::from_secs(PKCE_TTL_SECS);
-  store.retain(|_, entry| entry.created_at.elapsed() < ttl);
+/// OAuth 授权流程的临时凭据（Phase 7.2 持久化方案）。
+///
+/// 通过 AES-256-GCM 加密成 cookie value 后由浏览器在 OAuth 重定向间携带，
+/// 替代 Phase 1A.4 的进程内 `HashMap`，从而支持多副本部署：
+/// 即使 login 与 callback 落在不同后端实例上，state / verifier 仍由
+/// 浏览器 cookie 同步过来，服务端无需共享存储。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PkceCookiePayload {
+  /// OAuth provider id（如 `github` / `google`）。用于 callback 时校验
+  /// URL 中的 `<provider>` 段与 cookie 携带的一致。
+  pub provider: String,
+  /// 32 字符随机 state，用于 CSRF：必须与回调 URL 的 `state` query 完全相等。
+  pub state: String,
+  /// 仅在 provider 启用 PKCE 时存在；64 字符 code_verifier 原文，
+  /// 作为 token exchange 请求的 `code_verifier` 字段。
+  pub verifier: Option<String>,
+  /// 签发时的 UNIX 时间戳（秒）。callback 端用它 + [`PKCE_TTL_SECS`] 判定过期。
+  pub issued_at_secs: u64,
 }
 
 #[cfg(feature = "server")]
-fn cleanup_expired_states(store: &mut HashMap<String, StateEntry>) {
-  let ttl = Duration::from_secs(PKCE_TTL_SECS);
-  store.retain(|_, entry| entry.created_at.elapsed() < ttl);
+impl PkceCookiePayload {
+  pub fn new_now(provider: String, state: String, verifier: Option<String>) -> Self {
+    let issued_at_secs =
+      SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    Self { provider, state, verifier, issued_at_secs }
+  }
+
+  /// JSON → AES-256-GCM 加密 → base64url(no-pad)，作为 cookie value。
+  pub fn encode(&self) -> Result<String, String> {
+    let json = serde_json::to_string(self).map_err(|e| format!("PKCE payload 序列化失败: {}", e))?;
+    crypto::encrypt_token(&json)
+  }
+
+  /// base64url(no-pad) → AES-256-GCM 解密 → JSON。
+  pub fn decode(cipher: &str) -> Result<Self, String> {
+    let json = crypto::decrypt_token(cipher)?;
+    serde_json::from_str(&json).map_err(|e| format!("PKCE payload 反序列化失败: {}", e))
+  }
+
+  /// 是否已超过 [`PKCE_TTL_SECS`]。系统时钟倒退视作未过期（保守）。
+  pub fn is_expired(&self) -> bool {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    now.saturating_sub(self.issued_at_secs) > PKCE_TTL_SECS
+  }
+}
+
+/// 构造 `Set-Cookie` 头值，用于 OAuth 重定向时下发加密 PKCE payload。
+///
+/// 属性：
+/// - `HttpOnly`：禁止 JS 读取。
+/// - `Secure`：当 `secure=true`（即 `BASE_URL` 是 https）时附加。
+/// - `SameSite=Lax`：cross-site top-level GET 仍会发送 → callback 拿得到。
+/// - `Path=/api/auth`：限定回传路径。
+/// - `Max-Age=PKCE_TTL_SECS`：与 PKCE TTL 对齐。
+#[cfg(feature = "server")]
+pub fn build_pkce_set_cookie(value: &str, secure: bool) -> String {
+  let secure_flag = if secure { "; Secure" } else { "" };
+  format!(
+    "{}={}; HttpOnly; Path={}; Max-Age={}; SameSite=Lax{}",
+    PKCE_COOKIE_NAME, value, PKCE_COOKIE_PATH, PKCE_TTL_SECS, secure_flag
+  )
+}
+
+/// 构造清空 cookie 的 `Set-Cookie` 头值（callback 成功 / 失败后都应清掉，
+/// 避免遗留可重放的 verifier）。
+#[cfg(feature = "server")]
+pub fn build_pkce_clear_cookie(secure: bool) -> String {
+  let secure_flag = if secure { "; Secure" } else { "" };
+  format!(
+    "{}=; HttpOnly; Path={}; Max-Age=0; SameSite=Lax{}",
+    PKCE_COOKIE_NAME, PKCE_COOKIE_PATH, secure_flag
+  )
+}
+
+/// 从 `Cookie` 请求头原文中抽出 [`PKCE_COOKIE_NAME`] 的值。
+///
+/// 简易解析：按 `;` 分段，找首个 `key=value` 命中。允许 key 前后空白。
+/// 不做百分号解码（cookie value 是 base64url，已无需解码）。
+#[cfg(feature = "server")]
+pub fn extract_pkce_cookie(cookie_header: &str) -> Option<String> {
+  for segment in cookie_header.split(';') {
+    let trimmed = segment.trim();
+    if let Some((k, v)) = trimmed.split_once('=') {
+      if k.trim() == PKCE_COOKIE_NAME {
+        return Some(v.trim().to_string());
+      }
+    }
+  }
+  None
 }
 
 /// 动态认证配置，不再硬编码单个 provider
@@ -152,12 +211,16 @@ impl AuthService {
     result
   }
 
-  /// 加载插件并生成授权 URL
-  pub fn get_auth_url(
+  /// 准备 OAuth 登录：返回 (跳转 URL, [`PkceCookiePayload`])。
+  ///
+  /// 调用方负责把 payload 调 [`PkceCookiePayload::encode`] 后塞进 `Set-Cookie`
+  /// （见 [`build_pkce_set_cookie`]）。Phase 7.2：服务端不再保存任何 state /
+  /// verifier，全部由浏览器 cookie 承担。
+  pub fn prepare_login(
     &self,
     provider: &str,
     plugin_filename: &str,
-  ) -> crate::error::AppResult<String> {
+  ) -> crate::error::AppResult<(String, PkceCookiePayload)> {
     let plugin_path = self.plugin_dir.join(plugin_filename);
     if !plugin_path.exists() {
       return Err(format!("未找到插件: {:?}", plugin_path).into());
@@ -177,22 +240,13 @@ impl AuthService {
     let state: String =
       rand::rng().sample_iter(&rand::distr::Alphanumeric).take(32).map(|b| b as char).collect();
 
-    // 记录 state 以供后续 CSRF 验证（带 5 分钟 TTL）
-    if let Ok(mut store) = STATE_STORE.lock() {
-      cleanup_expired_states(&mut store);
-      store.insert(
-        state.clone(),
-        StateEntry { provider: provider.to_string(), created_at: Instant::now() },
-      );
-    }
-
     let mut url = format!(
       "{}?client_id={}&redirect_uri={}&scope={}&response_type=code&state={}",
       provider_config.auth_url, client_id, redirect_url, scopes, state
     );
 
     // PKCE: 生成 code_verifier 和 code_challenge
-    if provider_config.requires_pkce {
+    let verifier = if provider_config.requires_pkce {
       use base64::Engine;
       use sha2::Digest;
 
@@ -201,46 +255,44 @@ impl AuthService {
 
       let digest = sha2::Sha256::digest(code_verifier.as_bytes());
       let code_challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest);
-
       url.push_str(&format!("&code_challenge={}&code_challenge_method=S256", code_challenge));
 
-      // 存储 code_verifier，回调时使用（带 TTL）
-      if let Ok(mut store) = PKCE_STORE.lock() {
-        cleanup_expired_pkce(&mut store);
-        store
-          .insert(state.clone(), PkceEntry { verifier: code_verifier, created_at: Instant::now() });
-      }
       tracing::debug!(provider = %provider, "auth: PKCE enabled");
-    }
+      Some(code_verifier)
+    } else {
+      None
+    };
 
-    Ok(url)
+    let payload = PkceCookiePayload::new_now(provider.to_string(), state, verifier);
+    Ok((url, payload))
   }
 
-  /// 验证 OAuth state。如果 state 合法，从存储中移除并返回 Ok；否则返回错误。
-  pub fn validate_state(state: &str, expected_provider: &str) -> crate::error::AppResult<()> {
-    let mut store = STATE_STORE.lock().map_err(|_| "state 存储互斥异常")?;
-    cleanup_expired_states(&mut store);
-    let entry = store.remove(state).ok_or("不合法或已过期的 state")?;
-    if entry.provider != expected_provider {
-      return Err("state 与 provider 不匹配".into());
-    }
-    if entry.created_at.elapsed() > Duration::from_secs(PKCE_TTL_SECS) {
-      return Err("state 已过期".into());
-    }
-    Ok(())
-  }
-
+  /// 在 cookie 解出 [`PkceCookiePayload`] 之后执行的回调主体。
+  ///
+  /// 调用方先从 `Cookie` 头解密出 payload；本函数负责所有业务校验：
+  /// - state CSRF: `payload.state == received_state`
+  /// - provider 绑定: `payload.provider == provider`
+  /// - TTL: `!payload.is_expired()`
+  /// - 若插件要求 PKCE：`payload.verifier.is_some()`
   pub async fn handle_callback(
     &self,
     db: &DatabaseConnection,
     provider: &str,
     plugin_filename: &str,
     code: String,
-    state: Option<String>,
+    received_state: &str,
+    pkce_cookie: PkceCookiePayload,
   ) -> crate::error::AppResult<user::Model> {
-    // 0. CSRF 防御：验证 state
-    let state_str = state.as_deref().ok_or("缺失 state 参数")?;
-    Self::validate_state(state_str, provider)?;
+    // 0. CSRF + 绑定 + TTL 校验（任何一项失败都视为不合法授权流）
+    if pkce_cookie.is_expired() {
+      return Err("OAuth 会话已过期，请重新登录".into());
+    }
+    if pkce_cookie.provider != provider {
+      return Err("OAuth 会话 provider 不匹配".into());
+    }
+    if pkce_cookie.state != received_state {
+      return Err("OAuth state 不匹配（疑似 CSRF）".into());
+    }
 
     let plugin_path = self.plugin_dir.join(plugin_filename);
     let wasm_bytes = std::fs::read(&plugin_path)?;
@@ -267,27 +319,13 @@ impl AuthService {
       ("grant_type", "authorization_code".to_string()),
     ];
 
-    // PKCE: 添加 code_verifier
-    let code_verifier = if provider_config.requires_pkce {
-      let entry = PKCE_STORE
-        .lock()
-        .ok()
-        .and_then(|mut store| {
-          cleanup_expired_pkce(&mut store);
-          store.remove(state_str)
-        })
-        .ok_or("PKCE code_verifier not found for this state")?;
-      if entry.created_at.elapsed() > Duration::from_secs(PKCE_TTL_SECS) {
-        return Err("PKCE code_verifier 已过期".into());
-      }
-      tracing::debug!("auth: PKCE code_verifier matched");
-      Some(entry.verifier)
-    } else {
-      None
-    };
-
-    if let Some(ref cv) = code_verifier {
+    // PKCE: 若插件要求 PKCE 但 cookie 里没有 verifier → 拒绝
+    if provider_config.requires_pkce && pkce_cookie.verifier.is_none() {
+      return Err("PKCE code_verifier 缺失".into());
+    }
+    if let Some(ref cv) = pkce_cookie.verifier {
       form_params.push(("code_verifier", cv.clone()));
+      tracing::debug!("auth: PKCE code_verifier attached");
     }
 
     // 根据认证方式构建请求
@@ -453,64 +491,117 @@ mod tests {
     assert_eq!(user.email, Some("test@example.com".to_string()));
   }
 
-  #[test]
-  fn test_state_csrf_validation_invalid_state_rejected() {
-    // 伪造一个未注册的 state，验证调用应被拒绝
-    let result = AuthService::validate_state("this-state-was-never-stored-xyz", "github");
-    assert!(result.is_err(), "未注册的 state 应该被拒绝");
+  // ── Phase 7.2：PkceCookiePayload 加密 cookie 持久化 ──
+
+  fn ensure_jwt_secret_for_pkce_tests() {
+    if std::env::var("JWT_SECRET").is_err() {
+      // SAFETY: 单测环境单线程下设置环境变量；与 crypto.rs 测试同套路。
+      unsafe {
+        std::env::set_var("JWT_SECRET", "test-secret-for-pkce-cookie-tests-1234");
+      }
+    }
+  }
+
+  fn payload_now(verifier: Option<&str>) -> PkceCookiePayload {
+    PkceCookiePayload::new_now(
+      "github".to_string(),
+      "state-abc-32".to_string(),
+      verifier.map(|s| s.to_string()),
+    )
   }
 
   #[test]
-  fn test_state_csrf_validation_provider_mismatch() {
-    // 手动插入一个 state，使用不同 provider 验证应拒绝
-    let state = "test-state-mismatch";
-    if let Ok(mut store) = STATE_STORE.lock() {
-      store.insert(
-        state.to_string(),
-        StateEntry { provider: "github".to_string(), created_at: Instant::now() },
-      );
-    }
-    let result = AuthService::validate_state(state, "google");
-    assert!(result.is_err(), "provider 不匹配的 state 应被拒绝");
+  fn pkce_cookie_round_trip_preserves_payload() {
+    ensure_jwt_secret_for_pkce_tests();
+    let p = payload_now(Some("verifier-xyz-64"));
+    let cipher = p.encode().expect("encode");
+    let back = PkceCookiePayload::decode(&cipher).expect("decode");
+    assert_eq!(back, p);
   }
 
   #[test]
-  fn test_state_csrf_validation_consumed_once() {
-    // state 验证成功后，重复使用同一 state 应拒绝
-    let state = "test-state-once";
-    if let Ok(mut store) = STATE_STORE.lock() {
-      store.insert(
-        state.to_string(),
-        StateEntry { provider: "github".to_string(), created_at: Instant::now() },
-      );
-    }
-    let first = AuthService::validate_state(state, "github");
-    assert!(first.is_ok(), "首次验证应该通过");
-    let second = AuthService::validate_state(state, "github");
-    assert!(second.is_err(), "state 应只能被消费一次");
+  fn pkce_cookie_round_trip_without_verifier() {
+    ensure_jwt_secret_for_pkce_tests();
+    let p = payload_now(None);
+    let cipher = p.encode().expect("encode");
+    let back = PkceCookiePayload::decode(&cipher).expect("decode");
+    assert_eq!(back.verifier, None);
+    assert_eq!(back.provider, "github");
   }
 
   #[test]
-  fn test_pkce_cleanup_removes_expired_entries() {
-    // 加入 100 个超出 TTL 的过期项以及 1 个新项，验证 cleanup 会仅保留未过期的
-    let mut local: HashMap<String, PkceEntry> = HashMap::new();
-    let very_old = Instant::now()
-      .checked_sub(Duration::from_secs(PKCE_TTL_SECS + 60))
-      .expect("can subtract from now");
-    for i in 0..100 {
-      local.insert(
-        format!("old-{}", i),
-        PkceEntry { verifier: "v".to_string(), created_at: very_old },
-      );
-    }
-    local.insert(
-      "fresh".to_string(),
-      PkceEntry { verifier: "v".to_string(), created_at: Instant::now() },
-    );
+  fn pkce_cookie_decode_rejects_tampered_cipher() {
+    ensure_jwt_secret_for_pkce_tests();
+    let p = payload_now(Some("v"));
+    let mut cipher = p.encode().expect("encode");
+    // 翻转尾部 1 字符以触发 GCM tag 校验失败
+    let last = cipher.pop().expect("non-empty");
+    let flipped = if last == 'a' { 'b' } else { 'a' };
+    cipher.push(flipped);
+    assert!(PkceCookiePayload::decode(&cipher).is_err());
+  }
 
-    cleanup_expired_pkce(&mut local);
-    assert_eq!(local.len(), 1);
-    assert!(local.contains_key("fresh"));
+  #[test]
+  fn pkce_cookie_decode_rejects_random_garbage() {
+    ensure_jwt_secret_for_pkce_tests();
+    assert!(PkceCookiePayload::decode("not-a-real-ciphertext").is_err());
+    assert!(PkceCookiePayload::decode("").is_err());
+  }
+
+  #[test]
+  fn pkce_cookie_is_expired_at_ttl_boundary() {
+    let mut p = payload_now(None);
+    // 模拟很久以前签发
+    p.issued_at_secs =
+      SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() - (PKCE_TTL_SECS + 10);
+    assert!(p.is_expired(), "超出 TTL 应判为过期");
+
+    p.issued_at_secs =
+      SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() - (PKCE_TTL_SECS - 10);
+    assert!(!p.is_expired(), "TTL 内不应过期");
+  }
+
+  #[test]
+  fn build_pkce_set_cookie_attaches_secure_when_https() {
+    let s = build_pkce_set_cookie("ABC", true);
+    assert!(s.starts_with("oauth_pkce=ABC;"));
+    assert!(s.contains("HttpOnly"));
+    assert!(s.contains("Path=/api/auth"));
+    assert!(s.contains("SameSite=Lax"));
+    assert!(s.contains("Max-Age=300"));
+    assert!(s.contains("Secure"));
+  }
+
+  #[test]
+  fn build_pkce_set_cookie_omits_secure_when_http() {
+    let s = build_pkce_set_cookie("ABC", false);
+    assert!(!s.contains("Secure"));
+  }
+
+  #[test]
+  fn build_pkce_clear_cookie_uses_zero_max_age() {
+    let s = build_pkce_clear_cookie(true);
+    assert!(s.starts_with("oauth_pkce=;"));
+    assert!(s.contains("Max-Age=0"));
+    assert!(s.contains("Secure"));
+  }
+
+  #[test]
+  fn extract_pkce_cookie_finds_value_among_other_cookies() {
+    let header = "theme=dark; oauth_pkce=ENCRYPTEDVAL; session=abc";
+    assert_eq!(extract_pkce_cookie(header).as_deref(), Some("ENCRYPTEDVAL"));
+  }
+
+  #[test]
+  fn extract_pkce_cookie_returns_none_when_absent() {
+    let header = "theme=dark; session=abc";
+    assert_eq!(extract_pkce_cookie(header), None);
+  }
+
+  #[test]
+  fn extract_pkce_cookie_handles_whitespace_around_pairs() {
+    let header = " theme=dark ;  oauth_pkce=VAL  ; session=abc ";
+    assert_eq!(extract_pkce_cookie(header).as_deref(), Some("VAL"));
   }
 
   // ── Live-DB 集成测试：验证 sync_user_to_db 的事务回滚 ──

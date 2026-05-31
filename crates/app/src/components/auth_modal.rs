@@ -124,12 +124,10 @@ fn render_provider_button(provider: &AuthProviderDisplay, lang: Language) -> Ele
           class: "flex items-center justify-center gap-3 w-full px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-150 cursor-pointer hover:opacity-90",
           style: "{btn_style}",
           onclick: move |_| {
-              let provider_id = provider_id.clone();
-              spawn(async move {
-                  if let Ok(url) = crate::server::get_login_url(provider_id).await {
-                      let _ = eval(&format!("window.location.href = '{}'", url));
-                  }
-              });
+              // Phase 7.2：直接跳转到 server 路由，由服务端在重定向响应里下发
+              // 加密的 oauth_pkce cookie（state + verifier）。不再走 server fn
+              // 取 URL，避免 PKCE 状态丢失的 race。
+              let _ = eval(&format!("window.location.href = '/api/auth/login/{}'", provider_id));
           },
 
           svg {

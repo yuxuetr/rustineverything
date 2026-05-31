@@ -366,29 +366,29 @@ pub async fn get_auth_providers(
   }
 }
 
-#[post("/api/auth/login-url")]
-pub async fn get_login_url(provider: String) -> Result<String, ServerFnError> {
-  #[cfg(feature = "server")]
-  {
-    let (auth_service, site_config) = build_auth_service();
-    let plugin_filename = find_plugin_filename(&site_config, &provider)
-      .ok_or_else(|| ServerFnError::new(format!("未在 site.json 中配置 provider: {}", provider)))?;
-    auth_service
-      .get_auth_url(&provider, &plugin_filename)
-      .map_err(|e| ServerFnError::new(e.to_string()))
-  }
-  #[cfg(not(feature = "server"))]
-  {
-    Ok("".to_string())
-  }
+/// Phase 7.2：准备一次 OAuth 登录，返回 (跳转 URL, 加密后的 cookie value)。
+/// 仅供 axum 路由 `/api/auth/login/{provider}` 使用：路由把 cookie value
+/// 套上 [`app_core::auth::build_pkce_set_cookie`] 后下发，再 302 到 url。
+#[cfg(feature = "server")]
+pub async fn prepare_login_for_provider(
+  provider: String,
+) -> Result<(String, String), app_core::error::AppError> {
+  let (auth_service, site_config) = build_auth_service();
+  let plugin_filename = find_plugin_filename(&site_config, &provider)
+    .ok_or_else(|| format!("未在 site.json 中配置 provider: {}", provider))?;
+  let (url, payload) = auth_service.prepare_login(&provider, &plugin_filename)?;
+  let cookie_value = payload.encode()?;
+  Ok((url, cookie_value))
 }
 
-/// 内部 auth callback — 仅 server 端调用，返回 (welcome_message, jwt_token)
+/// 内部 auth callback — 仅 server 端调用，返回 (welcome_message, jwt_token)。
+/// Phase 7.2：state / verifier 来自浏览器加密 cookie（不再有进程内 HashMap）。
 #[cfg(feature = "server")]
 pub async fn auth_callback_internal(
   code: String,
   provider: String,
-  state: Option<String>,
+  received_state: String,
+  pkce_cookie: app_core::auth::PkceCookiePayload,
 ) -> Result<(String, String), app_core::error::AppError> {
   use app_core::db::get_or_init_pool;
   use app_core::session::create_jwt;
@@ -397,11 +397,18 @@ pub async fn auth_callback_internal(
   let plugin_filename = find_plugin_filename(&site_config, &provider)
     .ok_or_else(|| format!("未在 site.json 中配置 provider: {}", provider))?;
 
-  tracing::debug!(provider = %provider, code_len = code.len(), state = ?state, "auth callback received");
+  tracing::debug!(
+    provider = %provider,
+    code_len = code.len(),
+    state_len = received_state.len(),
+    "auth callback received"
+  );
 
   let db = get_or_init_pool().await?;
 
-  let user = auth_service.handle_callback(&db, &provider, &plugin_filename, code, state).await?;
+  let user = auth_service
+    .handle_callback(&db, &provider, &plugin_filename, code, &received_state, pkce_cookie)
+    .await?;
 
   let jwt_token = create_jwt(&user)?;
   tracing::info!(user = %user.nickname, "auth callback login success");
