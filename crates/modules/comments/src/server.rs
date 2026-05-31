@@ -54,6 +54,20 @@ pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError
   }
 }
 
+/// Phase 7.5 debug 习惯（详见 `docs/DEVELOPER.md §3.5`）：用
+/// `#[tracing::instrument]` 自动记录入口 + 退出 + elapsed；`content` 走
+/// skip 避免评论原文泄漏到日志，仅留 `content_len` 字段供联调；`blog_id`
+/// 是资源 id 不敏感，直接入字段。
+#[cfg_attr(
+  feature = "server",
+  tracing::instrument(
+    name = "server::post_comment",
+    level = "info",
+    skip(content),
+    fields(blog_id = %blog_id, content_len = content.len()),
+    err
+  )
+)]
 #[post("/api/comments/post")]
 pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Comment>, ServerFnError> {
   #[cfg(feature = "server")]

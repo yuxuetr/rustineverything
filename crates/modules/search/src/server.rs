@@ -47,6 +47,21 @@ pub fn normalize_kind(raw: Option<String>) -> Option<String> {
 }
 
 /// 全站搜索接口。
+///
+/// Phase 7.5 debug 习惯（详见 `docs/DEVELOPER.md §3.5`）：用
+/// `#[tracing::instrument]` 自动记录入口 + 退出 + elapsed；`q` 用 `q_len`
+/// 字段避免把整段查询文本进日志（含搜索词的请求 PII 风险）；
+/// `kind` / `limit` 是元数据，直接进字段；返回 hit 数通过 `ret` 自动拿到。
+#[cfg_attr(
+  feature = "server",
+  tracing::instrument(
+    name = "server::search_query",
+    level = "info",
+    skip(q),
+    fields(q_len = q.len(), kind = ?kind, limit = ?limit, hits = tracing::field::Empty),
+    err
+  )
+)]
 #[post("/api/search/query")]
 pub async fn search_query(
   q: String,
@@ -75,6 +90,7 @@ pub async fn search_query(
         score: h.score,
       })
       .collect();
+    tracing::Span::current().record("hits", hits.len());
     Ok(SearchResponse { total: hits.len(), hits, elapsed_ms })
   }
   #[cfg(not(feature = "server"))]

@@ -190,7 +190,79 @@ pub unsafe extern "C" fn your_custom_function(ptr: *mut u8, len: usize) -> u64 {
 
 ---
 
-### 3.4 插件开发 Check-list
+### 3.4 server fn 联调日志规范（debug 习惯）
+
+新增 server fn 时**默认**用 `#[tracing::instrument]` 注入入口 / 退出 / 错误日志，
+避免每个 fn 手写 `tracing::info!("foo started"); ... tracing::info!("foo done")` 的
+重复 + 不一致问题。`tracing-subscriber` 已在 main.rs 启动期初始化（详见
+Phase 7.5 / `docs/OPERATIONS.md`）。
+
+#### 模板
+
+```rust
+#[cfg_attr(
+  feature = "server",
+  tracing::instrument(
+    name = "server::<fn-name>",          // 显式命名，避免被 SSR 框架展开后的难读 span
+    level = "info",                       // 默认 info；细节 fn 用 debug
+    skip(secret_arg, large_payload),      // 敏感 / 体积大的参数走 skip
+    fields(
+      ref_id = %some_id,                  // %  用 Display
+      len = some_string.len(),            // 标量直接进 fields
+      hits = tracing::field::Empty,       // 占位，后续在函数体内 record
+    ),
+    err                                   // 自动 Err(...) 时记一条 error
+  )
+)]
+#[post("/api/...")]
+pub async fn my_endpoint(
+  secret_arg: String,
+  ref_id: String,
+  some_string: String,
+) -> Result<MyResponse, ServerFnError> { /* ... */ }
+```
+
+函数体内可以补字段：
+
+```rust
+tracing::Span::current().record("hits", hits.len());
+```
+
+#### 命名 / 字段约定
+
+- `name = "server::<fn-name>"`：与文件树平行命名，避免被 dioxus_fullstack 的内部
+  span 包覆遮掩。
+- `level = "info"` 是默认；调试 fn / 高频热路径用 `"debug"`，避免 prod 默认 RUST_LOG=info
+  下日志爆炸。
+- **PII / 机密一律 `skip`**：OAuth code、JWT、明文密码、邮件正文、评论原文、查询
+  `q` 等都走 skip + 单独留 `xxx_len` 字段。
+- 资源 id / kind / 长度 / 计数等元数据**直接进 fields**，便于 grep / 聚合。
+- `err` 自动把 `Result::Err` 当作 `tracing::error!` 输出（不需要手写 `.map_err`
+  里的 log）。
+
+#### DB 查询日志
+
+SeaORM 在 `tracing::log` 桥接下默认按 `debug` level 输出 SQL。联调时：
+
+```bash
+# 只看本项目 fn 的 info + SeaORM SQL
+RUST_LOG="info,sea_orm=debug,sqlx=debug" dx serve
+
+# 看具体 fn 的 span（按命名前缀 "server::"）
+RUST_LOG="info,server::search_query=debug" dx serve
+```
+
+生产环境保持 `RUST_LOG=info` 即可，SQL 不会写。
+
+#### 当前已应用的 exemplar
+
+- `module_search::server::search_query`：高 QPS 查询，q skip、kind/limit/q_len/hits 入字段
+- `app::server::auth_callback_internal`：复杂多阶段流程（cookie 解密 / token 交换 / DB 写入）
+- `module_comments::server::post_comment`：审核 + 权限 + DB 写入的三联
+
+新增 server fn 请照此模板加；改既有 fn 时顺手补上。
+
+### 3.5 插件开发 Check-list
 
 在发布插件前，请检查以下事项：
 - [ ] **编译目标**：是否使用了 `--target wasm32-unknown-unknown`？

@@ -383,7 +383,23 @@ pub async fn prepare_login_for_provider(
 
 /// 内部 auth callback — 仅 server 端调用，返回 (welcome_message, jwt_token)。
 /// Phase 7.2：state / verifier 来自浏览器加密 cookie（不再有进程内 HashMap）。
+///
+/// Phase 7.5 debug 习惯：`#[tracing::instrument]` 自动记录入口 + 退出 +
+/// elapsed；`code` skip 以免 OAuth code 进日志，但 code_len 入字段供
+/// 联调判定；`provider` / 解密后 cookie 内的 `pkce_cookie.provider`
+/// 都已脱敏。
 #[cfg(feature = "server")]
+#[tracing::instrument(
+  name = "server::auth_callback",
+  level = "info",
+  skip(code, pkce_cookie),
+  fields(
+    provider = %provider,
+    code_len = code.len(),
+    state_match = received_state == pkce_cookie.state,
+  ),
+  err
+)]
 pub async fn auth_callback_internal(
   code: String,
   provider: String,

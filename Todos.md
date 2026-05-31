@@ -412,7 +412,7 @@
 
 - [-] **代码规范**：消除非测试代码中的 `unwrap` / `expect`。全量扫描后实际仅 ~5 处：已修 `app/server/mod.rs` 的 `.to_str().unwrap()`（→ `.and_then(to_str).ok().unwrap_or_default()`）+ i18n 插件 2 处 `expect`（→ `FluentResource::try_new(...).unwrap_or_else(|(r,_)| r)` + 忽略 add_resource 错误，已重建 wasm）。**剩余 2 处为有意为之的启动 fail-fast**：`main.rs` / `build_auth_service` 的 `std::env::var("BASE_URL").expect(...)`（与 `get_jwt_secret()` panic 同属 1A.1「缺配置即硬失败」设计，保留）。examples / tests / build.rs 按约定豁免
 - [x] **Rust target dir**：构建产物路径 `/Users/hal/.target` —— 文档化到 `docs/DEVELOPER.md §2.4`（机制 / 为什么共享 / 新机器 setup 步骤 / CI + Docker 通过 `CARGO_TARGET_DIR` env 覆盖的机制）；仓库根 `.cargo/config.toml` + `~/.target/` 已实际存在
-- [ ] **debug 习惯**：新增 server fn 打印请求/响应/DB 查询便于联调
+- [x] **debug 习惯**：新增 server fn 打印请求/响应/DB 查询便于联调 —— 落地为「`#[tracing::instrument]` + 字段约定」规范，写进 `docs/DEVELOPER.md §3.4 server fn 联调日志规范`：命名 `server::<fn-name>`、PII 走 `skip` + 单独 `_len` 字段、`err` 自动错误日志、`tracing::field::Empty` 占位 + `Span::current().record` 函数体内补字段；DB 查询通过 `RUST_LOG="info,sea_orm=debug,sqlx=debug"` 打开。3 个 exemplar 已落：`module_search::server::search_query`（高 QPS）/ `app::server::auth_callback_internal`（多阶段流程）/ `module_comments::server::post_comment`（审核+权限+DB 三联）。后续新 fn 按模板加
 - [x] **每个模块完成后**：更新本 Todos.md + 写 `docs/<MODULE>_SPEC.md` —— 2026-05-31 一次性补齐缺口：5 个 Phase 6 板块同构合并写 `docs/BOARDS_SPEC.md`；文件 markdown 集合 `docs/BLOG_SPEC.md` + `docs/DOCS_MODULE_SPEC.md`（与仓库 `docs/` 工程目录区分）；DB-backed UGC `docs/COMMENTS_SPEC.md` + `docs/UPLOADS_SPEC.md`。各 SPEC 覆盖：scope / 数据结构 / server fn 契约 / 路由 / ModuleEngine 集成 / 搜索集成 / 测试覆盖 / out-of-scope。后续新模块按此模板维护
 - [ ] **测试 + 编译通过**才允许 commit；commit 附 `Co-Authored-By: Oz <oz-agent@warp.dev>`
 
