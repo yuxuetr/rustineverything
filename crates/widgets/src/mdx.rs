@@ -279,12 +279,25 @@ fn render_tag(
       rsx! { pre { {children.into_iter()} } }
     }
     Tag::Link { dest_url, .. } => {
-      rsx! { a { href: "{dest_url}", class: "text-blue-600 dark:text-blue-400 underline decoration-blue-500/30 hover:decoration-blue-500 transition-all", {children.into_iter()} } }
+      // Phase 8.6：scheme allowlist。任何 HTML-entity / 大小写 / 制表符变体的
+      // `javascript:` / `data:` 编码 URL 都会被 reject，渲染为纯文本（保留 children）。
+      // 实体反编码 + 协议检查在 [`crate::sanitize::is_safe_link_url`]。
+      if crate::sanitize::is_safe_link_url(dest_url.as_ref()) {
+        rsx! { a { href: "{dest_url}", class: "text-blue-600 dark:text-blue-400 underline decoration-blue-500/30 hover:decoration-blue-500 transition-all", {children.into_iter()} } }
+      } else {
+        // 丢弃链接、保留可见文本，避免内容因 URL 被拒而消失
+        rsx! { span { {children.into_iter()} } }
+      }
     }
 
     // --- 核心：处理图片相对路径 ---
     Tag::Image { dest_url, title, .. } => {
       let url = dest_url.to_string();
+      // Phase 8.6：图片 src 也做 scheme allowlist；相对路径 / `/` 仍允许
+      // （图片走相对路径解析到博客资产目录是常用场景，不能误伤）。
+      if !crate::sanitize::is_safe_image_url(&url) {
+        return rsx! { span { class: "text-red-500", "[image rejected: unsafe URL]" } };
+      }
       let src = if url.starts_with("http") || url.starts_with('/') {
         url
       } else {

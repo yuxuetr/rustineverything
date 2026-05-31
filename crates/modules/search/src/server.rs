@@ -119,7 +119,7 @@ pub async fn search_reindex(mode: Option<String>) -> Result<ReindexReport, Serve
   #[cfg(feature = "server")]
   {
     use app_core::session::require_admin;
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let mode_str = mode.as_deref().map(|s| s.trim()).unwrap_or("incremental");
     match mode_str {
       "full" => {

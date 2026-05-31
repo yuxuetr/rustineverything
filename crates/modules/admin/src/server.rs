@@ -239,7 +239,7 @@ pub async fn admin_overview() -> Result<AdminOverview, ServerFnError> {
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
 
     // Phase 8.4：7 个 COUNT 各自独立 → `tokio::try_join!` 并行发起，总耗时
@@ -289,7 +289,7 @@ pub async fn admin_list_users(page: Option<u32>) -> Result<AdminPage<AdminUserRo
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
     let page = clamp_page(page);
 
@@ -354,7 +354,7 @@ pub async fn admin_set_user_role(
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
     validate_role(&role).map_err(ServerFnError::new)?;
-    let operator = require_admin()?;
+    let operator = require_admin().await?;
     let db = open_db().await?;
 
     // 找到目标用户
@@ -408,7 +408,7 @@ pub async fn admin_list_comments(
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
     let page = clamp_page(page);
 
@@ -466,7 +466,7 @@ pub async fn admin_delete_comment(id: i32) -> Result<(), ServerFnError> {
     use app_core::session::require_admin;
     use sea_orm::EntityTrait;
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
     comment::Entity::delete_by_id(id)
       .exec(&db)
@@ -491,7 +491,7 @@ pub async fn admin_list_topics(
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
     let page = clamp_page(page);
 
@@ -551,7 +551,7 @@ pub async fn admin_delete_topic(id: i32) -> Result<(), ServerFnError> {
     use app_core::session::require_admin;
     use sea_orm::EntityTrait;
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
     // topic_replies 通过 ON DELETE CASCADE 自动清理
     topic::Entity::delete_by_id(id)
@@ -577,7 +577,7 @@ pub async fn admin_delete_reply(id: i32) -> Result<(), ServerFnError> {
       ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, TransactionTrait,
     };
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
 
     // 先查到 reply 以拿到 topic_id
@@ -628,7 +628,7 @@ pub async fn admin_list_plugins() -> Result<Vec<AdminPluginRow>, ServerFnError> 
     use app_core::session::require_admin;
     use app_core::settings::SiteConfig;
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
 
     let asset_root = get_asset_root();
     let plugin_dir = asset_root.join("plugins");
@@ -725,7 +725,7 @@ pub async fn admin_reload_plugins() -> Result<String, ServerFnError> {
   {
     use app_core::session::require_admin;
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     // 清空共享 PluginManager 的 Module 缓存（i18n / 主题 / auth 下次调用
     // 会重新从磁盘加载），并重建审核流水线（重读 site.json + 插件目录）。
     app_core::shared_plugin_manager().invalidate_all();
@@ -767,7 +767,7 @@ pub async fn admin_upload_plugin(
       capabilities, shared_plugin_manager, PluginManifest, SDK_ABI_VERSION,
     };
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
 
     // 1. 安全文件名
     let filename = safe_plugin_filename(&name).map_err(ServerFnError::new)?;
@@ -884,7 +884,7 @@ pub async fn admin_list_moderation_queue(
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
 
     let mut q = moderation_queue::Entity::find();
@@ -1016,7 +1016,7 @@ pub async fn admin_approve_moderation(id: i64) -> Result<(), ServerFnError> {
     use app_core::session::require_admin;
     use sea_orm::{ActiveValue::Set, EntityTrait};
 
-    let admin = require_admin()?;
+    let admin = require_admin().await?;
     let db = open_db().await?;
     let now = chrono::Utc::now().fixed_offset();
 
@@ -1098,7 +1098,7 @@ pub async fn admin_reject_moderation(id: i64) -> Result<(), ServerFnError> {
     use app_core::session::require_admin;
     use sea_orm::EntityTrait;
 
-    let admin = require_admin()?;
+    let admin = require_admin().await?;
     let db = open_db().await?;
     let row = moderation_queue::Entity::find_by_id(id)
       .one(&db)
@@ -1123,7 +1123,7 @@ pub async fn admin_bulk_approve_moderation(ids: Vec<i64>) -> Result<u64, ServerF
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
-    let admin = require_admin()?;
+    let admin = require_admin().await?;
     if ids.is_empty() {
       return Ok(0);
     }
@@ -1157,7 +1157,7 @@ pub async fn admin_bulk_reject_moderation(ids: Vec<i64>) -> Result<u64, ServerFn
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
-    let admin = require_admin()?;
+    let admin = require_admin().await?;
     if ids.is_empty() {
       return Ok(0);
     }
@@ -1238,7 +1238,7 @@ pub async fn admin_get_moderation_settings(
   {
     use app_core::session::require_admin;
     use app_core::settings::SiteConfig;
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let path = get_asset_root().join("site.json");
     let config = SiteConfig::from_file(path.to_str().unwrap_or("assets/site.json"))
       .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -1266,7 +1266,7 @@ pub async fn admin_set_moderation_settings(
   #[cfg(feature = "server")]
   {
     use app_core::session::require_admin;
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     validate_moderation_settings(&settings).map_err(ServerFnError::new)?;
 
     let path = get_asset_root().join("site.json");

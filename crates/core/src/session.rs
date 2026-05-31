@@ -174,13 +174,44 @@ pub fn require_session() -> Result<SessionUser, dioxus::fullstack::ServerFnError
 }
 
 /// 要求当前请求带有 admin 角色；非 admin 返回 403 风格错误。
+///
+/// Phase 8.6：除了校验 JWT 内的 role 字段，再追加一次 DB 实时回查。
+/// 原因：JWT 默认 7 天有效；用户在 admin UI 被降级 / 删除后，缓存在浏览器
+/// cookie 里的旧 JWT 仍会被当作 admin 接受最长 7 天。回查 `users.role`
+/// 让降级 / 软删除 5 秒内（pool acquire 时间）生效。
+///
+/// 性能权衡：每次 admin 请求多 1 个 DB round-trip；admin 流量天然低
+/// （站点作者维护界面），不会对常规读路径造成影响。
+///
+/// 失败语义：DB 不可达 / 用户已删 → 拒绝（fail-closed）。
 #[cfg(feature = "server")]
-pub fn require_admin() -> Result<SessionUser, dioxus::fullstack::ServerFnError> {
-  let user = require_session()?;
-  if !user.is_admin() {
-    return Err(dioxus::fullstack::ServerFnError::new("需要管理员权限".to_string()));
+pub async fn require_admin() -> Result<SessionUser, dioxus::fullstack::ServerFnError> {
+  use crate::db::get_or_init_pool;
+  use crate::entities::user;
+  use dioxus::fullstack::ServerFnError;
+  use sea_orm::EntityTrait;
+
+  let user_from_jwt = require_session()?;
+  if !user_from_jwt.is_admin() {
+    return Err(ServerFnError::new("需要管理员权限".to_string()));
   }
-  Ok(user)
+
+  // DB recheck：fail-closed
+  let db = get_or_init_pool()
+    .await
+    .map_err(|e| ServerFnError::new(format!("admin 权限校验失败（DB 不可达）: {}", e)))?;
+  let db_user = user::Entity::find_by_id(user_from_jwt.id)
+    .one(&db)
+    .await
+    .map_err(|e| ServerFnError::new(format!("admin 权限校验失败: {}", e)))?
+    .ok_or_else(|| ServerFnError::new("用户已不存在或已被删除".to_string()))?;
+  if db_user.role != ROLE_ADMIN {
+    return Err(ServerFnError::new(format!(
+      "管理员权限已撤销（当前角色: {}）",
+      db_user.role
+    )));
+  }
+  Ok(user_from_jwt)
 }
 
 #[cfg(test)]

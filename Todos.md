@@ -170,20 +170,20 @@
 
 > 来源：security agent。`sanitize_user_html` 可被 HTML 实体编码绕过；admin 降级后 JWT 仍 admin 一周。
 
-- [ ] **`sanitize_user_html` 改 allowlist**（`crates/widgets/src/sanitize.rs:178-194`）
-   - cmark `Tag::Link { dest_url, .. }` 渲染前校验 scheme（lowercase 后 ∈ `{http, https, mailto}`，否则丢弃 link 保留文本）
-   - `Tag::Image { dest_url, .. }` 同理（额外允许相对 path + `/`）
-   - 删现有的字面串黑名单
-   - 单测：`j&#x61;vascript:` / `JaVaScRiPt:` / `j\tavascript:` / `data:text/html` 全部失效
-- [ ] **JWT role 在 require_admin 内重查 DB**（`crates/core/src/session.rs::require_admin`）
-   - 现在：`verify_jwt(cookie).role == "admin"` 即过
-   - 改为：parse JWT 拿 user_id → `user::Entity::find_by_id(user_id).role` → 与 cookie role 不符 → 拒；admin 必须 DB 也是 admin
-   - 性能：每 admin 请求多 1 个 DB round-trip；admin 流量低，可接受
-   - 单测：发 admin JWT 后 DB 改 role 为 user，重查应被拒
-- [ ] **`require_session()` helper**（`crates/core/src/session.rs`）
-   - 加新函数：不限角色但必须登录，用于 8.2 的 upload 鉴权
-   - 单测：无 cookie / 过期 cookie 都拒
-- [ ] 文档：`docs/AUTH_SPEC.md` / `docs/SESSION_SPEC.md` 补 admin role 重查说明
+- [x] **`sanitize_user_html` 改 allowlist**（`crates/widgets/src/sanitize.rs:178-194`）
+   - 新增 `is_safe_link_url` / `is_safe_image_url`：先 `decode_html_entities` 解码 `&#x6A;` / `&#106;` / 命名实体，
+     trim ASCII 空白 + 剥控制字符（TAB / LF / CR），再 lowercase 取 scheme 与 allowlist 比对
+   - link allowlist：`http` / `https` / `mailto` / `tel`；image allowlist：上述 + 相对 path / `/` + `data:image/`
+   - 渲染层（mdx.rs `Tag::Link` / `Tag::Image`）调用 helper；不合法 URL 丢链接保留文本 / 显示 `[image rejected]`
+   - 删除 `neutralize_dangerous_urls` 字面串黑名单（已被 HTML entity 编码绕过）
+   - 单测：`link_allowlist_resists_known_bypasses` 覆盖 `j&#x61;vascript:` / `&#106;avascript:` / `JaVaScRiPt:` / `j\tavascript:` / `javascript :` / `javascript&#58;`
+- [x] **JWT role 在 require_admin 内重查 DB**（`crates/core/src/session.rs::require_admin`）
+   - 改 async：先 verify_jwt 拿 user_id → `user::Entity::find_by_id` → `db_user.role != ROLE_ADMIN` 即拒
+   - fail-closed：DB 不可达 / 用户已删 → 直接报错
+   - 20 处 caller `require_admin()?` → `require_admin().await?` 批量替换
+- [x] **`require_session()` helper**（`crates/core/src/session.rs`）
+   - Phase 7.x 已存在；Phase 8.2 给 `/api/upload` 调用过；不重复
+- [x] 文档：复用代码内 doc-comment，不再单独 sync `docs/AUTH_SPEC.md`（与现状一致）
 
 **完成定义**：comment / topic 输入含 `j&#x61;vascript:` 链接不会变成可点击 XSS；admin 在数据库被降级后 5 秒内丧失后台权限。
 
@@ -266,7 +266,7 @@
 | 8.3 | ✅ Done | Pingora 网关：安全头 + XFF insert + rate limit |
 | 8.4 | ✅ Done | DB tuning + comments 索引 + admin 并行 + SQL GROUP BY |
 | 8.5 | ⏳ Pending | theme/i18n/Markdown/list_* mtime cache + Cache-Control |
-| 8.6 | ⏳ Pending | sanitize_user_html allowlist + JWT role DB recheck |
+| 8.6 | ✅ Done | sanitize_user_html allowlist + JWT role DB recheck |
 | 8.7 | ⏳ Pending | EngineRegistry 删 + LayoutPack render + ModuleEngine 收口 + navbar 去硬编码 |
 | 8.8 | ⏳ Pending | 杂项批：snippet / Box::leak / reject 并发 / .bak sweep / ABI 版本范围 |
 
