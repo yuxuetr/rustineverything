@@ -167,8 +167,13 @@ impl AuthService {
     Self { config, plugin_manager: PluginManager::new(), plugin_dir }
   }
 
-  /// 根据 site.json 配置，返回已安装且已配置凭据的 auth provider 展示列表
-  pub fn list_available_providers(&self, site_config: &SiteConfig) -> Vec<AuthProviderDisplay> {
+  /// 根据 site.json 配置，返回已安装且已配置凭据的 auth provider 展示列表。
+  ///
+  /// 内部需要进入 wasmi 沙箱调用 `get_display_info`，因此整个函数是 async。
+  pub async fn list_available_providers(
+    &self,
+    site_config: &SiteConfig,
+  ) -> Vec<AuthProviderDisplay> {
     if !site_config.auth.enabled {
       return vec![];
     }
@@ -192,7 +197,7 @@ impl AuthService {
       // 调用插件获取展示信息
       match std::fs::read(&plugin_path) {
         Ok(wasm_bytes) => {
-          match self.plugin_manager.call_with_string(&wasm_bytes, "get_display_info", "") {
+          match self.plugin_manager.call_with_string(&wasm_bytes, "get_display_info", "").await {
             Ok(json) => match serde_json::from_str::<AuthProviderDisplay>(&json) {
               Ok(display) => result.push(display),
               Err(e) => {
@@ -216,7 +221,7 @@ impl AuthService {
   /// 调用方负责把 payload 调 [`PkceCookiePayload::encode`] 后塞进 `Set-Cookie`
   /// （见 [`build_pkce_set_cookie`]）。Phase 7.2：服务端不再保存任何 state /
   /// verifier，全部由浏览器 cookie 承担。
-  pub fn prepare_login(
+  pub async fn prepare_login(
     &self,
     provider: &str,
     plugin_filename: &str,
@@ -228,7 +233,7 @@ impl AuthService {
 
     let wasm_bytes = std::fs::read(plugin_path)?;
     let config_json =
-      self.plugin_manager.call_with_string(&wasm_bytes, "get_provider_config", "")?;
+      self.plugin_manager.call_with_string(&wasm_bytes, "get_provider_config", "").await?;
     let provider_config: AuthProviderConfig = serde_json::from_str(&config_json)?;
 
     let (client_id, _) = AuthConfig::get_credentials(provider)?;
@@ -299,7 +304,7 @@ impl AuthService {
 
     // 1. 获取插件配置
     let config_json =
-      self.plugin_manager.call_with_string(&wasm_bytes, "get_provider_config", "")?;
+      self.plugin_manager.call_with_string(&wasm_bytes, "get_provider_config", "").await?;
     let provider_config: AuthProviderConfig = serde_json::from_str(&config_json)?;
 
     let (client_id, client_secret) = AuthConfig::get_credentials(provider)?;
@@ -367,11 +372,10 @@ impl AuthService {
     tracing::info!(provider = %provider, "auth: profile fetched");
 
     // 4. 插件 Profile 映射
-    let standard_user_json = self.plugin_manager.call_with_string(
-      &wasm_bytes,
-      "map_profile",
-      &profile_response.to_string(),
-    )?;
+    let standard_user_json = self
+      .plugin_manager
+      .call_with_string(&wasm_bytes, "map_profile", &profile_response.to_string())
+      .await?;
     let standard_user: StandardUser = serde_json::from_str(&standard_user_json)?;
 
     // 5. 同步至数据库
@@ -449,8 +453,8 @@ mod tests {
   use super::*;
   use std::fs;
 
-  #[test]
-  fn test_github_auth_plugin_logic() {
+  #[tokio::test]
+  async fn test_github_auth_plugin_logic() {
     // 插件路径（基于 target-dir 的位置或 build 后的位置）
     let wasm_path = "../../assets/plugins/github_auth_plugin.wasm";
     if !std::path::Path::new(wasm_path).exists() {
@@ -464,6 +468,7 @@ mod tests {
     // 1. 测试获取配置
     let config_json = manager
       .call_with_string(&wasm_bytes, "get_provider_config", "")
+      .await
       .expect("调用 get_provider_config 失败");
     let config: AuthProviderConfig =
       serde_json::from_str(&config_json).expect("解析配置 JSON 失败");
@@ -481,6 +486,7 @@ mod tests {
 
     let standard_user_json = manager
       .call_with_string(&wasm_bytes, "map_profile", &mock_raw_profile)
+      .await
       .expect("调用 map_profile 失败");
     let user: StandardUser =
       serde_json::from_str(&standard_user_json).expect("解析 StandardUser 失败");

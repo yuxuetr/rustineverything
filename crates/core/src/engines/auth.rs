@@ -95,11 +95,12 @@ mod tests {
     assert_eq!(e.service().config.base_url, "http://localhost:8080");
   }
 
-  #[test]
-  fn list_available_providers_empty_when_no_config() {
+  #[tokio::test]
+  async fn list_available_providers_empty_when_no_config() {
     let e = make();
     // SiteConfig::default() auth.enabled=false → 必然空
-    let providers = e.service().list_available_providers(&crate::settings::SiteConfig::default());
+    let providers =
+      e.service().list_available_providers(&crate::settings::SiteConfig::default()).await;
     assert!(providers.is_empty());
   }
 }

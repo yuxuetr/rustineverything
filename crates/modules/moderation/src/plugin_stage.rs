@@ -49,10 +49,11 @@ impl PluginModerationStage {
     self
   }
 
-  fn plugin_call(&self, func: &str, input: &str) -> Result<String, String> {
+  async fn plugin_call(&self, func: &str, input: &str) -> Result<String, String> {
     self
       .plugin_manager
       .call_path_with_string(&self.plugin_path, func, input)
+      .await
       .map_err(|e| e.to_string())
   }
 }
@@ -87,7 +88,10 @@ impl AsyncModerationStage for PluginModerationStage {
       }
     };
 
-    let messages_json = match self.plugin_call(moderation_abi::FN_BUILD_PROMPT, &submission_json) {
+    let messages_json = match self
+      .plugin_call(moderation_abi::FN_BUILD_PROMPT, &submission_json)
+      .await
+    {
       Ok(s) => s,
       Err(e) => {
         tracing::warn!(stage = %self.name, error = %e, "moderation: plugin build_prompt failed → allow");
@@ -116,7 +120,7 @@ impl AsyncModerationStage for PluginModerationStage {
     };
 
     // ── 3. 让插件解析 verdict ───────────────────────────────
-    let verdict_json = match self.plugin_call(moderation_abi::FN_PARSE_VERDICT, &llm_text) {
+    let verdict_json = match self.plugin_call(moderation_abi::FN_PARSE_VERDICT, &llm_text).await {
       Ok(s) => s,
       Err(e) => {
         tracing::warn!(stage = %self.name, error = %e, "moderation: plugin parse_verdict failed → allow");

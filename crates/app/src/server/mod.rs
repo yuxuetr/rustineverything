@@ -101,7 +101,7 @@ pub async fn list_public_plugins() -> Result<Vec<PublicPluginInfo>, ServerFnErro
         continue;
       }
       let path = entry.path();
-      let manifest_json = match manager.call_path_with_string(&path, "get_manifest", "") {
+      let manifest_json = match manager.call_path_with_string(&path, "get_manifest", "").await {
         Ok(j) => j,
         Err(_) => continue, // 无 manifest（老插件）→ 跳过
       };
@@ -144,6 +144,7 @@ pub async fn translate_server(key: String, lang: String) -> Result<String, Serve
     let input = serde_json::json!({ "key": key, "lang": lang }).to_string();
     manager
       .call_path_with_string(&wasm_path, "translate", &input)
+      .await
       .map_err(|e| ServerFnError::new(e.to_string()))
   }
   #[cfg(not(feature = "server"))]
@@ -193,7 +194,7 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
       return Ok(String::new());
     }
     let manager = app_core::shared_plugin_manager();
-    Ok(manager.aggregate_theme_css_paths(&resolved))
+    Ok(manager.aggregate_theme_css_paths(&resolved).await)
   }
   #[cfg(not(feature = "server"))]
   {
@@ -237,7 +238,7 @@ pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
       let path = entry.path();
 
       // 读 manifest。读不到时以启发式判定。
-      let manifest_json = manager.call_path_with_string(&path, "get_manifest", "").ok();
+      let manifest_json = manager.call_path_with_string(&path, "get_manifest", "").await.ok();
       let (id, label, is_theme) =
         match manifest_json.as_deref().and_then(|s| serde_json::from_str::<PluginManifest>(s).ok())
         {
@@ -358,7 +359,7 @@ pub async fn get_auth_providers(
   #[cfg(feature = "server")]
   {
     let (auth_service, site_config) = build_auth_service();
-    Ok(auth_service.list_available_providers(&site_config))
+    Ok(auth_service.list_available_providers(&site_config).await)
   }
   #[cfg(not(feature = "server"))]
   {
@@ -376,7 +377,7 @@ pub async fn prepare_login_for_provider(
   let (auth_service, site_config) = build_auth_service();
   let plugin_filename = find_plugin_filename(&site_config, &provider)
     .ok_or_else(|| format!("未在 site.json 中配置 provider: {}", provider))?;
-  let (url, payload) = auth_service.prepare_login(&provider, &plugin_filename)?;
+  let (url, payload) = auth_service.prepare_login(&provider, &plugin_filename).await?;
   let cookie_value = payload.encode()?;
   Ok((url, cookie_value))
 }

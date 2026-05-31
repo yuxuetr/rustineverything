@@ -797,12 +797,14 @@ pub async fn admin_upload_plugin(
     let manager = shared_plugin_manager();
     manager
       .validate_plugin_bytes(&bytes)
+      .await
       .map_err(|e| ServerFnError::new(format!("插件校验失败: {}", e)))?;
 
     // 4. manifest + ABI 版本校验（hot reload 要求新 ABI 插件导出 get_manifest）
-    let manifest_json = manager.call_with_string(&bytes, "get_manifest", "").map_err(|e| {
-      ServerFnError::new(format!("插件缺少 get_manifest 导出，无法识别 ABI: {}", e))
-    })?;
+    let manifest_json =
+      manager.call_with_string(&bytes, "get_manifest", "").await.map_err(|e| {
+        ServerFnError::new(format!("插件缺少 get_manifest 导出，无法识别 ABI: {}", e))
+      })?;
     let manifest: PluginManifest = serde_json::from_str(&manifest_json)
       .map_err(|e| ServerFnError::new(format!("manifest 解析失败: {}", e)))?;
     if !manifest.is_compatible() {

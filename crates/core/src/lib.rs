@@ -19,7 +19,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::SystemTime;
-use wasmi::{Engine, Linker, Module, Store};
+#[cfg(feature = "server")]
+use wasmi::Store;
+use wasmi::{Config, Engine, Linker, Module, StoreLimits, StoreLimitsBuilder};
 
 /// 全局共享的 [`PluginManager`] 实例，让插件 `Module` 缓存跨 server fn 调用复用。
 static SHARED_PLUGIN_MANAGER: LazyLock<PluginManager> = LazyLock::new(PluginManager::new);
@@ -29,18 +31,70 @@ pub fn shared_plugin_manager() -> &'static PluginManager {
   &SHARED_PLUGIN_MANAGER
 }
 
+/// 默认 fuel 额度：100M ≈ 1 秒内核动作。可通过 `WASM_FUEL_LIMIT` env 覆盖。
+const DEFAULT_WASM_FUEL: u64 = 100_000_000;
+/// 默认线性内存上限：128 页 = 8 MiB（每页 64 KiB）。可通过 `WASM_MEMORY_PAGES` env 覆盖。
+const DEFAULT_WASM_MEMORY_PAGES: u32 = 128;
+/// 默认 host 端输出缓冲上限：8 MiB。任何插件返回长度被 clamp 到该值之内，避免恶意 len 触发巨缓冲分配。
+const DEFAULT_OUTPUT_LIMIT: usize = 8 * 1024 * 1024;
+/// 默认单次 wasm 调用 wall-clock 超时（秒）。fuel 是主防线，timeout 是次防线兜底。
+const DEFAULT_INVOKE_TIMEOUT_SECS: u64 = 5;
+/// wasm 线性内存 page size。
+const WASM_PAGE_SIZE: usize = 65536;
+
 /// 插件缓存条目：记录预编译后的 wasmi `Module` + 文件 mtime。
 struct CachedModule {
   module: Module,
   mtime: SystemTime,
 }
 
+/// 沙箱配置：fuel + 内存页 + 输出缓冲 + 超时。
+#[derive(Clone, Copy, Debug)]
+struct SandboxConfig {
+  fuel: u64,
+  memory_pages: u32,
+  output_limit: usize,
+  timeout_secs: u64,
+}
+
+impl SandboxConfig {
+  fn from_env() -> Self {
+    Self {
+      fuel: read_env_u64("WASM_FUEL_LIMIT", DEFAULT_WASM_FUEL),
+      memory_pages: read_env_u32("WASM_MEMORY_PAGES", DEFAULT_WASM_MEMORY_PAGES),
+      output_limit: read_env_usize("WASM_OUTPUT_LIMIT", DEFAULT_OUTPUT_LIMIT),
+      timeout_secs: read_env_u64("WASM_INVOKE_TIMEOUT_SECS", DEFAULT_INVOKE_TIMEOUT_SECS),
+    }
+  }
+
+  fn memory_bytes(&self) -> usize {
+    (self.memory_pages as usize).saturating_mul(WASM_PAGE_SIZE)
+  }
+
+  fn store_limits(&self) -> StoreLimits {
+    StoreLimitsBuilder::new().memory_size(self.memory_bytes()).build()
+  }
+}
+
+fn read_env_u64(key: &str, default: u64) -> u64 {
+  std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+fn read_env_u32(key: &str, default: u32) -> u32 {
+  std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+fn read_env_usize(key: &str, default: usize) -> usize {
+  std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
 pub struct PluginManager {
   engine: Engine,
-  linker: Linker<()>,
+  linker: Linker<StoreLimits>,
   /// 提供按路径复用 `Module` 的能力。在 i18n / 主题等高频调用场景下
   /// 可以避免重复读文件 + 重复调用 `Module::new`。
   cache: Mutex<HashMap<PathBuf, CachedModule>>,
+  sandbox: SandboxConfig,
 }
 
 impl Default for PluginManager {
@@ -51,9 +105,31 @@ impl Default for PluginManager {
 
 impl PluginManager {
   pub fn new() -> Self {
-    let engine = Engine::default();
-    let linker = Linker::new(&engine);
-    Self { engine, linker, cache: Mutex::new(HashMap::new()) }
+    let mut config = Config::default();
+    config.consume_fuel(true);
+    let engine = Engine::new(&config);
+    let linker = Linker::<StoreLimits>::new(&engine);
+    Self {
+      engine,
+      linker,
+      cache: Mutex::new(HashMap::new()),
+      sandbox: SandboxConfig::from_env(),
+    }
+  }
+
+  /// 当前 host 端输出缓冲上限（bytes）。用于上层 PluginEngine 决定结果 cap。
+  pub fn output_limit(&self) -> usize {
+    self.sandbox.output_limit
+  }
+
+  /// 当前 fuel 配额（单次调用），用于诊断 / 测试。
+  pub fn fuel_limit(&self) -> u64 {
+    self.sandbox.fuel
+  }
+
+  /// 当前每实例线性内存 page 上限。
+  pub fn memory_pages_limit(&self) -> u32 {
+    self.sandbox.memory_pages
   }
 
   /// 从缓存中取出 wasm 路径对应的 `Module`；mtime 变化时会重新加载。
@@ -96,85 +172,75 @@ impl PluginManager {
     }
   }
 
-  /// 执行插件中的函数并传递字符串
-  pub fn call_with_string(
+  /// 执行插件中的函数并传递字符串。
+  ///
+  /// 沙箱保护（[`SandboxConfig`]）：fuel cap 防死循环；linear memory cap 防 OOM；
+  /// tokio timeout 兜底；输出长度 clamp 防 host 巨缓冲分配。
+  /// 调用本身走 [`tokio::task::spawn_blocking`]，避免 wasmi 同步执行卡住 tokio worker。
+  #[cfg(feature = "server")]
+  pub async fn call_with_string(
     &self,
     wasm_bytes: &[u8],
     func_name: &str,
     input: &str,
   ) -> crate::error::AppResult<String> {
     let module = Module::new(&self.engine, wasm_bytes)?;
-    self.invoke_module(&module, func_name, input)
+    self.invoke_module(module, func_name, input).await
   }
 
-  /// 从路径加载插件（走缓存）并调用。高频调用场景推荐使用该接口，
-  /// 避免重复 `fs::read` + `Module::new` 的开销。
-  pub fn call_path_with_string(
+  /// 从路径加载插件（走缓存）并调用。
+  #[cfg(feature = "server")]
+  pub async fn call_path_with_string(
     &self,
     path: &Path,
     func_name: &str,
     input: &str,
   ) -> crate::error::AppResult<String> {
     let module = self.get_or_load_module(path)?;
-    self.invoke_module(&module, func_name, input)
+    self.invoke_module(module, func_name, input).await
   }
 
-  /// 对已预编译的 `Module` 调用指定导出函数。仅在 crate 内部使用。
-  fn invoke_module(
+  /// 对已预编译的 `Module` 调用指定导出函数。私有路径，所有公开 API 都走该 fn。
+  #[cfg(feature = "server")]
+  async fn invoke_module(
     &self,
-    module: &Module,
+    module: Module,
     func_name: &str,
     input: &str,
   ) -> crate::error::AppResult<String> {
     use crate::error::AppError;
+    use std::time::Duration;
 
-    let mut store = Store::new(&self.engine, ());
-    let instance = self.linker.instantiate(&mut store, module)?.start(&mut store)?;
+    let engine = self.engine.clone();
+    let linker = self.linker.clone();
+    let sandbox = self.sandbox;
+    let func_name_owned = func_name.to_string();
+    let func_name_for_err = func_name_owned.clone();
+    let input = input.to_string();
+    let timeout = Duration::from_secs(sandbox.timeout_secs);
 
-    // 1. 获取插件的线性内存
-    let memory = instance
-      .get_memory(&store, "memory")
-      .ok_or_else(|| AppError::plugin("WASM module has no memory export"))?;
+    let fut = tokio::task::spawn_blocking(move || {
+      invoke_module_sync(&engine, &linker, &module, &func_name_owned, &input, sandbox)
+    });
 
-    // 2. 获取插件导出的分配函数
-    let alloc_fn = instance.get_typed_func::<i32, i32>(&store, "alloc")?;
-    let dealloc_fn = instance.get_typed_func::<(i32, i32), ()>(&store, "dealloc")?;
-
-    // 3. 在插件中分配空间并写入输入字符串
-    let input_bytes = input.as_bytes();
-    let input_len = input_bytes.len() as i32;
-    let input_ptr = alloc_fn.call(&mut store, input_len)?;
-    memory
-      .write(&mut store, input_ptr as usize, input_bytes)
-      .map_err(|e| AppError::plugin(format!("wasm memory write failed: {}", e)))?;
-
-    // 4. 调用目标函数 (ptr, len) -> u64
-    let target_fn = instance.get_typed_func::<(i32, i32), u64>(&store, func_name)?;
-    let packed_result = target_fn.call(&mut store, (input_ptr, input_len))?;
-
-    // 5. 解析结果 (高32位ptr, 低32位len)
-    let result_ptr = (packed_result >> 32) as i32;
-    let result_len = (packed_result & 0xFFFFFFFF) as i32;
-
-    let mut result_buf = vec![0u8; result_len as usize];
-    memory
-      .read(&store, result_ptr as usize, &mut result_buf)
-      .map_err(|e| AppError::plugin(format!("wasm memory read failed: {}", e)))?;
-    let result_str = String::from_utf8(result_buf)
-      .map_err(|e| AppError::plugin(format!("plugin output not valid UTF-8: {}", e)))?;
-
-    // 6. 清理内存
-    dealloc_fn.call(&mut store, (input_ptr, input_len))?;
-    dealloc_fn.call(&mut store, (result_ptr, result_len))?;
-
-    Ok(result_str)
+    match tokio::time::timeout(timeout, fut).await {
+      Ok(Ok(result)) => result,
+      Ok(Err(join_err)) => {
+        Err(AppError::plugin(format!("wasm worker join failed: {}", join_err)))
+      }
+      Err(_) => Err(AppError::plugin(format!(
+        "wasm invoke timed out after {}s ({})",
+        sandbox.timeout_secs, func_name_for_err
+      ))),
+    }
   }
 
-  /// 聚合多个主题插件的 CSS
-  pub fn aggregate_theme_css(&self, wasm_modules: &[Vec<u8>]) -> String {
+  /// 聚合多个主题插件的 CSS（直接传字节）。
+  #[cfg(feature = "server")]
+  pub async fn aggregate_theme_css(&self, wasm_modules: &[Vec<u8>]) -> String {
     let mut aggregated_css = String::new();
     for wasm_bytes in wasm_modules {
-      if let Ok(css) = self.call_with_string(wasm_bytes, "get_theme_css", "") {
+      if let Ok(css) = self.call_with_string(wasm_bytes, "get_theme_css", "").await {
         aggregated_css.push_str(&css);
         aggregated_css.push('\n');
       }
@@ -183,10 +249,11 @@ impl PluginManager {
   }
 
   /// 按路径聚合主题 CSS（走缓存）。
-  pub fn aggregate_theme_css_paths(&self, paths: &[PathBuf]) -> String {
+  #[cfg(feature = "server")]
+  pub async fn aggregate_theme_css_paths(&self, paths: &[PathBuf]) -> String {
     let mut aggregated_css = String::new();
     for path in paths {
-      if let Ok(css) = self.call_path_with_string(path, "get_theme_css", "") {
+      if let Ok(css) = self.call_path_with_string(path, "get_theme_css", "").await {
         aggregated_css.push_str(&css);
         aggregated_css.push('\n');
       }
@@ -198,42 +265,139 @@ impl PluginManager {
   ///
   /// 用于 hot reload（Phase 5.1）：admin 上传的 wasm 在落盘前必须先编译 +
   /// 实例化，确认它能在本宿主的 [`wasmi`] 引擎上运行且导出了 ABI 约定的
-  /// `memory` / `alloc` / `dealloc`。校验只触碰一个临时 [`Store`]，不读写
-  /// 任何外部状态，失败时返回可读错误信息（不 panic）。
-  ///
-  /// 注意：本方法只验证**结构**（能编译 + 有内存管理 ABI）。ABI 版本与能力
-  /// 协商由上层在拿到 `get_manifest` 输出后判断。
-  pub fn validate_plugin_bytes(&self, bytes: &[u8]) -> Result<(), String> {
-    let module =
-      Module::new(&self.engine, bytes).map_err(|e| format!("无法编译为合法 wasm 模块: {}", e))?;
-    let mut store = Store::new(&self.engine, ());
-    let instance = self
-      .linker
-      .instantiate(&mut store, &module)
-      .map_err(|e| format!("实例化失败: {}", e))?
-      .start(&mut store)
-      .map_err(|e| format!("启动失败: {}", e))?;
+  /// `memory` / `alloc` / `dealloc`。校验本身也跑在 fuel + 内存限制 + timeout
+  /// 之下，防止恶意 `start` 函数直接卡死上传流程。
+  #[cfg(feature = "server")]
+  pub async fn validate_plugin_bytes(&self, bytes: &[u8]) -> Result<(), String> {
+    use std::time::Duration;
 
-    if instance.get_memory(&store, "memory").is_none() {
-      return Err("插件缺少 `memory` 导出".to_string());
+    let module = Module::new(&self.engine, bytes)
+      .map_err(|e| format!("无法编译为合法 wasm 模块: {}", e))?;
+
+    let engine = self.engine.clone();
+    let linker = self.linker.clone();
+    let sandbox = self.sandbox;
+    let timeout = Duration::from_secs(sandbox.timeout_secs);
+
+    let fut = tokio::task::spawn_blocking(move || {
+      validate_plugin_sync(&engine, &linker, &module, sandbox)
+    });
+
+    match tokio::time::timeout(timeout, fut).await {
+      Ok(Ok(result)) => result,
+      Ok(Err(e)) => Err(format!("校验线程异常: {}", e)),
+      Err(_) => Err(format!("插件校验超时 ({}s)", sandbox.timeout_secs)),
     }
-    instance
-      .get_typed_func::<i32, i32>(&store, "alloc")
-      .map_err(|_| "插件缺少 `alloc(i32) -> i32` 导出".to_string())?;
-    instance
-      .get_typed_func::<(i32, i32), ()>(&store, "dealloc")
-      .map_err(|_| "插件缺少 `dealloc(i32, i32)` 导出".to_string())?;
-    Ok(())
   }
 }
 
-#[cfg(test)]
+/// 同步执行 wasmi 调用：装载 Store + 设置 fuel + 设置 ResourceLimiter + 跑 alloc/call/dealloc。
+///
+/// 输出长度在 host 分配缓冲前 clamp 到 `sandbox.output_limit`，避免恶意插件返回 `len = u32::MAX`
+/// 导致 host 端 OOM。
+#[cfg(feature = "server")]
+fn invoke_module_sync(
+  engine: &Engine,
+  linker: &Linker<StoreLimits>,
+  module: &Module,
+  func_name: &str,
+  input: &str,
+  sandbox: SandboxConfig,
+) -> crate::error::AppResult<String> {
+  use crate::error::AppError;
+
+  let mut store = Store::new(engine, sandbox.store_limits());
+  store.limiter(|s| s);
+  store
+    .set_fuel(sandbox.fuel)
+    .map_err(|e| AppError::plugin(format!("set_fuel failed: {}", e)))?;
+
+  let instance = linker.instantiate(&mut store, module)?.start(&mut store)?;
+
+  let memory = instance
+    .get_memory(&store, "memory")
+    .ok_or_else(|| AppError::plugin("WASM module has no memory export"))?;
+
+  let alloc_fn = instance.get_typed_func::<i32, i32>(&store, "alloc")?;
+  let dealloc_fn = instance.get_typed_func::<(i32, i32), ()>(&store, "dealloc")?;
+
+  let input_bytes = input.as_bytes();
+  let input_len = input_bytes.len() as i32;
+  let input_ptr = alloc_fn.call(&mut store, input_len)?;
+  memory
+    .write(&mut store, input_ptr as usize, input_bytes)
+    .map_err(|e| AppError::plugin(format!("wasm memory write failed: {}", e)))?;
+
+  let target_fn = instance.get_typed_func::<(i32, i32), u64>(&store, func_name)?;
+  let packed_result = target_fn.call(&mut store, (input_ptr, input_len))?;
+
+  let result_ptr = (packed_result >> 32) as i32;
+  let raw_result_len = (packed_result & 0xFFFFFFFF) as i32;
+
+  // 在 host 端 clamp 输出长度：插件可能返回恶意巨大的 len（甚至 u32::MAX 高位 bit）。
+  // 任何 < 0 视为 0；超出 output_limit 直接报错而不是默默截断（避免数据损坏被静默吞掉）。
+  if raw_result_len < 0 {
+    return Err(AppError::plugin(format!("plugin returned negative output length ({})", raw_result_len)));
+  }
+  let result_len_usize = raw_result_len as usize;
+  if result_len_usize > sandbox.output_limit {
+    return Err(AppError::plugin(format!(
+      "plugin output size {} exceeds limit {} bytes",
+      result_len_usize, sandbox.output_limit
+    )));
+  }
+
+  let mut result_buf = vec![0u8; result_len_usize];
+  memory
+    .read(&store, result_ptr as usize, &mut result_buf)
+    .map_err(|e| AppError::plugin(format!("wasm memory read failed: {}", e)))?;
+  let result_str = String::from_utf8(result_buf)
+    .map_err(|e| AppError::plugin(format!("plugin output not valid UTF-8: {}", e)))?;
+
+  dealloc_fn.call(&mut store, (input_ptr, input_len))?;
+  dealloc_fn.call(&mut store, (result_ptr, raw_result_len))?;
+
+  Ok(result_str)
+}
+
+#[cfg(feature = "server")]
+fn validate_plugin_sync(
+  engine: &Engine,
+  linker: &Linker<StoreLimits>,
+  module: &Module,
+  sandbox: SandboxConfig,
+) -> Result<(), String> {
+  let mut store = Store::new(engine, sandbox.store_limits());
+  store.limiter(|s| s);
+  store
+    .set_fuel(sandbox.fuel)
+    .map_err(|e| format!("set_fuel failed: {}", e))?;
+
+  let instance = linker
+    .instantiate(&mut store, module)
+    .map_err(|e| format!("实例化失败: {}", e))?
+    .start(&mut store)
+    .map_err(|e| format!("启动失败: {}", e))?;
+
+  if instance.get_memory(&store, "memory").is_none() {
+    return Err("插件缺少 `memory` 导出".to_string());
+  }
+  instance
+    .get_typed_func::<i32, i32>(&store, "alloc")
+    .map_err(|_| "插件缺少 `alloc(i32) -> i32` 导出".to_string())?;
+  instance
+    .get_typed_func::<(i32, i32), ()>(&store, "dealloc")
+    .map_err(|_| "插件缺少 `dealloc(i32, i32)` 导出".to_string())?;
+  Ok(())
+}
+
+#[cfg(all(test, feature = "server"))]
 mod tests {
   use super::*;
   use std::fs;
 
-  #[test]
-  fn test_i18n_fluent_plugin() {
+  #[tokio::test]
+  async fn test_i18n_fluent_plugin() {
     let wasm_path = "../../target/wasm32-unknown-unknown/release/i18n_fluent_plugin.wasm";
     if !std::path::Path::new(wasm_path).exists() {
       return;
@@ -248,13 +412,15 @@ mod tests {
     })
     .to_string();
 
-    let result =
-      manager.call_with_string(&wasm_bytes, "translate", &input).expect("Failed to call plugin");
+    let result = manager
+      .call_with_string(&wasm_bytes, "translate", &input)
+      .await
+      .expect("Failed to call plugin");
     assert_eq!(result, "Blog");
   }
 
-  #[test]
-  fn test_theme_plugin() {
+  #[tokio::test]
+  async fn test_theme_plugin() {
     let wasm_path = "../../target/wasm32-unknown-unknown/release/theme_ocean_plugin.wasm";
     if !std::path::Path::new(wasm_path).exists() {
       return;
@@ -263,14 +429,14 @@ mod tests {
     let wasm_bytes = fs::read(wasm_path).expect("Failed to read wasm file");
     let manager = PluginManager::new();
 
-    let css = manager.aggregate_theme_css(&[wasm_bytes]);
+    let css = manager.aggregate_theme_css(&[wasm_bytes]).await;
     assert!(css.contains("--color-primary"));
   }
 
   /// 实际调用插件验证 cache hit：同一路径调用 N 次仅产生 1 个缓存条目。
   /// 该测试仅在插件 wasm 已构建时运行。
-  #[test]
-  fn test_path_cache_hit() {
+  #[tokio::test]
+  async fn test_path_cache_hit() {
     let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
     if !std::path::Path::new(wasm_path).exists() {
       return;
@@ -279,14 +445,14 @@ mod tests {
     let path = std::path::Path::new(wasm_path);
     let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
     for _ in 0..5 {
-      let _ = manager.call_path_with_string(path, "translate", &input);
+      let _ = manager.call_path_with_string(path, "translate", &input).await;
     }
     let cache = manager.cache.lock().unwrap();
     assert_eq!(cache.len(), 1, "应仅产生 1 个缓存条目");
   }
 
-  #[test]
-  fn test_invalidate_clears_cache_entry() {
+  #[tokio::test]
+  async fn test_invalidate_clears_cache_entry() {
     let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
     if !std::path::Path::new(wasm_path).exists() {
       return;
@@ -294,14 +460,14 @@ mod tests {
     let manager = PluginManager::new();
     let path = std::path::Path::new(wasm_path);
     let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
-    let _ = manager.call_path_with_string(path, "translate", &input);
+    let _ = manager.call_path_with_string(path, "translate", &input).await;
     assert_eq!(manager.cache.lock().unwrap().len(), 1);
     manager.invalidate(path);
     assert_eq!(manager.cache.lock().unwrap().len(), 0, "调用 invalidate 后缓存应为空");
   }
 
-  #[test]
-  fn test_invalidate_all_clears_cache() {
+  #[tokio::test]
+  async fn test_invalidate_all_clears_cache() {
     let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
     if !std::path::Path::new(wasm_path).exists() {
       return;
@@ -309,7 +475,7 @@ mod tests {
     let manager = PluginManager::new();
     let path = std::path::Path::new(wasm_path);
     let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
-    let _ = manager.call_path_with_string(path, "translate", &input);
+    let _ = manager.call_path_with_string(path, "translate", &input).await;
     manager.invalidate_all();
     assert!(manager.cache.lock().unwrap().is_empty());
   }
@@ -317,8 +483,8 @@ mod tests {
   /// Phase 5.1 内存回收代理测试：反复 invalidate + 重新加载，缓存条目数
   /// 始终保持为 1，旧 `Module` 句柄在 invalidate 时被 Drop（不会累积）。
   /// 真正的 RSS 长跑监测在 `docs/OPERATIONS.md` 记录，单测只验证缓存不泄漏。
-  #[test]
-  fn test_reload_evicts_old_module_cache_stays_bounded() {
+  #[tokio::test]
+  async fn test_reload_evicts_old_module_cache_stays_bounded() {
     let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
     if !std::path::Path::new(wasm_path).exists() {
       return;
@@ -327,10 +493,9 @@ mod tests {
     let path = std::path::Path::new(wasm_path);
     let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
     for _ in 0..50 {
-      let _ = manager.call_path_with_string(path, "translate", &input);
-      // 模拟一次 hot reload：显式失效后重新加载
+      let _ = manager.call_path_with_string(path, "translate", &input).await;
       manager.invalidate(path);
-      let _ = manager.call_path_with_string(path, "translate", &input);
+      let _ = manager.call_path_with_string(path, "translate", &input).await;
       assert_eq!(
         manager.cache.lock().unwrap().len(),
         1,
@@ -340,18 +505,94 @@ mod tests {
   }
 
   /// `validate_plugin_bytes` 接受真实插件 wasm、拒绝垃圾字节。
-  #[test]
-  fn test_validate_plugin_bytes() {
+  #[tokio::test]
+  async fn test_validate_plugin_bytes() {
     let manager = PluginManager::new();
     // 垃圾字节：不是 wasm
-    assert!(manager.validate_plugin_bytes(b"not a wasm module").is_err());
-    assert!(manager.validate_plugin_bytes(&[]).is_err());
+    assert!(manager.validate_plugin_bytes(b"not a wasm module").await.is_err());
+    assert!(manager.validate_plugin_bytes(&[]).await.is_err());
 
     let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
     if !std::path::Path::new(wasm_path).exists() {
       return;
     }
     let bytes = fs::read(wasm_path).expect("read plugin");
-    assert!(manager.validate_plugin_bytes(&bytes).is_ok(), "真实插件 wasm 应通过结构校验");
+    assert!(
+      manager.validate_plugin_bytes(&bytes).await.is_ok(),
+      "真实插件 wasm 应通过结构校验"
+    );
+  }
+
+  /// 沙箱：fuel 默认值（无 env override）应为 100M；通过 `set_fuel` 注入到 Store
+  /// 已在 invoke_module_sync 内验证。
+  #[test]
+  fn sandbox_defaults_match_documentation() {
+    let manager = PluginManager::new();
+    assert_eq!(manager.fuel_limit(), DEFAULT_WASM_FUEL);
+    assert_eq!(manager.memory_pages_limit(), DEFAULT_WASM_MEMORY_PAGES);
+    assert_eq!(manager.output_limit(), DEFAULT_OUTPUT_LIMIT);
+  }
+
+  /// 沙箱：fuel 极小 → 真实插件无法完成 alloc/写入，wasmi 应返回 trap 错误，
+  /// 而不是 hang。验证 [`Config::consume_fuel`] + [`Store::set_fuel`] 路径生效。
+  #[tokio::test]
+  async fn fuel_exhaustion_traps_quickly() {
+    let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+    if !std::path::Path::new(wasm_path).exists() {
+      return;
+    }
+    // SAFETY: 单测序列化运行
+    unsafe {
+      std::env::set_var("WASM_FUEL_LIMIT", "1");
+    }
+    let manager = PluginManager::new();
+    unsafe {
+      std::env::remove_var("WASM_FUEL_LIMIT");
+    }
+    assert_eq!(manager.fuel_limit(), 1);
+    let path = std::path::Path::new(wasm_path);
+    let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
+    let start = std::time::Instant::now();
+    let res = manager.call_path_with_string(path, "translate", &input).await;
+    let elapsed = start.elapsed();
+    assert!(res.is_err(), "fuel=1 时应当 trap，结果: {:?}", res);
+    // 必须快速失败，不能因为没 fuel 限制而 hang。给 1s 充裕余地。
+    assert!(elapsed < std::time::Duration::from_secs(1), "fuel trap 耗时过长: {:?}", elapsed);
+  }
+
+  /// 沙箱：恶意插件返回 `result_len` 超过 host output_limit 时，
+  /// host 应拒绝分配巨缓冲并报清晰错误，而不是直接 `vec![0u8; huge]`。
+  ///
+  /// 实现细节：在 invoke_module_sync 内部，packed_result 解出的 len 先与
+  /// `sandbox.output_limit` 比较，超限直接返回 `AppError::plugin`。
+  /// 这里通过把 PluginManager 的 output_limit 调成 1 字节并跑真实插件来代理验证
+  /// （真实插件至少返回若干字节）。
+  #[tokio::test]
+  async fn output_length_is_clamped_before_alloc() {
+    let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+    if !std::path::Path::new(wasm_path).exists() {
+      return;
+    }
+    // 用 env override 把 output_limit 设成 1 byte
+    // SAFETY: 单测序列化运行；其他测试不依赖该值
+    unsafe {
+      std::env::set_var("WASM_OUTPUT_LIMIT", "1");
+    }
+    let manager = PluginManager::new();
+    unsafe {
+      std::env::remove_var("WASM_OUTPUT_LIMIT");
+    }
+    assert_eq!(manager.output_limit(), 1);
+    let path = std::path::Path::new(wasm_path);
+    let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
+    let res = manager.call_path_with_string(path, "translate", &input).await;
+    match res {
+      Err(e) => assert!(
+        format!("{}", e).contains("exceeds limit"),
+        "应当因输出超限拒绝，实际错误: {}",
+        e
+      ),
+      Ok(_) => panic!("output_limit=1 时不应允许真实插件返回完整字符串"),
+    }
   }
 }

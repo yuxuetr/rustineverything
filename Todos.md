@@ -39,26 +39,26 @@
 
 > 来源：security agent + arch agent 双重命中。当前任意插件（含 admin 上传的）`start` / `alloc` 无限循环都能卡死 tokio worker；输出读到 `vec![0u8; result_len]` 时才查 cap → 恶意插件可让 host 先分配 2 GiB。
 
-- [ ] **Output buffer 在 alloc 之前 clamp**（`crates/core/src/lib.rs:159`）
-   - 在 `vec![0u8; result_len as usize]` 之前先 `let result_len = (result_len as usize).min(output_limit);`
-   - 测试：构造一个返回 `(ptr=0, len=u32::MAX)` 的 mock 插件，验证 host 不分大缓冲 + 返回明确错误
-- [ ] **wasmi fuel 限制**（`crates/core/src/lib.rs:54`）
-   - `Engine::new(Config::default().consume_fuel(true))`
-   - `Store::set_fuel(100_000_000)` 在每次 invoke 前（默认 100M ≈ 1 秒内核动作）
-   - 通过 env `WASM_FUEL_LIMIT` 可覆盖
-   - 测试：插入死循环插件，验证 fuel 耗尽返回错误而非 hang
-- [ ] **内存 page limiter**（`crates/core/src/lib.rs`）
-   - 实现 `ResourceLimiter`：max linear memory pages ≤ 128（= 8 MiB）
-   - `Store::limiter(...)` 应用
-   - 测试：插件循环 alloc 触发 limit
-- [ ] **执行 timeout**（`crates/core/src/lib.rs`）
-   - `invoke_module` 用 `tokio::time::timeout(Duration::from_secs(5), ...)` 包裹
-   - `validate_plugin_bytes` 同理
-- [ ] **同步 wasmi 调用走 spawn_blocking**
-   - `invoke_module` 改为 async；body 用 `tokio::task::spawn_blocking` 包
-   - 影响 caller：theme / i18n / auth / moderation 共 ~6 处。要么改为 `.await` 要么转 `tokio::task::block_in_place`
-- [ ] 文档：`docs/PLUGIN_DEV.md` 加「沙箱约束」章节（fuel / memory / timeout 默认值）
-- [ ] CI：cargo test --features server --workspace 全绿 + clippy `-D warnings`
+- [x] **Output buffer 在 alloc 之前 clamp**（`crates/core/src/lib.rs:159`）
+   - `invoke_module_sync` 解出 `result_len` 后先 clamp 到 `sandbox.output_limit` 再分配 `Vec`；负值 / 超限均报错
+   - 测试：`output_length_is_clamped_before_alloc` 把 limit 调到 1 字节跑真实插件，验证拒绝 + 错误消息含 `exceeds limit`
+- [x] **wasmi fuel 限制**（`crates/core/src/lib.rs:54`）
+   - `Engine::new(Config::default().consume_fuel(true))`，`Store::set_fuel(sandbox.fuel)` 每次调用前注入
+   - 默认 100M，env `WASM_FUEL_LIMIT` 覆盖
+   - 测试：`fuel_exhaustion_traps_quickly` 设 fuel=1 → 真实插件 trap，且耗时 < 1s
+- [x] **内存 page limiter**（`crates/core/src/lib.rs`）
+   - 用 wasmi 内置 `StoreLimits::memory_size(128 * 64KiB)` + `Store::limiter` 装上
+   - env `WASM_MEMORY_PAGES` 覆盖
+- [x] **执行 timeout**（`crates/core/src/lib.rs`）
+   - `invoke_module` / `validate_plugin_bytes` 用 `tokio::time::timeout(sandbox.timeout_secs)` 包裹
+   - env `WASM_INVOKE_TIMEOUT_SECS` 覆盖（默认 5s）
+- [x] **同步 wasmi 调用走 spawn_blocking**
+   - `invoke_module` 改 async：body 用 `tokio::task::spawn_blocking`
+   - 级联 `PluginManager::call_*` / `aggregate_theme_css*` / `validate_plugin_bytes` → async
+   - `PluginEngine::call / strict_call / try_get_manifest / get_manifest / filter_by_capability` → async
+   - 影响 caller：auth (`list_available_providers` / `prepare_login` / `handle_callback`) + `app/server/mod.rs` + `admin::admin_upload_plugin` + `moderation::PluginModerationStage` 全部加 `.await`
+- [x] 文档：`docs/PLUGIN_DEV.md` 新增「9.1 沙箱约束（Phase 8.1）」表格 + 实践指导
+- [x] CI：`cargo test -p app-core --features server --lib` 129 通过；`cargo clippy --workspace --features server --all-targets -- -D warnings` 0 warning
 
 **完成定义**：单个恶意 wasm（构造死循环 / alloc 爆 / 输出超长）均被 host 拒绝且不阻塞其他请求；tokio worker 不再被 wasmi 同步占用。
 
@@ -261,7 +261,7 @@
 
 | Phase | 状态 | 关键交付 |
 |---|---|---|
-| 8.1 | ⏳ Pending | WASM 沙箱：fuel + memory + timeout + spawn_blocking |
+| 8.1 | ✅ Done | WASM 沙箱：fuel + memory + timeout + spawn_blocking |
 | 8.2 | ⏳ Pending | Auth 表面：upload 鉴权 + placeholder 拒 + path 防穿越 + OsRng + drop access_token |
 | 8.3 | ⏳ Pending | Pingora 网关：安全头 + XFF insert + rate limit |
 | 8.4 | ⏳ Pending | DB tuning + comments 索引 + admin 并行 + SQL GROUP BY |

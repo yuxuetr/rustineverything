@@ -58,10 +58,11 @@ impl ThemeEngine {
   }
 
   /// 聚合所有主题插件的 CSS。失败的插件会被跳过（不阻断其他主题）。
-  pub fn aggregate_css(&self) -> String {
+  #[cfg(feature = "server")]
+  pub async fn aggregate_css(&self) -> String {
     let mut out = String::new();
     for path in &self.themes {
-      match self.plugin.call(path, "get_theme_css", "") {
+      match self.plugin.call(path, "get_theme_css", "").await {
         Ok(css) => {
           out.push_str(&css);
           out.push('\n');
@@ -133,7 +134,7 @@ impl Engine for ThemeEngine {
   }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "server"))]
 #[allow(clippy::field_reassign_with_default)] // 测试 setup：Default + 逐字段赋值更易读
 mod tests {
   use super::*;
@@ -177,10 +178,10 @@ mod tests {
     assert!(e.themes()[0].ends_with("theme_ocean_plugin.wasm"));
   }
 
-  #[test]
-  fn aggregate_css_with_no_themes_is_empty() {
+  #[tokio::test]
+  async fn aggregate_css_with_no_themes_is_empty() {
     let e = make();
-    assert_eq!(e.aggregate_css(), "");
+    assert_eq!(e.aggregate_css().await, "");
   }
 
   #[test]

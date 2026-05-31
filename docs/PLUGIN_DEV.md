@@ -273,6 +273,24 @@ ALL_THEMES=(
 - [ ] 站点 `site.json` 已加入相应字段
 - [ ] 在 `docs/` 中补一段 README / 截图（可选）
 
+## 9.1 沙箱约束（Phase 8.1）
+
+宿主对每次 wasm 调用施加四道防线，插件作者编码时需要心里有数：
+
+| 维度 | 默认 | 覆盖 env | 说明 |
+| --- | --- | --- | --- |
+| Fuel（指令额度） | `100_000_000` ≈ 1s 内核活动 | `WASM_FUEL_LIMIT` | wasmi `Config::consume_fuel(true)` + `Store::set_fuel`，死循环会 trap |
+| 线性内存 | 128 页 = 8 MiB | `WASM_MEMORY_PAGES` | `StoreLimitsBuilder::memory_size`；插件 `memory.grow` 超过即 -1 |
+| 输出长度上限 | 8 MiB | `WASM_OUTPUT_LIMIT` | host 在 `vec![0u8; len]` 前 clamp；超额直接报错而非截断 |
+| 单次调用 timeout | 5s | `WASM_INVOKE_TIMEOUT_SECS` | tokio 兜底；任何 wasmi 调用都跑在 `spawn_blocking` 工作池，timeout 优先释放调度器 |
+
+实践指导：
+
+- 不要在 `start`（构造函数）里跑长循环 —— 加载时就走 fuel
+- 输出大概率在 KB 级；若上得了 MB 量级，请评估 `OUTPUT_LIMIT` 是否需要在部署侧上调
+- 任何外部 import（host functions）目前**未提供** —— 插件是纯计算 + 字符串 I/O，遇到需要 IO 的场景请回到 host 端实现
+- 校验阶段（`admin_upload_plugin`）也同样跑在沙箱内，恶意 `start` 不会卡住上传流程
+
 ## 10. 后续阶段（Phase 5+）
 
 - **Hot Reload**：admin 上传 wasm → PluginEngine `invalidate` → 替换。完成后无需重启 server。
