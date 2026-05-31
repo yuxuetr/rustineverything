@@ -100,45 +100,19 @@ pub fn Markdown(props: MarkdownProps) -> Element {
 
   rsx! {
       document::Title { "{metadata.title}" }
-      document::Style { "
-            math {{ font-size: 1.1em; }}
-            .math-display math {{ font-size: 1.4em; }}
-            .prose code::before, .prose code::after {{ content: none !important; }}
-        " }
 
       div { class: "prose prose-slate dark:prose-invert max-w-none",
           {elements.into_iter()}
       }
-
-      // Phase 1A.5：hydration-safe 触发器。用 `document::Script` 而不是
-      // `dioxus::document::eval`：前者声明式渲染 <script> 节点，SSR 时进
-      // HTML 流由浏览器原生执行；客户端再渲染时 Dioxus 重新挂载该节点同样
-      // 触发执行；desktop / mobile 后端则把它作为普通节点忽略，不再依赖
-      // 仅 web 可用的 `eval` JS 注入。轮询是为了等 `/js/prism.min.js`
-      // 与 `/js/mermaid.min.js`（由 main.rs 的 document::Script 加载）就绪。
-      document::Script { {MARKDOWN_REHIGHLIGHT_SCRIPT} }
+      // 注：math / .prose code 等全局静态样式以及 Prism / Mermaid 重高亮触发器
+      // 不在此组件内挂载——它们由 App 根 (`crates/app/src/main.rs`) 一次性
+      // 安装。在 Markdown 组件级别用 document::Style/Script 会触发
+      // dioxus-document "Changing the props … is not supported" 警告（每次
+      // 路由切换重渲都会"换"一遍），而且替换后的 script 不会被再次执行 →
+      // SPA 导航后 Prism/Mermaid 失效。改由 main.rs 里的 MutationObserver
+      // 自动捕获新插入的 code/mermaid 块，覆盖首屏 + SPA 导航两个场景。
   }
 }
-
-/// Phase 1A.5：每次 Markdown 组件挂载时执行，等待 Prism / Mermaid 全局
-/// 对象就绪后触发高亮与 Mermaid 图渲染。轮询步长 100 / 200ms，避免主线程
-/// 阻塞；Prism / Mermaid 的 `run` 都是幂等的，重复触发安全。
-const MARKDOWN_REHIGHLIGHT_SCRIPT: &str = r#"
-(function rehighlight(){
-  if(window.Prism && window.Prism.languages && window.Prism.languages.rust){
-    window.Prism.highlightAll();
-  } else {
-    setTimeout(rehighlight, 100);
-  }
-})();
-(function rerunMermaid(){
-  if(window.mermaid && typeof window.mermaid.run === 'function'){
-    try { window.mermaid.run({querySelector: '.mermaid'}); } catch(e) {}
-  } else {
-    setTimeout(rerunMermaid, 200);
-  }
-})();
-"#;
 
 fn render_stream<'a>(
   it: &mut std::iter::Peekable<Parser<'a>>,

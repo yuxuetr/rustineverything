@@ -21,6 +21,66 @@ const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 const MATH_CSS: Asset = asset!("/assets/css/math.css");
 const PRISM_CSS: Asset = asset!("/assets/css/prism-tomorrow.min.css");
 
+/// 全局一次性引导脚本：初始化 mermaid，对**整个文档**开 MutationObserver，
+/// 一旦 DOM 中出现未处理的 `<code class="language-*">` 或 `.mermaid` 块就
+/// 自动跑 Prism / mermaid。SPA 导航换入新 Markdown 内容时同样能触发。
+///
+/// 设计要点：
+/// - **只挂载一次**（在 App 根的 document::Script 里），避免 mdx 组件级别
+///   的 Script 引起 dioxus-document props-change 警告且无法重跑。
+/// - 等 `window.Prism` / `window.mermaid` 就绪后再启动 observer（脚本加载顺序
+///   不可控，prism / mermaid 的 `<script src>` 可能晚于本脚本到达）。
+/// - 用 `Prism.highlightAllUnder` + 自加 `data-prism-done` 标记，防止重复处理。
+/// - mermaid 用其自身的 `data-processed` 已有标记（mermaid 内部维护）。
+const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
+(function(){
+  function tryHighlight(root){
+    if(!window.Prism) return;
+    var nodes = (root || document).querySelectorAll('code[class*="language-"]:not([data-prism-done])');
+    for(var i = 0; i < nodes.length; i++){
+      try { window.Prism.highlightElement(nodes[i]); } catch(e) {}
+      nodes[i].setAttribute('data-prism-done', '1');
+    }
+  }
+  function tryMermaid(root){
+    if(!window.mermaid || typeof window.mermaid.run !== 'function') return;
+    var hits = (root || document).querySelectorAll('.mermaid:not([data-processed])');
+    if(hits.length === 0) return;
+    try { window.mermaid.run({nodes: hits}); } catch(e) {}
+  }
+  function bootMermaid(){
+    if(window.mermaid && typeof window.mermaid.initialize === 'function' && !window.__rie_mermaid_init){
+      window.__rie_mermaid_init = true;
+      try { window.mermaid.initialize({startOnLoad: false, theme: 'default'}); } catch(e) {}
+    }
+  }
+  function sweep(){
+    bootMermaid();
+    tryHighlight(document);
+    tryMermaid(document);
+  }
+  // 初始扫一遍（处理首屏 / hydration 后已存在的内容）
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', sweep);
+  } else {
+    sweep();
+  }
+  // 观察后续 DOM 插入（SPA 路由切换换入新 markdown 时触发）
+  if(typeof MutationObserver === 'function' && !window.__rie_obs){
+    window.__rie_obs = new MutationObserver(function(){
+      // 节流：合并同一 tick 的多次插入
+      if(window.__rie_obs_q) return;
+      window.__rie_obs_q = true;
+      setTimeout(function(){
+        window.__rie_obs_q = false;
+        sweep();
+      }, 30);
+    });
+    window.__rie_obs.observe(document.body || document.documentElement, {childList: true, subtree: true});
+  }
+})();
+"#;
+
 fn main() {
   // Phase 2.1 / 2.2: 启动期一次性注册 MDX 嵌入组件。
   // 在 server 和 client 两边都调用，用于 SSR + hydration 双边 registry 一致。
@@ -519,11 +579,27 @@ fn App() -> Element {
         .prose-comment .prose img {{ max-height: 200px; border-radius: 0.5rem; margin: 0.5em 0; }}
       " }
 
-      // 从 WASM 插件聊合出的主题 CSS：直接以原生 <style> 标签输出。
-      // 使用 document::Style 以保证节点被插入 <head>，不依赖 JS DOM API。
+      // 从 WASM 插件聚合出的主题 CSS。
+      // 注意：**不能**用 `document::Style`：theme_css_value 会随用户切换
+      // 主题变化，而 `document::Style/Script` 只支持一次性挂载（变更 props
+      // 会触发 dioxus-document "Changing the props … is not supported" 警告
+      // 且不更新 DOM）。改用普通 `style` 元素 + `dangerous_inner_html`：
+      // CSS 落在 <body> 仍全局生效，且 vdom diff 正常更新内容。
       if !theme_css_value.is_empty() {
-          document::Style { id: "wasm-theme-style", "{theme_css_value}" }
+          style {
+              id: "wasm-theme-style",
+              dangerous_inner_html: "{theme_css_value}",
+          }
       }
+
+      // mdx 内容的全局静态样式（math / 评论 prose 缩排）。原本住在
+      // widgets/src/mdx.rs 的 document::Style，但 mdx 组件每次路由切换都
+      // 重渲，会触发 props-change 警告 → 上提到 App 根，挂载一次。
+      document::Style { "
+        math {{ font-size: 1.1em; }}
+        .math-display math {{ font-size: 1.4em; }}
+        .prose code::before, .prose code::after {{ content: none !important; }}
+      " }
 
       // pulldown-latex math fonts & styles
       document::Link { rel: "stylesheet", href: MATH_CSS }
@@ -540,7 +616,16 @@ fn App() -> Element {
 
       // Mermaid.js for diagram rendering
       document::Script { src: "/js/mermaid.min.js" }
-      document::Script { "mermaid.initialize({{ startOnLoad: true, theme: 'default' }});" }
+
+      // 全局 rehighlight / mermaid 触发器。**只在 App 根挂载一次**，靠
+      // MutationObserver 自动捕获后续插入到 DOM 的代码块 / mermaid 块（包括
+      // SPA 路由切换换入的新 Markdown 内容）。
+      //
+      // 为什么不放在 widgets/mdx.rs 里：那个组件每次路由切换都重渲，会触发
+      // dioxus-document "Changing the props of Script is not supported" 警告，
+      // 且更换后的脚本不会再次执行 → SPA 导航后 Prism / Mermaid 不重跑。
+      // MutationObserver 一次挂载 → 长期生效，幂等且零警告。
+      document::Script { {GLOBAL_REHIGHLIGHT_BOOT_SCRIPT} }
 
       // 运行时标注运行时（PR-D）
       document::Script { src: "/js/annotations.js" }
