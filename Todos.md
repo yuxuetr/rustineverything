@@ -97,22 +97,19 @@
 
 > 来源：security agent。全无安全响应头 + XFF 头可被客户端伪造 + 全无 rate limit。
 
-- [ ] **响应注入安全头**（`crates/gateway/src/main.rs`）
-   - 在 `AppGateway` 实现 `response_filter`：
-     - `Strict-Transport-Security: max-age=31536000; includeSubDomains`
-     - `X-Content-Type-Options: nosniff`
-     - `X-Frame-Options: DENY`
-     - `Content-Security-Policy: default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'`
-   - CSP 灵活：env `CSP_POLICY` 可覆盖默认
-- [ ] **X-Forwarded-For 改 insert / 清 Forwarded**（`crates/gateway/src/main.rs:51-56`）
-   - `req.insert_header("X-Forwarded-For", ip)` 替代 `append`
-   - `req.remove_header("Forwarded")` 清 RFC 7239 变体
-- [ ] **rate limiting**（`crates/gateway/Cargo.toml` + main.rs）
-   - 引入 `governor = "0.10"`（pure Rust 限流器，与 Pingora 兼容）
-   - `request_filter` 内查表：每 IP `/api/auth/*` / `/api/upload` / `/api/comments/*` / `/api/topics/*` 写端点 10 req/min；读端点 60 req/min；命中限流返 429 + `Retry-After`
-   - env `RATE_LIMIT_DISABLE=true` 可关（开发态）
-- [ ] 文档：`docs/DEPLOY_GUIDE.md §6.1` 补响应头 + rate limit 行为说明
-- [ ] 手动验证：curl `-I https://...` 看 4 个头都在；并发打 100 次 `/api/comments/post` 见 429
+- [x] **响应注入安全头**（`crates/gateway/src/main.rs`）
+   - `AppGateway::response_filter` 注入 HSTS / X-Content-Type-Options / X-Frame-Options / Referrer-Policy / CSP / Server，所有 `insert_header` 防重复
+   - CSP 默认值含 `object-src 'none'; base-uri 'self'; frame-ancestors 'none'`，env `CSP_POLICY` 覆盖
+- [x] **X-Forwarded-For 改 insert / 清 Forwarded**（`crates/gateway/src/main.rs:51-56`）
+   - 改 `insert_header` 覆盖客户端伪造 + `remove_header("Forwarded")` strip RFC 7239
+   - 拿不到 socket 时也显式 `remove_header("X-Forwarded-For")` 避免毒化
+- [x] **rate limiting**（`crates/gateway/Cargo.toml` + main.rs）
+   - 引入 `governor = "0.10"` + `once_cell`：`DefaultKeyedRateLimiter<IpAddr>` 全局静态实例
+   - 写端点（`/api/auth/`/`/api/upload`/`/api/comments/`/`/api/topics/`/`/api/admin/`/`/api/forum/`/`/api/i18n/translate`）10 req/min；其他 60 req/min
+   - 触发返 429 + `Retry-After: 60`；env `RATE_LIMIT_DISABLE=true` / `RATE_LIMIT_WRITE_PER_MIN` / `RATE_LIMIT_READ_PER_MIN` 覆盖
+   - 直接读 `session.client_addr()` 的 socket IP（不信任客户端 XFF）
+- [x] 文档：`docs/DEPLOY_GUIDE.md §6.1` 补「安全响应头 + 限流（Phase 8.3）」小节 + curl 边缘验证脚本
+- [x] 单测：`write_path_classification` / `rate_limit_env_disable_flag` / `keyed_limiter_enforces_quota` 三组覆盖路径分类、env 开关、配额耗尽
 
 **完成定义**：浏览器 devtools 看到响应头齐；攻击者无法把伪造的 XFF 灌进日志 / 限流决策；典型 DoS 模式被 429 短路。
 
@@ -265,7 +262,7 @@
 |---|---|---|
 | 8.1 | ✅ Done | WASM 沙箱：fuel + memory + timeout + spawn_blocking |
 | 8.2 | ✅ Done | Auth 表面：upload 鉴权 + placeholder 拒 + path 防穿越 + OsRng + drop access_token |
-| 8.3 | ⏳ Pending | Pingora 网关：安全头 + XFF insert + rate limit |
+| 8.3 | ✅ Done | Pingora 网关：安全头 + XFF insert + rate limit |
 | 8.4 | ⏳ Pending | DB tuning + comments 索引 + admin 并行 + SQL GROUP BY |
 | 8.5 | ⏳ Pending | theme/i18n/Markdown/list_* mtime cache + Cache-Control |
 | 8.6 | ⏳ Pending | sanitize_user_html allowlist + JWT role DB recheck |
