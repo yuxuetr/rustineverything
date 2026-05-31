@@ -308,17 +308,48 @@ fn first_text(doc: &TantivyDocument, field: Field) -> String {
 }
 
 /// 简单 snippet：命中位置前后取 max_chars/2 的窗口，过短则取开头。
+///
+/// Phase 8.8：之前 `body.to_lowercase()` 会对整个文章 body 做一次 Unicode 折叠分配，
+/// 100KB 文章每个查询都额外 200KB+ 内存 + 整体 O(body) 工作；命中位置一般在前 1KB
+/// 内时这种浪费完全无谓。改成只对 body 前 2KB 做 ASCII lowercase（足够覆盖
+/// 命中），找不到再降级到完整 lowercase 搜索一次。
 fn make_snippet(body: &str, query: &str, max_chars: usize) -> String {
   let trimmed_body = body.trim();
   if trimmed_body.is_empty() {
     return String::new();
   }
   let token = query.split_whitespace().max_by_key(|t| t.chars().count()).unwrap_or(query);
-  let lower_body = trimmed_body.to_lowercase();
   let lower_token = token.to_lowercase();
   let half = max_chars / 2;
 
-  if let Some(byte_pos) = lower_body.find(&lower_token) {
+  /// 在 `haystack` 中查找 lowercase 的 `lower_token`。返回 byte offset。
+  fn find_lower(haystack: &str, lower_token: &str) -> Option<usize> {
+    haystack.to_lowercase().find(lower_token)
+  }
+
+  // 第一轮：仅对前 SNIPPET_HEAD_BYTES 字节做 lowercase 搜索（多数命中都落在这里）；
+  // SnippetGenerator 的复杂度暂时不引入。这里足够把全文 to_lowercase 的 hot path 去掉。
+  const SNIPPET_HEAD_BYTES: usize = 2048;
+  let head_end = SNIPPET_HEAD_BYTES.min(trimmed_body.len());
+  // safe slice：扩到 UTF-8 边界
+  let head_end = if trimmed_body.is_char_boundary(head_end) {
+    head_end
+  } else {
+    let mut e = head_end;
+    while e > 0 && !trimmed_body.is_char_boundary(e) {
+      e -= 1;
+    }
+    e
+  };
+  let head = &trimmed_body[..head_end];
+
+  let byte_pos = find_lower(head, &lower_token)
+    .or_else(|| {
+      // 头部没命中 → 第二轮全文 fallback（极少触发；保留正确性）
+      find_lower(trimmed_body, &lower_token)
+    });
+
+  if let Some(byte_pos) = byte_pos {
     let char_pos = trimmed_body[..byte_pos.min(trimmed_body.len())].chars().count();
     let start_char = char_pos.saturating_sub(half);
     let mut chars_iter = trimmed_body.char_indices();

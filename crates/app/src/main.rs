@@ -157,16 +157,40 @@ fn main() {
       tracing::warn!("startup: DATABASE_URL not set; DB-backed features will error on first call");
     }
 
-    // 使用 core::utils::get_asset_root 返回的 PathBuf，保证与
-    // 其他 server fn 扫描资产的逻辑一致。转换为 String
-    // 并 `Box::leak` 为静态生命周期字符串，方便下面 ServeDir
-    // format! 调用（启动期仅泄露一次，不会被锁定。）
-    let assets_root: &'static str = Box::leak(
-      app_core::utils::get_asset_root()
-        .to_string_lossy()
-        .into_owned()
-        .into_boxed_str(),
-    );
+    // Phase 8.8：用 OnceLock 取代 Box::leak，避免 `dx serve` 反复重启的开发态泄漏
+    // 累积。`OnceLock<&'static str>` 在首次写入时把 String leak 成 &'static，
+    // 后续运行直接读 cell（无重复 leak、无可观察的语义差异）。
+    static ASSETS_ROOT: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    let assets_root: &'static str = ASSETS_ROOT.get_or_init(|| {
+      Box::leak(
+        app_core::utils::get_asset_root()
+          .to_string_lossy()
+          .into_owned()
+          .into_boxed_str(),
+      )
+    });
+
+    // Phase 8.8：插件 hot reload 会留下 `assets/plugins/<name>.wasm.bak`
+    // 备份。超过 7 天的旧备份在启动时清理，避免长跑站点磁盘占用持续累加。
+    let plugin_dir = app_core::utils::get_asset_root().join("plugins");
+    if let Ok(entries) = std::fs::read_dir(&plugin_dir) {
+      let week = std::time::Duration::from_secs(7 * 24 * 3600);
+      let now = std::time::SystemTime::now();
+      for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("bak") {
+          continue;
+        }
+        let Ok(meta) = entry.metadata() else { continue };
+        let Ok(modified) = meta.modified() else { continue };
+        if now.duration_since(modified).map(|age| age > week).unwrap_or(false) {
+          match std::fs::remove_file(&path) {
+            Ok(()) => tracing::info!(path = %path.display(), "startup: pruned stale .bak (>7d)"),
+            Err(e) => tracing::warn!(error = %e, path = %path.display(), "startup: failed to prune .bak"),
+          }
+        }
+      }
+    }
 
     let router = dioxus::server::router(App)
       // 1. 处理登录跳转：生成 state + verifier，加密成 oauth_pkce cookie 下发，
@@ -554,8 +578,10 @@ fn App() -> Element {
   });
 
   // 原生渲染：读取当前 theme CSS，由下面的 RSX 直接输出为 <style> 节点。
-  // 避免 dioxus::document::eval(...) 这种依赖浏览器 DOM API 的街道，
-  // 从而保留 desktop / mobile 等跨平台能力。
+  // Phase 8.8：项目当前是 web-first via dioxus_fullstack（SSR + WASM hydration）。
+  // 原措辞「保留 desktop / mobile 等跨平台能力」与现状不符；其他 16 处
+  // `dioxus::document::eval` 在 widgets crate 中保留是为了避免大规模重写
+  // （见 `docs/PLUGIN_DEV.md`）。
   let theme_css_value: String = theme_css.read().as_ref().cloned().unwrap_or_default();
 
   rsx! {

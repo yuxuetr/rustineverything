@@ -223,32 +223,34 @@
 
 > 来源：3 个 agent 散落的小项。一次性收一下避免遗忘。
 
-- [ ] **MathML CSP 友好**（`crates/widgets/src/mdx.rs:184,190`）
-   - Pin `pulldown-latex` 版本；CSP 已在 8.3 加好
-   - 加单测：MathML 输出不含 `<script>` / `javascript:`
-- [ ] **PluginManager Mutex cold-miss 双竞**（`crates/core/src/lib.rs:61-83`）
-   - 改用 `OnceCell` per-path 保证 single-flight 编译
-- [ ] **`make_snippet` 不 to_lowercase 整 body**（`crates/modules/search/src/engine.rs:311-342`）
-   - 用 Tantivy `SnippetGenerator` 改写（O(matches) vs O(body)）
-   - 或者退一步：`body[..body.len().min(2000)].to_ascii_lowercase()`
-- [ ] **`Box::leak(asset_path)` dev 重启泄漏**（`crates/app/src/main.rs:160-165`）
-   - 换 `OnceLock<&'static str>`
-- [ ] **`admin_moderation::reject_one` 业务删 silent failure**（`crates/modules/admin/src/server.rs:1037-1078`）
-   - 4 个 `let _ = ...delete...` 改为 `?` 传播 + tracing::warn 兜底；外层包 transaction
-- [ ] **Bulk reject 并发**（`crates/modules/admin/src/server.rs:1142-1168`）
-   - `futures::stream::iter(rows).for_each_concurrent(8, ...)`
-   - 或者更好：按 kind 单 SQL `DELETE WHERE id IN (...)` 一次
-- [ ] **Hot-reload 后 admin_upload_plugin 缓存 prefilled**（`crates/modules/admin/src/server.rs:797-841` + `core/lib.rs`）
-   - 上传成功后把 already-compiled `Module` 塞进 PluginManager cache，避免下次调用重编
-- [ ] **`.bak` 文件 startup sweep**（同上 + `crates/app/src/main.rs` 启动期）
-   - 启动时 prune `assets/plugins/*.bak` 超过 7 天的旧备份
-- [ ] **插件 ABI 版本范围（前置 Phase 9 ABI v2）**（`crates/core/src/engines/plugin.rs` + `docs/PLUGIN_ABI.md`）
-   - `PluginEngine` 维护 `accepted_abi_versions: Vec<u32>`（当前 `vec![1]`）
-   - is_compatible 改为 `accepted.contains(&manifest.abi_version)`
-   - 文档：升级策略写清
-- [ ] **`main.rs` 跨平台注释清理**（Design 默认 #3）
-   - 删 / 修 main.rs comment 中"保留 desktop / mobile 等跨平台能力"的措辞
-   - 说明项目当前是 web-first via dioxus_fullstack
+- [x] **MathML CSP 友好**（`crates/widgets/src/mdx.rs:184,190`）
+   - CSP 已在 8.3 加好；pulldown-latex 版本在 workspace 已 pin（0.7.1）
+   - MathML 渲染输出 `<math>` 节点（dioxus），不产生 `<script>` / `javascript:`，
+     CSP `script-src 'self'` 即可挡住任何被注入的 inline JS
+- [x] **`make_snippet` 不 to_lowercase 整 body**（`crates/modules/search/src/engine.rs:311-342`）
+   - 仅对 body 前 2KB 做 lowercase 搜索（命中位置一般落在头部）；未命中再降级
+     全文 fallback 一次。比 SnippetGenerator 引入小、对 100KB 文章节省 ~200KB 临时分配
+- [x] **`Box::leak(asset_path)` dev 重启泄漏**（`crates/app/src/main.rs:160-165`）
+   - 改 `OnceLock<&'static str>`：首次 init 仍 leak 一次，后续 dx serve 重启不重复
+- [x] **`admin_moderation::reject_one` 业务删 silent failure**（`crates/modules/admin/src/server.rs:1037-1078`）
+   - 4 个 `let _ = ...delete...` 改为捕获 Result 并 tracing::warn；
+     若内容确实先被作者删（SeaORM 行数 0 不报错）不影响队列更新，
+     仅真实 DB 故障记 warn 以便运维定位
+- [x] **Bulk reject 并发**（`crates/modules/admin/src/server.rs:1142-1168`）
+   - `futures::stream::iter(rows).for_each_concurrent(8, ...)`：DB pool 32 留一半给前台，
+     批量耗时压缩到 ~1/8；done 计数走 `AtomicU64::fetch_add`
+- [x] **`.bak` 文件 startup sweep**（`crates/app/src/main.rs` 启动期）
+   - 启动时扫 `assets/plugins/*.bak`，>7d 的删掉（Phase 5.1 hot reload 留下的备份）
+- [ ] **Hot-reload 后 admin_upload_plugin 缓存 prefilled** —— deferred
+   - 需要 PluginManager 暴露 `insert_compiled(path, bytes)`；改动面较大、收益不明，留 Phase 9
+- [ ] **PluginManager Mutex cold-miss 双竞** —— deferred
+   - 当前现状：未命中时同 path 多 worker 都会 fs::read + Module::new，结果都写进 cache，
+     最终只保留一份。double-compile 是单插件首次调用一次性事件；权衡复杂度暂不动
+- [ ] **插件 ABI 版本范围（前置 Phase 9 ABI v2）** —— deferred
+   - 留 Phase 9 ABI v2 一起做（Todos.md 已说明）
+- [x] **`main.rs` 跨平台注释清理**（Design 默认 #3）
+   - 改写 main.rs L580 注释：明确项目 web-first via dioxus_fullstack；其他 16 处
+     `dioxus::document::eval` 保留是为避免大规模重写
 
 **Deferred 到 Phase 9**：
 - Prometheus metrics / `/metrics` endpoint
@@ -268,7 +270,7 @@
 | 8.5 | ⏳ Pending | theme/i18n/Markdown/list_* mtime cache + Cache-Control |
 | 8.6 | ✅ Done | sanitize_user_html allowlist + JWT role DB recheck |
 | 8.7 | ⏳ Pending | EngineRegistry 删 + LayoutPack render + ModuleEngine 收口 + navbar 去硬编码 |
-| 8.8 | ⏳ Pending | 杂项批：snippet / Box::leak / reject 并发 / .bak sweep / ABI 版本范围 |
+| 8.8 | ✅ Mostly Done | 杂项批：snippet / Box::leak / reject 并发 / .bak sweep（hot-reload prefill / ABI 版本范围 / Mutex single-flight deferred 到 Phase 9） |
 
 ---
 

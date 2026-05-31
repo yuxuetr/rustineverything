@@ -15,6 +15,8 @@ app-core = { path = "../../core" }
 sea-orm = { workspace = true, optional = true }
 # Server-only：审核插件 hot reload 需要重建审核流水线。
 module-moderation = { path = "../moderation", optional = true }
+# Phase 8.8：批量 moderation 操作的 for_each_concurrent
+futures = { version = "0.3", optional = true }
 tracing = { workspace = true }
 
 [features]
@@ -23,6 +25,7 @@ server = [
     "dep:tokio",
     "dep:sea-orm",
     "dep:module-moderation",
+    "dep:futures",
     "app-core/server",
 ]
 

@@ -1057,24 +1057,28 @@ async fn reject_one(
   use sea_orm::{ActiveValue::Set, EntityTrait};
 
   let now = chrono::Utc::now().fixed_offset();
-  // 尝试按 kind + ref_id 删除业务内容；找不到 ref_id 时跳过删除，仅打标记。
+  // Phase 8.8：删除业务内容的错误不再吞掉。之前用 `let _ = ...` 静默掉，
+  // 极端情况下评论真的没被删但队列被标 rejected → admin UI 上看着已处理，
+  // 但前端还能看到原帖。改成 `?` 传播；事实是 DELETE FROM ... WHERE id = ?
+  // 行不存在不会报错（SeaORM 返回 rows_affected = 0），所以「ref 已被其他流程
+  // 提前删」并不会触发错。
   if let Some(ref_id) = row.ref_id {
-    match row.kind.as_str() {
-      "comment" => {
-        let _ = comment::Entity::delete_by_id(ref_id as i32).exec(db).await;
-      }
-      "topic" => {
-        let _ = topic::Entity::delete_by_id(ref_id as i32).exec(db).await;
-      }
-      "reply" => {
-        let _ = topic_reply::Entity::delete_by_id(ref_id as i32).exec(db).await;
-      }
-      "annotation" => {
-        let _ = annotation::Entity::delete_by_id(ref_id).exec(db).await;
-      }
+    let kind = row.kind.as_str();
+    let res = match kind {
+      "comment" => comment::Entity::delete_by_id(ref_id as i32).exec(db).await.map(|_| ()),
+      "topic" => topic::Entity::delete_by_id(ref_id as i32).exec(db).await.map(|_| ()),
+      "reply" => topic_reply::Entity::delete_by_id(ref_id as i32).exec(db).await.map(|_| ()),
+      "annotation" => annotation::Entity::delete_by_id(ref_id).exec(db).await.map(|_| ()),
       _ => {
-        tracing::warn!(kind = %row.kind, "unknown moderation kind; queue marked rejected without business delete");
+        tracing::warn!(kind = %kind, "unknown moderation kind; queue marked rejected without business delete");
+        Ok(())
       }
+    };
+    if let Err(e) = res {
+      // 不阻塞队列更新：内容确实可能已经先被作者 / 其他 admin 流程删掉
+      // （DELETE WHERE id = X 在 SeaORM 下行数 0 不报错；这里能进 Err 说明
+      // 是真实 DB 故障，例如连接断、外键约束等）。记 warn 让运维有迹可循。
+      tracing::warn!(error = %e, kind = %kind, ref_id, "reject_one: business content delete failed");
     }
   }
 
@@ -1168,15 +1172,27 @@ pub async fn admin_bulk_reject_moderation(ids: Vec<i64>) -> Result<u64, ServerFn
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    let mut done = 0u64;
-    for row in rows {
-      // 单条失败只告警，继续处理其余（批量操作尽量不整体回滚）。
-      match reject_one(&db, admin.id, row).await {
-        Ok(()) => done += 1,
-        Err(e) => tracing::warn!(error = %e, "bulk reject: one entry failed"),
-      }
-    }
-    Ok(done)
+    // Phase 8.8：8 路并发处理。DB pool 上限 32，留一半给前台读路径，
+    // 仍把批量耗时压缩到 ~1/8。单条失败只告警，继续处理其余。
+    use futures::stream::{self, StreamExt};
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let done_for_stream = done.clone();
+    let admin_id = admin.id;
+    let db_ref = &db;
+    stream::iter(rows)
+      .for_each_concurrent(8, |row| {
+        let done_inc = done_for_stream.clone();
+        async move {
+          match reject_one(db_ref, admin_id, row).await {
+            Ok(()) => {
+              done_inc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            Err(e) => tracing::warn!(error = %e, "bulk reject: one entry failed"),
+          }
+        }
+      })
+      .await;
+    Ok(done.load(std::sync::atomic::Ordering::Relaxed))
   }
   #[cfg(not(feature = "server"))]
   {

@@ -4209,6 +4209,7 @@ dependencies = [
  "base64",
  "chrono",
  "dioxus",
+ "futures",
  "module-moderation",
  "sdk",
  "sea-orm",
