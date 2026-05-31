@@ -41,14 +41,46 @@ struct Claims {
 }
 
 /// 取出 JWT_SECRET。
-/// **安全策略**：未配置直接 panic，避免在生产环境中误用默认值。
-/// 启动时（如 `init_pool` 之后）应主动调用一次以早失败。
+/// **安全策略**：未配置 / 空 / 命中 placeholder 子串均直接 panic，避免生产环境
+/// 误用默认值。启动时（如 `init_pool` 之后）应主动调用一次以早失败。
 #[cfg(feature = "server")]
 pub fn get_jwt_secret() -> String {
   match std::env::var("JWT_SECRET") {
-    Ok(secret) if !secret.is_empty() => secret,
+    Ok(secret) if !secret.is_empty() => {
+      assert_not_placeholder("JWT_SECRET", &secret);
+      secret
+    }
     Ok(_) => panic!("JWT_SECRET 不能为空，请在环境变量或 .env 中配置（建议 32+ 字符随机字符串）"),
     Err(_) => panic!("JWT_SECRET 未配置，请在环境变量或 .env 中设置 JWT_SECRET"),
+  }
+}
+
+/// 已知 placeholder 模板片段（来自 `.env.example` 等）。命中即视为未配置真实值。
+///
+/// 模式选择原则：足够具体以避免误伤真实凭据（例如不直接拒绝 `password` 子串，
+/// 因为用户的真实密码完全可能包含 `password` 词根），同时覆盖最常见的占位串。
+#[cfg(feature = "server")]
+const KNOWN_PLACEHOLDER_FRAGMENTS: &[&str] =
+  &["change-me", "changeme", "your-", "<your", "replace-me", "placeholder"];
+
+/// 在配置值里搜索任意已知 placeholder 片段（大小写不敏感）。
+///
+/// 仅做子串匹配；不强制 schema。允许例如 `BASE_URL=http://127.0.0.1:8080` 这类
+/// 本地开发值通过——它们不在 placeholder 列表里。
+#[cfg(feature = "server")]
+pub fn looks_like_placeholder(value: &str) -> bool {
+  let lower = value.to_ascii_lowercase();
+  KNOWN_PLACEHOLDER_FRAGMENTS.iter().any(|frag| lower.contains(frag))
+}
+
+/// 命中 placeholder 时立即 panic；附带变量名提示运维该改哪个 env。
+#[cfg(feature = "server")]
+pub fn assert_not_placeholder(env_var_name: &str, value: &str) {
+  if looks_like_placeholder(value) {
+    panic!(
+      "{} 仍是 .env.example 的占位值（命中 placeholder 子串），请替换为真实凭据后再启动",
+      env_var_name
+    );
   }
 }
 
@@ -179,5 +211,29 @@ mod tests {
     assert!(!user_with_role(ROLE_MEMBER).is_admin());
     assert!(!user_with_role(ROLE_GUEST).is_admin());
     assert!(!user_with_role("unknown").is_admin());
+  }
+
+  #[cfg(feature = "server")]
+  #[test]
+  fn placeholder_detector_catches_known_templates() {
+    assert!(super::looks_like_placeholder("change-me-to-a-32-char-random-string"));
+    assert!(super::looks_like_placeholder("Change-Me-Now")); // 大小写不敏感
+    assert!(super::looks_like_placeholder("changeme123"));
+    assert!(super::looks_like_placeholder("your-domain.example.com"));
+    assert!(super::looks_like_placeholder("REPLACE-ME"));
+    assert!(super::looks_like_placeholder("<your-token-here>"));
+    assert!(super::looks_like_placeholder("just-a-placeholder"));
+  }
+
+  #[cfg(feature = "server")]
+  #[test]
+  fn placeholder_detector_passes_realistic_values() {
+    // 真实 32+ 字节随机串
+    assert!(!super::looks_like_placeholder("aE82kx9p1QrW7nZv4BcdLmTfHsJyU0qZ"));
+    // 本地开发 BASE_URL
+    assert!(!super::looks_like_placeholder("http://127.0.0.1:8080"));
+    assert!(!super::looks_like_placeholder("https://blog.example.org"));
+    // 真实密码可能包含 password 词根 → 不应误伤
+    assert!(!super::looks_like_placeholder("Sup3r!StrongPa55word2026"));
   }
 }

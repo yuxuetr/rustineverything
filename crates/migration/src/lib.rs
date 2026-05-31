@@ -25,6 +25,7 @@ pub use sea_orm_migration::prelude::*;
 
 mod m20260527_000001_initial_schema;
 mod m20260530_000002_moderation_queue;
+mod m20260601_000003_drop_access_token;
 
 pub struct Migrator;
 
@@ -34,6 +35,7 @@ impl MigratorTrait for Migrator {
     vec![
       Box::new(m20260527_000001_initial_schema::Migration),
       Box::new(m20260530_000002_moderation_queue::Migration),
+      Box::new(m20260601_000003_drop_access_token::Migration),
     ]
   }
 }
@@ -50,6 +52,7 @@ mod tests {
       vec![
         "m20260527_000001_initial_schema".to_string(),
         "m20260530_000002_moderation_queue".to_string(),
+        "m20260601_000003_drop_access_token".to_string(),
       ]
     );
   }

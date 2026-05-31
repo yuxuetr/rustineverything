@@ -241,9 +241,21 @@ impl AuthService {
     let scopes = provider_config.scopes.join(" ");
 
     // 生成随机 state
-    use rand::Rng;
-    let state: String =
-      rand::rng().sample_iter(&rand::distr::Alphanumeric).take(32).map(|b| b as char).collect();
+    //
+    // Phase 8.2：state / code_verifier 都是 CSRF / PKCE 防御的核心熵源，必须用
+    // CSPRNG。`rand::rngs::OsRng` 直读 OS 熵池（`getrandom(2)` 等），相比 `rand::rng()`
+    // 的 `ThreadRng` 更稳定且不会被替换为 `SmallRng` 等弱 RNG。
+    //
+    // **不要**改成 `rand::rng()` / `SmallRng` —— 任何 PRNG 都可能被预测出 state，
+    // 导致 OAuth 回调被伪造。OsRng 是 `TryRngCore`；用 `unwrap_err()` 包成
+    // `RngCore`（OS 熵失败极罕见，发生时 panic 比签发可预测 state 更安全）。
+    use rand::{rngs::OsRng, Rng, TryRngCore};
+    let state: String = OsRng
+      .unwrap_err()
+      .sample_iter(&rand::distr::Alphanumeric)
+      .take(32)
+      .map(|b| b as char)
+      .collect();
 
     let mut url = format!(
       "{}?client_id={}&redirect_uri={}&scope={}&response_type=code&state={}",
@@ -255,8 +267,13 @@ impl AuthService {
       use base64::Engine;
       use sha2::Digest;
 
-      let code_verifier: String =
-        rand::rng().sample_iter(&rand::distr::Alphanumeric).take(64).map(|b| b as char).collect();
+      // 同上 state：必须用 OsRng 而非 ThreadRng；code_verifier 被预测会让 PKCE 退化为无防。
+      let code_verifier: String = OsRng
+        .unwrap_err()
+        .sample_iter(&rand::distr::Alphanumeric)
+        .take(64)
+        .map(|b| b as char)
+        .collect();
 
       let digest = sha2::Sha256::digest(code_verifier.as_bytes());
       let code_challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest);
@@ -378,7 +395,8 @@ impl AuthService {
       .await?;
     let standard_user: StandardUser = serde_json::from_str(&standard_user_json)?;
 
-    // 5. 同步至数据库
+    // 5. 同步至数据库（Phase 8.2：不再持久化 access_token，直接丢弃）
+    let _ = access_token; // 调用链结束于此；进入 sync_user_to_db 之后不再需要
     self
       .sync_user_to_db(
         db,
@@ -386,7 +404,6 @@ impl AuthService {
         standard_user.external_id,
         standard_user.nickname,
         standard_user.avatar_url,
-        access_token.to_string(),
       )
       .await
   }
@@ -398,7 +415,6 @@ impl AuthService {
     uid: String,
     nickname: String,
     avatar_url: Option<String>,
-    token: String,
   ) -> crate::error::AppResult<user::Model> {
     let identity = user_identity::Entity::find()
       .filter(user_identity::Column::Provider.eq(provider))
@@ -412,10 +428,6 @@ impl AuthService {
     } else {
       // 事务包裹：user 与 user_identity 要么同时成功要么同时回滚，避免孤儿 user
       let txn = db.begin().await?;
-
-      // access_token 不得明文落库：使用 AES-GCM 加密
-      let encrypted_token =
-        crypto::encrypt_token(&token).map_err(|e| format!("access_token 加密失败: {}", e))?;
 
       let new_user = user::ActiveModel {
         nickname: Set(nickname),
@@ -431,7 +443,6 @@ impl AuthService {
         user_id: Set(user_res.last_insert_id),
         provider: Set(provider.to_string()),
         provider_uid: Set(uid),
-        access_token: Set(Some(encrypted_token)),
         created_at: Set(Utc::now().fixed_offset()),
         ..Default::default()
       };
@@ -631,7 +642,8 @@ mod tests {
       eprintln!("跳过 rollback live test：DATABASE_URL 未配置");
       return;
     };
-    // sync_user_to_db 会用 JWT_SECRET 派生密钥加密 access_token；测试自带一个
+    // Phase 8.2：sync_user_to_db 不再加密 access_token（列已删），但加 JWT_SECRET
+    // 让 verify_jwt 等代码路径不 panic。
     std::env::set_var("JWT_SECRET", "test-secret-for-rollback-tests-1234");
     let db = Database::connect(&db_url).await.expect("连接测试数据库失败");
     Migrator::up(&db, None).await.expect("应用迁移失败");
@@ -654,7 +666,6 @@ mod tests {
         over_long_uid,
         nickname.clone(),
         None,
-        "tok".to_string(),
       )
       .await;
     assert!(failed.is_err(), "超长 provider_uid 的 identity 插入应当失败");
@@ -670,7 +681,7 @@ mod tests {
     let ok_uid = format!("uid-{}", marker);
     let ok_nick = format!("rollback-ok-{}", marker);
     let created = service
-      .sync_user_to_db(&db, "rollback_test_provider", ok_uid, ok_nick, None, "tok".to_string())
+      .sync_user_to_db(&db, "rollback_test_provider", ok_uid, ok_nick, None)
       .await
       .expect("正常 uid 应成功创建用户");
 

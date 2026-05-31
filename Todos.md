@@ -68,24 +68,26 @@
 
 > 来源：security agent 命中 4 项。`/api/upload` 完全不鉴权 + 默认 secret 通过启动校验 + forum 路径穿越 + `state` RNG 未文档化。
 
-- [ ] **`/api/upload` 加 require_session**（`crates/modules/uploads/src/server.rs:88`）
-   - fn 顶 `let _ = app_core::session::require_session()?;`
-   - 测试：未登录调用返回 401 / Unauthorized
-   - 如果将来需要匿名上传通道，单开 `/api/upload/public` 走严格 rate limit
-- [ ] **`.env.example` 默认 placeholder 拒绝**（`crates/core/src/session.rs::get_jwt_secret` + `crates/app/src/main.rs:63`）
-   - `JWT_SECRET` / `POSTGRES_PASSWORD` / `BASE_URL` 校验时拒绝包含 `change-me` / `your-` / `example` / `password` 等已知 placeholder 子串
-   - 单测：3 个 placeholder 都被拒、合法值通过
-- [ ] **forum `ref_path` 防目录穿越**（`crates/modules/forum/src/server.rs:122-133,206-253`）
-   - `resolve_ref_title` 内 `Path::join` 后 `.canonicalize()`，验证落在 `assets/<root>` 前缀下
-   - 单测：`ref_path = "../../etc"` 被拒
-- [ ] **OAuth `state` / `code_verifier` 改用 `OsRng`**（`crates/core/src/auth/mod.rs:240-241,253-254`）
-   - 从 `rand::rng()` 换 `rand::rngs::OsRng`
-   - 加注释说明：state/verifier 必须 CSPRNG，禁止改 `SmallRng`
-- [ ] **删 `user_identity.access_token` 列**（Design 默认 #2）
-   - 新建 migration `m20260601_000004_drop_access_token`：`ALTER TABLE user_identity DROP COLUMN access_token`
-   - `crates/core/src/entities/user_identity.rs` 删字段
-   - `crates/core/src/auth/mod.rs::sync_user_to_db` 删加密 / 写入逻辑
-   - 单测调整
+- [x] **`/api/upload` 加 require_session**（`crates/modules/uploads/src/server.rs:88`）
+   - 函数顶端调 `require_session()?`；匿名调用直接 401
+   - 文档化「如需匿名上传通道单开 `/api/upload/public`」
+- [x] **`.env.example` 默认 placeholder 拒绝**（`crates/core/src/session.rs::get_jwt_secret` + `crates/app/src/main.rs:63`）
+   - 新增 `looks_like_placeholder` + `assert_not_placeholder`：模式 `change-me` / `changeme` / `your-` / `<your` / `replace-me` / `placeholder`，大小写不敏感
+   - 故意避开 `password` 子串以免误伤真实凭据
+   - `JWT_SECRET` / `BASE_URL` / `DATABASE_URL` 启动时三个 env 都过 placeholder 校验
+   - 单测：常见占位模板被拒，真实值（含 `Sup3r!StrongPa55word2026` / `http://127.0.0.1:8080`）通过
+- [x] **forum `ref_path` 防目录穿越**（`crates/modules/forum/src/server.rs:122-133,206-253`）
+   - 新增 `safe_join_under(sub_root, raw)`：字符级拒 `..` / 绝对路径，存在的路径再做 `canonicalize` 前缀校验
+   - `resolve_ref_title` 全部 join 改走该 helper（blog/doc/course/lesson/case 全覆盖）
+   - 单测：`safe_join_rejects_dotdot_segments` + `resolve_ref_title_rejects_traversal`
+- [x] **OAuth `state` / `code_verifier` 改用 `OsRng`**（`crates/core/src/auth/mod.rs:240-241,253-254`）
+   - 改用 `rand::rngs::OsRng` + `TryRngCore::unwrap_err`（rand 0.9 API）
+   - 代码注释强调禁止退回 `ThreadRng` / `SmallRng`
+- [x] **删 `user_identity.access_token` 列**（Design 默认 #2）
+   - 新建 migration `m20260601_000003_drop_access_token`：ALTER TABLE DROP COLUMN + 反向 down 重加列
+   - `entities/user_identity.rs` 删字段并添加 Phase 8.2 注释说明
+   - `handle_callback` / `sync_user_to_db` 删 access_token 持久化路径（保留 OAuth `Bearer` 调用 profile_url 路径）
+   - 调整 rollback live test 调用签名
 
 **完成定义**：未登录用户调任何写端点（含 `/api/upload`）被拒；新部署用模板默认值启动 panic；forum 输入无法越出 assets 目录。
 
@@ -262,7 +264,7 @@
 | Phase | 状态 | 关键交付 |
 |---|---|---|
 | 8.1 | ✅ Done | WASM 沙箱：fuel + memory + timeout + spawn_blocking |
-| 8.2 | ⏳ Pending | Auth 表面：upload 鉴权 + placeholder 拒 + path 防穿越 + OsRng + drop access_token |
+| 8.2 | ✅ Done | Auth 表面：upload 鉴权 + placeholder 拒 + path 防穿越 + OsRng + drop access_token |
 | 8.3 | ⏳ Pending | Pingora 网关：安全头 + XFF insert + rate limit |
 | 8.4 | ⏳ Pending | DB tuning + comments 索引 + admin 并行 + SQL GROUP BY |
 | 8.5 | ⏳ Pending | theme/i18n/Markdown/list_* mtime cache + Cache-Control |

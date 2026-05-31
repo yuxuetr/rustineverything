@@ -91,9 +91,13 @@ pub async fn upload_image(name: String, data_base64: String) -> Result<String, S
   {
     use base64::Engine as _;
     use app_core::engines::moderation::ModerationLabel;
-    use app_core::session::current_session_user;
+    use app_core::session::{current_session_user, require_session};
     use module_moderation::{enqueue_if_flagged, evaluate_submission};
     use sdk::{ImageRef, ModerationSubmission};
+
+    // 0. Phase 8.2：匿名上传不再被允许。任何写盘 IO 必须有合法会话；
+    //    如未来需要匿名图床通道，单开 `/api/upload/public` + 严格 rate limit。
+    require_session()?;
 
     // 1. 取出 Base64 负载并按长度估算提前拒绝超大负载（写盘前第一道防线）
     let base64_str = check_upload_size(&data_base64).map_err(ServerFnError::new)?;

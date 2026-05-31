@@ -29,3 +29,6 @@ server = [
     "app-core/server",
     "dep:module-moderation",
 ]
+
+[dev-dependencies]
+tempfile = "3"

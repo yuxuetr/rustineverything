@@ -117,17 +117,21 @@ fn main() {
       .try_init();
 
     // 安全门禁：启动时必须提供关键环境变量，避免 fallback 到不安全默认值
-    // 1) JWT_SECRET必须配置（panic on missing）
+    // 1) JWT_SECRET 必须配置且非 placeholder（panic on missing / 命中模板片段）
     let _ = app_core::session::get_jwt_secret();
-    // 2) BASE_URL 必须配置为可访问的公网 / 内网地址
+    // 2) BASE_URL 必须配置为可访问的公网 / 内网地址，且不能仍是 .env.example 占位
     let base_url =
       std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
+    app_core::session::assert_not_placeholder("BASE_URL", &base_url);
     let cookie_is_secure = base_url.starts_with("https://");
 
     // 3) 提前初始化数据库连接池，后续 server fn 都走共享连接。
+    //    DATABASE_URL 也按 placeholder 校验，避免「忘了改 docker-compose 密码」
+    //    导致 sqlx 拒绝认证的难以排查的失败。
     //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
     //    成功连上数据库后再跑 sea-orm-migration（Phase 7.1）。
     if let Ok(db_url) = std::env::var("DATABASE_URL") {
+      app_core::session::assert_not_placeholder("DATABASE_URL", &db_url);
       match app_core::db::init_pool(&db_url).await {
         Err(e) => {
           tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)")

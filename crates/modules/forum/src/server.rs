@@ -201,16 +201,59 @@ fn read_index_title(dir: &Path) -> Option<String> {
   None
 }
 
+/// 校验「用户提供的 ref_path 拼到 sub_root 之后没有逃逸出 sub_root」。
+///
+/// 防御目标（Phase 8.2）：阻止 `ref_path = "../../etc/passwd"` 或符号链接逃逸。
+/// 即便 `read_index_title` 只读不写，也不该让匿名 / 普通用户用 forum 引用接口
+/// 探测任意系统文件 —— 这是典型的 path-traversal 信息泄露面。
+///
+/// 实现：
+/// 1. 直接拒绝包含 `..` 段或绝对路径的输入（即便 canonicalize 之前）。
+/// 2. canonicalize 拼接结果，要求实际指向必须以 `sub_root.canonicalize()` 为前缀。
+/// 3. sub_root 不存在时，回退到 join 后比较前缀（仍要求字符串级别没有逃逸）。
+///
+/// 返回的 `PathBuf` 只是 sub_root 的子路径；让调用方继续走 read_index_title 等。
+#[cfg(feature = "server")]
+fn safe_join_under(sub_root: &Path, raw: &str) -> Option<PathBuf> {
+  // 1. 字符级别快速拒绝（防御 canonicalize 之前的歧义）
+  if raw.contains("..") || raw.starts_with('/') || raw.starts_with('\\') {
+    tracing::warn!(input = %raw, "forum: ref_path 含路径穿越特征，拒绝");
+    return None;
+  }
+  let joined = sub_root.join(raw);
+
+  // 2. 不存在时，沿用 lexical 比较：joined 必须以 sub_root 前缀开头即可
+  //    （我们已经拒绝了 `..`，所以 join 的结果不可能逃出 sub_root）。
+  let Ok(canonical_root) = sub_root.canonicalize() else {
+    return Some(joined);
+  };
+  match joined.canonicalize() {
+    Ok(canonical) if canonical.starts_with(&canonical_root) => Some(canonical),
+    Ok(canonical) => {
+      tracing::warn!(input = %raw, resolved = %canonical.display(),
+        "forum: ref_path 解析后逃出资产根，拒绝");
+      None
+    }
+    // 文件不存在 → 只能做 lexical 检查；已在 step 1 拒绝 `..`，可继续。
+    Err(_) => Some(joined),
+  }
+}
+
 /// 按 ref_kind/ref_path 反查标题；找不到则用 path 兜底
 #[cfg(feature = "server")]
 fn resolve_ref_title(kind: &str, path: &str) -> String {
   let root = get_asset_root();
   let fallback = || path.to_string();
+  // 包一层 sub_root：blog → posts/, doc → docs/, ...
+  let resolve_in = |sub_dir: &str| -> Option<PathBuf> {
+    safe_join_under(&root.join(sub_dir), path)
+  };
   match kind {
-    "blog" => read_index_title(&root.join("posts").join(path)).unwrap_or_else(fallback),
-    "doc" => read_index_title(&root.join("docs").join(path)).unwrap_or_else(fallback),
+    "blog" => resolve_in("posts").and_then(|p| read_index_title(&p)).unwrap_or_else(fallback),
+    "doc" => resolve_in("docs").and_then(|p| read_index_title(&p)).unwrap_or_else(fallback),
     "course" => {
-      let yaml = root.join("courses").join(path).join("course.yaml");
+      let Some(course_dir) = resolve_in("courses") else { return fallback() };
+      let yaml = course_dir.join("course.yaml");
       if let Ok(content) = std::fs::read_to_string(&yaml) {
         for line in content.lines() {
           let line = line.trim();
@@ -225,6 +268,10 @@ fn resolve_ref_title(kind: &str, path: &str) -> String {
       fallback()
     }
     "lesson" => {
+      // lesson 路径形如 `<category>/<course>/<lesson>`；逐段拼接前先整体 sanity check
+      if safe_join_under(&root.join("courses"), path).is_none() {
+        return fallback();
+      }
       let parts: Vec<&str> = path.split('/').collect();
       if parts.len() == 3 {
         let lesson_dir = root.join("courses").join(parts[0]).join(parts[1]).join(parts[2]);
@@ -235,7 +282,8 @@ fn resolve_ref_title(kind: &str, path: &str) -> String {
       fallback()
     }
     "case" => {
-      let yaml = root.join("cases").join(path).join("case.yaml");
+      let Some(case_dir) = resolve_in("cases") else { return fallback() };
+      let yaml = case_dir.join("case.yaml");
       if let Ok(content) = std::fs::read_to_string(&yaml) {
         for line in content.lines() {
           let line = line.trim();
@@ -861,6 +909,38 @@ mod tests {
   #[test]
   fn extract_title_none() {
     assert!(extract_title_line("just plain text").is_none());
+  }
+
+  /// Phase 8.2 path-traversal 防御：用户输入的 `ref_path` 不能逃出 sub_root。
+  #[test]
+  fn safe_join_rejects_dotdot_segments() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("posts/article")).expect("setup posts");
+
+    // 合法子路径
+    assert!(safe_join_under(&root.join("posts"), "article").is_some());
+
+    // `..` 段 → 立即拒绝（字符级别）
+    assert!(safe_join_under(&root.join("posts"), "../etc").is_none());
+    assert!(safe_join_under(&root.join("posts"), "article/../../etc").is_none());
+    assert!(safe_join_under(&root.join("posts"), "../../etc/passwd").is_none());
+
+    // 绝对路径 → 拒绝
+    assert!(safe_join_under(&root.join("posts"), "/etc/passwd").is_none());
+
+    // 不存在的子路径仍允许（lexical 检查通过），由上层 read_index_title 兜底
+    assert!(safe_join_under(&root.join("posts"), "no-such-article").is_some());
+  }
+
+  /// 端到端：`resolve_ref_title` 收到恶意 `ref_path` 时回退到原始字符串，
+  /// 不会泄露 sub_root 之外文件的内容。
+  #[test]
+  fn resolve_ref_title_rejects_traversal() {
+    let evil = "../../etc/passwd";
+    // 不存在的引用：返回原始 path 作为 fallback，*不会* 偷偷读 /etc/passwd
+    let got = resolve_ref_title("blog", evil);
+    assert_eq!(got, evil, "应当原样返回，而不是 read_index_title 后的产物");
   }
 }
 
