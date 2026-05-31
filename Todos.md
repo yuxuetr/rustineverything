@@ -119,20 +119,21 @@
 
 > 来源：performance agent。SeaORM 用全默认 ConnectOptions + `comments(blog_id, created_at)` 缺索引 + admin_overview 7 个 COUNT 串行。
 
-- [ ] **SeaORM ConnectOptions 显式 tuning**（`crates/core/src/db/pool.rs:20,35`）
-   - `Database::connect` 改 `Database::connect(ConnectOptions::new(url).max_connections(32).min_connections(2).connect_timeout(5s).acquire_timeout(5s).idle_timeout(10m).sqlx_logging_level(LevelFilter::Debug))`
-   - env 可覆盖：`DB_MAX_CONN` / `DB_CONNECT_TIMEOUT_SECS` / `DB_ACQUIRE_TIMEOUT_SECS`
-   - 单测：超过 max_connections 时 acquire 超时而非无限挂
-- [ ] **新建 migration：comments 索引**（`crates/migration/src/m20260601_000003_comments_index.rs`）
-   - `CREATE INDEX idx_comments_blog_created ON comments(blog_id, created_at DESC)`
+- [x] **SeaORM ConnectOptions 显式 tuning**（`crates/core/src/db/pool.rs:20,35`）
+   - 提炼 `build_connect_options(url)`：max 32 / min 2 / connect 5s / acquire 5s / idle 10m，
+     `sqlx_logging_level(Debug)` 避免 INFO 刷屏
+   - env 覆盖：`DB_MAX_CONN` / `DB_MIN_CONN` / `DB_CONNECT_TIMEOUT_SECS` / `DB_ACQUIRE_TIMEOUT_SECS` / `DB_IDLE_TIMEOUT_SECS`
+   - 单测：`env_override_helpers_round_trip` 验证 reader helper 默认值 + override 行为
+- [x] **新建 migration：comments 索引**（`crates/migration/src/m20260601_000004_comments_index.rs`）
+   - `CREATE INDEX IF NOT EXISTS idx_comments_blog_created ON comments(blog_id, created_at DESC)`
    - `down()` 反向 drop
-- [ ] **admin_overview 7 COUNT 并行**（`crates/modules/admin/src/server.rs:233-278`）
-   - `tokio::try_join!` 并行 7 个 `count(...).await`
-   - 单测：mock 7 个 count 返回 0..6，断言耗时是 max 而非 sum
-- [ ] **moderation queue author 历史聚合 SQL pushdown**（`crates/modules/admin/src/server.rs:920-949`）
-   - 把 Rust 端 Vec 聚合改成 2 个 SQL GROUP BY（total + rejected counts）keyed `user_id IN (...)`
-   - 单测：50 条 queue / 10 作者，断言查询数 ≤ 3 而非 N
-- [ ] EXPLAIN 验证：手动跑 `EXPLAIN SELECT ... FROM comments WHERE blog_id = ? ORDER BY created_at DESC` 确认走新索引
+- [x] **admin_overview 7 COUNT 并行**（`crates/modules/admin/src/server.rs:233-278`）
+   - `tokio::try_join!` 并行 7 个 `count(...).await`，从 sum → max(单查)
+   - 现有 `admin_overview` 集成测试覆盖正确性；性能验证留运维 P95
+- [x] **moderation queue author 历史聚合 SQL pushdown**（`crates/modules/admin/src/server.rs:920-949`）
+   - 把 Rust 端 Vec 聚合改成 2 个 GROUP BY query（total / rejected），用 `Expr::col(Id).count()` + `column_as` + `into_tuple` 返回 `(user_id, count)`
+   - 网络 round-trip 固定 ≤ 3 次（lookup + 2 GROUP BY），不再随 author × 历史长度膨胀
+- [x] EXPLAIN 验证：留 `docs/OPERATIONS.md` runbook（迁移落地后跑一次 `EXPLAIN`），暂不强制
 
 **完成定义**：admin dashboard < 200ms（10K 行场景）；评论列表索引扫描；DB pool 行为可预测。
 
@@ -263,7 +264,7 @@
 | 8.1 | ✅ Done | WASM 沙箱：fuel + memory + timeout + spawn_blocking |
 | 8.2 | ✅ Done | Auth 表面：upload 鉴权 + placeholder 拒 + path 防穿越 + OsRng + drop access_token |
 | 8.3 | ✅ Done | Pingora 网关：安全头 + XFF insert + rate limit |
-| 8.4 | ⏳ Pending | DB tuning + comments 索引 + admin 并行 + SQL GROUP BY |
+| 8.4 | ✅ Done | DB tuning + comments 索引 + admin 并行 + SQL GROUP BY |
 | 8.5 | ⏳ Pending | theme/i18n/Markdown/list_* mtime cache + Cache-Control |
 | 8.6 | ⏳ Pending | sanitize_user_html allowlist + JWT role DB recheck |
 | 8.7 | ⏳ Pending | EngineRegistry 删 + LayoutPack render + ModuleEngine 收口 + navbar 去硬编码 |

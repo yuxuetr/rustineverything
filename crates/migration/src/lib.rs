@@ -26,6 +26,7 @@ pub use sea_orm_migration::prelude::*;
 mod m20260527_000001_initial_schema;
 mod m20260530_000002_moderation_queue;
 mod m20260601_000003_drop_access_token;
+mod m20260601_000004_comments_index;
 
 pub struct Migrator;
 
@@ -36,6 +37,7 @@ impl MigratorTrait for Migrator {
       Box::new(m20260527_000001_initial_schema::Migration),
       Box::new(m20260530_000002_moderation_queue::Migration),
       Box::new(m20260601_000003_drop_access_token::Migration),
+      Box::new(m20260601_000004_comments_index::Migration),
     ]
   }
 }
@@ -53,6 +55,7 @@ mod tests {
         "m20260527_000001_initial_schema".to_string(),
         "m20260530_000002_moderation_queue".to_string(),
         "m20260601_000003_drop_access_token".to_string(),
+        "m20260601_000004_comments_index".to_string(),
       ]
     );
   }
