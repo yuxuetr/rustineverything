@@ -12,6 +12,10 @@ public/uploads/
 public/data/
 .env
 
+# Local AI agent / tooling state — never commit
+.claude/
+.playwright-mcp/
+
 # crates/app/assets/ is a build-time mirror of root assets/ (populated by build.rs)
 # Only root assets/ is the source of truth — do not track the copy.
 crates/app/assets/
