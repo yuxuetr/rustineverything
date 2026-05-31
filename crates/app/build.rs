@@ -26,6 +26,17 @@ fn main() {
   if app_tw.exists() {
     copy_if_changed(&app_tw, &root_tw);
   }
+
+  // Reverse sync uploads/: dev 时 `dx serve` 可能从 `crates/app/` 启动，写入
+  // 落到 `crates/app/assets/uploads/`；下次从仓库根启动 `get_asset_root()`
+  // 返回 `assets/`，原本可能找不到那张图（404）。把 app→root 反向同步进来，
+  // 保证两份路径下都能读到。两端都 `.gitignore` 该目录，不污染 git。
+  let app_uploads = app_assets.join("uploads");
+  let root_uploads = root_assets.join("uploads");
+  if app_uploads.exists() {
+    let _ = fs::create_dir_all(&root_uploads);
+    sync_dir(&app_uploads, &root_uploads);
+  }
 }
 
 /// 仅在内容确实变化时拷贝（dest 缺失或字节不同）。

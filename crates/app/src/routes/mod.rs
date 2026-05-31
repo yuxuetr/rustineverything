@@ -398,7 +398,6 @@ fn BlogInner(id: String) -> Element {
   });
   // 标注资源路径：resource_kind="blog"，resource_path = 博客 id
   let anno_path = id.clone();
-  let anno_blog_id = format!("blog:{}", id);
 
   // Phase 2.3: 从 server 读 BASE_URL 以拼接 canonical URL
   let base_url_res = use_resource(|| async move { get_seo_base_url().await.unwrap_or_default() });
@@ -417,7 +416,10 @@ fn BlogInner(id: String) -> Element {
                                   let (meta, _body) = parse_mdx(&content);
                                   rsx! { {inject_seo(&meta, &blog_path, &base_url)} }
                               }
-                              Markdown { content: content.clone(), blog_id: anno_blog_id.clone() }
+                              // `blog_id` 在 widgets::Markdown 内仅用于拼图片相对路径 `/posts/<id>/...`，
+                              // **必须传纯 slug**（如 "welcome"），不能传标注层的复合 key
+                              // `blog:welcome` —— 否则浏览器请求 `/posts/blog:welcome/x.webp` 直接 404。
+                              Markdown { content: content.clone(), blog_id: id.clone() }
                               // 标注层（resource_kind="blog"，path = 博客 id）
                               AnnotationLayer {
                                   resource_kind: "blog".to_string(),
