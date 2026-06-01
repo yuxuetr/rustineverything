@@ -173,26 +173,20 @@
 
 > 来源：Phase 9 范围澄清（2026-06-01）。9.1 / 9.2 / 9.3 都在动 ABI 表面或新加规范，文档必须同步。同时缺一节"第三方插件如何审计"，对开源 fork 模式至关重要。
 
-- [ ] **PLUGIN_DEV.md §3 重写**（依赖 9.1）
-   - 主题样例改用 `#[plugin_export]`，从 50 行 → 10 行；明示"看不到 unsafe 是因为宏展开"
-   - §6.1 i18n 模板也改新 macro 写法
-- [ ] **PLUGIN_DEV.md §6.3 moderation 模板补完**
-   - 当前是"ABI 待定"，Phase 4.3 已完成；补 `moderation_build_prompt` / `moderation_parse_verdict` 真实样例
-- [ ] **PLUGIN_DEV.md §6.4 新增 content-transformer 模板**（依赖 9.3）
-   - 展示如何用 `#[plugin_export]` 加 `transform_markdown`
-- [ ] **PLUGIN_DEV.md §12「如何审计第三方插件」新章节**
-   - 沙箱已挡（Phase 8.1）：fuel / memory / timeout / output cap → 物理隔离，**插件偷文件 / 偷 DB / 上网都不可能**
-   - 安全检测套件（Phase 9.2）：wasm import scan / CSS allowlist / manifest 一致性 / SHA256 lock / Ed25519 签名
-   - 永远检测不了的（必须人工 review 源码）：i18n 翻译篡改 / Auth 插件偷塞额外字段 / 时间炸弹
-   - 信任链建议：fork 者**只信任**自己签名的 + 仓库审过 PR 的 + 自己读过源码的；其他一律 unsigned 警告
-- [ ] **PLUGIN_ABI.md §2.3 表更新**
-   - 新增 `content-transformer` 行（依赖 9.3）
-   - `moderation-provider` 行去掉"(Phase 4.3)"标注
-- [ ] **PLUGIN_ABI.md §9 内置插件清单更新**
-   - 加 `content-toc | content-transformer | content_toc_plugin.wasm` 行（依赖 9.3）
-- [ ] **`docs/CONTENT_TRANSFORMER_SPEC.md` finalize**（依赖 9.3）
+- [x] **PLUGIN_DEV.md §3 重写**
+   - 主题样例改用 `#[plugin_export]`，从 50 行 → ~12 行；§3.0 新增「为什么看不到 unsafe」说明宏展开
+- [x] **PLUGIN_DEV.md §6.1 i18n 模板**改用 `#[plugin_export]` + `Deserialize` 结构体；引用完整 fluent 样例
+- [-] **PLUGIN_DEV.md §6.3 moderation 模板补完** —— 留后续 phase（4.3 实现完整但样例补完不阻塞 fork 用户）
+- [-] **PLUGIN_DEV.md §6.4 content-transformer 模板** —— 依赖 9.3，已砍
+- [x] **PLUGIN_DEV.md §12「如何审计第三方插件」新章节**
+   - §12.1 沙箱已挡（Phase 8.1 + 9.2 共 7 类攻击）
+   - §12.2 永远检测不了的（4 类逻辑攻击，必须 review source）
+   - §12.3 信任链建议（4 条 fork 用户行为准则）
+   - §12.4 未来扩展（Ed25519 + audit 流程 + reproducible build，按需要再加）
+- [x] **PLUGIN_DEV.md §11 参考**：加 sdk-macros + i18n-fluent 索引
+- [-] **PLUGIN_ABI.md §2.3 / §9 更新** —— content-transformer 行不加（9.3 已砍）；moderation 标注小问题留后续
 
-**完成定义**：第三方从 0 开始读 PLUGIN_DEV.md 30 分钟内可写 + 部署一个 content-transformer 插件；audit 指南覆盖"什么能挡 / 什么挡不住"，让 fork 者心里有数。
+**完成定义**：第三方读 PLUGIN_DEV.md §3 ≤12 行 safe Rust 写出可工作主题；§12 审计指南覆盖"什么能挡 / 什么挡不住"，让 fork 者心里有数。
 
 ---
 
@@ -204,7 +198,7 @@
 | 9.2 | ✅ Mostly Done | wasm import scan + CSS sanitize + manifest 一致性 + SHA256 lock（Ed25519 + admin UI 集成本 phase 不做） | — |
 | 9.3 | 🟡 Pending | content-transformer capability + content-toc 示例插件 + SPEC | 9.1 (macro) / 9.2 (manifest 一致性表加新行) |
 | 9.4 | ✅ Mostly Done | mobile 375 navbar 修复（hamburger 抽屉 + 站名 truncate + nowrap）+ desktop 1280 无 regression + audit 文档（评论区/Math/footer/list tag 小问题留后续） | — |
-| 9.5 | 🟡 Pending | PLUGIN_DEV.md 重写 + 审计指南章节 | 9.1 / 9.3 |
+| 9.5 | ✅ Mostly Done | PLUGIN_DEV.md §3 + §6.1 改用 #[plugin_export] / §12 审计指南完整章节（PLUGIN_ABI.md content-transformer 相关更新随 9.3 一起砍） | 9.1 |
 
 ---
 

