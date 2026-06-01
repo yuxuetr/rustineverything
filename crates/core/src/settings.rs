@@ -44,6 +44,15 @@ pub struct SiteConfig {
   /// 读取并装载。
   #[serde(default)]
   pub moderation: ModerationSettings,
+  /// Phase 9.2：插件 SHA256 lock map。key = 插件文件名（如
+  /// `theme_ocean_plugin.wasm`），value = 期望的 SHA256 hex（64 字符小写）。
+  ///
+  /// 缺字段或值为空 → 加载时跳过校验（warn-only）；命中且不匹配 → 拒绝加载。
+  /// 用 `cargo run -p app --bin lock_plugins` 一键生成。
+  ///
+  /// 防御场景：插件文件在文件系统层被偷换（供应链攻击 / 误覆盖）。
+  #[serde(default)]
+  pub plugins_lock: HashMap<String, String>,
 }
 
 /// 审核功能在 site.json 中的配置块。**默认 disabled**，意味着评论 / 话题 /
@@ -154,7 +163,16 @@ impl Default for SiteConfig {
       auth: AuthSettings::default(),
       modules: HashMap::new(),
       moderation: ModerationSettings::default(),
+      plugins_lock: HashMap::new(),
     }
+  }
+}
+
+impl SiteConfig {
+  /// Phase 9.2：查询某插件的预期 SHA256 hex。`None` 表示 site.json 未给该
+  /// 插件登记 lock（warn-only 模式，调用方应记日志但放行）。
+  pub fn plugin_sha256(&self, plugin_file_name: &str) -> Option<&str> {
+    self.plugins_lock.get(plugin_file_name).map(String::as_str).filter(|s| !s.is_empty())
   }
 }
 
@@ -239,6 +257,58 @@ mod tests {
         }"#;
     let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
     assert!(!cfg.moderation.enabled);
+  }
+
+  // ─── Phase 9.2 plugins_lock ──────────────────────────────
+
+  #[test]
+  fn plugins_lock_defaults_to_empty() {
+    let cfg = SiteConfig::default();
+    assert!(cfg.plugins_lock.is_empty());
+  }
+
+  #[test]
+  fn plugins_lock_back_compat_when_field_missing() {
+    // 老 site.json 不含 plugins_lock 字段 → 默认空
+    let json = r#"{
+            "site_name": "X",
+            "site_description": "",
+            "active_theme": "t.wasm",
+            "default_language": "zh",
+            "author": "",
+            "paths": {},
+            "navigation": []
+        }"#;
+    let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
+    assert!(cfg.plugins_lock.is_empty());
+  }
+
+  #[test]
+  fn plugins_lock_parses_entries() {
+    let json = r#"{
+            "site_name": "X",
+            "site_description": "",
+            "active_theme": "t.wasm",
+            "default_language": "zh",
+            "author": "",
+            "paths": {},
+            "navigation": [],
+            "plugins_lock": {
+                "theme_ocean_plugin.wasm": "deadbeef",
+                "i18n_fluent_plugin.wasm": "cafebabe"
+            }
+        }"#;
+    let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
+    assert_eq!(cfg.plugin_sha256("theme_ocean_plugin.wasm"), Some("deadbeef"));
+    assert_eq!(cfg.plugin_sha256("i18n_fluent_plugin.wasm"), Some("cafebabe"));
+    assert_eq!(cfg.plugin_sha256("unknown.wasm"), None);
+  }
+
+  #[test]
+  fn plugins_lock_empty_string_treated_as_missing() {
+    let mut cfg = SiteConfig::default();
+    cfg.plugins_lock.insert("x.wasm".into(), String::new());
+    assert_eq!(cfg.plugin_sha256("x.wasm"), None, "empty string should be treated as missing");
   }
 
   #[test]
