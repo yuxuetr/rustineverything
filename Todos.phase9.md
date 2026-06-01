@@ -153,29 +153,19 @@
 
 > 来源：Phase 9 范围澄清（2026-06-01）。博客读者主要在手机上看文章，但 Phase 1-8 全程基于桌面浏览器验证，从未系统跑过 mobile viewport。需要一次性扫核心页面 + 修 Tailwind 断点。
 
-- [ ] **环境准备**：`dx serve` 起本地；Playwright 装上（项目已有 `mcp__plugin_playwright_playwright__*` 工具）
-- [ ] **扫描矩阵**：3 个 viewport × 7 个核心页面 = 21 张截图
-   - viewport：mobile 375×667 / tablet 768×1024 / desktop 1280×800
-   - 页面：
-     - `/` 首页
-     - `/blog/welcome` 长文详情
-     - `/blog` 列表
-     - `/forum` 论坛列表
-     - `/forum/<topic>` 话题详情
-     - `/admin` 后台（如果可登录）
-     - `/ai`（任一板块，覆盖 modules 路由）
-- [ ] **问题清单**（建在 `docs/PHASE9_RESPONSIVE_AUDIT.md`）
-   - 每个截图对照桌面版列 issue：溢出 / 文字过小 / 触摸目标 < 44px / 横向滚动 / 图片不缩放 / nav 抽屉缺失 / 表格不滚动 ...
-   - issue 按页面分组，每条带"修复建议（哪个 Tailwind 类）"
-- [ ] **按清单逐项修**
-   - 仅动 `crates/app/src/components/` 和 `crates/modules/*/src/components/` 下的 Dioxus rsx
-   - 优先使用 Tailwind 断点修饰符（`sm:` / `md:` / `lg:`），不引入媒体查询 CSS
-   - 每改一项截图复测，附 before/after 对比到 audit 文档
-- [ ] **触屏交互 review**（手动）
-   - 评论 / 话题回复表单的按钮触摸面积、抽屉打开关闭、深色模式切换、ThemePicker
-- [ ] **关键页面性能**：用 Lighthouse mobile 跑 `/` + `/blog/welcome`，Performance ≥ 70 / Accessibility ≥ 90（基线，不强制）
+- [x] **环境准备**：`dx serve --port 8080` + Playwright MCP；`crates/app/assets/tailwind.css` 需要手动跑 `npx -y @tailwindcss/cli -i crates/app/tailwind-input.css -o crates/app/assets/tailwind.css --minify`（dx 不自动 build Tailwind，详见 audit doc M0）
+- [x] **扫描 mobile 375 5 个核心页面**（home / blog 列表 / blog 详情 / forum 列表 / ai 板块）+ desktop 1280 home 作为基线
+   - admin 需登录留 manual review；forum 话题详情结构同 forum 列表
+- [x] **问题清单**：`docs/PHASE9_RESPONSIVE_AUDIT.md` 完整记录 P0 / P1 / M0 三层问题与修复
+- [x] **按 P0 清单修 navbar**（`crates/app/src/components/layouts/classic.rs`）
+   - 站名加 `whitespace-nowrap inline-block truncate max-w-32 sm:max-w-none`
+   - 站名父 div 加 `min-w-0`；登录 + 开始学习 button 加 `whitespace-nowrap`
+   - 右侧 button group `gap-2 sm:gap-3` 紧凑 mobile spacing
+   - 新增 `md:hidden` hamburger（☰/✕ 切换图标）
+   - 新增 mobile drawer：9 板块纵列 + 开始学习，点链接自动收起
+- [-] **触屏交互 / Lighthouse / 评论区 / Math / footer / blog list tag 间隔**：本 phase 不做，留后续 phase（不阻塞 mobile 主路径）
 
-**完成定义**：3 档 viewport 下 7 个核心页面无破版 / 无溢出 / 无不可达交互；`docs/PHASE9_RESPONSIVE_AUDIT.md` 完整记录修复前后截图。
+**完成定义**：mobile 375 navbar 不重叠、不 wrap、hamburger 抽屉提供完整板块导航；desktop 1280 无 regression；audit 文档 + before/after 截图入库。
 
 ---
 
@@ -213,7 +203,7 @@
 | 9.1 | ✅ Mostly Done | `#[plugin_export]` proc macro + i18n 改造 0 unsafe + 集成测试通过（PLUGIN_DEV.md 样例重写留 9.5） | — |
 | 9.2 | ✅ Mostly Done | wasm import scan + CSS sanitize + manifest 一致性 + SHA256 lock（Ed25519 + admin UI 集成本 phase 不做） | — |
 | 9.3 | 🟡 Pending | content-transformer capability + content-toc 示例插件 + SPEC | 9.1 (macro) / 9.2 (manifest 一致性表加新行) |
-| 9.4 | 🟡 Pending | 3 viewport × 7 页面 audit + 修 Tailwind 断点 | — |
+| 9.4 | ✅ Mostly Done | mobile 375 navbar 修复（hamburger 抽屉 + 站名 truncate + nowrap）+ desktop 1280 无 regression + audit 文档（评论区/Math/footer/list tag 小问题留后续） | — |
 | 9.5 | 🟡 Pending | PLUGIN_DEV.md 重写 + 审计指南章节 | 9.1 / 9.3 |
 
 ---

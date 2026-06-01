@@ -27,6 +27,9 @@ pub fn ClassicShell() -> Element {
   let mut show_auth_modal = crate::use_auth_modal();
   let session_user = crate::use_session_user();
   let mut show_user_menu = use_signal(|| false);
+  // Phase 9.4：mobile 抽屉开关。md:hidden 显示一个 hamburger button，
+  // 点击展开 header 下方的纵向 nav，让窄屏用户也能跳到板块。
+  let mut show_mobile_menu = use_signal(|| false);
 
   // Dynamic Translations from WASM Plugins
   let t_blog = use_t("nav-blog");
@@ -124,8 +127,14 @@ pub fn ClassicShell() -> Element {
           header { class: "sticky top-0 z-50 border-b border-slate-200/70 bg-white/80 backdrop-blur dark:bg-slate-950/70 dark:border-slate-800",
               Container {
                   div { class: "h-14 flex items-center justify-between",
-                      div { class: "flex items-center gap-6",
-                          Link { to: Route::Home {}, class: "font-extrabold tracking-tight text-flow", "Rust in Everything" }
+                      div { class: "flex items-center gap-6 min-w-0",
+                          Link {
+                              to: Route::Home {},
+                              // Phase 9.4：mobile 下限 max-w-32（8rem ≈ 128px）+ truncate 防止
+                              // 站名挤占右侧 button group；sm 以上完整显示。
+                              class: "font-extrabold tracking-tight text-flow whitespace-nowrap inline-block truncate max-w-32 sm:max-w-none",
+                              "Rust in Everything"
+                          }
                           nav { class: "hidden md:flex items-center gap-4 text-sm font-medium",
                               if on_blog {
                                   Link { to: Route::BlogIndex {}, class: link_class(Route::BlogIndex {}), "{t_blog}" }
@@ -157,7 +166,24 @@ pub fn ClassicShell() -> Element {
                           }
                       }
 
-                      div { class: "flex items-center gap-3",
+                      div { class: "flex items-center gap-2 sm:gap-3",
+                          // Phase 9.4: mobile hamburger（md:hidden）。点击展开 header
+                          // 下方的板块抽屉，让 mobile 用户能直接跳到 8 个板块。
+                          button {
+                              class: "md:hidden p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors",
+                              onclick: move |_| show_mobile_menu.set(!show_mobile_menu()),
+                              aria_label: "Toggle navigation menu",
+                              if show_mobile_menu() {
+                                  svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
+                                      path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M6 18L18 6M6 6l12 12" }
+                                  }
+                              } else {
+                                  svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
+                                      path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M4 6h16M4 12h16M4 18h16" }
+                                  }
+                              }
+                          }
+
                           // Search
                           SearchButton {}
 
@@ -244,7 +270,7 @@ pub fn ClassicShell() -> Element {
                           } else {
                               button {
                                   onclick: move |_| show_auth_modal.set(true),
-                                  class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800 transition-colors",
+                                  class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800 transition-colors whitespace-nowrap",
                                   svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                                       path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" }
                                   }
@@ -255,9 +281,46 @@ pub fn ClassicShell() -> Element {
                           if on_docs {
                               Link {
                                   to: Route::Docs {},
-                                  class: "hidden sm:inline-flex items-center rounded-md btn-flow px-3 py-2 text-sm font-semibold transition-all",
+                                  class: "hidden sm:inline-flex items-center rounded-md btn-flow px-3 py-2 text-sm font-semibold whitespace-nowrap transition-all",
                                   "{t(lang(), \"nav.start\")}"
                               }
+                          }
+                      }
+                  }
+
+                  // Phase 9.4: mobile 板块抽屉。md:hidden，仅 mobile/tablet 窄屏可见。
+                  // 点 hamburger 切换；点链接后自动收起（show_mobile_menu.set(false)）。
+                  if show_mobile_menu() {
+                      nav { class: "md:hidden border-t border-slate-200/70 dark:border-slate-800 py-2 flex flex-col text-sm font-medium",
+                          if on_blog {
+                              Link { to: Route::BlogIndex {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_blog}" }
+                          }
+                          if on_podcast {
+                              Link { to: Route::Podcast {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_podcast}" }
+                          }
+                          if on_cases {
+                              Link { to: Route::Cases {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), \"nav.cases\")}" }
+                          }
+                          if on_forum {
+                              Link { to: Route::TopicsIndex {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_forum}" }
+                          }
+                          if on_embedded {
+                              Link { to: Route::Embedded {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "嵌入式" }
+                          }
+                          if on_ai {
+                              Link { to: Route::Ai {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "AI" }
+                          }
+                          if on_web3 {
+                              Link { to: Route::Web3 {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "Web3" }
+                          }
+                          if on_wasm {
+                              Link { to: Route::Wasm {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "WASM" }
+                          }
+                          if on_cli {
+                              Link { to: Route::Cli {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "CLI" }
+                          }
+                          if on_docs {
+                              Link { to: Route::Docs {}, class: "px-2 py-2 mt-1 rounded-md btn-flow text-center font-semibold transition-all", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), \"nav.start\")}" }
                           }
                       }
                   }
@@ -293,3 +356,4 @@ pub fn ClassicShell() -> Element {
       }
   }
 }
+// trigger rebuild 1780294934
