@@ -74,7 +74,7 @@
    - 真实集成测试 `test_i18n_fluent_plugin` 通过；plugin engine 10 个测试全过
    - wasm 体积 297k → 314k（+5.7%，serde derive 引入，可接受）
    - 注：其余 7 个内置插件留作 Phase 9.5 文档样例时再 opt-in 改造，不强制
-- [ ] **PLUGIN_DEV.md §3 样例重写**：从 50 行缩到 10 行 —— 留给 Phase 9.5
+- [x] **PLUGIN_DEV.md §3 样例重写**：从 50 行缩到 10 行 —— 已在 9.5 落地（见下文 9.5 §3 重写勾选项）
    - 新增 §3.0 "为什么看不到 unsafe"小节解释宏展开
 - [x] CI：`cargo check --workspace --features server` 通过；`cargo clippy -p sdk-macros -p sdk -p i18n-fluent-plugin -p app-core --features server -- -D warnings` 0 warning
 
