@@ -380,43 +380,17 @@ fn main() {
             );
             collect_board!("cli", module_cli::server::list_cli_articles, "/cli");
 
-            // 静态路径：首页恒收录；其它模块按开关动态拼接。
-            let mut static_paths: Vec<&'static str> = vec!["/"];
-            if is_on("blog") {
-              static_paths.push("/blog");
+            // 静态路径：首页恒收录；其它模块从 ModuleSpec.static_path 自动获取。
+            // Phase 8.7：删掉了 11 个 if 链；加新模块只动 ModuleSpec.static_path 即可在 sitemap 出现。
+            let mut static_paths: Vec<String> = vec!["/".to_string()];
+            for spec in module_engine.enabled_modules() {
+              if let Some(p) = spec.static_path.as_deref() {
+                static_paths.push(p.to_string());
+              }
             }
-            if is_on("podcast") {
-              static_paths.push("/podcast");
-            }
-            if is_on("course") {
-              static_paths.push("/course");
-            }
-            if is_on("cases") {
-              static_paths.push("/case");
-            }
-            if is_on("docs") {
-              static_paths.push("/docs");
-            }
-            if is_on("forum") {
-              static_paths.push("/topics");
-            }
-            if is_on("embedded") {
-              static_paths.push("/embedded");
-            }
-            if is_on("ai") {
-              static_paths.push("/ai");
-            }
-            if is_on("web3") {
-              static_paths.push("/web3");
-            }
-            if is_on("wasm") {
-              static_paths.push("/wasm");
-            }
-            if is_on("cli") {
-              static_paths.push("/cli");
-            }
+            let static_paths_ref: Vec<&str> = static_paths.iter().map(String::as_str).collect();
 
-            let xml = build_sitemap_xml(&entries, &static_paths, &base);
+            let xml = build_sitemap_xml(&entries, &static_paths_ref, &base);
             // Phase 8.5：sitemap 1 小时 Cache-Control，让爬虫与 CDN 不至于
             // 每次请求都打满 list_* hot path。`public` 表示中间代理也能缓存。
             axum::response::Response::builder()

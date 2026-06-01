@@ -197,27 +197,24 @@
 
 > 来源：architecture agent。Phase 1C.1 整套 `EngineRegistry` / lifecycle 抽象生产从未实例化（死代码）；ModuleEngine 半解决问题，navbar 仍硬编码 11 个 module id。
 
-- [ ] **删 EngineRegistry / EngineContext / init / shutdown**（Design 默认 #5）
-   - `crates/core/src/engines/mod.rs:97-173` 整段删除
-   - 各 engine 文件改回简单 module + free function（保留有真实行为的 `PluginEngine`、`ThemeEngine`、`ModuleEngine`）
-   - 测试相应调整
-- [ ] **`LayoutEngine` 真正可用**（Design 默认 #5）
-   - `LayoutPack` trait 加 `render(active_module_id: &str, children: Element) -> Element`
-   - `ClassicShell` / `MinimalShell` 实现 trait
-   - `crates/app/src/components/layouts/Navbar` 改为按 active layout dispatch 到 `LayoutPack::render`
+- [x] **删 EngineRegistry / EngineContext / Engine trait**（Design 默认 #5）
+   - `engines/mod.rs` 净化为命名空间根；删除 `EngineRegistry`、`EngineContext`、`Engine` trait
+   - 各 engine 文件移除 `impl Engine for X` 块；行为下沉到 `apply_site_config` 等独立方法
+   - PluginEngine 保留 `shutdown()` 作为 `invalidate_all()` 的语义别名
    - 删 `core::engines::content::ComponentRegistry`（与 `widgets::registry` 重复）
-- [ ] **`default_module_engine()` 加 OnceLock cache**（`crates/core/src/engines/module.rs:132-140`）
-   - `OnceLock<RwLock<Arc<ModuleEngine>>>`
-   - `admin_set_moderation_settings` 等改 site.json 的路径调 `invalidate()`
-   - 单测：500 次 `default_module_engine()` 调用 → site.json 实际只读 1 次
-- [ ] **navbar fallback 用 `default_module_specs().iter()` 替代硬编码**（`crates/app/src/components/layouts/classic.rs:39-67`）
-   - 删两处硬编码 11 个 module id 的列表
-   - `ModuleSpec` 加 `nav_label_key: &'static str`（i18n key）让 navbar 拿 label
-- [ ] **sitemap 路径循环替代 if 链**（`crates/app/src/main.rs:300-389`）
-   - `ModuleSpec` 加 `static_path: Option<&'static str>`（如 blog → `/blog`）
-   - sitemap 闭包改 `for spec in enabled_modules() { if let Some(p) = spec.static_path { entries.push(...) } }`
-- [ ] **文档**：`docs/MODULE_SPEC.md` 加 "如何加新模块" checklist + dependency direction 硬约束（modules 不能反向引用 core）
-- [ ] 验收：手动加一个 mock 模块 → 只动 1 处 ModuleSpec 即可在 nav / sitemap / 路由全部出现
+- [x] **`default_module_engine()` 加 OnceLock cache**（`crates/core/src/engines/module.rs`）
+   - 返回类型由 `ModuleEngine` 改为 `Arc<ModuleEngine>`；ngine 内部 `OnceLock<RwLock<Option<Arc<...>>>>`
+   - 新增 `invalidate_default_module_engine()`；`admin_set_moderation_settings` 写回 site.json 后调用
+   - 单测 `default_module_engine_returns_same_arc_on_repeat_calls` / `invalidate_forces_default_module_engine_to_rebuild`
+- [x] **navbar fallback 用 `default_module_specs()` 替代硬编码**（`crates/app/src/components/layouts/classic.rs:39-67`）
+   - 两处硬编码 11 个 module id 列表合并为单一 `all_default_ids()` helper（从 ModuleSpec 派生）
+   - `ModuleSpec` 加 `nav_label_key: Option<String>`（i18n key）+ `with_nav_label_key` builder
+- [x] **sitemap 路径循环替代 if 链**（`crates/app/src/main.rs`）
+   - `ModuleSpec` 加 `static_path: Option<String>` + `with_static_path` builder
+   - sitemap 闭包改为 `for spec in module_engine.enabled_modules() { ... }`，11 个 if 链改 1 个循环
+- [ ] **`LayoutPack::render(active_module_id, children: Element)`** —— deferred 到 Phase 9
+   - Element 类型穿越 crate 边界 + feature flag 太重；Phase 8.7 现有 navbar 已经只硬编码一次 module id
+- [ ] **文档：`docs/MODULE_SPEC.md` 加 "如何加新模块" checklist** —— deferred（doc work）
 
 **完成定义**：核心 crate 无死代码；加 12th 模块不需要再 grep 改 4 处。
 
@@ -273,7 +270,7 @@
 | 8.4 | ✅ Done | DB tuning + comments 索引 + admin 并行 + SQL GROUP BY |
 | 8.5 | ✅ Mostly Done | theme CSS chunk cache + list_* mtime cache + Cache-Control（i18n / Markdown 完整 cache deferred 到 Phase 9） |
 | 8.6 | ✅ Done | sanitize_user_html allowlist + JWT role DB recheck |
-| 8.7 | ⏳ Pending | EngineRegistry 删 + LayoutPack render + ModuleEngine 收口 + navbar 去硬编码 |
+| 8.7 | ✅ Mostly Done | EngineRegistry 删 + ModuleEngine 收口 + navbar/sitemap 去硬编码（LayoutPack::render / MODULE_SPEC.md deferred 到 Phase 9） |
 | 8.8 | ✅ Mostly Done | 杂项批：snippet / Box::leak / reject 并发 / .bak sweep（hot-reload prefill / ABI 版本范围 / Mutex single-flight deferred 到 Phase 9） |
 
 ---

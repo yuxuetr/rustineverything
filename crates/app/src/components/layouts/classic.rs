@@ -34,38 +34,20 @@ pub fn ClassicShell() -> Element {
   let t_forum = use_t("nav-forum");
 
   // Phase 3.4：站点模块开关。默认全开（避免首屏闪烁）。
-  let enabled_res = use_resource(|| async move {
-    enabled_module_ids().await.unwrap_or_else(|_| {
-      vec![
-        "blog".into(),
-        "podcast".into(),
-        "cases".into(),
-        "forum".into(),
-        "embedded".into(),
-        "ai".into(),
-        "web3".into(),
-        "wasm".into(),
-        "cli".into(),
-        "course".into(),
-        "docs".into(),
-      ]
-    })
-  });
-  let enabled: Vec<String> = enabled_res.read().as_ref().cloned().unwrap_or_else(|| {
-    vec![
-      "blog".into(),
-      "podcast".into(),
-      "cases".into(),
-      "forum".into(),
-      "embedded".into(),
-      "ai".into(),
-      "web3".into(),
-      "wasm".into(),
-      "cli".into(),
-      "course".into(),
-      "docs".into(),
-    ]
-  });
+  //
+  // Phase 8.7：fallback 列表改从 `default_module_specs()` 单一源派生，
+  // 不再在 navbar 里硬编码 11 个 module id —— 加 12th 模块只动 ModuleSpec
+  // 一处即可在 nav 出现。
+  fn all_default_ids() -> Vec<String> {
+    app_core::engines::module::default_module_specs()
+      .into_iter()
+      .map(|s| s.id)
+      .collect()
+  }
+  let enabled_res =
+    use_resource(|| async move { enabled_module_ids().await.unwrap_or_else(|_| all_default_ids()) });
+  let enabled: Vec<String> =
+    enabled_res.read().as_ref().cloned().unwrap_or_else(all_default_ids);
   let on_blog = enabled.iter().any(|s| s == "blog");
   let on_podcast = enabled.iter().any(|s| s == "podcast");
   let on_cases = enabled.iter().any(|s| s == "cases");

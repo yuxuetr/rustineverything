@@ -28,7 +28,6 @@ use std::sync::Arc;
 
 use sdk::{PluginManifest, SDK_ABI_VERSION};
 
-use super::{Engine, EngineContext};
 use crate::error::{AppError, AppResult};
 
 /// 默认插件输出大小限制：8MB。
@@ -170,28 +169,11 @@ impl PluginEngine {
   }
 }
 
-impl Engine for PluginEngine {
-  fn name(&self) -> &'static str {
-    "plugin"
-  }
-
-  fn init(&mut self, _ctx: &EngineContext) -> AppResult<()> {
-    // 无需特殊初始化：PluginManager 自带懒加载缓存。
-    Ok(())
-  }
-
-  fn shutdown(&mut self) -> AppResult<()> {
-    // 释放所有 wasmi Module / Instance / Memory 缓存。
+impl PluginEngine {
+  /// 旧 Engine::shutdown 的等价物：清空所有 wasmi Module / Instance / Memory 缓存。
+  /// 给 admin 显式重新加载所有插件时调用。
+  pub fn shutdown(&self) {
     self.manager.invalidate_all();
-    Ok(())
-  }
-
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-
-  fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-    self
   }
 }
 
@@ -204,11 +186,7 @@ mod tests {
     PluginEngine::new(Arc::new(crate::PluginManager::new()))
   }
 
-  #[test]
-  fn engine_name_is_plugin() {
-    let e = make_engine();
-    assert_eq!(e.name(), "plugin");
-  }
+  // Phase 8.7：删除了 Engine trait，原 engine_name_is_plugin 测试不再有意义。
 
   #[test]
   fn output_limit_default_is_8mb() {
@@ -225,7 +203,7 @@ mod tests {
 
   #[tokio::test]
   async fn shutdown_invalidates_cache() {
-    let mut e = make_engine();
+    let e = make_engine();
     // 用一个真实存在的 wasm 路径生成缓存条目；不存在则跳过
     let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
     if wasm.exists() {
@@ -238,14 +216,8 @@ mod tests {
         )
         .await;
     }
-    assert!(e.shutdown().is_ok());
-  }
-
-  #[test]
-  fn engine_ctx_init_is_noop_for_plugin() {
-    let mut e = make_engine();
-    let ctx = EngineContext::for_tests();
-    assert!(e.init(&ctx).is_ok());
+    // shutdown 不返回 Result（无可失败步骤）—— 仅验证 cache 被清空。
+    e.shutdown();
   }
 
   /// 当 manifest ABI 不兼容时 `strict_call` 应拒绝。

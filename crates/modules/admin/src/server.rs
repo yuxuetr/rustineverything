@@ -1289,7 +1289,9 @@ pub async fn admin_set_moderation_settings(
     write_moderation_settings_to_site_json(&path, &settings).map_err(ServerFnError::new)?;
 
     // 立即生效：插件缓存清空 + 审核 pipeline 重建（重读 site.json + 插件目录）
+    // Phase 8.7：site.json 变了 → default_module_engine 的 OnceLock cache 也得清
     app_core::shared_plugin_manager().invalidate_all();
+    app_core::engines::module::invalidate_default_module_engine();
     module_moderation::reload_pipeline();
     tracing::info!(
       enabled = settings.enabled,
