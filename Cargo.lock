@@ -3260,6 +3260,7 @@ version = "0.1.0"
 dependencies = [
  "fluent-bundle",
  "sdk",
+ "serde",
  "serde_json",
  "unic-langid",
 ]
@@ -6099,9 +6100,19 @@ version = "0.1.0"
 dependencies = [
  "fluent-bundle",
  "intl-memoizer",
+ "sdk-macros",
  "serde",
  "serde_json",
  "unic-langid",
+]
+
+[[package]]
+name = "sdk-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

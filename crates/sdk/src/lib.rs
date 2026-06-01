@@ -2,6 +2,11 @@
 use serde::{Deserialize, Serialize};
 use std::mem;
 
+// Re-export 过程宏：插件作者写 `use sdk::plugin_export;` 即可。
+// 宏内部展开会引用 `::sdk::read_input` / `::sdk::pack_output` / `::sdk::pack_json`，
+// 因此 sdk 必须同时提供宏 + runtime helpers，缺一不可。
+pub use sdk_macros::plugin_export;
+
 /// 当前 SDK 定义的 WASM ABI 版本。宿主载入插件时会读插件中的
 /// `get_manifest()` 返回体 [`PluginManifest::abi_version`]，数值不一致则拒绝加载。
 ///
