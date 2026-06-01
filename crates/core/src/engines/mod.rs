@@ -19,6 +19,7 @@
 
 // 子引擎模块。
 pub mod auth;
+pub mod content_transformer;
 pub mod layout;
 pub mod moderation;
 pub mod module;

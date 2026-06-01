@@ -37,8 +37,9 @@ fn required_exports(capability: &str) -> &'static [&'static str] {
     sdk::capabilities::MODERATION_PROVIDER => {
       &["moderation_build_prompt", "moderation_parse_verdict"]
     }
-    // notification / layout / mdx-component / content-transformer 暂未定 ABI，
-    // 留作 Phase 9.3+ 加入时再扩此表。
+    // Phase 9.3：content-transformer 插件必须导出 transform_markdown。
+    sdk::capabilities::CONTENT_TRANSFORMER => &["transform_markdown"],
+    // notification / layout / mdx-component 暂未定 ABI，留作后续 phase 扩此表。
     _ => &[],
   }
 }
@@ -319,6 +320,52 @@ mod tests {
       .with_capability(capabilities::I18N);
     let result = verify_manifest_consistency(&manifest, &module);
     assert!(result.is_ok(), "should pass for real plugin: {:?}", result);
+  }
+
+  /// Phase 9.3：声明 content-transformer 能力但缺 `transform_markdown` → 拒绝。
+  #[test]
+  fn manifest_consistency_rejects_content_transformer_missing_export() {
+    // 构造一段只有 alloc / memory / get_manifest 的 wasm，不导出 transform_markdown。
+    let wat = r#"
+      (module
+        (memory (export "memory") 1)
+        (func (export "get_manifest") (result i64) (i64.const 0))
+        (func (export "alloc") (param i32) (result i32) (i32.const 0))
+      )
+    "#;
+    let wasm = wat::parse_str(wat).expect("wat → wasm");
+    let mut config = Config::default();
+    config.consume_fuel(true);
+    let engine = Engine::new(&config);
+    let module = Module::new(&engine, &wasm).expect("module");
+    let bad = PluginManifest::new("fake-ct", "Fake Content Transformer", "0.1.0")
+      .with_capability(capabilities::CONTENT_TRANSFORMER);
+    let result = verify_manifest_consistency(&bad, &module);
+    assert!(result.is_err());
+    let msg = result.unwrap_err();
+    assert!(msg.contains("transform_markdown"), "msg should call out missing fn: {}", msg);
+  }
+
+  /// 声明 content-transformer 且确实导出 transform_markdown → 通过。
+  #[test]
+  fn manifest_consistency_passes_for_synthetic_content_transformer() {
+    let wat = r#"
+      (module
+        (memory (export "memory") 1)
+        (func (export "get_manifest") (result i64) (i64.const 0))
+        (func (export "alloc") (param i32) (result i32) (i32.const 0))
+        (func (export "transform_markdown") (param i32 i32) (result i64) (i64.const 0))
+      )
+    "#;
+    let wasm = wat::parse_str(wat).expect("wat → wasm");
+    let mut config = Config::default();
+    config.consume_fuel(true);
+    let engine = Engine::new(&config);
+    let module = Module::new(&engine, &wasm).expect("module");
+    let manifest = PluginManifest::new("synth-ct", "Synth Content Transformer", "0.1.0")
+      .with_capability(capabilities::CONTENT_TRANSFORMER);
+    let result = verify_manifest_consistency(&manifest, &module);
+    assert!(result.is_ok(), "expected ok, got {:?}", result);
   }
 
   #[test]

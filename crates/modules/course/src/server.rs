@@ -906,7 +906,16 @@ pub async fn get_lesson(
 ) -> Result<Option<Lesson>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    Ok(read_lesson(&slug, &chapter, &lesson))
+    let mut lesson_opt = read_lesson(&slug, &chapter, &lesson);
+    if let Some(lesson) = lesson_opt.as_mut() {
+      if let Some(doc) = lesson.doc.as_mut() {
+        // Phase 9.3：pre-stage content transformers chain（fail-open，空链路零开销直通）。
+        doc.markdown =
+          app_core::engines::content_transformer::apply_default_pre(&doc.markdown, "course")
+            .await;
+      }
+    }
+    Ok(lesson_opt)
   }
   #[cfg(not(feature = "server"))]
   {

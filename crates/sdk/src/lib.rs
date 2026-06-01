@@ -24,6 +24,15 @@ pub mod capabilities {
   pub const NOTIFICATION: &str = "notification";
   pub const LAYOUT: &str = "layout";
   pub const MDX_COMPONENT: &str = "mdx-component";
+  /// Phase 9.3：内容变换器。声明该能力的插件必须导出 `transform_markdown`，
+  /// 宿主在加载 markdown 内容时按链顺序 chain（前一个输出 → 下一个输入）。
+  pub const CONTENT_TRANSFORMER: &str = "content-transformer";
+}
+
+/// Phase 9.3：content-transformer 插件需要导出的函数名。集中常量以便宿主 + 插件
+/// 同一处引用，避免拼写漂移。
+pub mod content_transformer {
+  pub const FN_TRANSFORM_MARKDOWN: &str = "transform_markdown";
 }
 
 /// 插件身份 / 能力联合信息，由 `get_manifest()` 导出。
@@ -264,6 +273,76 @@ impl ModerationVerdict {
   }
 }
 
+// ────────────────────────────────────────────────────────────
+// Content Transformer ABI (Phase 9.3)
+//
+// 声明 capability `content-transformer` 的插件必须导出：
+//   - `get_manifest` （所有插件都需要）
+//   - `transform_markdown(TransformRequest JSON) -> TransformResponse JSON`
+//
+// 宿主 (`crates/core/src/engines/content_transformer.rs`) 在加载 markdown
+// 内容后按 site.json `content_transformers` 列表顺序逐个调用，前一个的
+// `content` 作为下一个的输入（chain 语义）。任一插件 trap / timeout /
+// 返回非法 JSON 时 fail-open：跳过该插件，链路继续。
+//
+// 仅在 server 端运行：客户端 hydration 不重跑变换器；变换结果作为已渲染
+// 的 markdown 流入 widget Markdown 组件。
+// ────────────────────────────────────────────────────────────
+
+/// content-transformer 插件入参。
+///
+/// `kind`：业务类型字面值，由宿主提供。已知值：`"blog"` / `"doc"` /
+/// `"podcast"` / `"course"` / `"cases"` 等。插件可据此选择性变换。
+/// 未知 kind 推荐直接 passthrough。
+///
+/// `stage`：当前仅支持 `"pre"`（Markdown 解析前；字符串 in / 字符串 out）。
+/// 未来若加 `"post"`（HTML 后处理）会扩这一字段，插件可按 stage 路由。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct TransformRequest {
+  pub content: String,
+  #[serde(default)]
+  pub kind: String,
+  #[serde(default)]
+  pub stage: String,
+}
+
+impl TransformRequest {
+  pub fn new(content: impl Into<String>) -> Self {
+    Self { content: content.into(), kind: String::new(), stage: String::new() }
+  }
+  pub fn with_kind(mut self, kind: impl Into<String>) -> Self {
+    self.kind = kind.into();
+    self
+  }
+  pub fn with_stage(mut self, stage: impl Into<String>) -> Self {
+    self.stage = stage.into();
+    self
+  }
+}
+
+/// content-transformer 插件返回值。
+///
+/// `changed` 是给宿主诊断 / 调试用的提示位。宿主**不**依赖该字段做正确性
+/// 判断（仍以 `content` 实际差异为准），但 `false` 时可跳过一次 string clone
+/// + log "no-op" 以便排查"为啥 transformer 没生效"。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct TransformResponse {
+  pub content: String,
+  #[serde(default)]
+  pub changed: bool,
+}
+
+impl TransformResponse {
+  /// 表示该插件未对内容做任何改动；宿主可短路掉 clone。
+  pub fn unchanged(content: impl Into<String>) -> Self {
+    Self { content: content.into(), changed: false }
+  }
+  /// 表示该插件已生成新内容。
+  pub fn changed(content: impl Into<String>) -> Self {
+    Self { content: content.into(), changed: true }
+  }
+}
+
 /// 核心 Trait 定义
 pub trait Plugin {
   fn manifest(&self) -> PluginManifest;
@@ -472,5 +551,48 @@ mod tests {
   #[test]
   fn moderation_provider_capability_constant() {
     assert_eq!(capabilities::MODERATION_PROVIDER, "moderation-provider");
+  }
+
+  // ─── Phase 9.3 content-transformer 类型测试 ──────────────
+
+  #[test]
+  fn content_transformer_capability_constant() {
+    assert_eq!(capabilities::CONTENT_TRANSFORMER, "content-transformer");
+    assert_eq!(content_transformer::FN_TRANSFORM_MARKDOWN, "transform_markdown");
+  }
+
+  #[test]
+  fn transform_request_serde_round_trip() {
+    let req = TransformRequest::new("# Hello").with_kind("blog").with_stage("pre");
+    let json = serde_json::to_string(&req).unwrap();
+    let parsed: TransformRequest = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, req);
+  }
+
+  #[test]
+  fn transform_request_back_compat_only_content() {
+    // 老 host 只填 content；kind / stage 默认空
+    let json = "{\"content\":\"# H\"}";
+    let r: TransformRequest = serde_json::from_str(json).unwrap();
+    assert_eq!(r.content, "# H");
+    assert_eq!(r.kind, "");
+    assert_eq!(r.stage, "");
+  }
+
+  #[test]
+  fn transform_response_constructors() {
+    let no = TransformResponse::unchanged("body");
+    assert_eq!(no.content, "body");
+    assert!(!no.changed);
+    let yes = TransformResponse::changed("body2");
+    assert!(yes.changed);
+  }
+
+  #[test]
+  fn transform_response_serde_round_trip() {
+    let r = TransformResponse::changed("[[toc]]\n# H");
+    let json = serde_json::to_string(&r).unwrap();
+    let parsed: TransformResponse = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed, r);
   }
 }

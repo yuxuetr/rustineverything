@@ -123,29 +123,37 @@
 
 > 来源：Phase 9 范围澄清（2026-06-01）。当前 capability 表里 `layout` / `notification` / `mdx-component` 都是 placeholder（SDK 有常量但宿主没接）。需要至少一个"真正实现过一遍"的扩展型 capability 证明 ABI 表能稳定加新行。`content-transformer` 是博客系统最自然的扩展点（自动加 TOC / 图片 lazy / 自动检测断链等）。
 
-- [ ] **SDK 加常量**（`crates/sdk/src/lib.rs`）
-   - `pub const CONTENT_TRANSFORMER: &str = "content-transformer";` 入 `capabilities` 模块
-   - 新增类型 `TransformRequest { content: String, kind: String, stage: String }` + `TransformResponse { content: String, changed: bool }`
-   - `kind`：`"blog"` / `"doc"` / `"podcast"` / `"forum-topic"` 等业务类型
-   - `stage`：`"pre"`（Markdown 字符串）/ `"post"`（渲染后 HTML 字符串）
-- [ ] **宿主 `ContentTransformerEngine`**（`crates/core/src/engines/content_transformer.rs`）
-   - `apply(content, kind, stage) -> String`：遍历声明该 capability 的所有插件，串行 chain（前一个输出作为下一个输入）
-   - fail-open：任何插件 trap / timeout / 返回空 → 跳过该插件 + warn log，链路继续
-   - 集成进 PluginManager；Phase 8.7 ModuleEngine 加 enabled 检查
-- [ ] **Markdown 渲染管线接入**（`crates/widgets/src/mdx.rs`）
-   - `pre` hook：Markdown 解析前调 `engine.apply(md_str, kind, "pre")`
-   - `post` hook：HTML 渲染完成后调 `engine.apply(html_str, kind, "post")`
-   - 性能：默认开关 env `CONTENT_TRANSFORMER_DISABLE=true` 可关；启用插件 0 时直通短路（不走 wasm）
-- [ ] **示例插件 `crates/plugins/content-toc`**
-   - `transform_markdown` 实现：检测 `# H1` / `## H2` heading，在第一段后插入 `[[toc]]` 形式的 TOC 标记 + 加锚点
-   - 用 `#[plugin_export]`（9.1 的宏）写，证明宏 + 新 capability 双 stack 跑通
-   - 单测：核心 fn `inject_toc(md: &str) -> String` 覆盖 5 个边界（无 heading / 仅 H1 / 多级嵌套 / 已有 [[toc]] / 文末 heading）
-- [ ] **build_themes.sh 兼容**：脚本归一化命名 `content_toc_plugin`，产物拷贝到 `assets/plugins/`
-- [ ] **`assets/site.json` 新增字段** `content_transformers: ["content_toc_plugin.wasm"]`，默认空数组
-- [ ] **PLUGIN_ABI.md §2.3 表**：加 `content-transformer | transform_markdown | TransformRequest JSON | TransformResponse JSON` 行
-- [ ] **`docs/CONTENT_TRANSFORMER_SPEC.md`**（新建）：完整 ABI 说明 + kind/stage 约定 + 链式 chain 语义 + 示例
+- [x] **SDK 加常量**（`crates/sdk/src/lib.rs`）
+   - `capabilities::CONTENT_TRANSFORMER` + 新模块 `content_transformer::FN_TRANSFORM_MARKDOWN`
+   - 新增类型 `TransformRequest { content, kind, stage }`（serde default 三字段全部可选）+ `TransformResponse { content, changed }`
+   - 加 5 个 unit test：capability 常量 / FN 常量 / serde 双向 / 老 host 仅 content 字段向后兼容 / Response 构造器
+- [x] **宿主 `ContentTransformerEngine`**（`crates/core/src/engines/content_transformer.rs` 新建）
+   - `apply(manager, content, kind, stage) -> String`：按 `transformers` 顺序串行 chain（前一个输出作为下一个输入）
+   - **fail-open**：插件不存在 / wasmi trap / timeout / 输出超限 / 非法 JSON / `content` 字段空字符串 → 跳过 + `tracing::warn`，链路继续
+   - 空 `transformers` 列表 / env `CONTENT_TRANSFORMER_DISABLE=true|1` → `apply` 直通返回原 content，**0 次 wasm 调用**
+   - 全局 OnceLock 缓存 `default_content_transformer_engine()` + `invalidate_*`（与 ModuleEngine 同款），首屏读 site.json 一次后续 Arc::clone
+   - 顶层便利 fn `apply_default_pre(content, kind)`：用 default engine + `shared_plugin_manager`，server fn 调一行
+   - 单测 5 个：register/list / apply_site_config 过滤空名 / 空列表 disabled / 空列表零开销直通 / 不存在插件 fail-open
+- [x] **Markdown 渲染管线接入** —— 改为在 **server fn 加载内容时** 触发，比 widget 入口接入更稳（用户选 #1）
+   - `crates/modules/blog/src/server.rs::get_blog_content` 末尾 `apply_default_pre(&raw, "blog")`
+   - 同款补丁应用到 wasm / ai / web3 / cli / embedded 5 板块（kind 取 BOARD_ID 字面值）
+   - `crates/modules/docs/src/server.rs::get_doc_content`：在 `parse_doc_frontmatter` 之后对 `content` 跑 `apply_default_pre(_, "doc")`
+   - `crates/modules/course/src/server.rs::get_lesson`：对 `lesson.doc.markdown` 字段跑 `apply_default_pre(_, "course")`
+   - 不接：forum / comment / cases（理由见 [[content-transformer-untrusted-skip]]：user-submitted 内容由 sanitize_user_html 把关，不应被站点级 transformer 改写；cases 的 `read_case_from_dir` 是同步 fn 改造面太大）
+   - `pre` hook only；`post` hook 因 Dioxus 直接渲染 Element 不易实现，未来 SSR pipeline 稳定后再加（[[content-transformer-post-stage]]）
+- [x] **plugin_security 表扩展**：`required_exports("content-transformer") = ["transform_markdown"]`；2 个新 unit test（合成 WAT 一个缺一个齐全）
+- [x] **SiteConfig 加 `content_transformers: Vec<String>`**（serde default 空）+ 3 个 unit test（default / back-compat / 解析有序列表）
+- [x] **示例插件 `crates/plugins/content-toc`**（用 `#[plugin_export]` Phase 9.1 宏）
+   - 0 unsafe；`transform_markdown(req: TransformRequest) -> TransformResponse`
+   - kind 白名单 = blog / doc / course；其它 kind passthrough；非 `pre` stage passthrough
+   - 纯函数 `inject_toc(md: &str) -> String` 覆盖 5 边界：无 heading / 仅 H1 + intro / 多级嵌套 / 已有 [[toc]] / 文末 heading；外加 `is_heading_line` 辅助测 + transform layer assertion，共 7 个测试
+   - 加入 workspace members
+- [x] **build_themes.sh 扩展**：新增 `ALL_CONTENT_TRANSFORMERS` 数组 + 合并到 `ALL_PLUGINS`；无参跑全量，命令行短名匹配（`content-toc` / `content-toc-plugin`）；不识别的参数报错并列出可用项
+- [x] **`assets/site.json` + `crates/app/assets/site.json` 双份**：新增 `"content_transformers": []` 默认空数组（不破坏现网）
+- [x] **PLUGIN_ABI.md §2.3 + §9 + §11**：加 `content-transformer | transform_markdown | TransformRequest JSON | TransformResponse JSON` 行 + 示例插件 content-toc 入插件清单 + 加 SPEC 文档链接
+- [x] **`docs/CONTENT_TRANSFORMER_SPEC.md`**（新建）：完整 ABI 说明 + kind/stage 枚举 + chain 顺序 + fail-open 语义 + 未来扩展（post / async / kind 扩展）+ 性能 / 关停 / 测试章节
 
-**完成定义**：开启 `content-toc` 插件后 `/blog/welcome` 自动出 TOC；插件 trap 不影响文章渲染（fail-open 验证）；ABI 表新增一个真正实现过的 capability。
+**完成定义**：开启 `content-toc` 插件后 markdown 内容流经 server fn 自动注入 `[[toc]]` 占位；插件 trap 不影响文章渲染（fail-open 单测覆盖）；ABI 表新增一个真正实现过的 capability + 端到端走通宏 (9.1) + plugin_security (9.2) + transformer (9.3) 三层。
 
 ---
 
@@ -196,7 +204,7 @@
 |---|---|---|---|
 | 9.1 | ✅ Mostly Done | `#[plugin_export]` proc macro + i18n 改造 0 unsafe + 集成测试通过（PLUGIN_DEV.md 样例重写留 9.5） | — |
 | 9.2 | ✅ Mostly Done | wasm import scan + CSS sanitize + manifest 一致性 + SHA256 lock（Ed25519 + admin UI 集成本 phase 不做） | — |
-| 9.3 | 🟡 Pending | content-transformer capability + content-toc 示例插件 + SPEC | 9.1 (macro) / 9.2 (manifest 一致性表加新行) |
+| 9.3 | ✅ Mostly Done | content-transformer capability + ContentTransformerEngine + content-toc 示例 + SPEC（pre stage 落地；post stage 因 Dioxus Element pipeline 与 SSR-only 路径冲突，记为未来扩展） | 9.1 (macro) / 9.2 (manifest 一致性表加新行) |
 | 9.4 | ✅ Mostly Done | mobile 375 navbar 修复（hamburger 抽屉 + 站名 truncate + nowrap）+ desktop 1280 无 regression + audit 文档（评论区/Math/footer/list tag 小问题留后续） | — |
 | 9.5 | ✅ Mostly Done | PLUGIN_DEV.md §3 + §6.1 改用 #[plugin_export] / §12 审计指南完整章节（PLUGIN_ABI.md content-transformer 相关更新随 9.3 一起砍） | 9.1 |
 

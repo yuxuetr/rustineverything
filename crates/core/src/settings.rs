@@ -53,6 +53,13 @@ pub struct SiteConfig {
   /// 防御场景：插件文件在文件系统层被偷换（供应链攻击 / 误覆盖）。
   #[serde(default)]
   pub plugins_lock: HashMap<String, String>,
+  /// Phase 9.3：内容变换器插件文件名列表（相对 `assets/plugins/`），按顺序 chain
+  /// 调用 —— 前一个的输出作为下一个的输入。声明顺序 = 执行顺序。
+  ///
+  /// 空列表（默认）→ ContentTransformerEngine 不实例化 / 不触发 wasm，零开销。
+  /// fail-open：单个插件 trap / timeout / 非法输出，会跳过该插件继续。
+  #[serde(default)]
+  pub content_transformers: Vec<String>,
 }
 
 /// 审核功能在 site.json 中的配置块。**默认 disabled**，意味着评论 / 话题 /
@@ -164,6 +171,7 @@ impl Default for SiteConfig {
       modules: HashMap::new(),
       moderation: ModerationSettings::default(),
       plugins_lock: HashMap::new(),
+      content_transformers: Vec::new(),
     }
   }
 }
@@ -309,6 +317,51 @@ mod tests {
     let mut cfg = SiteConfig::default();
     cfg.plugins_lock.insert("x.wasm".into(), String::new());
     assert_eq!(cfg.plugin_sha256("x.wasm"), None, "empty string should be treated as missing");
+  }
+
+  // ─── Phase 9.3 content_transformers ───────────────────────
+
+  #[test]
+  fn content_transformers_default_empty() {
+    let cfg = SiteConfig::default();
+    assert!(cfg.content_transformers.is_empty());
+  }
+
+  #[test]
+  fn content_transformers_back_compat_when_field_missing() {
+    // 老 site.json 不含 content_transformers 字段 → 默认空
+    let json = r#"{
+            "site_name": "X",
+            "site_description": "",
+            "active_theme": "t.wasm",
+            "default_language": "zh",
+            "author": "",
+            "paths": {},
+            "navigation": []
+        }"#;
+    let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
+    assert!(cfg.content_transformers.is_empty());
+  }
+
+  #[test]
+  fn content_transformers_parses_ordered_list() {
+    let json = r#"{
+            "site_name": "X",
+            "site_description": "",
+            "active_theme": "t.wasm",
+            "default_language": "zh",
+            "author": "",
+            "paths": {},
+            "navigation": [],
+            "content_transformers": [
+                "content_toc_plugin.wasm",
+                "content_lazyload_plugin.wasm"
+            ]
+        }"#;
+    let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
+    assert_eq!(cfg.content_transformers.len(), 2);
+    assert_eq!(cfg.content_transformers[0], "content_toc_plugin.wasm");
+    assert_eq!(cfg.content_transformers[1], "content_lazyload_plugin.wasm");
   }
 
   #[test]

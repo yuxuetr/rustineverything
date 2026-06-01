@@ -31,6 +31,7 @@ members = [
     "crates/plugins/google-auth",
     "crates/plugins/discord-auth",
     "crates/plugins/twitter-auth",
+    "crates/plugins/content-toc",
     "examples/plugin-theme-purple",
     "examples/plugin-moderation-deepseek",
 ]

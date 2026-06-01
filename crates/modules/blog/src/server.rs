@@ -125,5 +125,8 @@ pub async fn get_blog_content(id: String) -> Result<String, ServerFnError> {
     return Err(ServerFnError::new(format!("文章未找到: {}", id)));
   };
 
-  fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))
+  let raw =
+    fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
+  // Phase 9.3：pre-stage content transformers chain（fail-open，空链路零开销直通）。
+  Ok(app_core::engines::content_transformer::apply_default_pre(&raw, "blog").await)
 }
