@@ -86,9 +86,10 @@
 - [x] 双编译目标（server + 默认 web）通过，clippy `-D warnings` 零告警
 - [ ] 【手动】`curl -s /blog` 验证首屏含文章列表
 
-### B3 — 迁移 5 个内容板块页
-- [ ] `ai/web3/wasm/cli/embedded` 的 `*IndexPage`（`list_*_articles`）与 `*ArticlePage`（`get_*_article`）→ `use_server_future`
-- [ ] 烟测各板块首屏
+### B3 — 迁移 5 个内容板块页 ✅
+- [x] `ai/web3/wasm/cli/embedded` 统一重写：`*IndexPage` 拆为标题外壳 + `SuspenseBoundary{ *IndexList }`（`use_server_future` 取 `list_*_articles`，筛选/搜索保留客户端 signal）；`*ArticlePage` 拆为外壳 + `*ArticleContent`（`use_server_future` + `use_reactive!(|slug|)` 取 `get_*_article`）
+- [x] app `--features server` 构建 + 默认 web check 通过；clippy `-D warnings` 零告警（5 板块 + app）
+- [ ] 【手动】`curl -s /ai|/web3|/wasm|/cli|/embedded` 验证各板块首屏
 
 ### B4 — 迁移 course 与 docs 页（须在 A2 之后）
 - [ ] `course.rs` 列表/详情/课时 + `docs.rs` 的 `list_doc_tree` / `get_doc_content` → `use_server_future`
