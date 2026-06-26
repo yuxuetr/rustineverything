@@ -52,11 +52,11 @@
 - [x] 从 `crates/modules/forum/Cargo.toml` 删除 `module-blog` / `module-course` 依赖及 `server` feature 中的 `module-blog/server` / `module-course/server`
 - [x] 保留 `module-moderation`（可选）；`module-forum` + `app` 全量构建通过，forum 21 测试通过
 
-### A2 — 上提 docs 的跨模块 UI 组合到 app 层
-- [ ] `DocPage` 改造为接受 `footer: Element`（或具名 children slot）插槽，组件本身不再 `use module_course` / `use module_forum`
-- [ ] `app/src/routes/mod.rs` 的 `DocPage` 包装组件把 `AnnotationLayer` + `DiscussionPanel` 作为插槽传入
-- [ ] 从 `crates/modules/docs/Cargo.toml` 删除 `module-course` / `module-forum` 依赖
-- [ ] 确认 docs 标注层 + 讨论面板渲染行为不变
+### A2 — 上提 docs 的跨模块 UI 组合到 app 层 ✅
+- [x] `DocPage` 改造为接受 `footer: Element` 插槽（`docs.rs:153`），组件本身不再 `use module_course` / `use module_forum`
+- [x] `app/src/routes/mod.rs` 的 `DocPage` 包装组件把 `AnnotationLayer` + `DiscussionPanel` 作为 `footer` 插槽传入（`routes/mod.rs:196`）
+- [x] 从 `crates/modules/docs/Cargo.toml` 删除 `module-blog`（同为死依赖）/ `module-course` / `module-forum` 依赖
+- [x] app（server）+ docs（server/client）构建通过，clippy `-D warnings` 零告警；标注层/讨论面板仍在 docs 文章页身位渲染
 
 ### A3 — 解耦 search → cases 数据源
 - [ ] 评估 `indexer.rs::collect_cases` 对 `module_cases::server::scan_cases` 的依赖

@@ -13,9 +13,6 @@ tokio = { workspace = true, features = ["full"], optional = true }
 sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
 app-core = { path = "../../core" }
-module-blog = { path = "../blog" }
-module-course = { path = "../course" }
-module-forum = { path = "../forum" }
 
 [dev-dependencies]
 tempfile = "3"
@@ -27,7 +24,4 @@ server = [
     "dep:serde_yaml",
     "widgets/server",
     "app-core/server",
-    "module-blog/server",
-    "module-course/server",
-    "module-forum/server",
 ]

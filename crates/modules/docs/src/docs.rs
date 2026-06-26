@@ -1,8 +1,6 @@
 use dioxus::prelude::*;
 
 use crate::server::{get_doc_content, list_doc_tree, DocTreeNode};
-use module_course::course::AnnotationLayer;
-use module_forum::forum::DiscussionPanel;
 use widgets::Markdown;
 
 /// 给定文档路径段，构造 SPA URL（`/docs/<path>`）。
@@ -146,14 +144,16 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
   }
 }
 
-/// 文档页面：左侧树形导航 + 右侧 Markdown 内容
+/// 文档页面：左侧树形导航 + 右侧 Markdown 内容。
+///
+/// `footer` 插槽：标注层（AnnotationLayer）与讨论面板（DiscussionPanel）是跨模块
+/// 组合（分属 course / forum），为避免 docs 模块编译期依赖兄弟模块，这两个组件
+/// 由组合根 `app` 装配后通过该插槽注入；docs 自身只渲染内容主体。
 #[component]
-pub fn DocPage(path: Vec<String>) -> Element {
+pub fn DocPage(path: Vec<String>, footer: Element) -> Element {
   let doc_path = path.join("/");
   let doc_path_for_tree = doc_path.clone();
   let doc_path_for_content = doc_path.clone();
-  // 标注资源路径：resource_kind="doc"，resource_path = 叶子路径
-  let anno_path = doc_path.clone();
   // Markdown blog_id 携带 "doc:<path>" 前缀，JS 运行时以此识别资源归属
   let anno_blog_id = format!("doc:{}", doc_path);
 
@@ -199,16 +199,8 @@ pub fn DocPage(path: Vec<String>) -> Element {
                               div { class: "text-slate-700 dark:text-slate-200",
                                   Markdown { content: resp.content.clone(), blog_id: anno_blog_id.clone() }
                               }
-                              // 标注层（resource_kind="doc"，path 为叶子路径）
-                              AnnotationLayer {
-                                  resource_kind: "doc".to_string(),
-                                  resource_path: anno_path.clone(),
-                              }
-                              // 资源讨论面板：关联论坛话题
-                              DiscussionPanel {
-                                  resource_kind: "doc".to_string(),
-                                  resource_path: anno_path.clone(),
-                              }
+                              // 跨模块组合（标注层 + 讨论面板）由 app 层注入。
+                              {footer.clone()}
                           },
                           Some(Err(e)) => rsx! {
                               div { class: "p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg",

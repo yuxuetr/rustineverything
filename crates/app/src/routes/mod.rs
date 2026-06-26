@@ -189,10 +189,29 @@ pub fn Docs() -> Element {
   rsx! { ModuleGate { id: "docs".to_string(), DocsView {} } }
 }
 
-/// 文档详情页：转交给 docs 模块的 DocPage 组件渲染
+/// 文档详情页：转交给 docs 模块的 DocPage 组件渲染。
+/// 标注层（course）+ 讨论面板（forum）是跨模块组合，在组合根 app 这里装配后
+/// 通过 DocPage 的 `footer` 插槽注入，docs 模块本身不依赖 course / forum。
 #[component]
 pub fn DocPage(path: Vec<String>) -> Element {
-  rsx! { ModuleGate { id: "docs".to_string(), DocPageView { path: path } } }
+  let doc_path = path.join("/");
+  rsx! {
+      ModuleGate { id: "docs".to_string(),
+          DocPageView {
+              path: path.clone(),
+              footer: rsx! {
+                  AnnotationLayer {
+                      resource_kind: "doc".to_string(),
+                      resource_path: doc_path.clone(),
+                  }
+                  DiscussionPanel {
+                      resource_kind: "doc".to_string(),
+                      resource_path: doc_path.clone(),
+                  }
+              },
+          }
+      }
+  }
 }
 
 #[component]
