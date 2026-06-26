@@ -12,14 +12,30 @@ fn doc_href(path: &str) -> String {
   }
 }
 
-/// /docs 文档首页：左侧一级分类列表 + 右侧欢迎页和分类卡片
+/// /docs 文档首页：左侧一级分类列表 + 右侧欢迎页和分类卡片。
+/// 重构 B4：树形导航改由 `DocsIndexInner` 用 use_server_future 服务端预取（随 SSR HTML 下发）。
 #[component]
 pub fn Docs() -> Element {
-  let tree = use_resource(move || async move { list_doc_tree().await.unwrap_or_default() });
-
   rsx! {
       section { class: "min-h-screen bg-white dark:bg-slate-950",
-          div { class: "max-w-7xl mx-auto flex",
+          SuspenseBoundary {
+              fallback: |_| rsx! {
+                  div { class: "flex items-center justify-center py-20",
+                      div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                  }
+              },
+              DocsIndexInner {}
+          }
+      }
+  }
+}
+
+#[component]
+fn DocsIndexInner() -> Element {
+  let tree = use_server_future(|| async move { list_doc_tree().await.unwrap_or_default() })?;
+
+  rsx! {
+      div { class: "max-w-7xl mx-auto flex",
               // 左侧导航：一级分类列表（仅桌面端显示）
               aside { class: "hidden lg:block shrink-0 w-64 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 pt-8 pb-12 px-4",
                   nav {
@@ -64,7 +80,6 @@ pub fn Docs() -> Element {
                   }
               }
           }
-      }
   }
 }
 
@@ -149,24 +164,40 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
 /// `footer` 插槽：标注层（AnnotationLayer）与讨论面板（DiscussionPanel）是跨模块
 /// 组合（分属 course / forum），为避免 docs 模块编译期依赖兄弟模块，这两个组件
 /// 由组合根 `app` 装配后通过该插槽注入；docs 自身只渲染内容主体。
+/// 重构 B4：文档详情页拆为 SuspenseBoundary 外壳 + `DocPageInner`，正文由
+/// use_server_future 服务端预取（随 SSR HTML 下发）；树形导航仍是客户端
+/// use_resource（导航辅助，非 SEO 关键）。
 #[component]
 pub fn DocPage(path: Vec<String>, footer: Element) -> Element {
+  rsx! {
+      section { class: "min-h-screen bg-white dark:bg-slate-950",
+          SuspenseBoundary {
+              fallback: |_| rsx! {
+                  div { class: "flex items-center justify-center py-20",
+                      div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                  }
+              },
+              DocPageInner { path: path.clone(), footer: footer.clone() }
+          }
+      }
+  }
+}
+
+#[component]
+fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
   let doc_path = path.join("/");
   let doc_path_for_tree = doc_path.clone();
-  let doc_path_for_content = doc_path.clone();
   // Markdown blog_id 携带 "doc:<path>" 前缀，JS 运行时以此识别资源归属
   let anno_blog_id = format!("doc:{}", doc_path);
 
   let tree = use_resource(move || async move { list_doc_tree().await.unwrap_or_default() });
 
-  let content = use_resource(move || {
-    let p = doc_path_for_content.clone();
-    async move { get_doc_content(p).await }
-  });
+  // 正文：use_server_future 服务端预取，随路由参数 doc_path 变化重取。
+  let content =
+    use_server_future(use_reactive!(|doc_path| async move { get_doc_content(doc_path).await }))?;
 
   rsx! {
-      section { class: "min-h-screen bg-white dark:bg-slate-950",
-          div { class: "max-w-7xl mx-auto flex",
+      div { class: "max-w-7xl mx-auto flex",
               // 左侧导航（仅桌面端显示）
               aside { class: "hidden lg:block shrink-0 w-64 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 pt-8 pb-12 px-4",
                   nav {
@@ -216,7 +247,6 @@ pub fn DocPage(path: Vec<String>, footer: Element) -> Element {
                   }
               }
           }
-      }
   }
 }
 

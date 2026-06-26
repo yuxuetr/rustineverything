@@ -33,12 +33,10 @@ fn LocalSectionTitle(title: String, subtitle: Option<String>) -> Element {
 // /courses  Index Page
 // ============================================================
 
-/// 课程列表页：卡片网格
+/// 课程列表页：卡片网格。
+/// 重构 B4：课程列表改由 `CoursesList` 用 use_server_future 服务端预取（随 SSR HTML 下发）。
 #[component]
 pub fn CoursesIndexPage() -> Element {
-  let courses_res = use_resource(|| async move { list_courses().await.unwrap_or_default() });
-  let courses = courses_res.read().as_ref().cloned();
-
   rsx! {
       section { class: "py-12 min-h-screen bg-[var(--color-bg)] transition-colors duration-300",
           LocalContainer {
@@ -47,27 +45,38 @@ pub fn CoursesIndexPage() -> Element {
                   subtitle: Some("系统化学习路径，从基础到全栈实战".to_string())
               }
 
-              match courses {
-                  None => rsx! {
+              SuspenseBoundary {
+                  fallback: |_| rsx! {
                       div { class: "flex items-center justify-center py-20",
                           div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
                       }
                   },
-                  Some(list) if list.is_empty() => rsx! {
-                      div { class: "text-center text-slate-500 py-20",
-                          "暂无课程内容。把课程目录放到 ", code { "assets/courses/" }, " 下即可。"
-                      }
-                  },
-                  Some(list) => rsx! {
-                      div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8",
-                          for course in list.iter() {
-                              CourseCard { course: course.clone() }
-                          }
-                      }
-                  },
+                  CoursesList {}
               }
           }
       }
+  }
+}
+
+#[component]
+fn CoursesList() -> Element {
+  let courses_res = use_server_future(|| async move { list_courses().await.unwrap_or_default() })?;
+  let list = courses_res().unwrap_or_default();
+
+  if list.is_empty() {
+    rsx! {
+        div { class: "text-center text-slate-500 py-20",
+            "暂无课程内容。把课程目录放到 ", code { "assets/courses/" }, " 下即可。"
+        }
+    }
+  } else {
+    rsx! {
+        div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-8",
+            for course in list.iter() {
+                CourseCard { course: course.clone() }
+            }
+        }
+    }
   }
 }
 
@@ -141,15 +150,34 @@ fn CourseCard(course: CourseSummary) -> Element {
 // /courses/:slug  Detail Page
 // ============================================================
 
+/// 重构 B4：课程详情页拆为 SuspenseBoundary 外壳 + `CourseDetailLoaded`；课程元数据
+/// （get_course）由 use_server_future 服务端预取（SEO），进度 / 上次学习位置是每用户
+/// DB 数据，保留客户端 use_resource。
 #[component]
 pub fn CourseDetailPage(slug: String) -> Element {
-  let slug_for_course = slug.clone();
-  let course_res = use_resource(move || {
-    let s = slug_for_course.clone();
-    async move { get_course(s).await.ok().flatten() }
-  });
-  let course = course_res.read().as_ref().cloned();
+  rsx! {
+      section { class: "py-12 min-h-screen bg-[var(--color-bg)] transition-colors duration-300",
+          LocalContainer {
+              SuspenseBoundary {
+                  fallback: |_| rsx! {
+                      div { class: "flex items-center justify-center py-20",
+                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                      }
+                  },
+                  CourseDetailLoaded { slug: slug.clone() }
+              }
+          }
+      }
+  }
+}
 
+#[component]
+fn CourseDetailLoaded(slug: String) -> Element {
+  // 课程元数据：use_server_future 服务端预取，随 slug 变化重取。
+  let course_res =
+    use_server_future(use_reactive!(|slug| async move { get_course(slug).await.ok().flatten() }))?;
+
+  // 进度 / 上次学习位置：每用户 DB 数据（非 SEO），保留客户端 use_resource。
   let slug_for_progress = slug.clone();
   let progress_res = use_resource(move || {
     let s = slug_for_progress.clone();
@@ -164,31 +192,22 @@ pub fn CourseDetailPage(slug: String) -> Element {
   });
   let last = last_res.read().as_ref().cloned().flatten();
 
-  rsx! {
-      section { class: "py-12 min-h-screen bg-[var(--color-bg)] transition-colors duration-300",
-          LocalContainer {
-              match course {
-                  None => rsx! {
-                      div { class: "flex items-center justify-center py-20",
-                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
-                      }
-                  },
-                  Some(None) => rsx! {
-                      div { class: "text-center py-20",
-                          h2 { class: "text-2xl font-bold text-slate-900 dark:text-white mb-4",
-                              "课程未找到"
-                          }
-                          p { class: "text-slate-500", "课程 \"{slug}\" 不存在或尚未发布。" }
-                          a { href: "/course",
-                              class: "inline-block mt-6 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors",
-                              "返回课程列表"
-                          }
-                      }
-                  },
-                  Some(Some(c)) => rsx! { CourseDetailBody { course: c, progress: progress.clone(), last: last.clone() } },
-              }
-          }
-      }
+  match course_res() {
+    Some(Some(c)) => {
+      rsx! { CourseDetailBody { course: c, progress: progress.clone(), last: last.clone() } }
+    }
+    _ => rsx! {
+        div { class: "text-center py-20",
+            h2 { class: "text-2xl font-bold text-slate-900 dark:text-white mb-4",
+                "课程未找到"
+            }
+            p { class: "text-slate-500", "课程 \"{slug}\" 不存在或尚未发布。" }
+            a { href: "/course",
+                class: "inline-block mt-6 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors",
+                "返回课程列表"
+            }
+        }
+    },
   }
 }
 
@@ -402,21 +421,10 @@ fn LessonRow(
 // 按 LessonKind 自适应布局：Doc / Video / Audio / Code
 // ============================================================
 
+/// 重构 B4：课节页拆为 SuspenseBoundary 外壳 + `LessonLoaded`；课节内容（get_lesson）
+/// 由 use_server_future 服务端预取（SEO）。返回链接在外壳始终展示。
 #[component]
 pub fn LessonPage(slug: String, chapter: String, lesson: String) -> Element {
-  let slug_r = slug.clone();
-  let chapter_r = chapter.clone();
-  let lesson_r = lesson.clone();
-  let lesson_res = use_resource(move || {
-    let s = slug_r.clone();
-    let c = chapter_r.clone();
-    let l = lesson_r.clone();
-    async move { get_lesson(s, c, l).await.ok().flatten() }
-  });
-  let state = lesson_res.read().as_ref().cloned();
-
-  let blog_id = format!("course:{}/{}/{}", slug, chapter, lesson);
-
   rsx! {
       section { class: "py-8 min-h-screen bg-[var(--color-bg)]",
           LocalContainer {
@@ -424,27 +432,44 @@ pub fn LessonPage(slug: String, chapter: String, lesson: String) -> Element {
                   class: "inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline mb-6",
                   "← 返回课程目录"
               }
-              match state {
-                  None => rsx! {
+              SuspenseBoundary {
+                  fallback: |_| rsx! {
                       div { class: "flex items-center justify-center py-20",
                           div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
                       }
                   },
-                  Some(None) => rsx! {
-                      div { class: "text-center py-20 text-slate-500", "课节未找到。" }
-                  },
-              Some(Some(l)) => rsx! {
-                  LessonContent {
-                      lesson: l,
-                      blog_id: blog_id.clone(),
-                      course_slug: slug.clone(),
-                      chapter_slug: chapter.clone(),
-                      lesson_slug: lesson.clone(),
+                  LessonLoaded {
+                      slug: slug.clone(),
+                      chapter: chapter.clone(),
+                      lesson: lesson.clone(),
                   }
-              },
               }
           }
       }
+  }
+}
+
+#[component]
+fn LessonLoaded(slug: String, chapter: String, lesson: String) -> Element {
+  let blog_id = format!("course:{}/{}/{}", slug, chapter, lesson);
+  // 课节内容：use_server_future 服务端预取，随（slug, chapter, lesson）变化重取。
+  let lesson_res = use_server_future(use_reactive!(|slug, chapter, lesson| async move {
+    get_lesson(slug, chapter, lesson).await.ok().flatten()
+  }))?;
+
+  match lesson_res() {
+    Some(Some(l)) => rsx! {
+        LessonContent {
+            lesson: l,
+            blog_id: blog_id.clone(),
+            course_slug: slug.clone(),
+            chapter_slug: chapter.clone(),
+            lesson_slug: lesson.clone(),
+        }
+    },
+    _ => rsx! {
+        div { class: "text-center py-20 text-slate-500", "课节未找到。" }
+    },
   }
 }
 

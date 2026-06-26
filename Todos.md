@@ -91,9 +91,11 @@
 - [x] app `--features server` 构建 + 默认 web check 通过；clippy `-D warnings` 零告警（5 板块 + app）
 - [ ] 【手动】`curl -s /ai|/web3|/wasm|/cli|/embedded` 验证各板块首屏
 
-### B4 — 迁移 course 与 docs 页（须在 A2 之后）
-- [ ] `course.rs` 列表/详情/课时 + `docs.rs` 的 `list_doc_tree` / `get_doc_content` → `use_server_future`
-- [ ] 课时页若涉及 DB 按 P1 起 DB 验证；烟测 `/course`、`/docs/<path>`
+### B4 — 迁移 course 与 docs 页（须在 A2 之后）✅
+- [x] `course.rs`：`CoursesIndexPage`→`CoursesList`、`CourseDetailPage`→`CourseDetailLoaded`（get_course）、`LessonPage`→`LessonLoaded`（get_lesson）均走 `use_server_future`；进度/上次学习/标注层等每用户 DB交互保留 use_resource
+- [x] `docs.rs`：`Docs`→`DocsIndexInner`（list_doc_tree）、`DocPage`→`DocPageInner`（get_doc_content 走 server_future；树形导航保留 use_resource）
+- [x] 本任务不需 DB（内容均读磁盘）；app `--features server` + 默认 web check 通过，clippy `-D warnings` 零告警
+- [ ] 【手动】`curl -s /course | /docs/<path>` 验证首屏
 
 ### B5 — 迁移 cases 页
 - [ ] `cases.rs` 的 `*IndexPage` / `*DetailPage` → `use_server_future`
