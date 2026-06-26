@@ -409,50 +409,20 @@ pub fn Blog(id: String) -> Element {
 
 #[component]
 fn BlogInner(id: String) -> Element {
-  // 修复：在闭包外先克隆一次 id 用于 resource，保留原 id 用于后续组件
-  let id_for_res = id.clone();
-  let blog_content = use_resource(move || {
-    let inner_id = id_for_res.clone();
-    async move { get_blog_content(inner_id).await }
-  });
-  // 标注资源路径：resource_kind="blog"，resource_path = 博客 id
-  let anno_path = id.clone();
-
-  // Phase 2.3: 从 server 读 BASE_URL 以拼接 canonical URL
-  let base_url_res = use_resource(|| async move { get_seo_base_url().await.unwrap_or_default() });
-  let base_url: String = base_url_res.read().as_ref().cloned().unwrap_or_default();
-  let blog_path = format!("/blog/{}", id);
-
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950",
           Container {
               div { class: "max-w-4xl mx-auto",
                   div { class: "text-slate-700 dark:text-slate-200 mb-12",
-                      match blog_content() {
-                          Some(Ok(content)) => rsx! {
-                              // SEO 注入：inject_seo 从 frontmatter 取 metadata，只走一次。
-                              {
-                                  let (meta, _body) = parse_mdx(&content);
-                                  rsx! { {inject_seo(&meta, &blog_path, &base_url)} }
-                              }
-                              // `blog_id` 在 widgets::Markdown 内仅用于拼图片相对路径 `/posts/<id>/...`，
-                              // **必须传纯 slug**（如 "welcome"），不能传标注层的复合 key
-                              // `blog:welcome` —— 否则浏览器请求 `/posts/blog:welcome/x.webp` 直接 404。
-                              Markdown { content: content.clone(), blog_id: id.clone() }
-                              // 标注层（resource_kind="blog"，path = 博客 id）
-                              AnnotationLayer {
-                                  resource_kind: "blog".to_string(),
-                                  resource_path: anno_path.clone(),
-                              }
-                          },
-                          Some(Err(e)) => rsx! {
-                              div { class: "p-4 bg-red-50 text-red-700 rounded-lg", "Error loading post: {e}" }
-                          },
-                          None => rsx! {
+                      // 重构 B1：正文改由 BlogArticle 用 use_server_future 服务端预取（随 SSR HTML 下发）。
+                      // SuspenseBoundary 捕获 BlogArticle 内 `?` 的挂起，未就绪时渲染 spinner。
+                      SuspenseBoundary {
+                          fallback: |_| rsx! {
                               div { class: "flex items-center justify-center py-20",
                                   div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
                               }
                           },
+                          BlogArticle { id: id.clone() }
                       }
                   }
 
@@ -468,6 +438,49 @@ fn BlogInner(id: String) -> Element {
               }
           }
       }
+  }
+}
+
+/// 博客正文（重构 B1 参照实现）：用 `use_server_future` 在服务端预取并随 SSR HTML
+/// 下发，客户端 hydration 直接拿到内容，避免首屏 spinner + 二次抓取。
+///
+/// 必须置于 SuspenseBoundary 内：`?` 会在数据未就绪时挂起，由边界渲染 fallback。
+#[component]
+fn BlogArticle(id: String) -> Element {
+  let anno_path = id.clone();
+  let blog_path = format!("/blog/{}", id);
+  // 正文随路由参数 id 变化重取：use_reactive 让闭包订阅 id（避免 SPA 导航后内容 stale）。
+  let blog_content =
+    use_server_future(use_reactive!(|id| async move { get_blog_content(id).await }))?;
+  // BASE_URL 用于 canonical URL，常量级，无需响应式依赖。
+  let base_url_res =
+    use_server_future(|| async move { get_seo_base_url().await.unwrap_or_default() })?;
+  let base_url: String = base_url_res().unwrap_or_default();
+
+  match blog_content() {
+    Some(Ok(content)) => rsx! {
+        // SEO 注入：inject_seo 从 frontmatter 取 metadata。
+        {
+            let (meta, _body) = parse_mdx(&content);
+            rsx! { {inject_seo(&meta, &blog_path, &base_url)} }
+        }
+        // `blog_id` 在 widgets::Markdown 内仅用于拼图片相对路径 `/posts/<id>/...`，
+        // **必须传纯 slug**（如 "welcome"）。
+        Markdown { content: content.clone(), blog_id: id.clone() }
+        // 标注层（resource_kind="blog"，path = 博客 id）
+        AnnotationLayer {
+            resource_kind: "blog".to_string(),
+            resource_path: anno_path.clone(),
+        }
+    },
+    Some(Err(e)) => rsx! {
+        div { class: "p-4 bg-red-50 text-red-700 rounded-lg", "Error loading post: {e}" }
+    },
+    None => rsx! {
+        div { class: "flex items-center justify-center py-20",
+            div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+        }
+    },
   }
 }
 

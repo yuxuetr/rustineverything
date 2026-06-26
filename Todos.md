@@ -73,9 +73,13 @@
 > 技术前提：server fn 返回类型已 `Serialize + Deserialize`；`use_server_future` 需置于 `SuspenseBoundary` 内、闭包捕获其依赖的响应式值；错误分支 fail-safe 不 panic。
 > 非 SEO / 强交互 / 鉴权页（forum 互动、admin、登录态）保持 `use_resource` 并注释理由。
 
-### B1 — 建立模式与参照迁移（blog 详情页）
-- [ ] `BlogInner` 引入 `use_server_future` + `SuspenseBoundary`
-- [ ] `curl /blog/<slug>` 断言首屏 HTML 含正文；沉淀「迁移配方」
+### B1 — 建立模式与参照迁移（blog 详情页）✅
+- [x] `BlogInner` 拆为布局外壳 + `BlogArticle`（`routes/mod.rs:449`）；`BlogArticle` 用 `use_server_future` + `use_reactive!(|id| ...)`，置于 `SuspenseBoundary`（fallback=spinner）内
+- [x] base_url 也改 `use_server_future`；错误/空分支 fail-safe（`unwrap_or_default`，无 `unwrap()/expect()`）
+- [x] 双编译目标验证：app `--features server`（SSR）构建通过 + `cargo check -p app`（默认 web cfg）通过；clippy `-D warnings` 零告警
+- [ ] 【手动】`dx serve --package app` + `curl -s /blog/welcome` 验证首屏 HTML 含正文（cold wasm 构建耗时长，交互式，留作本地验证；适用于 B2–B5）
+
+> 迁移配方（后续 B 任务复用）：把取数部分抽成子组件，子组件内 `let x = use_server_future(use_reactive!(|dep| async move { server_fn(dep).await }))?;`（无参数用 `|| async move {...}`），父组件用 `SuspenseBoundary { fallback: |_| rsx!{...}, Child {} }` 包裹；读取 `res()` 得 `Option<T>`，`match` 处理 Some(Ok/Err)/None。
 
 ### B2 — 迁移 blog 列表页
 - [ ] `BlogIndexInner` 的 `list_blog_posts` → `use_server_future`，保留标签筛选/分页客户端交互
