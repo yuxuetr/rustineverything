@@ -81,9 +81,10 @@
 
 > 迁移配方（后续 B 任务复用）：把取数部分抽成子组件，子组件内 `let x = use_server_future(use_reactive!(|dep| async move { server_fn(dep).await }))?;`（无参数用 `|| async move {...}`），父组件用 `SuspenseBoundary { fallback: |_| rsx!{...}, Child {} }` 包裹；读取 `res()` 得 `Option<T>`，`match` 处理 Some(Ok/Err)/None。
 
-### B2 — 迁移 blog 列表页
-- [ ] `BlogIndexInner` 的 `list_blog_posts` → `use_server_future`，保留标签筛选/分页客户端交互
-- [ ] 烟测 `/blog`
+### B2 — 迁移 blog 列表页 ✅
+- [x] `BlogIndexInner` 拆为标题外壳 + `SuspenseBoundary{ BlogList }`；`BlogList`（`routes/mod.rs:252`）用 `use_server_future` 取 `list_blog_posts`，标签筛选/分页保留为客户端 signal
+- [x] 双编译目标（server + 默认 web）通过，clippy `-D warnings` 零告警
+- [ ] 【手动】`curl -s /blog` 验证首屏含文章列表
 
 ### B3 — 迁移 5 个内容板块页
 - [ ] `ai/web3/wasm/cli/embedded` 的 `*IndexPage`（`list_*_articles`）与 `*ArticlePage`（`get_*_article`）→ `use_server_future`

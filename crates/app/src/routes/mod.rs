@@ -223,8 +223,37 @@ pub fn BlogIndex() -> Element {
 fn BlogIndexInner() -> Element {
   let lang = use_i18n();
 
-  let posts_res = use_resource(move || async move { list_blog_posts().await.unwrap_or_default() });
-  let posts = posts_res.read().as_ref().cloned().unwrap_or_default();
+  rsx! {
+      section { class: "py-12 bg-white dark:bg-slate-950",
+          div { class: "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8",
+              // 页面标题（静态，始终展示）
+              div { class: "text-center mb-10",
+                  h2 { class: "text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl", "{t(lang(), \"blog.title\")}" }
+                  p { class: "mt-4 text-lg text-slate-500 dark:text-slate-400", "{t(lang(), \"blog.subtitle\")}" }
+              }
+
+              // 重构 B2：文章列表改由 BlogList 用 use_server_future 服务端预取（随 SSR HTML 下发）。
+              SuspenseBoundary {
+                  fallback: |_| rsx! {
+                      div { class: "flex items-center justify-center py-20",
+                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                      }
+                  },
+                  BlogList {}
+              }
+          }
+      }
+  }
+}
+
+/// 博客文章列表（重构 B2）：`list_blog_posts` 经 `use_server_future` 服务端预取，
+/// 标签筛选 / 分页仍是客户端 signal 交互。置于 SuspenseBoundary 内。
+#[component]
+fn BlogList() -> Element {
+  let lang = use_i18n();
+
+  let posts_res = use_server_future(|| async move { list_blog_posts().await.unwrap_or_default() })?;
+  let posts = posts_res().unwrap_or_default();
 
   let mut active_tag = use_signal::<Option<String>>(|| None);
   let mut current_page = use_signal(|| 0usize);
@@ -254,23 +283,8 @@ fn BlogIndexInner() -> Element {
     filtered.iter().skip(safe_page * PAGE_SIZE).take(PAGE_SIZE).cloned().collect();
 
   rsx! {
-      section { class: "py-12 bg-white dark:bg-slate-950",
-          div { class: "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8",
-              // 页面标题
-              div { class: "text-center mb-10",
-                  h2 { class: "text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl", "{t(lang(), \"blog.title\")}" }
-                  p { class: "mt-4 text-lg text-slate-500 dark:text-slate-400", "{t(lang(), \"blog.subtitle\")}" }
-              }
-
-              match posts_res.read().as_ref() {
-                  None => rsx! {
-                      div { class: "flex items-center justify-center py-20",
-                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
-                      }
-                  },
-                  Some(_) => rsx! {
-                      // 4列网格：标签(1列=25%) | 文章列表(3列=75%)
-                      div { class: "grid grid-cols-1 lg:grid-cols-4 gap-6 lg:items-start",
+      // 4列网格：标签(1列=25%) | 文章列表(3列=75%)
+      div { class: "grid grid-cols-1 lg:grid-cols-4 gap-6 lg:items-start",
 
                           // ── 左列：标签筛选 (sticky, 辅助内容) ──
                           div { class: "lg:sticky lg:top-20",
@@ -395,10 +409,6 @@ fn BlogIndexInner() -> Element {
                               }
                           }
                       }
-                  },
-              }
-          }
-      }
   }
 }
 
