@@ -63,8 +63,8 @@
 - [x] `indexer.rs` 的 `collect_cases` → `collect_registered_external`，改读 core 注册表；从 `module-search/Cargo.toml` 删除 `module-cases` 依赖及 `module-cases/server`
 - [x] `app/src/main.rs` 启动期注册 cases 来源（server-only）；core 155 + search 64 测试通过，clippy `-D warnings` 零告警
 
-### A4 — 固化模块依赖策略文档
-- [ ] 在 `docs/MODULE_SPEC.md` 增补「模块依赖规则」+ 当前合规边与例外
+### A4 — 固化模块依赖策略文档 ✅
+- [x] `docs/MODULE_SPEC.md` 新增 §11「模块依赖规则」：允许的依赖方向 / 实现手法（插槽 + IoC）/ 当前合规边与例外（moderation）/ 新增交互决策树
 
 ---
 
