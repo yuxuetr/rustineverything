@@ -1,5 +1,5 @@
-use dioxus::prelude::*;
 use app_core::session::{is_known_role, ROLE_ADMIN};
+use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use std::path::PathBuf;
@@ -348,9 +348,9 @@ pub async fn admin_set_user_role(
 ) -> Result<AdminUserRow, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use chrono::Utc;
     use app_core::entities::user as user_entity;
     use app_core::session::require_admin;
+    use chrono::Utc;
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
     validate_role(&role).map_err(ServerFnError::new)?;
@@ -761,11 +761,9 @@ pub async fn admin_upload_plugin(
 ) -> Result<PluginUploadResult, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use base64::Engine as _;
     use app_core::session::require_admin;
-    use app_core::{
-      capabilities, shared_plugin_manager, PluginManifest, SDK_ABI_VERSION,
-    };
+    use app_core::{capabilities, shared_plugin_manager, PluginManifest, SDK_ABI_VERSION};
+    use base64::Engine as _;
 
     let _ = require_admin().await?;
 
@@ -931,7 +929,7 @@ pub async fn admin_list_moderation_queue(
     ) = if author_ids.is_empty() {
       Default::default()
     } else {
-      use sea_orm::{QuerySelect, sea_query::Expr};
+      use sea_orm::{sea_query::Expr, QuerySelect};
 
       // 两个 GROUP BY query；count 改在 DB 端做，Rust 端只构造 HashMap。
       let total_rows: Vec<(i32, i64)> = moderation_queue::Entity::find()
@@ -1051,9 +1049,7 @@ async fn reject_one(
   admin_id: i32,
   row: app_core::entities::moderation_queue::Model,
 ) -> Result<(), ServerFnError> {
-  use app_core::entities::{
-    annotation, comment, moderation_queue, topic, topic_reply,
-  };
+  use app_core::entities::{annotation, comment, moderation_queue, topic, topic_reply};
   use sea_orm::{ActiveValue::Set, EntityTrait};
 
   let now = chrono::Utc::now().fixed_offset();
@@ -1318,12 +1314,12 @@ fn write_moderation_settings_to_site_json(
   path: &std::path::Path,
   settings: &app_core::settings::ModerationSettings,
 ) -> Result<(), String> {
-  let raw = std::fs::read_to_string(path)
-    .map_err(|e| format!("读取 {} 失败：{}", path.display(), e))?;
+  let raw =
+    std::fs::read_to_string(path).map_err(|e| format!("读取 {} 失败：{}", path.display(), e))?;
   let mut value: serde_json::Value =
     serde_json::from_str(&raw).map_err(|e| format!("site.json 不是合法 JSON：{}", e))?;
-  let moderation = serde_json::to_value(settings)
-    .map_err(|e| format!("序列化 ModerationSettings 失败：{}", e))?;
+  let moderation =
+    serde_json::to_value(settings).map_err(|e| format!("序列化 ModerationSettings 失败：{}", e))?;
   value["moderation"] = moderation;
   let pretty =
     serde_json::to_string_pretty(&value).map_err(|e| format!("序列化 site.json 失败：{}", e))?;
@@ -1495,8 +1491,8 @@ mod tests {
 
   #[test]
   fn validate_moderation_rejects_flag_greater_than_block() {
-    let err = validate_moderation_settings(&thresholds(Some(0.9), Some(0.5)))
-      .expect_err("flag>block 应拒");
+    let err =
+      validate_moderation_settings(&thresholds(Some(0.9), Some(0.5))).expect_err("flag>block 应拒");
     assert!(err.contains("flag_above"));
     assert!(err.contains("block_above"));
   }
@@ -1521,10 +1517,8 @@ mod tests {
 
   #[test]
   fn validate_moderation_rejects_blocklist_with_whitespace() {
-    let s = ModerationSettings {
-      url_blocklist: vec!["scam .com".to_string()],
-      ..Default::default()
-    };
+    let s =
+      ModerationSettings { url_blocklist: vec!["scam .com".to_string()], ..Default::default() };
     assert!(validate_moderation_settings(&s).is_err());
   }
 

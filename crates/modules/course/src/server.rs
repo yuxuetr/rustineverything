@@ -911,8 +911,7 @@ pub async fn get_lesson(
       if let Some(doc) = lesson.doc.as_mut() {
         // Phase 9.3：pre-stage content transformers chain（fail-open，空链路零开销直通）。
         doc.markdown =
-          app_core::engines::content_transformer::apply_default_pre(&doc.markdown, "course")
-            .await;
+          app_core::engines::content_transformer::apply_default_pre(&doc.markdown, "course").await;
       }
     }
     Ok(lesson_opt)
@@ -938,8 +937,8 @@ pub struct LessonProgress {
 /// server-only: 从请求 cookie 提取当前用户
 #[cfg(feature = "server")]
 fn current_session_user() -> Option<app_core::session::SessionUser> {
-  use dioxus::fullstack::FullstackContext;
   use app_core::session::parse_session_from_cookie_header;
+  use dioxus::fullstack::FullstackContext;
 
   let ctx = FullstackContext::current()?;
   let parts = ctx.parts_mut();
@@ -1007,8 +1006,8 @@ pub async fn mark_lesson_complete(
 ) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use chrono::Utc;
     use app_core::entities::course_progress;
+    use chrono::Utc;
     use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
     let user = require_writer()?;
     let db = open_db().await?;
@@ -1296,9 +1295,9 @@ pub async fn create_annotation(payload: AnnotationCreate) -> Result<Annotation, 
     if !read_annotations_switch(&payload.resource_kind) {
       return Err(ServerFnError::new("当前资源未启用标注".to_string()));
     }
-    use chrono::Utc;
     use app_core::engines::moderation::ModerationLabel;
     use app_core::entities::annotation;
+    use chrono::Utc;
     use module_moderation::{enqueue_if_flagged, evaluate_submission};
     use sdk::ModerationSubmission;
     use sea_orm::{ActiveValue::Set, EntityTrait};
@@ -1415,8 +1414,8 @@ pub async fn update_annotation(
 ) -> Result<Annotation, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use chrono::Utc;
     use app_core::entities::annotation;
+    use chrono::Utc;
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
     let user = require_writer()?;
     let db = open_db().await?;

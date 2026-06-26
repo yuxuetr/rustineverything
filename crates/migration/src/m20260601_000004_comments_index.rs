@@ -35,9 +35,7 @@ impl MigrationTrait for Migration {
 
   async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
     manager
-      .drop_index(
-        Index::drop().name("idx_comments_blog_created").table(Comments::Table).to_owned(),
-      )
+      .drop_index(Index::drop().name("idx_comments_blog_created").table(Comments::Table).to_owned())
       .await?;
     Ok(())
   }

@@ -1,9 +1,9 @@
 use crate::server::{
   get_case, list_case_categories, list_case_tags, list_cases, Case, CaseSummary, TagSummary,
 };
+use app_core::i18n::Language;
 use dioxus::prelude::try_use_context;
 use dioxus::prelude::*;
-use app_core::i18n::Language;
 use module_forum::forum::DiscussionPanel;
 use widgets::Markdown;
 

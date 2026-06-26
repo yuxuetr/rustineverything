@@ -89,9 +89,9 @@ pub(crate) fn safe_upload_filename(original: &str, mime: &str) -> Result<String,
 pub async fn upload_image(name: String, data_base64: String) -> Result<String, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use base64::Engine as _;
     use app_core::engines::moderation::ModerationLabel;
     use app_core::session::{current_session_user, require_session};
+    use base64::Engine as _;
     use module_moderation::{enqueue_if_flagged, evaluate_submission};
     use sdk::{ImageRef, ModerationSubmission};
 

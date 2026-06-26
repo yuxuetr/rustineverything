@@ -162,12 +162,7 @@ fn main() {
     // 后续运行直接读 cell（无重复 leak、无可观察的语义差异）。
     static ASSETS_ROOT: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
     let assets_root: &'static str = ASSETS_ROOT.get_or_init(|| {
-      Box::leak(
-        app_core::utils::get_asset_root()
-          .to_string_lossy()
-          .into_owned()
-          .into_boxed_str(),
-      )
+      Box::leak(app_core::utils::get_asset_root().to_string_lossy().into_owned().into_boxed_str())
     });
 
     // Phase 8.8：插件 hot reload 会留下 `assets/plugins/<name>.wasm.bak`
@@ -186,7 +181,9 @@ fn main() {
         if now.duration_since(modified).map(|age| age > week).unwrap_or(false) {
           match std::fs::remove_file(&path) {
             Ok(()) => tracing::info!(path = %path.display(), "startup: pruned stale .bak (>7d)"),
-            Err(e) => tracing::warn!(error = %e, path = %path.display(), "startup: failed to prune .bak"),
+            Err(e) => {
+              tracing::warn!(error = %e, path = %path.display(), "startup: failed to prune .bak")
+            }
           }
         }
       }
@@ -238,9 +235,7 @@ fn main() {
           move |Path(provider): Path<String>,
                 Query(params): Query<std::collections::HashMap<String, String>>,
                 headers: HeaderMap| async move {
-            use app_core::auth::{
-              build_pkce_clear_cookie, extract_pkce_cookie, PkceCookiePayload,
-            };
+            use app_core::auth::{build_pkce_clear_cookie, extract_pkce_cookie, PkceCookiePayload};
             let code = params.get("code").cloned().unwrap_or_default();
             let received_state = params.get("state").cloned().unwrap_or_default();
 
@@ -275,8 +270,7 @@ fn main() {
               }
             };
 
-            match crate::server::auth_callback_internal(code, provider, received_state, pkce)
-              .await
+            match crate::server::auth_callback_internal(code, provider, received_state, pkce).await
             {
               Ok((_message, jwt_token)) => {
                 let secure_flag = if cookie_is_secure { "; Secure" } else { "" };
@@ -346,8 +340,7 @@ fn main() {
 
             // 仅在 blog 启用时枚举博客条目（避免无谓 IO）
             let mut entries: Vec<ContentEntry> = if is_on("blog") {
-              let posts =
-                module_blog::server::list_blog_posts().await.unwrap_or_default();
+              let posts = module_blog::server::list_blog_posts().await.unwrap_or_default();
               posts
                 .into_iter()
                 .map(|p| ContentEntry {
@@ -384,16 +377,8 @@ fn main() {
               "/embedded"
             );
             collect_board!("ai", module_ai::server::list_ai_articles, "/ai");
-            collect_board!(
-              "web3",
-              module_web3::server::list_web3_articles,
-              "/web3"
-            );
-            collect_board!(
-              "wasm",
-              module_wasm::server::list_wasm_articles,
-              "/wasm"
-            );
+            collect_board!("web3", module_web3::server::list_web3_articles, "/web3");
+            collect_board!("wasm", module_wasm::server::list_wasm_articles, "/wasm");
             collect_board!("cli", module_cli::server::list_cli_articles, "/cli");
 
             // 静态路径：首页恒收录；其它模块从 ModuleSpec.static_path 自动获取。
@@ -467,16 +452,8 @@ fn main() {
               "/embedded"
             );
             collect_board!("ai", module_ai::server::list_ai_articles, "/ai");
-            collect_board!(
-              "web3",
-              module_web3::server::list_web3_articles,
-              "/web3"
-            );
-            collect_board!(
-              "wasm",
-              module_wasm::server::list_wasm_articles,
-              "/wasm"
-            );
+            collect_board!("web3", module_web3::server::list_web3_articles, "/web3");
+            collect_board!("wasm", module_wasm::server::list_wasm_articles, "/wasm");
             collect_board!("cli", module_cli::server::list_cli_articles, "/cli");
 
             // 全站按日期降序，取最近 50 篇。
@@ -484,10 +461,7 @@ fn main() {
             entries.truncate(50);
             // 取站点元信息：如取不到 site.json 则走默认。
             let cfg = app_core::settings::SiteConfig::from_file(
-              app_core::utils::get_asset_root()
-                .join("site.json")
-                .to_str()
-                .unwrap_or_default(),
+              app_core::utils::get_asset_root().join("site.json").to_str().unwrap_or_default(),
             )
             .unwrap_or_default();
             let xml = build_atom_feed(&entries, &cfg.site_name, &cfg.site_description, &base);

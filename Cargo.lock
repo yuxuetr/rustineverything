@@ -4369,8 +4369,6 @@ dependencies = [
  "app-core",
  "chrono",
  "dioxus",
- "module-blog",
- "module-course",
  "module-moderation",
  "sdk",
  "sea-orm",

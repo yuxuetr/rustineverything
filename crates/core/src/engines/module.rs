@@ -434,10 +434,7 @@ mod tests {
     super::invalidate_default_module_engine();
     let a = super::default_module_engine();
     let b = super::default_module_engine();
-    assert!(
-      std::sync::Arc::ptr_eq(&a, &b),
-      "cache hit 应当返回同一 Arc instance"
-    );
+    assert!(std::sync::Arc::ptr_eq(&a, &b), "cache hit 应当返回同一 Arc instance");
   }
 
   /// invalidate 后必须重建。

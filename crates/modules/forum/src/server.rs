@@ -245,9 +245,8 @@ fn resolve_ref_title(kind: &str, path: &str) -> String {
   let root = get_asset_root();
   let fallback = || path.to_string();
   // 包一层 sub_root：blog → posts/, doc → docs/, ...
-  let resolve_in = |sub_dir: &str| -> Option<PathBuf> {
-    safe_join_under(&root.join(sub_dir), path)
-  };
+  let resolve_in =
+    |sub_dir: &str| -> Option<PathBuf> { safe_join_under(&root.join(sub_dir), path) };
   match kind {
     "blog" => resolve_in("posts").and_then(|p| read_index_title(&p)).unwrap_or_else(fallback),
     "doc" => resolve_in("docs").and_then(|p| read_index_title(&p)).unwrap_or_else(fallback),
@@ -314,8 +313,8 @@ fn build_topic_ref(kind: Option<String>, path: Option<String>) -> Option<TopicRe
 
 #[cfg(feature = "server")]
 fn current_session_user() -> Option<app_core::session::SessionUser> {
-  use dioxus::fullstack::FullstackContext;
   use app_core::session::parse_session_from_cookie_header;
+  use dioxus::fullstack::FullstackContext;
 
   let ctx = FullstackContext::current()?;
   let parts = ctx.parts_mut();
@@ -556,10 +555,8 @@ pub async fn get_topic(id: i32) -> Result<Option<TopicDetail>, ServerFnError> {
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
     };
-    let reply_user_map: std::collections::HashMap<
-      i32,
-      app_core::entities::user::Model,
-    > = reply_users.into_iter().map(|u| (u.id, u)).collect();
+    let reply_user_map: std::collections::HashMap<i32, app_core::entities::user::Model> =
+      reply_users.into_iter().map(|u| (u.id, u)).collect();
 
     let replies: Vec<Reply> = reply_rows
       .into_iter()
@@ -603,8 +600,8 @@ pub async fn get_topic(id: i32) -> Result<Option<TopicDetail>, ServerFnError> {
 pub async fn create_topic(input: NewTopicInput) -> Result<TopicSummary, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use chrono::Utc;
     use app_core::entities::topic;
+    use chrono::Utc;
     use sea_orm::{ActiveValue::Set, EntityTrait};
 
     validate_new_topic(&input).map_err(ServerFnError::new)?;
@@ -659,8 +656,8 @@ pub async fn create_topic(input: NewTopicInput) -> Result<TopicSummary, ServerFn
 pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use chrono::Utc;
     use app_core::entities::{topic, topic_reply};
+    use chrono::Utc;
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 
     validate_new_reply(&content).map_err(ServerFnError::new)?;

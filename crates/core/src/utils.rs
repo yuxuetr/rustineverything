@@ -55,11 +55,7 @@ impl<T: Send + Sync> DirListingCache<T> {
   ///
   /// `fingerprint` 通常通过 [`fingerprint_for_dir`] 之类的工具生成；
   /// 调用方只要保证「同 fingerprint == 同 builder 输出」，缓存就一致。
-  pub fn get_or_rebuild<F>(
-    &self,
-    fingerprint: Vec<(PathBuf, SystemTime)>,
-    builder: F,
-  ) -> Arc<T>
+  pub fn get_or_rebuild<F>(&self, fingerprint: Vec<(PathBuf, SystemTime)>, builder: F) -> Arc<T>
   where
     F: FnOnce() -> T,
   {
@@ -141,8 +137,8 @@ mod tests {
     let v1 = cache.get_or_rebuild(fp1.clone(), || 7);
     assert_eq!(*v1, 7);
     // 同 fingerprint：builder 不应再调；返回旧 Arc
-    let v2 = cache
-      .get_or_rebuild(fp1.clone(), || panic!("builder should not be invoked on cache hit"));
+    let v2 =
+      cache.get_or_rebuild(fp1.clone(), || panic!("builder should not be invoked on cache hit"));
     assert_eq!(*v2, 7);
     assert!(Arc::ptr_eq(&v1, &v2));
 
@@ -178,11 +174,13 @@ mod tests {
     std::fs::write(root.join("a/x/extra.txt"), "ignore me").unwrap();
     std::fs::write(root.join("a/x/index.mdx"), "world").unwrap();
 
-    let fp =
-      fingerprint_for_dir(root, |p| p.file_name().is_some_and(|n| n == "index.md" || n == "index.mdx"));
+    let fp = fingerprint_for_dir(root, |p| {
+      p.file_name().is_some_and(|n| n == "index.md" || n == "index.mdx")
+    });
     // 只收集 2 个 index 文件，按路径排序
     assert_eq!(fp.len(), 2);
-    let names: Vec<_> = fp.iter().map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+    let names: Vec<_> =
+      fp.iter().map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
     assert!(names.contains(&"index.md".to_string()));
     assert!(names.contains(&"index.mdx".to_string()));
   }

@@ -47,10 +47,10 @@
 
 ## 工作流 A：业务模块解耦
 
-### A1 — 移除 forum 的死依赖（blog / course）
-- [ ] 确认 `forum` 全树无 `module_blog::` / `module_course::` 使用
-- [ ] 从 `crates/modules/forum/Cargo.toml` 删除 `module-blog` / `module-course` 依赖及 `server` feature 中的 `module-blog/server` / `module-course/server`
-- [ ] 保留 `module-moderation`（可选）；全量构建 + 测试不回归
+### A1 — 移除 forum 的死依赖（blog / course）✅
+- [x] 确认 `forum` 全树无 `module_blog::` / `module_course::` 使用（grep 0 命中）
+- [x] 从 `crates/modules/forum/Cargo.toml` 删除 `module-blog` / `module-course` 依赖及 `server` feature 中的 `module-blog/server` / `module-course/server`
+- [x] 保留 `module-moderation`（可选）；`module-forum` + `app` 全量构建通过，forum 21 测试通过
 
 ### A2 — 上提 docs 的跨模块 UI 组合到 app 层
 - [ ] `DocPage` 改造为接受 `footer: Element`（或具名 children slot）插槽，组件本身不再 `use module_course` / `use module_forum`

@@ -14,7 +14,6 @@
 
 use serde::{Deserialize, Serialize};
 
-
 /// 与 Tantivy 索引 schema 一一对应的纯数据。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchDocument {

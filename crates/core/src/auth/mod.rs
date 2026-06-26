@@ -59,7 +59,8 @@ impl PkceCookiePayload {
 
   /// JSON → AES-256-GCM 加密 → base64url(no-pad)，作为 cookie value。
   pub fn encode(&self) -> Result<String, String> {
-    let json = serde_json::to_string(self).map_err(|e| format!("PKCE payload 序列化失败: {}", e))?;
+    let json =
+      serde_json::to_string(self).map_err(|e| format!("PKCE payload 序列化失败: {}", e))?;
     crypto::encrypt_token(&json)
   }
 
@@ -660,13 +661,7 @@ mod tests {
     // 负向：identity 插入必失败（uid 超长），事务必须回滚
     let over_long_uid = "u".repeat(300);
     let failed = service
-      .sync_user_to_db(
-        &db,
-        "rollback_test_provider",
-        over_long_uid,
-        nickname.clone(),
-        None,
-      )
+      .sync_user_to_db(&db, "rollback_test_provider", over_long_uid, nickname.clone(), None)
       .await;
     assert!(failed.is_err(), "超长 provider_uid 的 identity 插入应当失败");
 

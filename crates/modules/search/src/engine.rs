@@ -17,7 +17,9 @@ use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Field, Schema, TextFieldIndexing, TextOptions, FAST, STORED, STRING};
 use tantivy::tokenizer::TextAnalyzer;
-use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, TantivyError, Term};
+use tantivy::{
+  doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, TantivyError, Term,
+};
 
 use crate::indexer::{
   collect_dyn_documents, collect_file_documents, diff_for_reindex, filter_versioned_by_enabled,
@@ -280,7 +282,8 @@ fn wipe_index_dir(dir: &Path) -> Result<(), String> {
     .map_err(|e| format!("search: read_dir {} failed: {}", dir.display(), e))?;
   for entry in entries.flatten() {
     let path = entry.path();
-    let result = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+    let result =
+      if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
     result.map_err(|e| format!("search: wipe {} failed: {}", path.display(), e))?;
   }
   Ok(())
@@ -343,11 +346,10 @@ fn make_snippet(body: &str, query: &str, max_chars: usize) -> String {
   };
   let head = &trimmed_body[..head_end];
 
-  let byte_pos = find_lower(head, &lower_token)
-    .or_else(|| {
-      // 头部没命中 → 第二轮全文 fallback（极少触发；保留正确性）
-      find_lower(trimmed_body, &lower_token)
-    });
+  let byte_pos = find_lower(head, &lower_token).or_else(|| {
+    // 头部没命中 → 第二轮全文 fallback（极少触发；保留正确性）
+    find_lower(trimmed_body, &lower_token)
+  });
 
   if let Some(byte_pos) = byte_pos {
     let char_pos = trimmed_body[..byte_pos.min(trimmed_body.len())].chars().count();
@@ -497,7 +499,6 @@ async fn full_populate_with_manifest(engine: &SearchEngine) -> Result<usize, Str
   diff.next.save(&engine.dir)?;
   Ok(count)
 }
-
 
 #[cfg(test)]
 mod tests {

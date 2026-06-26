@@ -1,9 +1,9 @@
-use dioxus::fullstack::{post, ServerFnError};
-use dioxus::prelude::*;
 use app_core::session::SessionUser;
 use app_core::settings::SiteConfig;
 #[cfg(feature = "server")]
 use app_core::utils::get_asset_root;
+use dioxus::fullstack::{post, ServerFnError};
+use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // ========== 辅助：从 FullstackContext 读取 Cookie 中的用户 ==========
@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 /// server-only: 从当前请求上下文的 Cookie 中解析 SessionUser
 #[cfg(feature = "server")]
 fn current_session_user() -> Option<SessionUser> {
-  use dioxus::fullstack::FullstackContext;
   use app_core::session::parse_session_from_cookie_header;
+  use dioxus::fullstack::FullstackContext;
 
   let ctx = FullstackContext::current()?;
   let parts = ctx.parts_mut();
@@ -354,8 +354,7 @@ fn find_plugin_filename(site_config: &SiteConfig, provider: &str) -> Option<Stri
 // ========== Auth 端点 ==========
 
 #[post("/api/auth/providers")]
-pub async fn get_auth_providers(
-) -> Result<Vec<app_core::AuthProviderDisplay>, ServerFnError> {
+pub async fn get_auth_providers() -> Result<Vec<app_core::AuthProviderDisplay>, ServerFnError> {
   #[cfg(feature = "server")]
   {
     let (auth_service, site_config) = build_auth_service();

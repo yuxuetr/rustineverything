@@ -1,15 +1,14 @@
 use crate::server::{
   admin_approve_moderation, admin_bulk_approve_moderation, admin_bulk_reject_moderation,
-  admin_delete_comment, admin_delete_reply, admin_delete_topic,
-  admin_get_moderation_settings, admin_list_comments, admin_list_moderation_queue,
-  admin_list_plugins, admin_list_topics, admin_list_users, admin_overview,
-  admin_reject_moderation, admin_reload_plugins, admin_set_moderation_settings,
-  admin_set_user_role, admin_upload_plugin, AdminCommentRow, AdminPluginRow, AdminTopicRow,
-  AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
+  admin_delete_comment, admin_delete_reply, admin_delete_topic, admin_get_moderation_settings,
+  admin_list_comments, admin_list_moderation_queue, admin_list_plugins, admin_list_topics,
+  admin_list_users, admin_overview, admin_reject_moderation, admin_reload_plugins,
+  admin_set_moderation_settings, admin_set_user_role, admin_upload_plugin, AdminCommentRow,
+  AdminPluginRow, AdminTopicRow, AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
 };
+use app_core::session::{SessionUser, ALL_ROLES};
 use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
 use dioxus::prelude::*;
-use app_core::session::{SessionUser, ALL_ROLES};
 
 // =============================================================
 // 共享上下文 hooks
@@ -1071,11 +1070,7 @@ fn input_to_opt_f32(raw: &str) -> Result<Option<f32>, String> {
 
 /// 按行拆分 textarea 文本，去重空行 + trim，得到 Vec<String>。
 fn lines_to_vec(text: &str) -> Vec<String> {
-  text
-    .lines()
-    .map(|s| s.trim().to_string())
-    .filter(|s| !s.is_empty())
-    .collect()
+  text.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
 }
 
 /// Vec<String> 拼回多行文本，便于初始化 textarea。

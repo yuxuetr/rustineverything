@@ -2,9 +2,9 @@ use crate::server::{
   create_topic, get_topic, list_my_topics, list_tags, list_topics, list_topics_by_ref, post_reply,
   NewTopicInput, Reply, TagSummary, TopicDetail, TopicRef, TopicSummary,
 };
-use dioxus::prelude::*;
 use app_core::i18n::Language;
 use app_core::session::SessionUser;
+use dioxus::prelude::*;
 use widgets::Markdown;
 
 // =============================================================

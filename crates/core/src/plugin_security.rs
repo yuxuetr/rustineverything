@@ -58,11 +58,7 @@ pub fn scan_imports(module: &Module) -> Result<(), String> {
   if imports.is_empty() {
     Ok(())
   } else {
-    Err(format!(
-      "plugin declares {} disallowed import(s): {}",
-      imports.len(),
-      imports.join(", ")
-    ))
+    Err(format!("plugin declares {} disallowed import(s): {}", imports.len(), imports.join(", ")))
   }
 }
 
@@ -181,9 +177,7 @@ pub struct SecurityReport {
 
 impl SecurityReport {
   pub fn is_hard_failure(&self) -> bool {
-    !self.imports_ok
-      || !self.manifest_ok
-      || matches!(self.sha256_status, Some(Err(_)))
+    !self.imports_ok || !self.manifest_ok || matches!(self.sha256_status, Some(Err(_)))
   }
 }
 
@@ -209,8 +203,7 @@ mod tests {
 
   #[test]
   fn scan_imports_passes_for_real_plugin() {
-    let Some(module) =
-      load_module(Path::new("../../assets/plugins/i18n_fluent_plugin.wasm"))
+    let Some(module) = load_module(Path::new("../../assets/plugins/i18n_fluent_plugin.wasm"))
     else {
       return;
     };
@@ -311,8 +304,7 @@ mod tests {
 
   #[test]
   fn manifest_consistency_passes_for_real_i18n_plugin() {
-    let Some(module) =
-      load_module(Path::new("../../assets/plugins/i18n_fluent_plugin.wasm"))
+    let Some(module) = load_module(Path::new("../../assets/plugins/i18n_fluent_plugin.wasm"))
     else {
       return;
     };
@@ -371,8 +363,7 @@ mod tests {
   #[test]
   fn manifest_consistency_rejects_missing_export() {
     // 用 i18n 模块假装它声明 auth-provider capability —— 必然缺 exchange_code
-    let Some(module) =
-      load_module(Path::new("../../assets/plugins/i18n_fluent_plugin.wasm"))
+    let Some(module) = load_module(Path::new("../../assets/plugins/i18n_fluent_plugin.wasm"))
     else {
       return;
     };
@@ -390,20 +381,16 @@ mod tests {
   fn sha256_passes_on_match() {
     let bytes = b"hello world";
     // sha256("hello world") = b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9
-    let result = verify_sha256(
-      bytes,
-      "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9",
-    );
+    let result =
+      verify_sha256(bytes, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
     assert!(result.is_ok());
   }
 
   #[test]
   fn sha256_case_insensitive_match() {
     let bytes = b"hello world";
-    let result = verify_sha256(
-      bytes,
-      "B94D27B9934D3E08A52E52D7DA7DABFAC484EFE37A5380EE9088F7ACE2EFCDE9",
-    );
+    let result =
+      verify_sha256(bytes, "B94D27B9934D3E08A52E52D7DA7DABFAC484EFE37A5380EE9088F7ACE2EFCDE9");
     assert!(result.is_ok());
   }
 

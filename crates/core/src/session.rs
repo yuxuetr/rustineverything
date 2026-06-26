@@ -206,10 +206,7 @@ pub async fn require_admin() -> Result<SessionUser, dioxus::fullstack::ServerFnE
     .map_err(|e| ServerFnError::new(format!("admin 权限校验失败: {}", e)))?
     .ok_or_else(|| ServerFnError::new("用户已不存在或已被删除".to_string()))?;
   if db_user.role != ROLE_ADMIN {
-    return Err(ServerFnError::new(format!(
-      "管理员权限已撤销（当前角色: {}）",
-      db_user.role
-    )));
+    return Err(ServerFnError::new(format!("管理员权限已撤销（当前角色: {}）", db_user.role)));
   }
   Ok(user_from_jwt)
 }

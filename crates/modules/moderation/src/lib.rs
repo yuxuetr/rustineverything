@@ -62,7 +62,5 @@ pub use stage::AsyncModerationStage;
 pub use url_blocklist::UrlBlocklistStage;
 
 // 重导出常用类型，调用方只需要 use 本 crate 顶层。
-pub use app_core::engines::moderation::{
-  ModerationLabel, ModerationThresholds, Verdict,
-};
+pub use app_core::engines::moderation::{ModerationLabel, ModerationThresholds, Verdict};
 pub use sdk::{ModerationSubmission, ModerationVerdict};

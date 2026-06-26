@@ -464,7 +464,7 @@ mod tests {
     assert_eq!(decode_html_entities("a&lt;b&gt;c"), "a<b>c");
     assert_eq!(decode_html_entities("&#x6A;"), "j"); // hex
     assert_eq!(decode_html_entities("&#106;"), "j"); // dec
-    // 未知实体保持原样
+                                                     // 未知实体保持原样
     assert_eq!(decode_html_entities("&unknown;"), "&unknown;");
     // 没有 `;` 不解码
     assert_eq!(decode_html_entities("a&amp"), "a&amp");

@@ -299,9 +299,7 @@ impl PluginManager {
 
     match tokio::time::timeout(timeout, fut).await {
       Ok(Ok(result)) => result,
-      Ok(Err(join_err)) => {
-        Err(AppError::plugin(format!("wasm worker join failed: {}", join_err)))
-      }
+      Ok(Err(join_err)) => Err(AppError::plugin(format!("wasm worker join failed: {}", join_err))),
       Err(_) => Err(AppError::plugin(format!(
         "wasm invoke timed out after {}s ({})",
         sandbox.timeout_secs, func_name_for_err
@@ -387,8 +385,8 @@ impl PluginManager {
   pub async fn validate_plugin_bytes(&self, bytes: &[u8]) -> Result<(), String> {
     use std::time::Duration;
 
-    let module = Module::new(&self.engine, bytes)
-      .map_err(|e| format!("无法编译为合法 wasm 模块: {}", e))?;
+    let module =
+      Module::new(&self.engine, bytes).map_err(|e| format!("无法编译为合法 wasm 模块: {}", e))?;
 
     plugin_security::scan_imports(&module).map_err(|e| format!("import 扫描拒绝: {}", e))?;
 
@@ -397,9 +395,8 @@ impl PluginManager {
     let sandbox = self.sandbox;
     let timeout = Duration::from_secs(sandbox.timeout_secs);
 
-    let fut = tokio::task::spawn_blocking(move || {
-      validate_plugin_sync(&engine, &linker, &module, sandbox)
-    });
+    let fut =
+      tokio::task::spawn_blocking(move || validate_plugin_sync(&engine, &linker, &module, sandbox));
 
     match tokio::time::timeout(timeout, fut).await {
       Ok(Ok(result)) => result,
@@ -449,8 +446,7 @@ impl PluginManager {
       Err(_) => (false, Some("wasm 解码失败，跳过 manifest 检查".into()), Vec::new()),
     };
 
-    let sha256_status =
-      expected_sha256.map(|hex| plugin_security::verify_sha256(bytes, hex));
+    let sha256_status = expected_sha256.map(|hex| plugin_security::verify_sha256(bytes, hex));
 
     SecurityReport {
       imports_ok,
@@ -480,9 +476,7 @@ fn invoke_module_sync(
 
   let mut store = Store::new(engine, sandbox.store_limits());
   store.limiter(|s| s);
-  store
-    .set_fuel(sandbox.fuel)
-    .map_err(|e| AppError::plugin(format!("set_fuel failed: {}", e)))?;
+  store.set_fuel(sandbox.fuel).map_err(|e| AppError::plugin(format!("set_fuel failed: {}", e)))?;
 
   let instance = linker.instantiate(&mut store, module)?.start(&mut store)?;
 
@@ -509,7 +503,10 @@ fn invoke_module_sync(
   // 在 host 端 clamp 输出长度：插件可能返回恶意巨大的 len（甚至 u32::MAX 高位 bit）。
   // 任何 < 0 视为 0；超出 output_limit 直接报错而不是默默截断（避免数据损坏被静默吞掉）。
   if raw_result_len < 0 {
-    return Err(AppError::plugin(format!("plugin returned negative output length ({})", raw_result_len)));
+    return Err(AppError::plugin(format!(
+      "plugin returned negative output length ({})",
+      raw_result_len
+    )));
   }
   let result_len_usize = raw_result_len as usize;
   if result_len_usize > sandbox.output_limit {
@@ -541,9 +538,7 @@ fn validate_plugin_sync(
 ) -> Result<(), String> {
   let mut store = Store::new(engine, sandbox.store_limits());
   store.limiter(|s| s);
-  store
-    .set_fuel(sandbox.fuel)
-    .map_err(|e| format!("set_fuel failed: {}", e))?;
+  store.set_fuel(sandbox.fuel).map_err(|e| format!("set_fuel failed: {}", e))?;
 
   let instance = linker
     .instantiate(&mut store, module)
@@ -689,10 +684,7 @@ mod tests {
       return;
     }
     let bytes = fs::read(wasm_path).expect("read plugin");
-    assert!(
-      manager.validate_plugin_bytes(&bytes).await.is_ok(),
-      "真实插件 wasm 应通过结构校验"
-    );
+    assert!(manager.validate_plugin_bytes(&bytes).await.is_ok(), "真实插件 wasm 应通过结构校验");
   }
 
   /// 沙箱：fuel 默认值（无 env override）应为 100M；通过 `set_fuel` 注入到 Store
@@ -800,11 +792,9 @@ mod tests {
     let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
     let res = manager.call_path_with_string(path, "translate", &input).await;
     match res {
-      Err(e) => assert!(
-        format!("{}", e).contains("exceeds limit"),
-        "应当因输出超限拒绝，实际错误: {}",
-        e
-      ),
+      Err(e) => {
+        assert!(format!("{}", e).contains("exceeds limit"), "应当因输出超限拒绝，实际错误: {}", e)
+      }
       Ok(_) => panic!("output_limit=1 时不应允许真实插件返回完整字符串"),
     }
   }

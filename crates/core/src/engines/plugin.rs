@@ -86,12 +86,7 @@ impl PluginEngine {
   /// 严格调用：必须有合法 manifest（缺失视为不兼容），且 ABI 版本一致。
   /// 适合内置/受信任插件路径，老插件未迁移时会失败。
   #[cfg(feature = "server")]
-  pub async fn strict_call(
-    &self,
-    path: &Path,
-    func_name: &str,
-    input: &str,
-  ) -> AppResult<String> {
+  pub async fn strict_call(&self, path: &Path, func_name: &str, input: &str) -> AppResult<String> {
     let manifest = self.get_manifest(path).await?;
     if !manifest.is_compatible() {
       return Err(AppError::plugin(format!(

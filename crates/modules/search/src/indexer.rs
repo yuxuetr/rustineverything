@@ -150,7 +150,6 @@ fn file_mtime_secs(path: &Path) -> u64 {
     .unwrap_or(0)
 }
 
-
 fn get_asset_root() -> PathBuf {
   let p = PathBuf::from("assets");
   if p.exists() {
@@ -776,11 +775,8 @@ mod tests {
 
   #[test]
   fn filter_versioned_by_enabled_respects_module_switches() {
-    let docs = vec![
-      versioned("blog", "a", 1),
-      versioned("embedded", "b", 1),
-      versioned("ai", "c", 1),
-    ];
+    let docs =
+      vec![versioned("blog", "a", 1), versioned("embedded", "b", 1), versioned("ai", "c", 1)];
     let enabled = vec!["blog".to_string(), "embedded".to_string()];
     let filtered = filter_versioned_by_enabled(docs, &enabled);
     let kinds: Vec<&str> = filtered.iter().map(|v| v.doc.kind.as_str()).collect();

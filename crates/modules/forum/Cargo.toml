@@ -11,8 +11,6 @@ chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
 sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
-module-blog = { path = "../blog" }
-module-course = { path = "../course" }
 app-core = { path = "../../core" }
 module-moderation = { path = "../moderation", optional = true }
 sea-orm = { workspace = true, optional = true }
@@ -24,8 +22,6 @@ server = [
     "dep:tokio",
     "dep:sea-orm",
     "widgets/server",
-    "module-blog/server",
-    "module-course/server",
     "app-core/server",
     "dep:module-moderation",
 ]
