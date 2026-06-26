@@ -97,9 +97,10 @@
 - [x] 本任务不需 DB（内容均读磁盘）；app `--features server` + 默认 web check 通过，clippy `-D warnings` 零告警
 - [ ] 【手动】`curl -s /course | /docs/<path>` 验证首屏
 
-### B5 — 迁移 cases 页
-- [ ] `cases.rs` 的 `*IndexPage` / `*DetailPage` → `use_server_future`
-- [ ] 烟测 `/case`、`/case/<slug>`
+### B5 — 迁移 cases 页 ✅
+- [x] `CaseDetailPage`→`CaseDetailLoaded`（get_case 走 `use_server_future`）；`CasesIndexPage` 结果网格抽为 `CasesGrid`（`use_server_future` + `use_reactive!(|query,category,tag|)`，筛选 signal 作 prop），搜索/标签/分类 UI chrome 保留客户端
+- [x] app `--features server` + 默认 web check 通过，clippy `-D warnings` 零告警
+- [ ] 【手动】`curl -s /case | /case/<slug>` 验证首屏
 
 ### B6 — 评估 App 级与非内容页
 - [ ] 评估 `get_aggregated_theme_css`（可受益 server-future）与 `get_current_user`（宜保持客户端）
