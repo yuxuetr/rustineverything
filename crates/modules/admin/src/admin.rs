@@ -108,6 +108,9 @@ pub fn AdminDashboardPage() -> Element {
     return rsx! { ForbiddenPanel {} };
   }
 
+  // 重构 B6 评估：admin 后台全部保留 use_resource，**不** 迁移到 use_server_future。
+  // 理由：后台鉴权（非 admin 渲染 403）、纯交互管理面板，不需 SEO / 首屏预渲染，
+  // 且不应被公共缓存。
   let res = use_resource(|| async move { admin_overview().await.ok() });
   let overview = res.read().as_ref().cloned().flatten();
 

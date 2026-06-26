@@ -102,9 +102,19 @@
 - [x] app `--features server` + 默认 web check 通过，clippy `-D warnings` 零告警
 - [ ] 【手动】`curl -s /case | /case/<slug>` 验证首屏
 
-### B6 — 评估 App 级与非内容页
-- [ ] 评估 `get_aggregated_theme_css`（可受益 server-future）与 `get_current_user`（宜保持客户端）
-- [ ] forum/admin 等显式保留 `use_resource` 并注释理由
+### B6 — 评估 App 级与非内容页 ✅
+- [x] 结论：`get_aggregated_theme_css` 与 `get_current_user` 均保留 `use_resource`（App 根不宜整体挂起；登录态不宜烘进可缓存 HTML），已在 `main.rs` 加详细理由注释
+- [x] forum (`TopicsIndexPage`) / admin (`AdminDashboardPage`) 加保留 `use_resource` 的理由注释（强交互/鉴权、非 SEO）
+- [x] app `--features server` 构建 + clippy `-D warnings` 零告警；全工作区 `cargo test --features server --workspace` 全部通过（0 failed）
+
+---
+
+## 验收状态（2026-06-26）
+所有任务（P0 / A1–A4 / B1–B6）已完成并逐个提交（无共同作者行）。
+- 模块解耦：forum 不再依赖 blog/course；docs 不再依赖 course/forum/blog；search 经 core IoC 注册表解耦 cases；策略写入 `MODULE_SPEC.md` §11。
+- SSR：blog（列表+详情）、5 内容板块、course（列表/详情/课时）、docs（首页+详情）、cases（列表+详情）均迁到 `use_server_future` + `SuspenseBoundary`；鉴权/强交互页保留 use_resource 并注释理由。
+- 验证：双编译目标（server + 默认 web）构建、clippy `-D warnings` 零告警、全量测试 0 failed。
+- 待办（本地手动）：`dx serve` + curl 各内容页首屏 HTML 含正文的运行时烟测（见各 B 任务末「手动」项）。
 
 ---
 

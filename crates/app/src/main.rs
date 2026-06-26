@@ -553,7 +553,12 @@ fn App() -> Element {
   let user: Signal<Option<SessionUser>> = use_signal(|| None);
   use_context_provider(|| user);
 
-  // 加载当前用户
+  // 加载当前用户。
+  //
+  // 重构 B6 评估：有意保留客户端加载（use_effect + server fn），**不** 迁移到
+  // use_server_future。理由：`get_current_user` 是每请求的登录态（读 session
+  // cookie）；若随 SSR 预渲染会把个性化用户信息烘进页面 HTML，与 CDN /
+  // 代理层的公共缓存（sitemap/feed 已用 public Cache-Control）相冲，且有信息泄露风险。
   let mut user_signal = user;
   use_effect(move || {
     spawn(async move {
@@ -564,6 +569,11 @@ fn App() -> Element {
   });
 
   // Fetch aggregated theme CSS from WASM plugins。订阅 theme_version 以便切换重拉。
+  //
+  // 重构 B6 评估：保留 use_resource，**不** 迁移到 use_server_future。理由：该调用
+  // 位于 App 根组件，`use_server_future` 的 `?` 需要祖先 SuspenseBoundary，会把整个
+  // 应用根挂起（blast radius 极大）；且它订阅 theme_version signal 以支持用户
+  // 实时切主题（客户端交互）。主题 CSS 通过 <style> 注入，首屏 FOUC 可接受。
   let theme_css = use_resource(move || {
     let _ = theme_version();
     async move {
