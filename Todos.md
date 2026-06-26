@@ -1,305 +1,106 @@
-# 开发计划 — Phase 8 安全 & 性能硬化冲刺
+# 开发计划 — 重构冲刺：业务模块解耦 + SSR Hydration 优化
 
-> 上一阶段（Phase 0 – Phase 7.7，全部主体完成）归档在 [`Todos.phase1-7.md`](Todos.phase1-7.md)。
-> 本文档承接 2026-05-31 三 agent 并行 code review 的综合结果，按 **8 个独立可发布 PR** 顺序推进。
-> 协作约定 / 提交习惯 / 测试门禁继承自上一阶段，简短复述见文末「持续约定」。
+> 上一阶段（Phase 8 安全 & 性能硬化 + Phase 9）归档在 [`Todos.refactor-backup.md`](Todos.refactor-backup.md)。
+> 本文档承接 2026-06-26 整体架构评估的两项结论，聚焦 **(A) 业务模块编译期解耦** 与 **(B) SSR hydration 优化**。
 
 ## 本阶段目标
 
-把"单作者站可跑"提升到"小流量公网可上"的硬化等级。聚焦三类：
+1. **模块解耦**：内容模块只依赖 `app-core` / `sdk` / `widgets`；跨模块 UI 组合上提到组合根 `app`；数据源依赖显式化。
+2. **SSR hydration**：把 SEO/首屏关键的内容承载页从 `use_resource` 迁移到 `use_server_future`，消除首屏 spinner、二次抓取与 hydration 不匹配。
 
-1. **安全**：消除可被匿名 / 非特权用户触发的 DoS / 越权 / 注入面
-2. **性能**：拆掉 hot-path 上同步阻塞 + 重复解析，保 5–50 RPS 不爆 worker
-3. **结构**：清掉死代码（EngineRegistry）+ 消除 ModuleEngine 仍存的硬编码副本
-
-**不在本阶段范围**（后续单独规划）：
-- 5 个 Phase-6 板块 crate（`modules/{ai,cli,embedded,wasm,web3}`）合并 —— 用户决定暂不动
-- 全平台 desktop / mobile 迁移（含剩余 16 处 `dioxus::document::eval`）
-- 插件 ABI v2（Extism / wit-bindgen）—— 留 Phase 9
-- Prometheus metrics —— 见 8.8 末尾 deferred
-
----
-
-## Design 默认值（开工前的关键选择）
-
-| # | 决策点 | 选择 | 理由 |
-|---|---|---|---|
-| 1 | JWT role 变更失效策略 | `require_admin()` 内重查 DB role | 比 token_version 改动小；JWT TTL 保持 7 天避免 refresh 复杂度 |
-| 2 | `user_identity.access_token` 列 | **删列**（dead-stored，无解密路径） | YAGNI；未来真要 token 转发再加 |
-| 3 | 剩余 16 处 `dioxus::document::eval` | 留着；删 `main.rs` 跨平台注释 | 全迁成本大、无 desktop 部署需求 |
-| 4 | MDX `register_components` 机制 | 留着 | 已落、podcast 在用 |
-| 5 | EngineRegistry / lifecycle 抽象 | **删 dead code** + LayoutPack 加 `render` 方法 | "Don't add features for hypothetical future" |
-| 6 | rate limiting 落点 | Pingora 网关层 | 真实 client IP 在那里；app 端不动 |
-| 7 | Markdown / list 缓存 invalidation | mtime-based（同 plugin cache） | 与现有 `PluginManager::get_or_load_module` 一致 |
-| 8 | comments 索引迁移 | 新建 `m20260601_000003_*` migration | sea-orm-migration 累加，不动既有 |
-
----
-
-## Phase 8.1 — WASM 沙箱硬化（🔴 Critical）
-
-> 来源：security agent + arch agent 双重命中。当前任意插件（含 admin 上传的）`start` / `alloc` 无限循环都能卡死 tokio worker；输出读到 `vec![0u8; result_len]` 时才查 cap → 恶意插件可让 host 先分配 2 GiB。
-
-- [x] **Output buffer 在 alloc 之前 clamp**（`crates/core/src/lib.rs:159`）
-   - `invoke_module_sync` 解出 `result_len` 后先 clamp 到 `sandbox.output_limit` 再分配 `Vec`；负值 / 超限均报错
-   - 测试：`output_length_is_clamped_before_alloc` 把 limit 调到 1 字节跑真实插件，验证拒绝 + 错误消息含 `exceeds limit`
-- [x] **wasmi fuel 限制**（`crates/core/src/lib.rs:54`）
-   - `Engine::new(Config::default().consume_fuel(true))`，`Store::set_fuel(sandbox.fuel)` 每次调用前注入
-   - 默认 100M，env `WASM_FUEL_LIMIT` 覆盖
-   - 测试：`fuel_exhaustion_traps_quickly` 设 fuel=1 → 真实插件 trap，且耗时 < 1s
-- [x] **内存 page limiter**（`crates/core/src/lib.rs`）
-   - 用 wasmi 内置 `StoreLimits::memory_size(128 * 64KiB)` + `Store::limiter` 装上
-   - env `WASM_MEMORY_PAGES` 覆盖
-- [x] **执行 timeout**（`crates/core/src/lib.rs`）
-   - `invoke_module` / `validate_plugin_bytes` 用 `tokio::time::timeout(sandbox.timeout_secs)` 包裹
-   - env `WASM_INVOKE_TIMEOUT_SECS` 覆盖（默认 5s）
-- [x] **同步 wasmi 调用走 spawn_blocking**
-   - `invoke_module` 改 async：body 用 `tokio::task::spawn_blocking`
-   - 级联 `PluginManager::call_*` / `aggregate_theme_css*` / `validate_plugin_bytes` → async
-   - `PluginEngine::call / strict_call / try_get_manifest / get_manifest / filter_by_capability` → async
-   - 影响 caller：auth (`list_available_providers` / `prepare_login` / `handle_callback`) + `app/server/mod.rs` + `admin::admin_upload_plugin` + `moderation::PluginModerationStage` 全部加 `.await`
-- [x] 文档：`docs/PLUGIN_DEV.md` 新增「9.1 沙箱约束（Phase 8.1）」表格 + 实践指导
-- [x] CI：`cargo test -p app-core --features server --lib` 129 通过；`cargo clippy --workspace --features server --all-targets -- -D warnings` 0 warning
-
-**完成定义**：单个恶意 wasm（构造死循环 / alloc 爆 / 输出超长）均被 host 拒绝且不阻塞其他请求；tokio worker 不再被 wasmi 同步占用。
-
----
-
-## Phase 8.2 — Auth / 输入校验表面硬化（🔴 Critical）
-
-> 来源：security agent 命中 4 项。`/api/upload` 完全不鉴权 + 默认 secret 通过启动校验 + forum 路径穿越 + `state` RNG 未文档化。
-
-- [x] **`/api/upload` 加 require_session**（`crates/modules/uploads/src/server.rs:88`）
-   - 函数顶端调 `require_session()?`；匿名调用直接 401
-   - 文档化「如需匿名上传通道单开 `/api/upload/public`」
-- [x] **`.env.example` 默认 placeholder 拒绝**（`crates/core/src/session.rs::get_jwt_secret` + `crates/app/src/main.rs:63`）
-   - 新增 `looks_like_placeholder` + `assert_not_placeholder`：模式 `change-me` / `changeme` / `your-` / `<your` / `replace-me` / `placeholder`，大小写不敏感
-   - 故意避开 `password` 子串以免误伤真实凭据
-   - `JWT_SECRET` / `BASE_URL` / `DATABASE_URL` 启动时三个 env 都过 placeholder 校验
-   - 单测：常见占位模板被拒，真实值（含 `Sup3r!StrongPa55word2026` / `http://127.0.0.1:8080`）通过
-- [x] **forum `ref_path` 防目录穿越**（`crates/modules/forum/src/server.rs:122-133,206-253`）
-   - 新增 `safe_join_under(sub_root, raw)`：字符级拒 `..` / 绝对路径，存在的路径再做 `canonicalize` 前缀校验
-   - `resolve_ref_title` 全部 join 改走该 helper（blog/doc/course/lesson/case 全覆盖）
-   - 单测：`safe_join_rejects_dotdot_segments` + `resolve_ref_title_rejects_traversal`
-- [x] **OAuth `state` / `code_verifier` 改用 `OsRng`**（`crates/core/src/auth/mod.rs:240-241,253-254`）
-   - 改用 `rand::rngs::OsRng` + `TryRngCore::unwrap_err`（rand 0.9 API）
-   - 代码注释强调禁止退回 `ThreadRng` / `SmallRng`
-- [x] **删 `user_identity.access_token` 列**（Design 默认 #2）
-   - 新建 migration `m20260601_000003_drop_access_token`：ALTER TABLE DROP COLUMN + 反向 down 重加列
-   - `entities/user_identity.rs` 删字段并添加 Phase 8.2 注释说明
-   - `handle_callback` / `sync_user_to_db` 删 access_token 持久化路径（保留 OAuth `Bearer` 调用 profile_url 路径）
-   - 调整 rollback live test 调用签名
-
-**完成定义**：未登录用户调任何写端点（含 `/api/upload`）被拒；新部署用模板默认值启动 panic；forum 输入无法越出 assets 目录。
-
----
-
-## Phase 8.3 — Pingora 网关硬化（🟡 Warning，上线前必做）
-
-> 来源：security agent。全无安全响应头 + XFF 头可被客户端伪造 + 全无 rate limit。
-
-- [x] **响应注入安全头**（`crates/gateway/src/main.rs`）
-   - `AppGateway::response_filter` 注入 HSTS / X-Content-Type-Options / X-Frame-Options / Referrer-Policy / CSP / Server，所有 `insert_header` 防重复
-   - CSP 默认值含 `object-src 'none'; base-uri 'self'; frame-ancestors 'none'`，env `CSP_POLICY` 覆盖
-- [x] **X-Forwarded-For 改 insert / 清 Forwarded**（`crates/gateway/src/main.rs:51-56`）
-   - 改 `insert_header` 覆盖客户端伪造 + `remove_header("Forwarded")` strip RFC 7239
-   - 拿不到 socket 时也显式 `remove_header("X-Forwarded-For")` 避免毒化
-- [x] **rate limiting**（`crates/gateway/Cargo.toml` + main.rs）
-   - 引入 `governor = "0.10"` + `once_cell`：`DefaultKeyedRateLimiter<IpAddr>` 全局静态实例
-   - 写端点（`/api/auth/`/`/api/upload`/`/api/comments/`/`/api/topics/`/`/api/admin/`/`/api/forum/`/`/api/i18n/translate`）10 req/min；其他 60 req/min
-   - 触发返 429 + `Retry-After: 60`；env `RATE_LIMIT_DISABLE=true` / `RATE_LIMIT_WRITE_PER_MIN` / `RATE_LIMIT_READ_PER_MIN` 覆盖
-   - 直接读 `session.client_addr()` 的 socket IP（不信任客户端 XFF）
-- [x] 文档：`docs/DEPLOY_GUIDE.md §6.1` 补「安全响应头 + 限流（Phase 8.3）」小节 + curl 边缘验证脚本
-- [x] 单测：`write_path_classification` / `rate_limit_env_disable_flag` / `keyed_limiter_enforces_quota` 三组覆盖路径分类、env 开关、配额耗尽
-
-**完成定义**：浏览器 devtools 看到响应头齐；攻击者无法把伪造的 XFF 灌进日志 / 限流决策；典型 DoS 模式被 429 短路。
-
----
-
-## Phase 8.4 — DB 性能 & 索引（🟡 Warning）
-
-> 来源：performance agent。SeaORM 用全默认 ConnectOptions + `comments(blog_id, created_at)` 缺索引 + admin_overview 7 个 COUNT 串行。
-
-- [x] **SeaORM ConnectOptions 显式 tuning**（`crates/core/src/db/pool.rs:20,35`）
-   - 提炼 `build_connect_options(url)`：max 32 / min 2 / connect 5s / acquire 5s / idle 10m，
-     `sqlx_logging_level(Debug)` 避免 INFO 刷屏
-   - env 覆盖：`DB_MAX_CONN` / `DB_MIN_CONN` / `DB_CONNECT_TIMEOUT_SECS` / `DB_ACQUIRE_TIMEOUT_SECS` / `DB_IDLE_TIMEOUT_SECS`
-   - 单测：`env_override_helpers_round_trip` 验证 reader helper 默认值 + override 行为
-- [x] **新建 migration：comments 索引**（`crates/migration/src/m20260601_000004_comments_index.rs`）
-   - `CREATE INDEX IF NOT EXISTS idx_comments_blog_created ON comments(blog_id, created_at DESC)`
-   - `down()` 反向 drop
-- [x] **admin_overview 7 COUNT 并行**（`crates/modules/admin/src/server.rs:233-278`）
-   - `tokio::try_join!` 并行 7 个 `count(...).await`，从 sum → max(单查)
-   - 现有 `admin_overview` 集成测试覆盖正确性；性能验证留运维 P95
-- [x] **moderation queue author 历史聚合 SQL pushdown**（`crates/modules/admin/src/server.rs:920-949`）
-   - 把 Rust 端 Vec 聚合改成 2 个 GROUP BY query（total / rejected），用 `Expr::col(Id).count()` + `column_as` + `into_tuple` 返回 `(user_id, count)`
-   - 网络 round-trip 固定 ≤ 3 次（lookup + 2 GROUP BY），不再随 author × 历史长度膨胀
-- [x] EXPLAIN 验证：留 `docs/OPERATIONS.md` runbook（迁移落地后跑一次 `EXPLAIN`），暂不强制
-
-**完成定义**：admin dashboard < 200ms（10K 行场景）；评论列表索引扫描；DB pool 行为可预测。
-
----
-
-## Phase 8.5 — Hot-path 缓存（🟡 Warning，规模化前必做）
-
-> 来源：performance agent。WASM 调用 / Markdown 解析 / list_* 重读全部按"每请求"做，浪费 5-50× 的工作。
-
-- [x] **theme CSS 每路径 mtime cache**（`crates/core/src/lib.rs` PluginManager）
-   - 新增 `theme_css_cache: Mutex<HashMap<PathBuf, (SystemTime, Arc<String>)>>`
-   - `aggregate_theme_css_paths` 命中时跳过 wasmi instantiate / call / memory I/O，
-     直接拼缓存的 Arc<String>
-   - `invalidate(path)` / `invalidate_all()` 同步清 theme cache 防 stale
-   - 单测：`theme_css_chunk_cache_populates_and_invalidates`（命中条目数 + invalidate 语义）
-- [ ] **i18n 翻译表整表缓存** —— deferred（需要插件加 `get_all(lang)` 新 ABI export，
-   面太大，留 Phase 9 一起做）
-- [ ] **Markdown 渲染 mtime cache** —— deferred（`Element` 类型不易 cache；
-   blog/doc loader 层已通过 8.5 的 list_* cache 间接缓解 frontmatter parse，
-   完整 render cache 留 Phase 9 配合新 ABI 一起做）
-- [x] **list_blog_posts / list_*_articles mtime cache**
-   - 新增 `app_core::utils::DirListingCache<T>` + `fingerprint_for_dir` helper：
-     文件 (路径, mtime) 列表作为 fingerprint，任何文件 add / remove / 修改都失配
-   - 应用到 6 个 server fn：`list_blog_posts` + 5 个板块 `list_{ai,cli,embedded,web3,wasm}_articles`
-   - 单测：`dir_listing_cache_basic` / `dir_listing_cache_invalidate_forces_rebuild` /
-     `fingerprint_collects_matched_files`（5 项 utils 测试）
-- [x] **sitemap / feed Cache-Control 头**（`crates/app/src/main.rs`）
-   - sitemap: `Cache-Control: public, max-age=3600`（1h）
-   - feed: 同 sitemap
-   - robots.txt: `public, max-age=21600`（6h，几乎不变）
-- [ ] 性能 benchmark 脚本：暂不引入；P95 验证留运维 / 后续 Prometheus
-
-**完成定义**：navbar theme 不再每请求触发 wasmi；sitemap / feed 在 100 并发下不重复 walk 所有 board 目录；CDN / 浏览器看到 Cache-Control 头。i18n / Markdown 完整缓存留 Phase 9。
-
----
-
-## Phase 8.6 — XSS allowlist + JWT role 重查（🟡 Warning）
-
-> 来源：security agent。`sanitize_user_html` 可被 HTML 实体编码绕过；admin 降级后 JWT 仍 admin 一周。
-
-- [x] **`sanitize_user_html` 改 allowlist**（`crates/widgets/src/sanitize.rs:178-194`）
-   - 新增 `is_safe_link_url` / `is_safe_image_url`：先 `decode_html_entities` 解码 `&#x6A;` / `&#106;` / 命名实体，
-     trim ASCII 空白 + 剥控制字符（TAB / LF / CR），再 lowercase 取 scheme 与 allowlist 比对
-   - link allowlist：`http` / `https` / `mailto` / `tel`；image allowlist：上述 + 相对 path / `/` + `data:image/`
-   - 渲染层（mdx.rs `Tag::Link` / `Tag::Image`）调用 helper；不合法 URL 丢链接保留文本 / 显示 `[image rejected]`
-   - 删除 `neutralize_dangerous_urls` 字面串黑名单（已被 HTML entity 编码绕过）
-   - 单测：`link_allowlist_resists_known_bypasses` 覆盖 `j&#x61;vascript:` / `&#106;avascript:` / `JaVaScRiPt:` / `j\tavascript:` / `javascript :` / `javascript&#58;`
-- [x] **JWT role 在 require_admin 内重查 DB**（`crates/core/src/session.rs::require_admin`）
-   - 改 async：先 verify_jwt 拿 user_id → `user::Entity::find_by_id` → `db_user.role != ROLE_ADMIN` 即拒
-   - fail-closed：DB 不可达 / 用户已删 → 直接报错
-   - 20 处 caller `require_admin()?` → `require_admin().await?` 批量替换
-- [x] **`require_session()` helper**（`crates/core/src/session.rs`）
-   - Phase 7.x 已存在；Phase 8.2 给 `/api/upload` 调用过；不重复
-- [x] 文档：复用代码内 doc-comment，不再单独 sync `docs/AUTH_SPEC.md`（与现状一致）
-
-**完成定义**：comment / topic 输入含 `j&#x61;vascript:` 链接不会变成可点击 XSS；admin 在数据库被降级后 5 秒内丧失后台权限。
-
----
-
-## Phase 8.7 — Engine 层清理 + ModuleEngine 收口（🟠 设计债）
-
-> 来源：architecture agent。Phase 1C.1 整套 `EngineRegistry` / lifecycle 抽象生产从未实例化（死代码）；ModuleEngine 半解决问题，navbar 仍硬编码 11 个 module id。
-
-- [x] **删 EngineRegistry / EngineContext / Engine trait**（Design 默认 #5）
-   - `engines/mod.rs` 净化为命名空间根；删除 `EngineRegistry`、`EngineContext`、`Engine` trait
-   - 各 engine 文件移除 `impl Engine for X` 块；行为下沉到 `apply_site_config` 等独立方法
-   - PluginEngine 保留 `shutdown()` 作为 `invalidate_all()` 的语义别名
-   - 删 `core::engines::content::ComponentRegistry`（与 `widgets::registry` 重复）
-- [x] **`default_module_engine()` 加 OnceLock cache**（`crates/core/src/engines/module.rs`）
-   - 返回类型由 `ModuleEngine` 改为 `Arc<ModuleEngine>`；ngine 内部 `OnceLock<RwLock<Option<Arc<...>>>>`
-   - 新增 `invalidate_default_module_engine()`；`admin_set_moderation_settings` 写回 site.json 后调用
-   - 单测 `default_module_engine_returns_same_arc_on_repeat_calls` / `invalidate_forces_default_module_engine_to_rebuild`
-- [x] **navbar fallback 用 `default_module_specs()` 替代硬编码**（`crates/app/src/components/layouts/classic.rs:39-67`）
-   - 两处硬编码 11 个 module id 列表合并为单一 `all_default_ids()` helper（从 ModuleSpec 派生）
-   - `ModuleSpec` 加 `nav_label_key: Option<String>`（i18n key）+ `with_nav_label_key` builder
-- [x] **sitemap 路径循环替代 if 链**（`crates/app/src/main.rs`）
-   - `ModuleSpec` 加 `static_path: Option<String>` + `with_static_path` builder
-   - sitemap 闭包改为 `for spec in module_engine.enabled_modules() { ... }`，11 个 if 链改 1 个循环
-- [ ] **`LayoutPack::render(active_module_id, children: Element)`** —— deferred 到 Phase 9
-   - Element 类型穿越 crate 边界 + feature flag 太重；Phase 8.7 现有 navbar 已经只硬编码一次 module id
-- [ ] **文档：`docs/MODULE_SPEC.md` 加 "如何加新模块" checklist** —— deferred（doc work）
-
-**完成定义**：核心 crate 无死代码；加 12th 模块不需要再 grep 改 4 处。
-
----
-
-## Phase 8.8 — 杂项批（🟢 Defense-in-depth）
-
-> 来源：3 个 agent 散落的小项。一次性收一下避免遗忘。
-
-- [x] **MathML CSP 友好**（`crates/widgets/src/mdx.rs:184,190`）
-   - CSP 已在 8.3 加好；pulldown-latex 版本在 workspace 已 pin（0.7.1）
-   - MathML 渲染输出 `<math>` 节点（dioxus），不产生 `<script>` / `javascript:`，
-     CSP `script-src 'self'` 即可挡住任何被注入的 inline JS
-- [x] **`make_snippet` 不 to_lowercase 整 body**（`crates/modules/search/src/engine.rs:311-342`）
-   - 仅对 body 前 2KB 做 lowercase 搜索（命中位置一般落在头部）；未命中再降级
-     全文 fallback 一次。比 SnippetGenerator 引入小、对 100KB 文章节省 ~200KB 临时分配
-- [x] **`Box::leak(asset_path)` dev 重启泄漏**（`crates/app/src/main.rs:160-165`）
-   - 改 `OnceLock<&'static str>`：首次 init 仍 leak 一次，后续 dx serve 重启不重复
-- [x] **`admin_moderation::reject_one` 业务删 silent failure**（`crates/modules/admin/src/server.rs:1037-1078`）
-   - 4 个 `let _ = ...delete...` 改为捕获 Result 并 tracing::warn；
-     若内容确实先被作者删（SeaORM 行数 0 不报错）不影响队列更新，
-     仅真实 DB 故障记 warn 以便运维定位
-- [x] **Bulk reject 并发**（`crates/modules/admin/src/server.rs:1142-1168`）
-   - `futures::stream::iter(rows).for_each_concurrent(8, ...)`：DB pool 32 留一半给前台，
-     批量耗时压缩到 ~1/8；done 计数走 `AtomicU64::fetch_add`
-- [x] **`.bak` 文件 startup sweep**（`crates/app/src/main.rs` 启动期）
-   - 启动时扫 `assets/plugins/*.bak`，>7d 的删掉（Phase 5.1 hot reload 留下的备份）
-- [ ] **Hot-reload 后 admin_upload_plugin 缓存 prefilled** —— deferred
-   - 需要 PluginManager 暴露 `insert_compiled(path, bytes)`；改动面较大、收益不明，留 Phase 9
-- [ ] **PluginManager Mutex cold-miss 双竞** —— deferred
-   - 当前现状：未命中时同 path 多 worker 都会 fs::read + Module::new，结果都写进 cache，
-     最终只保留一份。double-compile 是单插件首次调用一次性事件；权衡复杂度暂不动
-- [ ] **插件 ABI 版本范围（前置 Phase 9 ABI v2）** —— deferred
-   - 留 Phase 9 ABI v2 一起做（Todos.md 已说明）
-- [x] **`main.rs` 跨平台注释清理**（Design 默认 #3）
-   - 改写 main.rs L580 注释：明确项目 web-first via dioxus_fullstack；其他 16 处
-     `dioxus::document::eval` 保留是为避免大规模重写
-
-**Deferred 到 Phase 9**：
-- Prometheus metrics / `/metrics` endpoint
-- 全平台 desktop / mobile 迁移（含余下 16 处 `document::eval`）
+**不在本阶段范围**（留作后续独立计划）：
+- 5 个内容板块 crate（`modules/{ai,cli,embedded,wasm,web3}`）合并去重
 - 插件 ABI v2（Extism / wit-bindgen）
+- 桌面 / 移动端迁移
 
 ---
 
-## 进度跟踪
+## 持续约定
 
-| Phase | 状态 | 关键交付 |
-|---|---|---|
-| 8.1 | ✅ Done | WASM 沙箱：fuel + memory + timeout + spawn_blocking |
-| 8.2 | ✅ Done | Auth 表面：upload 鉴权 + placeholder 拒 + path 防穿越 + OsRng + drop access_token |
-| 8.3 | ✅ Done | Pingora 网关：安全头 + XFF insert + rate limit |
-| 8.4 | ✅ Done | DB tuning + comments 索引 + admin 并行 + SQL GROUP BY |
-| 8.5 | ✅ Mostly Done | theme CSS chunk cache + list_* mtime cache + Cache-Control（i18n / Markdown 完整 cache deferred 到 Phase 9） |
-| 8.6 | ✅ Done | sanitize_user_html allowlist + JWT role DB recheck |
-| 8.7 | ✅ Mostly Done | EngineRegistry 删 + ModuleEngine 收口 + navbar/sitemap 去硬编码（LayoutPack::render / MODULE_SPEC.md deferred 到 Phase 9） |
-| 8.8 | ✅ Mostly Done | 杂项批：snippet / Box::leak / reject 并发 / .bak sweep（hot-reload prefill / ABI 版本范围 / Mutex single-flight deferred 到 Phase 9） |
+- **每任务一提交**：每完成一个任务，`cargo fmt` + 构建 + 测试 + `clippy -D warnings` 通过后提交一次。
+- **提交信息不带共同作者行**（不加 `Co-Authored-By`）。
+- **提交后同步本文档**：勾选完成项 + 补实际落点（文件:行号 / 测试名），再开下一个任务。
+- **构建命令**统一带 `CARGO_TARGET_DIR=/Users/hal/.target`；新代码不使用 `unwrap` / `expect`。
+- **数据库（按需）**：需要 DB 时用 macOS `apple container` 起 `postgres:16`，环境变量从 `.env` 读取（不回显密钥）。内容页 SSR 验证只读 `assets/`，不需要 DB。
 
----
+### 校验命令
 
-## 验收标准（全 Phase 8 完成）
-
-- **测试**：`cargo test --features server --workspace -- --test-threads=1` 全绿（预计 ~620+ tests）
-- **clippy**：`cargo clippy --features server --workspace --all-targets -- -D warnings` 0 warning
-- **性能**：blog/welcome 100 次 SSR P95 < 100ms（cache 命中态）；admin dashboard < 200ms；恶意插件无法 DoS host
-- **安全**：浏览器 devtools 看 4 个安全头；未登录 `/api/upload` 401；admin 降级 5s 失效；模板 placeholder 启动 panic
-- **文档**：每个 Phase 完成后同步本文件 `[ ]` → `[x]` + 一段实施说明
-- **手动验证**：`cd crates/app && dx serve` + `cd crates/gateway && cargo build --release` 全过；docker compose up 全过
+- 格式化：`cargo fmt`
+- 构建：`CARGO_TARGET_DIR=/Users/hal/.target cargo build -p app --features server`
+- 测试：`CARGO_TARGET_DIR=/Users/hal/.target cargo test --features server --workspace -- --test-threads=1`
+- Lint：`CARGO_TARGET_DIR=/Users/hal/.target cargo clippy --workspace --features server --all-targets -- -D warnings`
+- SSR 烟测（B 类）：`dx serve --package app` 后 `curl -s http://127.0.0.1:8080/<路由>`，断言首屏 HTML 含正文/列表文本而非 loading spinner。
 
 ---
 
-## 持续约定（继承自 Phase 1-7）
+## 前置任务
 
-- 每完成一个独立功能立即 commit，不批量打包
-- 提交信息走 Conventional Commits（`feat(8.1): ...` / `fix` / `refactor` 等）
-- **不附 `Co-Authored-By`**（沿用 [Memory: workflow-conventions]）
-- `cargo test` + `cargo clippy -- -D warnings` 通过才允许 commit
-- 完成每个 sub-item 后立即把对应 `[ ]` 改为 `[x]` + 补简短实施说明（同 Phase 1-7 风格）
-- `git push` 时机由用户决定，本计划只推进到本地 commit
-- **Out of scope 守护**：本阶段不动 `modules/{ai,cli,embedded,wasm,web3}` 五板块合并、不做 ABI v2、不引 metrics crate
+### P0 — 备份并重建 Todos.md
+- [x] 备份当前 `Todos.md` → `Todos.refactor-backup.md`
+- [x] 按本计划重写 `Todos.md`（A/B 全部任务 + 持续约定）
+- [x] 提交（无共同作者行）
+
+### P1 —（按需）apple container 起 PostgreSQL
+- [ ] 首个需要 DB 的任务前：从 `.env` 读取 `POSTGRES_USER/PASSWORD/DB`，`container run` 起 `postgres:16`，映射 `127.0.0.1:5432`，等健康后用 `DATABASE_URL` 验证连通
 
 ---
 
-## 引用
+## 工作流 A：业务模块解耦
 
-- 上一阶段计划：[`Todos.phase1-7.md`](Todos.phase1-7.md)
-- 触发本阶段的 review：聊天会话 2026-05-31 三 agent 并行扫描合成报告（未落盘）
-- 涉及的核心 SPEC：[`docs/ENGINES_SPEC.md`](docs/ENGINES_SPEC.md) / [`docs/PLUGIN_ABI.md`](docs/PLUGIN_ABI.md) / [`docs/AUTH_SPEC.md`](docs/AUTH_SPEC.md) / [`docs/MODERATION_SPEC.md`](docs/MODERATION_SPEC.md) / [`docs/DEPLOY_GUIDE.md`](docs/DEPLOY_GUIDE.md)
+### A1 — 移除 forum 的死依赖（blog / course）
+- [ ] 确认 `forum` 全树无 `module_blog::` / `module_course::` 使用
+- [ ] 从 `crates/modules/forum/Cargo.toml` 删除 `module-blog` / `module-course` 依赖及 `server` feature 中的 `module-blog/server` / `module-course/server`
+- [ ] 保留 `module-moderation`（可选）；全量构建 + 测试不回归
+
+### A2 — 上提 docs 的跨模块 UI 组合到 app 层
+- [ ] `DocPage` 改造为接受 `footer: Element`（或具名 children slot）插槽，组件本身不再 `use module_course` / `use module_forum`
+- [ ] `app/src/routes/mod.rs` 的 `DocPage` 包装组件把 `AnnotationLayer` + `DiscussionPanel` 作为插槽传入
+- [ ] 从 `crates/modules/docs/Cargo.toml` 删除 `module-course` / `module-forum` 依赖
+- [ ] 确认 docs 标注层 + 讨论面板渲染行为不变
+
+### A3 — 解耦 search → cases 数据源
+- [ ] 评估 `indexer.rs::collect_cases` 对 `module_cases::server::scan_cases` 的依赖
+- [ ] 倒置（core 注册点 IoC，使 `module-search` 不再编译期依赖 `module-cases`）或文档化保留为「可接受的数据层依赖」
+- [ ] 按结论二选一落地
+
+### A4 — 固化模块依赖策略文档
+- [ ] 在 `docs/MODULE_SPEC.md` 增补「模块依赖规则」+ 当前合规边与例外
+
+---
+
+## 工作流 B：SSR Hydration 优化
+
+> 技术前提：server fn 返回类型已 `Serialize + Deserialize`；`use_server_future` 需置于 `SuspenseBoundary` 内、闭包捕获其依赖的响应式值；错误分支 fail-safe 不 panic。
+> 非 SEO / 强交互 / 鉴权页（forum 互动、admin、登录态）保持 `use_resource` 并注释理由。
+
+### B1 — 建立模式与参照迁移（blog 详情页）
+- [ ] `BlogInner` 引入 `use_server_future` + `SuspenseBoundary`
+- [ ] `curl /blog/<slug>` 断言首屏 HTML 含正文；沉淀「迁移配方」
+
+### B2 — 迁移 blog 列表页
+- [ ] `BlogIndexInner` 的 `list_blog_posts` → `use_server_future`，保留标签筛选/分页客户端交互
+- [ ] 烟测 `/blog`
+
+### B3 — 迁移 5 个内容板块页
+- [ ] `ai/web3/wasm/cli/embedded` 的 `*IndexPage`（`list_*_articles`）与 `*ArticlePage`（`get_*_article`）→ `use_server_future`
+- [ ] 烟测各板块首屏
+
+### B4 — 迁移 course 与 docs 页（须在 A2 之后）
+- [ ] `course.rs` 列表/详情/课时 + `docs.rs` 的 `list_doc_tree` / `get_doc_content` → `use_server_future`
+- [ ] 课时页若涉及 DB 按 P1 起 DB 验证；烟测 `/course`、`/docs/<path>`
+
+### B5 — 迁移 cases 页
+- [ ] `cases.rs` 的 `*IndexPage` / `*DetailPage` → `use_server_future`
+- [ ] 烟测 `/case`、`/case/<slug>`
+
+### B6 — 评估 App 级与非内容页
+- [ ] 评估 `get_aggregated_theme_css`（可受益 server-future）与 `get_current_user`（宜保持客户端）
+- [ ] forum/admin 等显式保留 `use_resource` 并注释理由
+
+---
+
+## 依赖与排序
+
+- P0 最先；P1 在首个需要 DB 的任务前按需执行。
+- **A2 必须在 B4 之前**（docs 插槽改造影响其 SSR 迁移）。
+- 建议顺序：P0 → A1 → A2 → A3 → A4 → B1 → B2 → B3 → B4 →（按需 P1）→ B5 → B6。
