@@ -58,10 +58,10 @@
 - [x] 从 `crates/modules/docs/Cargo.toml` 删除 `module-blog`（同为死依赖）/ `module-course` / `module-forum` 依赖
 - [x] app（server）+ docs（server/client）构建通过，clippy `-D warnings` 零告警；标注层/讨论面板仍在 docs 文章页身位渲染
 
-### A3 — 解耦 search → cases 数据源
-- [ ] 评估 `indexer.rs::collect_cases` 对 `module_cases::server::scan_cases` 的依赖
-- [ ] 倒置（core 注册点 IoC，使 `module-search` 不再编译期依赖 `module-cases`）或文档化保留为「可接受的数据层依赖」
-- [ ] 按结论二选一落地
+### A3 — 解耦 search → cases 数据源 ✅（选择：IoC 倒置）
+- [x] 新增 `app-core::engines::doc_source`：中立 `ExternalIndexedDoc` + `register_doc_source` / `collect_registered_docs` 注册表（同 `ComponentRegistry` IoC 模式）
+- [x] `indexer.rs` 的 `collect_cases` → `collect_registered_external`，改读 core 注册表；从 `module-search/Cargo.toml` 删除 `module-cases` 依赖及 `module-cases/server`
+- [x] `app/src/main.rs` 启动期注册 cases 来源（server-only）；core 155 + search 64 测试通过，clippy `-D warnings` 零告警
 
 ### A4 — 固化模块依赖策略文档
 - [ ] 在 `docs/MODULE_SPEC.md` 增补「模块依赖规则」+ 当前合规边与例外

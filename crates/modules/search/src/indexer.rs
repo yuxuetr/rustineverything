@@ -382,24 +382,22 @@ async fn collect_topics() -> Result<Vec<IndexedDocument>, String> {
   Ok(out)
 }
 
+/// 收集由 `app` 启动期注册的外部内容来源（如 cases）的索引文档。
+///
+/// Phase 重构 A3：原先直接 `module_cases::server::scan_cases()`，使 search 编译期
+/// 依赖 cases。改走 [`app_core::engines::doc_source`] 注册表后，search 只依赖 core
+/// 抽象；具体内容模块的数据由组合根 `app` 注入（见 `app/src/main.rs`）。
 #[cfg(feature = "server")]
-fn collect_cases() -> Vec<IndexedDocument> {
-  use module_cases::server::scan_cases;
-
-  scan_cases()
+fn collect_registered_external() -> Vec<IndexedDocument> {
+  app_core::engines::doc_source::collect_registered_docs()
     .into_iter()
-    .map(|case| {
-      let readme = case.readme_md.unwrap_or_default();
-      let body =
-        format!("{} {} {}", case.description, case.tags.join(" "), truncate_chars(&readme, 4000));
-      IndexedDocument {
-        kind: "case".to_string(),
-        ref_id: case.slug.clone(),
-        title: case.name,
-        body,
-        url: format!("/case/{}", case.slug),
-        created_at: case.date_added,
-      }
+    .map(|d| IndexedDocument {
+      kind: d.kind,
+      ref_id: d.ref_id,
+      title: d.title,
+      body: d.body,
+      url: d.url,
+      created_at: d.created_at,
     })
     .collect()
 }
@@ -451,7 +449,7 @@ pub async fn collect_dyn_documents() -> Vec<IndexedDocument> {
     Ok(mut t) => out.append(&mut t),
     Err(e) => tracing::warn!(error = %e, "search: failed to collect topics"),
   }
-  out.extend(collect_cases());
+  out.extend(collect_registered_external());
   out
 }
 

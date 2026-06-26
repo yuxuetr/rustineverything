@@ -89,6 +89,33 @@ fn main() {
   // 2) 各业务模块注册自身提供的组件 (PodcastCard ...)
   module_podcast::register_components();
 
+  // 3) A3 解耦：把 cases 注册为搜索索引的外部文档来源（IoC）。
+  //    使 module-search 不再编译期依赖 module-cases —— 数据由组合根 app 在此注入。
+  //    仅 server 端需要（scan_cases 读磁盘 + 索引只在服务端构建）。
+  #[cfg(feature = "server")]
+  app_core::engines::doc_source::register_doc_source(|| {
+    module_cases::server::scan_cases()
+      .into_iter()
+      .map(|case| {
+        let readme = case.readme_md.unwrap_or_default();
+        let body = format!(
+          "{} {} {}",
+          case.description,
+          case.tags.join(" "),
+          module_search::text::truncate_chars(&readme, 4000)
+        );
+        app_core::engines::doc_source::ExternalIndexedDoc {
+          kind: "case".to_string(),
+          ref_id: case.slug.clone(),
+          title: case.name,
+          body,
+          url: format!("/case/{}", case.slug),
+          created_at: case.date_added,
+        }
+      })
+      .collect()
+  });
+
   // Server: customize the Axum router to serve blog post static assets
   #[cfg(feature = "server")]
   dioxus::serve(|| async move {

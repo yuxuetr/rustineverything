@@ -4419,7 +4419,6 @@ dependencies = [
  "app-core",
  "chrono",
  "dioxus",
- "module-cases",
  "sdk",
  "sea-orm",
  "serde",
