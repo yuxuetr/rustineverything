@@ -384,8 +384,34 @@ fn engine_slot() -> &'static Mutex<Option<Arc<SearchEngine>>> {
   ENGINE.get_or_init(|| Mutex::new(None))
 }
 
+/// 串行化「首次初始化」的异步锁。
+///
+/// 修复 typeahead 并发首查（如 `q_len=1` / `q_len=2` 同一瞬间触发）各自进入
+/// [`init_or_load`] → 在同一 `MmapDirectory` 上各开一个 `IndexWriter` 抢锁，
+/// 第二个失败 `LockBusy` 的问题。该锁仅在引擎尚未就绪时短暂持有；一旦就绪，
+/// 后续查询走 [`engine_slot`] 快路径，不再加锁、也不再创建 writer。
+static INIT_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+fn init_lock() -> &'static tokio::sync::Mutex<()> {
+  INIT_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
 /// 获取当前引擎；若未初始化则在默认目录上 [`init_or_load`]。
+///
+/// 初始化通过 [`INIT_LOCK`] 串行化 + 双检：并发首查只会有一个真正执行
+/// `init_or_load`，其余在拿到锁后发现引擎已就绪，直接复用，避免 writer 抢锁。
 pub async fn get_or_build() -> Result<Arc<SearchEngine>, String> {
+  // 快路径：引擎已就绪，无需加初始化锁。
+  {
+    let guard = engine_slot().lock().map_err(|e| format!("search lock poisoned: {}", e))?;
+    if let Some(e) = guard.as_ref() {
+      return Ok(e.clone());
+    }
+  }
+
+  // 慢路径：串行化初始化。
+  let _init = init_lock().lock().await;
+  // 双检：等待锁期间可能已被其他调用者完成初始化。
   {
     let guard = engine_slot().lock().map_err(|e| format!("search lock poisoned: {}", e))?;
     if let Some(e) = guard.as_ref() {

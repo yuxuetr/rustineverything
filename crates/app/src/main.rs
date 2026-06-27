@@ -536,6 +536,71 @@ pub fn use_session_user() -> Signal<Option<SessionUser>> {
   use_context::<Signal<Option<SessionUser>>>()
 }
 
+/// 静态 head 资源（图标 / 全局 CSS / 语法高亮 + mermaid 脚本）。
+///
+/// 这些节点内容固定、与任何响应式状态无关。单独封成无 props 的组件后会被
+/// Dioxus memoize：仅首次渲染挂载一次，App 因主题 / 语言切换 bump 信号重渲时
+/// **不会**重渲它们，从而消除 dioxus-document 的
+/// "Changing the props of `Style {}` / `Script {}` is not supported" 警告。
+#[component]
+fn HeadAssets() -> Element {
+  rsx! {
+      // Head links
+      document::Link { rel: "icon", href: FAVICON }
+      document::Link { rel: "stylesheet", href: MAIN_CSS }
+      document::Link { rel: "stylesheet", href: TAILWIND_CSS }
+
+      // Global Fixed Styles (Static)
+      document::Style { "
+        body {{ 
+          background-color: var(--color-bg, white); 
+          color: var(--color-text, #0f172a);
+          transition: background-color 0.3s ease, color 0.3s ease; 
+        }}
+        .dark body {{ 
+          background-color: var(--color-bg, #020617); 
+          color: var(--color-text, #f8fafc);
+        }}
+        .prose-comment .prose {{ font-size: 0.875rem; }}
+        .prose-comment .prose h1 {{ font-size: 1.1em; margin: 0.4em 0; line-height: 1.3; }}
+        .prose-comment .prose h2 {{ font-size: 1em; margin: 0.3em 0; line-height: 1.3; }}
+        .prose-comment .prose h3 {{ font-size: 0.95em; margin: 0.2em 0; line-height: 1.3; }}
+        .prose-comment .prose p {{ margin: 0.3em 0; line-height: 1.5; }}
+        .prose-comment .prose img {{ max-height: 200px; border-radius: 0.5rem; margin: 0.5em 0; }}
+      " }
+
+      // mdx 内容的全局静态样式（math / 评论 prose 缩排）。
+      document::Style { "
+        math {{ font-size: 1.1em; }}
+        .math-display math {{ font-size: 1.4em; }}
+        .prose code::before, .prose code::after {{ content: none !important; }}
+      " }
+
+      // pulldown-latex math fonts & styles
+      document::Link { rel: "stylesheet", href: MATH_CSS }
+
+      // PrismJS for syntax highlighting (core + language packs, served via /js)
+      document::Link { rel: "stylesheet", href: PRISM_CSS }
+      document::Script { src: "/js/prism.min.js" }
+      document::Script { src: "/js/prism-rust.min.js" }
+      document::Script { src: "/js/prism-bash.min.js" }
+      document::Script { src: "/js/prism-toml.min.js" }
+      document::Script { src: "/js/prism-json.min.js" }
+      document::Script { src: "/js/prism-yaml.min.js" }
+      document::Script { src: "/js/prism-python.min.js" }
+
+      // Mermaid.js for diagram rendering
+      document::Script { src: "/js/mermaid.min.js" }
+
+      // 全局 rehighlight / mermaid 触发器。**只挂载一次**，靠 MutationObserver
+      // 自动捕获后续插入到 DOM 的代码块 / mermaid 块（含 SPA 路由切换换入的内容）。
+      document::Script { {GLOBAL_REHIGHLIGHT_BOOT_SCRIPT} }
+
+      // 运行时标注运行时（PR-D）
+      document::Script { src: "/js/annotations.js" }
+  }
+}
+
 #[component]
 fn App() -> Element {
   init_i18n();
@@ -594,80 +659,21 @@ fn App() -> Element {
   let theme_css_value: String = theme_css.read().as_ref().cloned().unwrap_or_default();
 
   rsx! {
-      // Head links
-      document::Link { rel: "icon", href: FAVICON }
-      document::Link { rel: "stylesheet", href: MAIN_CSS }
-      document::Link { rel: "stylesheet", href: TAILWIND_CSS }
+      // 静态 head 资源（图标 / CSS / 脚本）。抽到独立 memoized 组件，避免随 App
+      // 重渲（主题 / 语言切换会 bump 信号触发 App 重渲）反复重挂 document::Style /
+      // Script，进而触发 dioxus-document "Changing the props … is not supported" 警告。
+      HeadAssets {}
 
-      // Global Fixed Styles (Static)
-      document::Style { "
-        body {{ 
-          background-color: var(--color-bg, white); 
-          color: var(--color-text, #0f172a);
-          transition: background-color 0.3s ease, color 0.3s ease; 
-        }}
-        .dark body {{ 
-          background-color: var(--color-bg, #020617); 
-          color: var(--color-text, #f8fafc);
-        }}
-        .prose-comment .prose {{ font-size: 0.875rem; }}
-        .prose-comment .prose h1 {{ font-size: 1.1em; margin: 0.4em 0; line-height: 1.3; }}
-        .prose-comment .prose h2 {{ font-size: 1em; margin: 0.3em 0; line-height: 1.3; }}
-        .prose-comment .prose h3 {{ font-size: 0.95em; margin: 0.2em 0; line-height: 1.3; }}
-        .prose-comment .prose p {{ margin: 0.3em 0; line-height: 1.5; }}
-        .prose-comment .prose img {{ max-height: 200px; border-radius: 0.5rem; margin: 0.5em 0; }}
-      " }
-
-      // 从 WASM 插件聚合出的主题 CSS。
-      // 注意：**不能**用 `document::Style`：theme_css_value 会随用户切换
-      // 主题变化，而 `document::Style/Script` 只支持一次性挂载（变更 props
-      // 会触发 dioxus-document "Changing the props … is not supported" 警告
-      // 且不更新 DOM）。改用普通 `style` 元素 + `dangerous_inner_html`：
-      // CSS 落在 <body> 仍全局生效，且 vdom diff 正常更新内容。
+      // 从 WASM 插件聚合出的主题 CSS（随用户切换变化，必须留在 App 内响应式渲染）。
+      // 注意：**不能**用 `document::Style`（变更 props 会触发警告且不更新 DOM）；
+      // 改用普通 `style` + `dangerous_inner_html`：CSS 落在 <body> 仍全局生效，
+      // 且 vdom diff 正常更新内容。
       if !theme_css_value.is_empty() {
           style {
               id: "wasm-theme-style",
               dangerous_inner_html: "{theme_css_value}",
           }
       }
-
-      // mdx 内容的全局静态样式（math / 评论 prose 缩排）。原本住在
-      // widgets/src/mdx.rs 的 document::Style，但 mdx 组件每次路由切换都
-      // 重渲，会触发 props-change 警告 → 上提到 App 根，挂载一次。
-      document::Style { "
-        math {{ font-size: 1.1em; }}
-        .math-display math {{ font-size: 1.4em; }}
-        .prose code::before, .prose code::after {{ content: none !important; }}
-      " }
-
-      // pulldown-latex math fonts & styles
-      document::Link { rel: "stylesheet", href: MATH_CSS }
-
-      // PrismJS for syntax highlighting (core + language packs, served via /js)
-      document::Link { rel: "stylesheet", href: PRISM_CSS }
-      document::Script { src: "/js/prism.min.js" }
-      document::Script { src: "/js/prism-rust.min.js" }
-      document::Script { src: "/js/prism-bash.min.js" }
-      document::Script { src: "/js/prism-toml.min.js" }
-      document::Script { src: "/js/prism-json.min.js" }
-      document::Script { src: "/js/prism-yaml.min.js" }
-      document::Script { src: "/js/prism-python.min.js" }
-
-      // Mermaid.js for diagram rendering
-      document::Script { src: "/js/mermaid.min.js" }
-
-      // 全局 rehighlight / mermaid 触发器。**只在 App 根挂载一次**，靠
-      // MutationObserver 自动捕获后续插入到 DOM 的代码块 / mermaid 块（包括
-      // SPA 路由切换换入的新 Markdown 内容）。
-      //
-      // 为什么不放在 widgets/mdx.rs 里：那个组件每次路由切换都重渲，会触发
-      // dioxus-document "Changing the props of Script is not supported" 警告，
-      // 且更换后的脚本不会再次执行 → SPA 导航后 Prism / Mermaid 不重跑。
-      // MutationObserver 一次挂载 → 长期生效，幂等且零警告。
-      document::Script { {GLOBAL_REHIGHLIGHT_BOOT_SCRIPT} }
-
-      // 运行时标注运行时（PR-D）
-      document::Script { src: "/js/annotations.js" }
 
       // Main router entry
       Router::<Route> {}
