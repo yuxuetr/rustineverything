@@ -10,9 +10,10 @@
 use dioxus::prelude::*;
 use dioxus::router::{Link, Outlet};
 
+use crate::components::lang_picker::LangPicker;
 use crate::components::theme_picker::ThemePicker;
 use crate::components::view::Container;
-use crate::i18n::{t, use_i18n, use_t, Language};
+use crate::i18n::{t, use_i18n, use_t};
 use crate::routes::Route;
 use crate::server::enabled_module_ids;
 use dioxus::document::eval;
@@ -22,7 +23,7 @@ use module_search::search::SearchButton;
 #[component]
 pub fn ClassicShell() -> Element {
   let route = use_route::<Route>();
-  let mut lang = use_i18n();
+  let lang = use_i18n();
   let mut is_dark = use_signal(|| false);
   let mut show_auth_modal = crate::use_auth_modal();
   let session_user = crate::use_session_user();
@@ -112,14 +113,6 @@ pub fn ClassicShell() -> Element {
     let _ = eval(script);
   };
 
-  let toggle_lang = move |_| {
-    if lang() == Language::Zh {
-      lang.set(Language::En);
-    } else {
-      lang.set(Language::Zh);
-    }
-  };
-
   rsx! {
       div { class: "min-h-screen flex flex-col",
           header { class: "sticky top-0 z-50 border-b border-slate-200/70 bg-white/80 backdrop-blur dark:bg-slate-950/70 dark:border-slate-800",
@@ -188,12 +181,8 @@ pub fn ClassicShell() -> Element {
                           // Phase 3.1: Theme switcher
                           ThemePicker {}
 
-                          // Language Toggle
-                          button {
-                              onclick: toggle_lang,
-                              class: "p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors text-xs font-semibold",
-                              if lang() == Language::Zh { "EN" } else { "中" }
-                          }
+                          // Language Picker（下拉，便于后续支持更多语言）
+                          LangPicker {}
 
                           // Dark Mode Toggle
                           button {

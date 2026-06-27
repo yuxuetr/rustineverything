@@ -217,7 +217,12 @@ pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
     let config = SiteConfig::from_file(asset_root.join("site.json").to_str().unwrap_or_default())
       .unwrap_or_default();
     let stack = config.theme_stack();
-    let active_top = stack.last().cloned().unwrap_or_default();
+    // 激活态优先看用户 cookie（与 `get_aggregated_theme_css` 的覆盖语义一致），
+    // 没有 cookie 时回退到 site.json 主题栈顶。
+    let active_top = read_request_cookie(THEME_COOKIE_NAME)
+      .map(|c| c.trim().to_string())
+      .filter(|c| !c.is_empty())
+      .unwrap_or_else(|| stack.last().cloned().unwrap_or_default());
 
     let manager = app_core::shared_plugin_manager();
 
@@ -306,11 +311,13 @@ pub async fn set_user_theme(filename: String) -> Result<(), ServerFnError> {
       .map(|_| "; Secure")
       .unwrap_or("");
 
+    // 主题名是非敏感展示偏好，不使用 HttpOnly；前端也会用 document.cookie 兜底写入，
+    // 确保随后的主题 CSS 重新请求能立即携带新 cookie，刷新后也能保持选择。
     let header_value = if cookie_value.is_empty() {
-      format!("{}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax{}", THEME_COOKIE_NAME, secure_flag)
+      format!("{}=; Path=/; Max-Age=0; SameSite=Lax{}", THEME_COOKIE_NAME, secure_flag)
     } else {
       format!(
-        "{}={}; HttpOnly; Path=/; Max-Age=31536000; SameSite=Lax{}",
+        "{}={}; Path=/; Max-Age=31536000; SameSite=Lax{}",
         THEME_COOKIE_NAME, cookie_value, secure_flag
       )
     };

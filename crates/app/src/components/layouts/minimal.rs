@@ -6,9 +6,10 @@
 use dioxus::prelude::*;
 use dioxus::router::{Link, Outlet};
 
+use crate::components::lang_picker::LangPicker;
 use crate::components::theme_picker::ThemePicker;
 use crate::components::view::Container;
-use crate::i18n::{t, use_i18n, Language};
+use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
 use dioxus::document::eval;
 use module_search::search::SearchButton;
@@ -16,7 +17,7 @@ use module_search::search::SearchButton;
 /// Minimal shell：极简顶部条，`Outlet::<Route>` 主导内容；无 Footer。
 #[component]
 pub fn MinimalShell() -> Element {
-  let mut lang = use_i18n();
+  let lang = use_i18n();
   let mut is_dark = use_signal(|| false);
   let mut show_auth_modal = crate::use_auth_modal();
   let session_user = crate::use_session_user();
@@ -52,14 +53,6 @@ pub fn MinimalShell() -> Element {
     let _ = eval(script);
   };
 
-  let toggle_lang = move |_| {
-    if lang() == Language::Zh {
-      lang.set(Language::En);
-    } else {
-      lang.set(Language::Zh);
-    }
-  };
-
   rsx! {
       div { class: "min-h-screen flex flex-col",
           header { class: "sticky top-0 z-50 border-b border-slate-200/70 bg-white/80 backdrop-blur dark:bg-slate-950/70 dark:border-slate-800",
@@ -73,11 +66,7 @@ pub fn MinimalShell() -> Element {
                       div { class: "flex items-center gap-2",
                           SearchButton {}
                           ThemePicker {}
-                          button {
-                              onclick: toggle_lang,
-                              class: "p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors text-xs font-semibold",
-                              if lang() == Language::Zh { "EN" } else { "中" }
-                          }
+                          LangPicker {}
                           button {
                               onclick: toggle_dark,
                               class: "p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors",

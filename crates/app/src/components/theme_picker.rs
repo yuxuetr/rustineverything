@@ -4,9 +4,13 @@
 //! 点击后调用 `set_user_theme` 写入 cookie 并 bump `ThemeVersion` Signal，
 //! 触发上层 `theme_css` `use_resource` 重新请求合并 CSS。
 
+use dioxus::document::eval;
 use dioxus::prelude::*;
 
 use crate::server::{list_available_themes, set_user_theme, ThemeInfo};
+
+/// 主题 cookie 名（与后端 `THEME_COOKIE_NAME` 保持一致）。
+const THEME_COOKIE_NAME: &str = "site_theme";
 
 /// 全局主题版本号：每次切换主题 +1，App 组件中的 `use_resource` 依赖该值，
 /// 使聚合 CSS 在用户切换主题后立即重取。
@@ -50,20 +54,43 @@ pub fn ThemePicker() -> Element {
     return rsx! {};
   }
 
-  // 在闭包中调用上衔函数：写 cookie 后 bump version 以迫使上层重拼 CSS。
+  // 切换主题：写 cookie 后 bump version 以迫使上层重拼 CSS。
   // 该闭包被后续多个 button.onclick 共享使用，所以需要 Copy + impl Fn。
+  //
+  // 持久化采用「双写」策略，修复「切不动 + 刷新回退」：
+  // 1. `set_user_theme`：服务端校验文件名并下发 Set-Cookie（桌面端走 reqwest
+  //    cookie jar，跨平台兜底）。
+  // 2. `document.cookie`：Web 端直接写入非 HttpOnly cookie，**等待写入完成**再
+  //    bump version，确保紧接着的聚合 CSS 重新请求一定携带新 cookie；刷新后 SSR
+  //    也能读到，主题保持不变。
   let switch = use_callback(move |filename: String| {
-    spawn(async move {
-      match set_user_theme(filename).await {
-        Ok(_) => {
-          version.with_mut(|v| *v += 1);
-        }
-        Err(e) => {
-          tracing::error!(error = %e, "theme picker: set_user_theme failed");
-        }
-      }
-    });
     open.set(false);
+    spawn(async move {
+      // 1) 服务端校验 + Set-Cookie（best-effort，失败仅记日志，不阻断切换）。
+      if let Err(e) = set_user_theme(filename.clone()).await {
+        tracing::error!(error = %e, "theme picker: set_user_theme failed");
+      }
+
+      // 2) 客户端兜底写 cookie，并等待 JS 执行完成。
+      let trimmed = filename.trim();
+      let js = if trimmed.is_empty() {
+        format!(
+          "document.cookie = '{name}=; path=/; max-age=0; samesite=lax'; dioxus.send(true);",
+          name = THEME_COOKIE_NAME
+        )
+      } else {
+        format!(
+          "document.cookie = '{name}={value}; path=/; max-age=31536000; samesite=lax'; dioxus.send(true);",
+          name = THEME_COOKIE_NAME,
+          value = trimmed
+        )
+      };
+      let mut handle = eval(&js);
+      let _ = handle.recv::<bool>().await;
+
+      // 3) cookie 就绪后再触发上层重新拉取聚合 CSS。
+      version.with_mut(|v| *v += 1);
+    });
   });
 
   rsx! {
