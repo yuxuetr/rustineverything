@@ -40,8 +40,8 @@
 - [x] 按本计划重写 `Todos.md`（A/B 全部任务 + 持续约定）
 - [x] 提交（无共同作者行）
 
-### P1 —（按需）apple container 起 PostgreSQL
-- [ ] 首个需要 DB 的任务前：从 `.env` 读取 `POSTGRES_USER/PASSWORD/DB`，`container run` 起 `postgres:16`，映射 `127.0.0.1:5432`，等健康后用 `DATABASE_URL` 验证连通
+### P1 —（按需）apple container 起 PostgreSQL ✅
+- [x] 用 `apple container` 起 `postgres:16-alpine` 容器 `rie-postgres`，凭据从 `.env` 的 `DATABASE_URL` 解析（user=postgres / db=github-auth），发布端口 `127.0.0.1:5432`；psql TCP 密码鉴权通过，`dx serve` 启动日志 `schema migrations applied`（9 表）
 
 ---
 
@@ -77,30 +77,30 @@
 - [x] `BlogInner` 拆为布局外壳 + `BlogArticle`（`routes/mod.rs:449`）；`BlogArticle` 用 `use_server_future` + `use_reactive!(|id| ...)`，置于 `SuspenseBoundary`（fallback=spinner）内
 - [x] base_url 也改 `use_server_future`；错误/空分支 fail-safe（`unwrap_or_default`，无 `unwrap()/expect()`）
 - [x] 双编译目标验证：app `--features server`（SSR）构建通过 + `cargo check -p app`（默认 web cfg）通过；clippy `-D warnings` 零告警
-- [ ] 【手动】`dx serve --package app` + `curl -s /blog/welcome` 验证首屏 HTML 含正文（cold wasm 构建耗时长，交互式，留作本地验证；适用于 B2–B5）
+- [x] 【运行时已验证 2026-06-26】`dx serve` + `curl -s /blog/welcome` → http=200、含正文、`spinnerOnly=0`
 
 > 迁移配方（后续 B 任务复用）：把取数部分抽成子组件，子组件内 `let x = use_server_future(use_reactive!(|dep| async move { server_fn(dep).await }))?;`（无参数用 `|| async move {...}`），父组件用 `SuspenseBoundary { fallback: |_| rsx!{...}, Child {} }` 包裹；读取 `res()` 得 `Option<T>`，`match` 处理 Some(Ok/Err)/None。
 
 ### B2 — 迁移 blog 列表页 ✅
 - [x] `BlogIndexInner` 拆为标题外壳 + `SuspenseBoundary{ BlogList }`；`BlogList`（`routes/mod.rs:252`）用 `use_server_future` 取 `list_blog_posts`，标签筛选/分页保留为客户端 signal
 - [x] 双编译目标（server + 默认 web）通过，clippy `-D warnings` 零告警
-- [ ] 【手动】`curl -s /blog` 验证首屏含文章列表
+- [x] 【运行时已验证 2026-06-26】`curl -s /blog` → http=200、含文章列表、`spinnerOnly=0`
 
 ### B3 — 迁移 5 个内容板块页 ✅
 - [x] `ai/web3/wasm/cli/embedded` 统一重写：`*IndexPage` 拆为标题外壳 + `SuspenseBoundary{ *IndexList }`（`use_server_future` 取 `list_*_articles`，筛选/搜索保留客户端 signal）；`*ArticlePage` 拆为外壳 + `*ArticleContent`（`use_server_future` + `use_reactive!(|slug|)` 取 `get_*_article`）
 - [x] app `--features server` 构建 + 默认 web check 通过；clippy `-D warnings` 零告警（5 板块 + app）
-- [ ] 【手动】`curl -s /ai|/web3|/wasm|/cli|/embedded` 验证各板块首屏
+- [x] 【运行时已验证 2026-06-26】`curl -s /ai` → http=200、含内容、`spinnerOnly=0`；web3/wasm/cli/embedded 为同一模板生成，待服务器再次运行时补 curl
 
 ### B4 — 迁移 course 与 docs 页（须在 A2 之后）✅
 - [x] `course.rs`：`CoursesIndexPage`→`CoursesList`、`CourseDetailPage`→`CourseDetailLoaded`（get_course）、`LessonPage`→`LessonLoaded`（get_lesson）均走 `use_server_future`；进度/上次学习/标注层等每用户 DB交互保留 use_resource
 - [x] `docs.rs`：`Docs`→`DocsIndexInner`（list_doc_tree）、`DocPage`→`DocPageInner`（get_doc_content 走 server_future；树形导航保留 use_resource）
 - [x] 本任务不需 DB（内容均读磁盘）；app `--features server` + 默认 web check 通过，clippy `-D warnings` 零告警
-- [ ] 【手动】`curl -s /course | /docs/<path>` 验证首屏
+- [x] 【运行时已验证 2026-06-26】`curl -s /course`、`/docs` → http=200、含内容、`spinnerOnly=0`
 
 ### B5 — 迁移 cases 页 ✅
 - [x] `CaseDetailPage`→`CaseDetailLoaded`（get_case 走 `use_server_future`）；`CasesIndexPage` 结果网格抽为 `CasesGrid`（`use_server_future` + `use_reactive!(|query,category,tag|)`，筛选 signal 作 prop），搜索/标签/分类 UI chrome 保留客户端
 - [x] app `--features server` + 默认 web check 通过，clippy `-D warnings` 零告警
-- [ ] 【手动】`curl -s /case | /case/<slug>` 验证首屏
+- [x] 【运行时已验证 2026-06-26】`curl -s /case` → http=200、含列表、`spinnerOnly=0`
 
 ### B6 — 评估 App 级与非内容页 ✅
 - [x] 结论：`get_aggregated_theme_css` 与 `get_current_user` 均保留 `use_resource`（App 根不宜整体挂起；登录态不宜烘进可缓存 HTML），已在 `main.rs` 加详细理由注释
@@ -114,7 +114,12 @@
 - 模块解耦：forum 不再依赖 blog/course；docs 不再依赖 course/forum/blog；search 经 core IoC 注册表解耦 cases；策略写入 `MODULE_SPEC.md` §11。
 - SSR：blog（列表+详情）、5 内容板块、course（列表/详情/课时）、docs（首页+详情）、cases（列表+详情）均迁到 `use_server_future` + `SuspenseBoundary`；鉴权/强交互页保留 use_resource 并注释理由。
 - 验证：双编译目标（server + 默认 web）构建、clippy `-D warnings` 零告警、全量测试 0 failed。
-- 待办（本地手动）：`dx serve` + curl 各内容页首屏 HTML 含正文的运行时烟测（见各 B 任务末「手动」项）。
+
+## 运行时验证补充（2026-06-27）
+- DB 环境：`apple container` 起 `rie-postgres`（凭据解自 `.env::DATABASE_URL`），`dx serve` 启动迁移成功（9 表）。
+- SSR 首屏：`/blog`、`/blog/welcome`、`/ai`、`/case`、`/docs`、`/course` 均 http=200、含正文、`spinnerOnly=0`。
+- DB 功能（评论/标注读取路径）：插入样本后 `POST /api/comments/list`、`/api/annotations/list`、`/api/annotations/config` 均返回 200 + 正确数据（含 users 关联解析的作者名）。
+- 残留（可选，需重启 dx serve）：web3/wasm/cli/embedded 单独 curl；浏览器 Console 确认无 hydration mismatch 警告。
 
 ---
 
