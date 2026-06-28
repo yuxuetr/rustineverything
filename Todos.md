@@ -137,12 +137,13 @@
 > 定位：Rust 工业用途社区，围绕 **Rust 生态 + AI 生态** 两大支柱；案例为差异化核心，课程为变现核心。
 > 已完成（前置 UI 修复）：导航断点回退 lg + 首页模块卡网格（提交 `fix(ui): restore desktop nav...`）。
 
-## M1 — 导航重构：双生态 mega 菜单
-- [ ] 新增 taxonomy 单一源（ecosystem→domain 配置：rust={embedded,web3,wasm,cli,backend}，ai={llm,inference,agent,rust-ai}），导航/首页/筛选共用
-- [ ] `classic.rs` 顶层改为 `Rust 生态▾  AI 生态▾  案例  课程  博客  论坛`；播客并入博客；保留右侧控件
-- [ ] `EcosystemMega` 组件：三栏（应用领域 / 学习资源 / 精选案例缩略）；精选复用 `cases.favorite`
-- [ ] 响应式：<lg hamburger 抽屉内两个生态变 accordion；a11y（aria-expanded/haspopup、Esc 关闭、focus）
-- [ ] i18n 新键 `nav.eco.*` / `mega.*`（zh/en 同步）；`npm run build` 重建 CSS；构建 + clippy 零告警
+## M1 — 导航重构：双生态 mega 菜单 ✅
+- [x] taxonomy 单一源 `crates/app/src/taxonomy.rs`（rust={embedded,web3,wasm,cli}，ai={llm,inference,agent,rust-ai}；backend 与 AI 子领域筛选留 M3）
+- [x] `classic.rs` 顶层改为 `Rust 生态▾  AI 生态▾  案例  课程  博客  论坛`；播客并入移动抽屉；保留右侧控件；新增 on_course gating
+- [x] `EcosystemMenu` 组件（`components/ecosystem_menu.rs`）：三栏（应用领域 / 学习资源 / 生态简介+精选案例 CTA），纯 CSS group-hover + group-focus-within 展开
+- [x] 响应式：<lg hamburger 抽屉内按生态分组（标题+领域）+ 内容入口；桌面/移动均浏览器验证（M1 用分组列表，accordion 折叠 + Esc 关闭留作打磨）
+- [x] i18n 新键 `nav.eco.*` / `mega.*` / `nav.ai.*` / `nav.course/web3/wasm/cli`（zh/en parity 通过）；重建 minified CSS（root==crate）；clippy 新代码零告警
+- 备注：精选案例列 M1 用静态 CTA，M2/M3 接 `cases.favorite` 实时数据。
 
 ## M2 — 首页重排
 - [ ] Hero 文案/CTA 更新（浏览案例 + 查看课程 + 搜索）
