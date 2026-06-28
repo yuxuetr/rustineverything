@@ -2,8 +2,8 @@
 //!
 //! 围绕「Rust 生态 + AI 生态」双支柱组织首页：生态 pillars、精选案例、课程、
 //! 社区动态等。数据来源沿用各模块 server fn；SEO 关键区用 `use_server_future`
-//! + `SuspenseBoundary`（与内容页一致），社区/DB 区用 `use_resource`。
-//! 详见 `docs/SITE_REDESIGN_SPEC.md` §4。
+//! 配合 `SuspenseBoundary`（与内容页一致），社区/DB 区用 `use_resource`。
+//! 详见 `docs/SITE_REDESIGN_SPEC.md` 第 4 节。
 
 use dioxus::prelude::*;
 use dioxus::router::Link;
