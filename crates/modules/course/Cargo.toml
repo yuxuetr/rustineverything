@@ -14,6 +14,8 @@ sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
 module-blog = { path = "../blog" }
 app-core = { path = "../../core" }
+# 购买二维码渲染（client + server 均可用，纯 Rust → SVG）
+fast_qr = { version = "0.13", default-features = false, features = ["svg"] }
 module-moderation = { path = "../moderation", optional = true }
 sea-orm = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }

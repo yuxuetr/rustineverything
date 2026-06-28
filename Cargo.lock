@@ -2450,6 +2450,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "fast_qr"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f5ea9788036fedaf55f43a2db0ba01eedf47d26fd6852f01e5cf51952571d57"
+
+[[package]]
 name = "fastdivide"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4608,6 +4614,7 @@ dependencies = [
  "base64",
  "chrono",
  "dioxus",
+ "fast_qr",
  "module-blog",
  "module-moderation",
  "rand 0.9.4",

@@ -508,7 +508,7 @@ fn LessonContent(
         h1 { class: "text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white mb-6",
             "{lesson.title}"
         }
-        LessonPaywall { price: lesson.price }
+        LessonPaywall { course_slug: course_slug.clone(), price: lesson.price }
     };
   }
   rsx! {
@@ -557,9 +557,9 @@ fn LessonContent(
   }
 }
 
-/// 付费墙：锁定课节的占位卡片。支付网关接入前为信息态（M5 接入购买）。
+/// 付费墙：锁定课节的占位卡片 + 购买入口（M5d）。
 #[component]
-fn LessonPaywall(price: i64) -> Element {
+fn LessonPaywall(course_slug: String, price: i64) -> Element {
   let yuan = price / 100;
   rsx! {
       div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-10 text-center max-w-xl mx-auto",
@@ -573,8 +573,11 @@ fn LessonPaywall(price: i64) -> Element {
           if price > 0 {
               div { class: "mt-5 text-3xl font-extrabold text-[var(--color-primary)]", "¥{yuan}" }
           }
-          p { class: "mt-5 text-sm text-slate-400",
-              "登录并开通权益后即可访问；试看课节免费开放。在线支付即将上线。"
+          div { class: "mt-6",
+              crate::pay_ui::PurchaseButton { course_slug, price }
+          }
+          p { class: "mt-4 text-sm text-slate-400",
+              "需登录后购买；试看课节免费开放。"
           }
       }
   }

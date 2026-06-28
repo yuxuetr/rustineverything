@@ -1,6 +1,7 @@
 #[cfg(feature = "server")]
 pub mod alipay;
 pub mod course;
+pub mod pay_ui;
 pub mod server;
 #[cfg(feature = "server")]
 pub mod wechat;
