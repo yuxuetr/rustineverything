@@ -19,7 +19,7 @@ fn use_session_user_ctx() -> Option<Signal<Option<SessionUser>>> {
 }
 
 /// 当前用户是否为 admin
-fn is_current_user_admin() -> bool {
+pub fn is_current_user_admin() -> bool {
   use_session_user_ctx()
     .map(|s| s.read().as_ref().map(|u| u.is_admin()).unwrap_or(false))
     .unwrap_or(false)
@@ -30,7 +30,7 @@ fn is_current_user_admin() -> bool {
 // =============================================================
 
 #[component]
-fn ForbiddenPanel() -> Element {
+pub fn ForbiddenPanel() -> Element {
   rsx! {
       section { class: "min-h-screen flex items-center justify-center bg-white dark:bg-slate-950",
           div { class: "max-w-md text-center px-4",
@@ -49,8 +49,10 @@ fn ForbiddenPanel() -> Element {
   }
 }
 
+/// 管理后台公共外壳（侧边导航 + 内容区）。app 组合根可复用此 chrome
+/// 渲染跨模块管理页（如课程权益）而无需让 admin 模块反向依赖业务模块。
 #[component]
-fn AdminShell(active: String, children: Element) -> Element {
+pub fn AdminShell(active: String, children: Element) -> Element {
   rsx! {
       section { class: "min-h-screen bg-slate-50 dark:bg-slate-950",
           div { class: "max-w-7xl mx-auto flex",
@@ -65,6 +67,7 @@ fn AdminShell(active: String, children: Element) -> Element {
                       AdminNavLink { href: "/admin/topics", label: "话题".to_string(), key_id: "topics".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/moderation", label: "审核".to_string(), key_id: "moderation".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/moderation/settings", label: "审核设置".to_string(), key_id: "moderation-settings".to_string(), active: active.clone() }
+                      AdminNavLink { href: "/admin/entitlements", label: "课程权益".to_string(), key_id: "entitlements".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/plugins", label: "插件".to_string(), key_id: "plugins".to_string(), active: active.clone() }
                   }
               }

@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use dioxus::router::{Link, Routable};
 
+use crate::components::admin_entitlements::AdminEntitlementsPage;
 use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
 use crate::components::home_sections::{
@@ -130,6 +131,8 @@ pub enum Route {
         AdminTopics {},
         #[route("/admin/plugins")]
         AdminPlugins {},
+        #[route("/admin/entitlements")]
+        AdminEntitlements {},
         #[route("/admin/moderation")]
         AdminModeration {},
         #[route("/admin/moderation/settings")]
@@ -792,6 +795,11 @@ pub fn AdminTopics() -> Element {
 #[component]
 pub fn AdminPlugins() -> Element {
   rsx! { AdminPluginsPage {} }
+}
+
+#[component]
+pub fn AdminEntitlements() -> Element {
+  rsx! { AdminEntitlementsPage {} }
 }
 
 #[component]

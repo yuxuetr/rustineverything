@@ -1,3 +1,4 @@
+pub mod admin_entitlements;
 pub mod auth_modal;
 pub mod comment;
 pub mod echo;
