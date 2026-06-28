@@ -110,6 +110,9 @@ pub struct Lesson {
   /// 服务端鉴权结论：true 表示当前用户无权查看，正文/媒体/代码已清空，前端渲染 Paywall。
   #[serde(default)]
   pub locked: bool,
+  /// 所属课程价格（分）；锁定时供 Paywall 展示。
+  #[serde(default)]
+  pub price: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -717,6 +720,7 @@ pub fn read_lesson(course_slug: &str, chapter_slug: &str, lesson_slug: &str) -> 
     downloads,
     preview: frontmatter.preview,
     locked: false,
+    price: 0,
   })
 }
 
@@ -966,8 +970,34 @@ pub async fn get_lesson(
   #[cfg(feature = "server")]
   {
     let mut lesson_opt = read_lesson(&slug, &chapter, &lesson);
-    if let Some(lesson) = lesson_opt.as_mut() {
-      if let Some(doc) = lesson.doc.as_mut() {
+    if let Some(lesson_ref) = lesson_opt.as_mut() {
+      // M4c 访问控制：付费课程的非试看课节，需登录且拥有权益（或 admin）。
+      // 鉴权在服务端进行，锁定时清空正文/媒体/代码，绝不把付费内容下发到客户端。
+      let course = read_course(&slug);
+      let course_paid = course.as_ref().map(|c| c.is_paid()).unwrap_or(false);
+      if course_paid {
+        lesson_ref.price = course.as_ref().map(|c| c.price).unwrap_or(0);
+      }
+      if course_paid && !lesson_ref.preview {
+        let allowed = match current_session_user() {
+          Some(u) if u.is_admin() => true,
+          Some(u) => {
+            let db = open_db().await?;
+            has_entitlement(&db, u.id, &slug).await
+          }
+          None => false,
+        };
+        if !allowed {
+          lesson_ref.locked = true;
+          lesson_ref.doc = None;
+          lesson_ref.audio = None;
+          lesson_ref.video = None;
+          lesson_ref.code = Vec::new();
+          lesson_ref.downloads = Vec::new();
+        }
+      }
+      // 仅对可见正文跑 transformer
+      if let Some(doc) = lesson_ref.doc.as_mut() {
         // Phase 9.3：pre-stage content transformers chain（fail-open，空链路零开销直通）。
         doc.markdown =
           app_core::engines::content_transformer::apply_default_pre(&doc.markdown, "course").await;
@@ -1033,9 +1063,8 @@ fn require_admin_user() -> Result<app_core::session::SessionUser, ServerFnError>
   }
 }
 
-/// server-only：用户是否拥有某课程权益（M4c 访问控制复用）。
+/// server-only：用户是否拥有某课程权益（get_lesson 访问控制复用）。
 #[cfg(feature = "server")]
-#[allow(dead_code)] // 在 M4c get_lesson 访问控制中接入
 async fn has_entitlement(
   db: &sea_orm::DatabaseConnection,
   user_id: i32,

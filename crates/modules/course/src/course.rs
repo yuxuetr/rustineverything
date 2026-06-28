@@ -315,6 +315,7 @@ fn CourseDetailBody(
                   course_slug: course.slug.clone(),
                   chapter: chapter.clone(),
                   progress: progress.clone(),
+                  course_paid: course.is_paid(),
               }
           }
       }
@@ -332,6 +333,7 @@ fn ChapterAccordion(
   course_slug: String,
   chapter: Chapter,
   progress: Vec<LessonProgress>,
+  course_paid: bool,
 ) -> Element {
   let mut open = use_signal(|| true);
   let lesson_count = chapter.lessons.len();
@@ -375,6 +377,7 @@ fn ChapterAccordion(
                           chapter_slug: chapter.slug.clone(),
                           lesson: lesson.clone(),
                           completed: lesson_completed(&progress, &chapter.slug, &lesson.slug),
+                          course_paid,
                       }
                   }
               }
@@ -389,10 +392,13 @@ fn LessonRow(
   chapter_slug: String,
   lesson: LessonSummary,
   completed: bool,
+  course_paid: bool,
 ) -> Element {
   let href = format!("/course/{}/{}/{}", course_slug, chapter_slug, lesson.slug);
   let icon = lesson.kind.icon();
   let kind_label = lesson.kind.as_str();
+  // 付费课程：非试看课节加锁标记；试看课节标「试看」。
+  let locked = course_paid && !lesson.preview;
   rsx! {
       li {
           a { href: "{href}",
@@ -404,6 +410,12 @@ fn LessonRow(
               }
               span { class: "flex-1 text-sm text-slate-700 dark:text-slate-300 group-hover:text-blue-600 dark:group-hover:text-blue-400",
                   "{lesson.title}"
+              }
+              if lesson.preview && course_paid {
+                  span { class: "text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400", "试看" }
+              }
+              if locked {
+                  span { class: "text-xs flex-shrink-0 text-slate-400", "🔒" }
               }
               span { class: "text-[10px] uppercase tracking-wider text-slate-400 dark:text-slate-500",
                   "{kind_label}"
@@ -484,6 +496,21 @@ fn LessonContent(
 ) -> Element {
   let has_sidebar = !lesson.code.is_empty() || !lesson.downloads.is_empty();
   let resource_path = format!("{}/{}/{}", course_slug, chapter_slug, lesson_slug);
+  // M4c：锁定课节只渲染头部 + Paywall，不渲染正文/资源/标注。
+  if lesson.locked {
+    return rsx! {
+        div { class: "flex items-center gap-3 mb-3",
+            span { class: "text-xl", "🔒" }
+            span { class: "text-[11px] font-semibold uppercase tracking-widest text-slate-400 dark:text-slate-500",
+                "{lesson.kind.as_str()}"
+            }
+        }
+        h1 { class: "text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white mb-6",
+            "{lesson.title}"
+        }
+        LessonPaywall { price: lesson.price }
+    };
+  }
   rsx! {
       // 顶部头
       div { class: "flex items-center gap-3 mb-3",
@@ -527,6 +554,29 @@ fn LessonContent(
       }
       // 标注层（资源范围 = 当前 lesson 叶子页）
       AnnotationLayer { resource_kind: "course".to_string(), resource_path: resource_path }
+  }
+}
+
+/// 付费墙：锁定课节的占位卡片。支付网关接入前为信息态（M5 接入购买）。
+#[component]
+fn LessonPaywall(price: i64) -> Element {
+  let yuan = price / 100;
+  rsx! {
+      div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-10 text-center max-w-xl mx-auto",
+          div { class: "w-14 h-14 mx-auto rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center text-3xl mb-5",
+              "🔒"
+          }
+          h2 { class: "text-xl font-bold text-slate-900 dark:text-white", "本课节为付费内容" }
+          p { class: "mt-3 text-slate-600 dark:text-slate-400 leading-relaxed",
+              "开通本课程后即可解锁全部课节，含文档、视频、音频与代码资源。"
+          }
+          if price > 0 {
+              div { class: "mt-5 text-3xl font-extrabold text-[var(--color-primary)]", "¥{yuan}" }
+          }
+          p { class: "mt-5 text-sm text-slate-400",
+              "登录并开通权益后即可访问；试看课节免费开放。在线支付即将上线。"
+          }
+      }
   }
 }
 
