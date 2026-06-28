@@ -8,7 +8,27 @@ nav.forum = 论坛
 nav.cases = 案例
 nav.start = 开始学习
 nav.embedded = 嵌入式
+nav.course = 课程
+nav.web3 = Web3
+nav.wasm = WASM
+nav.cli = CLI
 nav.admin = 🛡️ 管理后台
+
+# ── 双生态导航（mega 菜单）──
+nav.eco.rust = Rust 生态
+nav.eco.ai = AI 生态
+nav.eco.rust.blurb = 嵌入式、Web3、WASM、CLI 与后端系统的工业实战。
+nav.eco.ai.blurb = 大模型、推理部署、Agent 与 Rust AI 生态。
+nav.ai.llm = 大模型
+nav.ai.inference = 推理部署
+nav.ai.agent = Agent
+nav.ai.rust_ai = Rust AI
+mega.col.domains = 应用领域
+mega.col.learn = 学习资源
+mega.learn.docs = 文档
+mega.learn.courses = 课程
+mega.learn.cases = 实战案例
+mega.featured.cta = 查看精选案例
 
 # ── 登录 / 用户 ──
 auth.sign_in = 登录

@@ -5,6 +5,7 @@ mod components;
 mod i18n;
 mod routes;
 mod server;
+mod taxonomy;
 
 use crate::components::theme_picker::use_theme_version_provider;
 use crate::i18n::init_i18n;
@@ -617,8 +618,7 @@ fn App() -> Element {
           "const m = document.cookie.match(/(?:^|; )site_lang=([^;]+)/); dioxus.send(m ? decodeURIComponent(m[1]) : '');",
         );
         if let Ok(v) = handle.recv::<String>().await {
-          let want =
-            if v == "en" { crate::i18n::Language::En } else { crate::i18n::Language::Zh };
+          let want = if v == "en" { crate::i18n::Language::En } else { crate::i18n::Language::Zh };
           if *lang.peek() != want {
             lang.set(want);
           }

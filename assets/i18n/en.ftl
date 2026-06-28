@@ -8,7 +8,27 @@ nav.forum = Forum
 nav.cases = Cases
 nav.start = Get Started
 nav.embedded = Embedded
+nav.course = Courses
+nav.web3 = Web3
+nav.wasm = WASM
+nav.cli = CLI
 nav.admin = 🛡️ Admin
+
+# ── Dual-ecosystem nav (mega menus) ──
+nav.eco.rust = Rust Ecosystem
+nav.eco.ai = AI Ecosystem
+nav.eco.rust.blurb = Industrial practice across embedded, Web3, WASM, CLI, and backend systems.
+nav.eco.ai.blurb = LLMs, inference & deployment, agents, and the Rust AI ecosystem.
+nav.ai.llm = LLMs
+nav.ai.inference = Inference
+nav.ai.agent = Agents
+nav.ai.rust_ai = Rust AI
+mega.col.domains = Domains
+mega.col.learn = Learn
+mega.learn.docs = Docs
+mega.learn.courses = Courses
+mega.learn.cases = Cases
+mega.featured.cta = Browse featured cases
 
 # ── Auth / User ──
 auth.sign_in = Sign In
