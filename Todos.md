@@ -151,8 +151,9 @@
 - [x] 现有 11 卡模块网格下移为「按领域浏览」（home.browse.*）
 - [x] `FeaturedCases`（`list_cases` + `favorite` 取 6，CaseCard 含封面/分类徽章/stars/描述）— 提交 `feat(home): featured cases + course showcase`
 - [x] `CourseShowcase`/`CourseCard`（cover/级别/课时数；资源徽章 🎬📄🎧💻 + 价格/层级留 M4）
-- [ ] `CommunityFeed`（最新博客 + 论坛热帖，2 列）
-- [ ] `SiteFooter` 加厚（内容 / 社区 / 关于 分栏）
+- [x] `CommunityFeed`（最新博客 use_server_future + 论坛热帖 use_resource，2 列）— 提交 `feat(home): community feed + richer footer`
+- [x] footer 加厚（品牌简介 + 内容 / 社区 分栏 + 底部版权条）
+- M2 完成：首页 Hero → 两大生态 → 精选案例 → 课程 → 社区动态 → 按领域浏览 → 加厚 footer，全部浏览器验证。
 
 ## M3 — 分类法统一
 - [ ] `ecosystem/domain` 标签贯通 case/doc/course/blog；`cases.category` 派生映射
