@@ -180,8 +180,11 @@
 - 约定：验签是发货前提；金额核验；以 out_trade_no 幂等；回调可重入；密钥经 .env 校验不回显。
 - M5 核心完成（M5a–M5d）：双网关下单 + 回调发货 + 购买 UI 全链路打通（服务端单测覆盖签名/验签/解密）。⚠️ 上线需真实商户号 + 公网 HTTPS 回调端到端验证。
 
-## M6 —（可选）Pro 订阅会员
-- [ ] 会员层级 + 订阅状态 + 看全部 pro 课程的权益解析
+## M6 — Pro 订阅会员 ✅
+- [x] **M6a** memberships 表 + 实体 + 迁移；is_pro_member；纯函数 can_access_lesson（pro 课程允许有效会员）接入 get_lesson；单测 — 提交 `feat(course): Pro membership model + access control`
+- [x] **M6b** my_membership + admin 授予/续期/撤销/列表 + Admin「Pro 会员」区块 + 我的订单页会员横幅 — 提交 `feat(pay): Pro membership management + display`
+- [ ] 余项（需网关/订阅模型）：会员**自助购买**（订阅下单，扩展 order 产品类型）+ 自动续费
+- 当前可用：运营在 /admin/entitlements 手动开通 Pro 会员（解锁全部 pro 课程）。
 
 ### 依赖与排序
 - M1/M2 不依赖付费，先上线见效；M3 为 M2 的筛选/精选提供数据；M4 起才动 DB 与鉴权；M5 依赖 M4。
