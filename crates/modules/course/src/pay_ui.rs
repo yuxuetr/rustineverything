@@ -9,8 +9,9 @@
 
 use dioxus::document::eval;
 use dioxus::prelude::*;
+use dioxus::router::Link;
 
-use crate::server::{create_order, query_order};
+use crate::server::{create_order, list_my_orders, query_order, OrderInfo};
 
 /// 由 fast_qr 把支付链接渲染成 SVG 二维码字符串。
 fn qr_svg(data: &str) -> String {
@@ -175,6 +176,82 @@ fn PurchaseModal(course_slug: String, price: i64, open: Signal<bool>) -> Element
                           p { class: "mt-3 text-sm text-rose-600", "{message}" }
                       }
                   },
+              }
+          }
+      }
+  }
+}
+
+/// 订单状态 → (中文, 样式 class)。
+fn status_badge(status: &str) -> (&'static str, &'static str) {
+  match status {
+    "paid" => {
+      ("已支付", "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400")
+    }
+    "pending" => ("待支付", "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400"),
+    "closed" => ("已关闭", "bg-slate-100 dark:bg-slate-800 text-slate-500"),
+    "refunded" => ("已退款", "bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400"),
+    _ => ("失败", "bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400"),
+  }
+}
+
+/// 个人中心「我的订单」页（`/me/orders`）。
+#[component]
+pub fn MyOrdersPage() -> Element {
+  let res = use_resource(|| async move { list_my_orders().await.unwrap_or_default() });
+  let orders: Vec<OrderInfo> = res.read().clone().unwrap_or_default();
+  let loaded = res.read().is_some();
+
+  rsx! {
+      section { class: "py-12 bg-white dark:bg-slate-950 min-h-[60vh]",
+          div { class: "mx-auto max-w-4xl px-4 sm:px-6 lg:px-8",
+              h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "我的订单" }
+              if !loaded {
+                  div { class: "flex items-center justify-center py-16",
+                      div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-primary)]" }
+                  }
+              } else if orders.is_empty() {
+                  div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-12 text-center",
+                      p { class: "text-slate-400", "还没有订单。" }
+                      Link { to: "/course", class: "inline-block mt-4 text-sm font-medium text-[var(--color-primary)] hover:underline", "去看看课程 →" }
+                  }
+              } else {
+                  div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
+                      table { class: "w-full text-sm",
+                          thead { class: "bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400",
+                              tr {
+                                  th { class: "text-left font-medium px-4 py-2", "课程" }
+                                  th { class: "text-left font-medium px-4 py-2", "金额" }
+                                  th { class: "text-left font-medium px-4 py-2", "渠道" }
+                                  th { class: "text-left font-medium px-4 py-2", "状态" }
+                                  th { class: "text-left font-medium px-4 py-2", "下单时间" }
+                              }
+                          }
+                          tbody { class: "divide-y divide-slate-100 dark:divide-slate-800",
+                              for o in orders.into_iter() {
+                                  {
+                                      let (label, badge) = status_badge(&o.status);
+                                      let yuan = o.amount / 100;
+                                      let chan = if o.provider == "alipay" { "支付宝" } else { "微信" };
+                                      let date = o.created_at.split('T').next().unwrap_or(&o.created_at).to_string();
+                                      rsx! {
+                                          tr { key: "{o.out_trade_no}", class: "text-slate-700 dark:text-slate-200",
+                                              td { class: "px-4 py-2",
+                                                  Link { to: format!("/course/{}", o.course_slug), class: "hover:text-[var(--color-primary)]", "{o.course_slug}" }
+                                              }
+                                              td { class: "px-4 py-2 font-medium", "¥{yuan}" }
+                                              td { class: "px-4 py-2 text-slate-400", "{chan}" }
+                                              td { class: "px-4 py-2",
+                                                  span { class: "text-xs px-2 py-0.5 rounded-full font-medium {badge}", "{label}" }
+                                              }
+                                              td { class: "px-4 py-2 text-slate-400 text-xs", "{date}" }
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
               }
           }
       }

@@ -40,6 +40,7 @@ auth.terms = By signing in, you agree to our Terms and Privacy Policy
 auth.logout = Sign Out
 user.my_topics = My Topics
 user.my_annotations = My Annotations
+user.my_orders = My Orders
 
 # ── Blog ──
 blog.title = Blog

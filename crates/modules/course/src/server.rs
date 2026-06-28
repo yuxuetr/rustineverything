@@ -1251,6 +1251,18 @@ pub struct OrderStatus {
   pub paid: bool,
 }
 
+/// 「我的订单」列表项。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OrderInfo {
+  pub out_trade_no: String,
+  pub course_slug: String,
+  pub provider: String,
+  pub amount: i64,
+  pub status: String,
+  pub created_at: String,
+  pub paid_at: Option<String>,
+}
+
 /// server-only：生成不易猜测的我方订单号（时间戳 + 用户 + 随机段）。
 #[cfg(feature = "server")]
 fn gen_out_trade_no(user_id: i32) -> String {
@@ -1397,6 +1409,45 @@ pub async fn query_order(out_trade_no: String) -> Result<OrderStatus, ServerFnEr
   {
     let _ = out_trade_no;
     Err(ServerFnError::new("server only".to_string()))
+  }
+}
+
+/// 当前用户的订单列表（个人中心「我的订单」）。
+#[post("/api/orders/mine")]
+pub async fn list_my_orders() -> Result<Vec<OrderInfo>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::order;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+    let user = match current_session_user() {
+      Some(u) => u,
+      None => return Ok(vec![]),
+    };
+    let db = open_db().await?;
+    let rows = order::Entity::find()
+      .filter(order::Column::UserId.eq(user.id))
+      .order_by_desc(order::Column::CreatedAt)
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(
+      rows
+        .into_iter()
+        .map(|o| OrderInfo {
+          out_trade_no: o.out_trade_no,
+          course_slug: o.course_slug,
+          provider: o.provider,
+          amount: o.amount,
+          status: o.status,
+          created_at: o.created_at.to_rfc3339(),
+          paid_at: o.paid_at.map(|t| t.to_rfc3339()),
+        })
+        .collect(),
+    )
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
   }
 }
 

@@ -228,6 +228,11 @@ pub fn ClassicShell() -> Element {
                                               class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
                                               "{t(lang(), \"user.my_annotations\")}"
                                           }
+                                          Link {
+                                              to: Route::MyOrders {},
+                                              class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
+                                              "{t(lang(), \"user.my_orders\")}"
+                                          }
                                           if u.is_admin() {
                                               div { class: "my-1 border-t border-slate-100 dark:border-slate-800" }
                                               Link {

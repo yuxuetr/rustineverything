@@ -25,6 +25,7 @@ use module_cli::cli::{CliArticlePage, CliIndexPage};
 use module_course::course::{
   AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
 };
+use module_course::pay_ui::MyOrdersPage;
 use module_docs::docs::{DocPage as DocPageView, Docs as DocsView};
 use module_embedded::embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
 use module_forum::forum::{
@@ -119,6 +120,8 @@ pub enum Route {
         MyAnnotations {},
         #[route("/me/topics")]
         MyTopics {},
+        #[route("/me/orders")]
+        MyOrders {},
 
         // Admin 后台（页面内部判断 role，非 admin 渲染 403 占位）
         #[route("/admin")]
@@ -757,6 +760,12 @@ pub fn TopicDetail(id: i32) -> Element {
 #[component]
 pub fn MyTopics() -> Element {
   rsx! { ModuleGate { id: "forum".to_string(), MyTopicsPage {} } }
+}
+
+/// /me/orders 我的订单页
+#[component]
+pub fn MyOrders() -> Element {
+  rsx! { ModuleGate { id: "course".to_string(), MyOrdersPage {} } }
 }
 
 #[component]

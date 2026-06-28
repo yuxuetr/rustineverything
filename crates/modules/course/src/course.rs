@@ -236,6 +236,11 @@ fn CourseDetailBody(
     None => first_lesson_link(&course),
   };
   let continue_label = if has_last { "继续学习" } else { "开始学习" };
+  // 付费课程：查当前用户是否已拥有（决定显示「购买」还是「已拥有」）。
+  let owned_res =
+    use_resource(|| async move { crate::server::list_my_entitlements().await.unwrap_or_default() });
+  let owned = owned_res.read().clone().unwrap_or_default().iter().any(|s| s == &course.slug);
+  let yuan = course.price / 100;
   rsx! {
       // Hero
       div { class: "grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12",
@@ -281,6 +286,19 @@ fn CourseDetailBody(
                           span { class: "text-xs px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400",
                               "#{tag}"
                           }
+                      }
+                  }
+              }
+              // 付费课程购买入口
+              if course.is_paid() {
+                  if owned {
+                      div { class: "mt-6 inline-flex w-fit items-center gap-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 px-4 py-2 text-sm font-medium text-emerald-600 dark:text-emerald-400",
+                          "✓ 已拥有本课程"
+                      }
+                  } else {
+                      div { class: "mt-6 flex items-center gap-4",
+                          span { class: "text-2xl font-extrabold text-[var(--color-primary)]", "¥{yuan}" }
+                          crate::pay_ui::PurchaseButton { course_slug: course.slug.clone(), price: course.price }
                       }
                   }
               }

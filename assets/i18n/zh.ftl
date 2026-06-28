@@ -40,6 +40,7 @@ auth.terms = 登录即表示你同意我们的服务条款和隐私政策
 auth.logout = 退出登录
 user.my_topics = 我的话题
 user.my_annotations = 我的标注
+user.my_orders = 我的订单
 
 # ── 博客页 ──
 blog.title = 博客
