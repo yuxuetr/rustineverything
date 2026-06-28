@@ -57,6 +57,7 @@ hero.subtitle = Docs, blogs, courses, and cases in one place: AI, backend, front
 hero.btn.docs = Enter Docs
 hero.btn.blog = Browse Blog
 hero.btn.cases = View Cases
+hero.btn.courses = View Courses
 hero.stat.docs.value = Docs
 hero.stat.docs.label = From zero to one
 hero.stat.blog.value = Blog
@@ -69,6 +70,8 @@ hero.stat.cases.label = Reusable templates
 # ── Home feature cards ──
 home.section_title = Focused on the Rust ecosystem
 home.section_subtitle = From low-level principles to full-stack practice — building high-performance, reliable software systems
+home.browse.title = Browse by area
+home.browse.subtitle = Dive into docs, cases, and courses across the Rust and AI ecosystems
 home.card.basics.title = Rust Fundamentals
 home.card.basics.desc = A clear take on ownership, lifetimes, traits, and other core concepts.
 home.card.fullstack.title = Full-Stack Development

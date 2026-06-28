@@ -20,20 +20,21 @@ pub fn Hero() -> Element {
                   }
 
                   div { class: "mt-8 flex flex-col sm:flex-row gap-3",
-                      Link {
-                          to: Route::Docs {},
-                          class: "inline-flex justify-center rounded-md bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100",
-                          "{t(lang(), \"hero.btn.docs\")}"
-                      }
-                      Link {
-                          to: Route::BlogIndex {},
-                          class: "inline-flex justify-center rounded-md border border-white/20 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10",
-                          "{t(lang(), \"hero.btn.blog\")}"
-                      }
+                      // 案例（差异化核心）作主 CTA，课程（变现核心）次之，文档兜底。
                       Link {
                           to: Route::Cases {},
-                          class: "inline-flex justify-center rounded-md border border-white/20 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10",
+                          class: "inline-flex justify-center rounded-md bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100",
                           "{t(lang(), \"hero.btn.cases\")}"
+                      }
+                      Link {
+                          to: Route::Courses {},
+                          class: "inline-flex justify-center rounded-md border border-white/20 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10",
+                          "{t(lang(), \"hero.btn.courses\")}"
+                      }
+                      Link {
+                          to: Route::Docs {},
+                          class: "inline-flex justify-center rounded-md border border-white/20 px-5 py-3 text-sm font-semibold text-white hover:bg-white/10",
+                          "{t(lang(), \"hero.btn.docs\")}"
                       }
                   }
               }

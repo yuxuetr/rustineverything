@@ -57,6 +57,7 @@ hero.subtitle = 文档、博客、课程、案例一站式聚合：AI、后端�
 hero.btn.docs = 进入文档
 hero.btn.blog = 浏览博客
 hero.btn.cases = 查看案例
+hero.btn.courses = 查看课程
 hero.stat.docs.value = 文档
 hero.stat.docs.label = 从零到一
 hero.stat.blog.value = 博客
@@ -69,6 +70,8 @@ hero.stat.cases.label = 可复用模板
 # ── 首页板块卡片 ──
 home.section_title = 专注 Rust 生态
 home.section_subtitle = 从底层原理到全栈实战，构建高性能、高可靠的软件系统
+home.browse.title = 按领域浏览
+home.browse.subtitle = 沿 Rust 生态与 AI 生态，按板块深入文档、案例与课程
 home.card.basics.title = Rust 基础
 home.card.basics.desc = 深入浅出所有权、生命周期、Trait 等核心概念。
 home.card.fullstack.title = 全栈开发

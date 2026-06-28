@@ -3,6 +3,7 @@ use dioxus::router::{Link, Routable};
 
 use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
+use crate::components::home_sections::EcosystemPillars;
 use crate::components::module_gate::ModuleGate;
 use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
@@ -163,11 +164,16 @@ pub fn Home() -> Element {
 
   rsx! {
       Hero {}
-      section { class: "py-24 bg-white dark:bg-slate-950",
+
+      // 两大生态支柱：直接体现「Rust 生态 + AI 生态」定位
+      EcosystemPillars { enabled: enabled.clone() }
+
+      // 按领域浏览：原模块网格下移为次级导航
+      section { class: "py-20 bg-white dark:bg-slate-950",
           Container {
               SectionTitle {
-                  title: t(lang(), "home.section_title"),
-                  subtitle: Some(t(lang(), "home.section_subtitle"))
+                  title: t(lang(), "home.browse.title"),
+                  subtitle: Some(t(lang(), "home.browse.subtitle"))
               }
 
               div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-12",
