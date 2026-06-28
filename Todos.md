@@ -172,7 +172,7 @@
 ## M5 — 支付集成（微信支付 + 支付宝，国内）
 > 设计：[`docs/PAYMENT_SPEC.md`](docs/PAYMENT_SPEC.md)。前置：两网关企业商户号 + 备案 HTTPS 域名。
 - [x] **M5a** `orders` 实体 + 迁移；`create_order` / `query_order` server fn（建单 + 状态机；网关 stub）— 提交 `feat(course): orders table + create/query order`
-- [ ] **M5b** 支付宝接入（page/wap/precreate + `/api/pay/alipay/notify` 验签发货，Axum 原生路由）
+- [x] **M5b** 支付宝接入（page/wap/precreate + `/api/pay/alipay/notify` 验签发货，Axum 原生路由；RSA2 签名/验签单测）— 提交 `feat(pay): Alipay integration`。⚠️ 待沙箱+真实密钥端到端验证
 - [ ] **M5c** 微信支付 v3 接入（native/h5 + `/api/pay/wechat/notify` 验签+AES-GCM 解密 + 平台证书轮换）
 - [ ] **M5d** PurchaseModal（选网关 + 二维码/跳转 + 轮询解锁）接到 Paywall / 课程详情
 - [ ] **M5e（可选）** 我的订单页 + 对账定时任务 + 退款
