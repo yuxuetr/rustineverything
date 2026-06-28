@@ -29,6 +29,8 @@ mega.learn.docs = 文档
 mega.learn.courses = 课程
 mega.learn.cases = 实战案例
 mega.featured.cta = 查看精选案例
+eco.enter = 进入生态
+eco.not_found = 未找到该生态
 
 # ── 登录 / 用户 ──
 auth.sign_in = 登录

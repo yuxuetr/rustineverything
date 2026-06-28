@@ -29,6 +29,8 @@ mega.learn.docs = Docs
 mega.learn.courses = Courses
 mega.learn.cases = Cases
 mega.featured.cta = Browse featured cases
+eco.enter = Enter ecosystem
+eco.not_found = Ecosystem not found
 
 # ── Auth / User ──
 auth.sign_in = Sign In

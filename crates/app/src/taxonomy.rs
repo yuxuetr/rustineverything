@@ -33,6 +33,24 @@ pub struct Ecosystem {
   pub domains: Vec<Domain>,
 }
 
+/// 按 id 查找单个生态（"rust" | "ai"）。
+pub fn ecosystem_by_id(id: &str) -> Option<Ecosystem> {
+  ecosystems().into_iter().find(|e| e.id == id)
+}
+
+/// 案例 `category` 归属哪个生态（生态页过滤的单一映射来源）。
+///
+/// 数据模型里只有 `ai` 这一类显式属于 AI 生态，其余工程类目都归 Rust 生态。
+/// 返回 `None` 表示无法判定（不计入任一生态过滤）。
+pub fn ecosystem_of_case_category(category: &str) -> Option<&'static str> {
+  match category {
+    "ai" => Some("ai"),
+    "embedded" | "web3" | "cli" | "wasm" | "backend" | "frontend" | "fullstack" | "library"
+    | "tool" | "desktop" => Some("rust"),
+    _ => None,
+  }
+}
+
 /// 返回两大生态及其领域。
 pub fn ecosystems() -> Vec<Ecosystem> {
   vec![

@@ -4,7 +4,7 @@ use dioxus::router::{Link, Routable};
 use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
 use crate::components::home_sections::{
-  CommunityFeed, CourseShowcase, EcosystemPillars, FeaturedCases,
+  CommunityFeed, CourseShowcase, EcosystemPage, EcosystemPillars, FeaturedCases,
 };
 use crate::components::module_gate::ModuleGate;
 use crate::components::nav::Navbar;
@@ -41,6 +41,10 @@ pub enum Route {
     #[layout(Navbar)]
         #[route("/")]
         Home {},
+
+        // 生态落地页（双生态 IA 的落地）：/ecosystem/rust | /ecosystem/ai
+        #[route("/ecosystem/:id")]
+        EcosystemPage { id: String },
 
         #[route("/docs")]
         Docs {},

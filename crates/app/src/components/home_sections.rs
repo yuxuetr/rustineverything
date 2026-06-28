@@ -11,7 +11,7 @@ use dioxus::router::Link;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
-use crate::taxonomy::ecosystems;
+use crate::taxonomy::{ecosystem_by_id, ecosystem_of_case_category, ecosystems};
 use module_blog::server::{list_blog_posts, BlogPostSummary};
 use module_cases::server::{list_cases, CaseSummary};
 use module_course::server::{list_courses, CourseSummary};
@@ -41,6 +41,14 @@ pub fn EcosystemPillars(enabled: Vec<String>) -> Element {
                                               class: "inline-flex items-center rounded-full border border-slate-200 dark:border-slate-700 px-3 py-1 text-sm text-slate-700 dark:text-slate-200 hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] transition-colors",
                                               "{t(lang(), d.label_key)}"
                                           }
+                                      }
+                                  }
+                                  Link {
+                                      to: Route::EcosystemPage { id: eco.id.to_string() },
+                                      class: "mt-6 inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-primary)] hover:underline",
+                                      "{t(lang(), \"eco.enter\")}"
+                                      svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", stroke_width: "2",
+                                          path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9 5l7 7-7 7" }
                                       }
                                   }
                               }
@@ -326,6 +334,95 @@ fn ForumColumn() -> Element {
                           span { "{tpc.author}" }
                       }
                   }
+              }
+          }
+      }
+  }
+}
+
+// ── 生态落地页 ────────────────────────────────────────────
+
+/// 生态落地页 `/ecosystem/:id`：生态简介 + 领域入口 + 该生态精选案例。
+/// 完成「生态为主」IA 的闭环——导航/pillars 的生态标题有真实落地页。
+#[component]
+pub fn EcosystemPage(id: String) -> Element {
+  let lang = use_i18n();
+  let Some(eco) = ecosystem_by_id(&id) else {
+    return rsx! {
+        section { class: "py-24",
+            Container {
+                p { class: "text-center text-slate-400", "{t(lang(), \"eco.not_found\")}" }
+            }
+        }
+    };
+  };
+
+  rsx! {
+      // 头部
+      section { class: "py-16 sm:py-20 bg-gradient-to-b from-slate-950 to-slate-900",
+          div { class: "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8",
+              h1 { class: "text-3xl md:text-4xl font-extrabold tracking-tight text-flow-light", "{t(lang(), eco.label_key)}" }
+              p { class: "mt-4 text-lg text-slate-300 max-w-2xl", "{t(lang(), eco.blurb_key)}" }
+          }
+      }
+
+      // 应用领域
+      section { class: "py-16 bg-white dark:bg-slate-950",
+          Container {
+              h2 { class: "text-xl font-bold text-slate-900 dark:text-white mb-6", "{t(lang(), \"mega.col.domains\")}" }
+              div { class: "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4",
+                  for d in eco.domains.iter() {
+                      Link {
+                          key: "{d.id}",
+                          to: d.route.clone(),
+                          class: "group flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 px-4 py-3 hover:border-[var(--color-primary)] transition-colors",
+                          span { class: "font-medium text-slate-800 dark:text-slate-100 group-hover:text-[var(--color-primary)] transition-colors", "{t(lang(), d.label_key)}" }
+                          svg { class: "w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-[var(--color-primary)] group-hover:translate-x-0.5 transition-all", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", stroke_width: "2",
+                              path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9 5l7 7-7 7" }
+                          }
+                      }
+                  }
+              }
+          }
+      }
+
+      // 该生态精选案例
+      section { class: "py-16 bg-slate-50/60 dark:bg-slate-900/40 border-t border-slate-200/70 dark:border-slate-800",
+          Container {
+              SectionHeader {
+                  title: t(lang(), "home.featured.title"),
+                  subtitle: t(lang(), "home.featured.subtitle"),
+                  all_label: t(lang(), "home.featured.all"),
+                  to: Route::Cases {},
+              }
+              SuspenseBoundary {
+                  fallback: |_| loading_spinner(),
+                  EcosystemCasesInner { eco_id: id.clone() }
+              }
+          }
+      }
+  }
+}
+
+#[component]
+fn EcosystemCasesInner(eco_id: String) -> Element {
+  let lang = use_i18n();
+  let res =
+    use_server_future(|| async move { list_cases(None, None, None).await.unwrap_or_default() })?;
+  let picks: Vec<CaseSummary> = res()
+    .unwrap_or_default()
+    .into_iter()
+    .filter(|c| ecosystem_of_case_category(&c.category) == Some(eco_id.as_str()))
+    .take(9)
+    .collect();
+
+  rsx! {
+      if picks.is_empty() {
+          p { class: "text-center text-slate-400 py-10", "{t(lang(), \"home.featured.empty\")}" }
+      } else {
+          div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6",
+              for c in picks.into_iter() {
+                  CaseCard { key: "{c.slug}", case: c }
               }
           }
       }
