@@ -169,9 +169,14 @@
 - [x] Admin 手动授权页 `/admin/entitlements`（列表 + 授予 + 撤销）— 提交 `feat(admin): manual course entitlement grant page`
 - M4 完成：付费课程内容模型（已有）+ access_tier/preview + entitlements 表 + get_lesson 服务端鉴权 + Paywall + Admin 授权。线上支付留 M5。
 
-## M5 — 支付集成
-- [ ] 接支付网关（国内 微信/支付宝；海外 Stripe/Paddle/LemonSqueezy）+ webhook→entitlement
-- [ ] 订单/支付记录表；幂等与回调校验
+## M5 — 支付集成（微信支付 + 支付宝，国内）
+> 设计：[`docs/PAYMENT_SPEC.md`](docs/PAYMENT_SPEC.md)。前置：两网关企业商户号 + 备案 HTTPS 域名。
+- [ ] **M5a** `orders` 实体 + 迁移；`create_order` / `query_order` server fn（建单 + 状态机；网关调用先 stub/沙箱）
+- [ ] **M5b** 支付宝接入（page/wap/precreate + `/api/pay/alipay/notify` 验签发货，Axum 原生路由）
+- [ ] **M5c** 微信支付 v3 接入（native/h5 + `/api/pay/wechat/notify` 验签+AES-GCM 解密 + 平台证书轮换）
+- [ ] **M5d** PurchaseModal（选网关 + 二维码/跳转 + 轮询解锁）接到 Paywall / 课程详情
+- [ ] **M5e（可选）** 我的订单页 + 对账定时任务 + 退款
+- 约定：验签是发货前提；金额核验；以 out_trade_no 幂等；回调可重入；密钥经 .env 校验不回显。
 
 ## M6 —（可选）Pro 订阅会员
 - [ ] 会员层级 + 订阅状态 + 看全部 pro 课程的权益解析
