@@ -155,9 +155,11 @@
 - [x] footer 加厚（品牌简介 + 内容 / 社区 分栏 + 底部版权条）
 - M2 完成：首页 Hero → 两大生态 → 精选案例 → 课程 → 社区动态 → 按领域浏览 → 加厚 footer，全部浏览器验证。
 
-## M3 — 分类法统一
-- [ ] `ecosystem/domain` 标签贯通 case/doc/course/blog；`cases.category` 派生映射
-- [ ] 生态/领域筛选页（`/embedded` 等保留为领域落地页；`ai` 子领域 tag 化）
+## M3 — 分类法统一（部分完成）
+- [x] `cases.category` → 生态派生映射（taxonomy::ecosystem_of_case_category，单一来源）— 提交 `feat(taxonomy): ecosystem landing pages`
+- [x] 生态落地页 `/ecosystem/:id`（生态简介 + 领域入口 + 该生态精选案例过滤）；pillars 加「进入生态」入口
+- [x] 领域 board（/embedded /ai /web3 /wasm /cli）保留为领域落地页（M1 起即由导航/pillars 指向）
+- [ ] 延后（内容相关）：`ecosystem/domain` 标签贯通 docs/blog/course；`/ai` 子领域 tag 化筛选（需先给 ai 文章打 llm/inference/agent/rust-ai 标签）
 
 ## M4 — 课程付费地基（不接网关也能线下售卖）
 - [ ] `course.yaml` 加 `access_tier`(free|paid|pro)/`price`/`currency`；Lesson frontmatter 加 `preview`
