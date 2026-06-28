@@ -173,7 +173,7 @@
 > 设计：[`docs/PAYMENT_SPEC.md`](docs/PAYMENT_SPEC.md)。前置：两网关企业商户号 + 备案 HTTPS 域名。
 - [x] **M5a** `orders` 实体 + 迁移；`create_order` / `query_order` server fn（建单 + 状态机；网关 stub）— 提交 `feat(course): orders table + create/query order`
 - [x] **M5b** 支付宝接入（page/wap/precreate + `/api/pay/alipay/notify` 验签发货，Axum 原生路由；RSA2 签名/验签单测）— 提交 `feat(pay): Alipay integration`。⚠️ 待沙箱+真实密钥端到端验证
-- [ ] **M5c** 微信支付 v3 接入（native/h5 + `/api/pay/wechat/notify` 验签+AES-GCM 解密 + 平台证书轮换）
+- [x] **M5c** 微信支付 v3 接入（native/h5 + `/api/pay/wechat/notify` 验签+AES-256-GCM 解密；回调用公钥模式）— 提交 `feat(pay): WeChat Pay v3`。⚠️ 待真实商户号端到端验证；平台证书轮换模式可后续扩展
 - [ ] **M5d** PurchaseModal（选网关 + 二维码/跳转 + 轮询解锁）接到 Paywall / 课程详情
 - [ ] **M5e（可选）** 我的订单页 + 对账定时任务 + 退款
 - 约定：验签是发货前提；金额核验；以 out_trade_no 幂等；回调可重入；密钥经 .env 校验不回显。
