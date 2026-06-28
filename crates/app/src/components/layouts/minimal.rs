@@ -57,7 +57,7 @@ pub fn MinimalShell() -> Element {
       div { class: "min-h-screen flex flex-col",
           header { class: "sticky top-0 z-50 border-b border-slate-200/70 bg-white/80 backdrop-blur dark:bg-slate-950/70 dark:border-slate-800",
               Container {
-                  div { class: "h-12 flex items-center justify-between",
+                  div { class: "h-12 flex items-center justify-between gap-4",
                       Link {
                           to: Route::Home {},
                           class: "font-extrabold tracking-tight text-flow text-sm",
