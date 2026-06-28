@@ -7,9 +7,15 @@
 //! 只需在 `app_core::i18n::Language` 增加枚举值，并在此追加一行即可，
 //! 无需改动渲染逻辑。
 
+use dioxus::document::eval;
 use dioxus::prelude::*;
 
 use crate::i18n::{use_i18n, Language};
+
+/// 语言 cookie 名（与 App 启动时的恢复逻辑保持一致）。
+/// 论坛等模块用 `<a href>` 整页跳转会重置内存中的语言信号，
+/// 写入 cookie 后可在下次加载时恢复，避免回退到中文。
+const LANG_COOKIE_NAME: &str = "site_lang";
 
 /// 可选语言表：`(枚举, 顶部按钮短标签, 下拉项完整名称)`。
 ///
@@ -63,6 +69,12 @@ pub fn LangPicker() -> Element {
                                   onclick: move |_| {
                                       lang.set(lang_val);
                                       open.set(false);
+                                      // 持久化语言选择：写 cookie，让整页跳转 / 刷新后仍保持。
+                                      let code = if lang_val == Language::En { "en" } else { "zh" };
+                                      let _ = eval(&format!(
+                                          "document.cookie = '{name}={code}; path=/; max-age=31536000; samesite=lax';",
+                                          name = LANG_COOKIE_NAME,
+                                      ));
                                   },
                                   class: format_args!(
                                       "w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center justify-between {}",

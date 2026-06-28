@@ -604,6 +604,29 @@ fn HeadAssets() -> Element {
 #[component]
 fn App() -> Element {
   init_i18n();
+
+  // 语言持久化恢复：论坛等模块用 `<a href>` 整页跳转（如 /topics/new、
+  // 评论/回复后的重定向）会重载整个应用，内存中的 `Signal<Language>`
+  // 会被重置为默认 Zh。这里在挂载后从 `site_lang` cookie（LangPicker
+  // 切换时写入）恢复用户选择，保证跳转 / 刷新后仍是英文页面。
+  {
+    let mut lang = crate::i18n::use_i18n();
+    use_effect(move || {
+      spawn(async move {
+        let mut handle = dioxus::document::eval(
+          "const m = document.cookie.match(/(?:^|; )site_lang=([^;]+)/); dioxus.send(m ? decodeURIComponent(m[1]) : '');",
+        );
+        if let Ok(v) = handle.recv::<String>().await {
+          let want =
+            if v == "en" { crate::i18n::Language::En } else { crate::i18n::Language::Zh };
+          if *lang.peek() != want {
+            lang.set(want);
+          }
+        }
+      });
+    });
+  }
+
   let show_auth = use_signal(|| false);
   use_context_provider(|| show_auth);
 
