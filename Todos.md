@@ -164,8 +164,8 @@
 ## M4 — 课程付费地基（不接网关也能线下售卖）
 - [x] `course.yaml` 加 `access_tier`(free|paid|pro)/`price`/`currency`；Lesson frontmatter 加 `preview`（首页 CourseCard 显价格徽章；rust-basics 示例 paid）— 提交 `feat(course): access tier + preview metadata`
 - [x] Entitlement 表（SeaORM 实体 + 迁移）+ server fns（mine/list/grant/revoke）— 提交 `feat(course): entitlements table + server fns`
-- [ ] 访问控制：`可看 = free || preview || has_entitlement`，server fn（get_lesson）二次校验
-- [ ] Paywall 组件 + 锁定课节覆盖层 + 侧栏锁图标
+- [x] 访问控制：get_lesson 服务端校验 `free || preview || has_entitlement || admin`，锁定时清空内容 — 提交 `feat(course): access control + paywall`
+- [x] Paywall 组件（锁定课节）+ 课程目录 试看/🔒 标记
 - [ ] Admin 手动授权页（[ADMIN_SPEC](docs/ADMIN_SPEC.md)）
 
 ## M5 — 支付集成
