@@ -27,6 +27,7 @@ mod m20260527_000001_initial_schema;
 mod m20260530_000002_moderation_queue;
 mod m20260601_000003_drop_access_token;
 mod m20260601_000004_comments_index;
+mod m20260628_000005_entitlements;
 
 pub struct Migrator;
 
@@ -38,6 +39,7 @@ impl MigratorTrait for Migrator {
       Box::new(m20260530_000002_moderation_queue::Migration),
       Box::new(m20260601_000003_drop_access_token::Migration),
       Box::new(m20260601_000004_comments_index::Migration),
+      Box::new(m20260628_000005_entitlements::Migration),
     ]
   }
 }
@@ -56,6 +58,7 @@ mod tests {
         "m20260530_000002_moderation_queue".to_string(),
         "m20260601_000003_drop_access_token".to_string(),
         "m20260601_000004_comments_index".to_string(),
+        "m20260628_000005_entitlements".to_string(),
       ]
     );
   }

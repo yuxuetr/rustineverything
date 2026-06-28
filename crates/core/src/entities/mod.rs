@@ -1,6 +1,7 @@
 pub mod annotation;
 pub mod comment;
 pub mod course_progress;
+pub mod entitlement;
 pub mod moderation_queue;
 pub mod topic;
 pub mod topic_reply;

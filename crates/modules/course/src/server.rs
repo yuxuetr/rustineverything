@@ -1022,6 +1022,169 @@ async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
   app_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
 }
 
+/// 限制：仅 admin 可授予 / 撤销权益。
+#[cfg(feature = "server")]
+fn require_admin_user() -> Result<app_core::session::SessionUser, ServerFnError> {
+  let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
+  if user.is_admin() {
+    Ok(user)
+  } else {
+    Err(ServerFnError::new("需要管理员权限".to_string()))
+  }
+}
+
+/// server-only：用户是否拥有某课程权益（M4c 访问控制复用）。
+#[cfg(feature = "server")]
+#[allow(dead_code)] // 在 M4c get_lesson 访问控制中接入
+async fn has_entitlement(
+  db: &sea_orm::DatabaseConnection,
+  user_id: i32,
+  course_slug: &str,
+) -> bool {
+  use app_core::entities::entitlement;
+  use sea_orm::EntityTrait;
+  entitlement::Entity::find_by_id((user_id, course_slug.to_string()))
+    .one(db)
+    .await
+    .ok()
+    .flatten()
+    .is_some()
+}
+
+/// Admin 列表项：一条权益 + 用户昵称。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EntitlementInfo {
+  pub user_id: i32,
+  pub nickname: String,
+  pub course_slug: String,
+  pub source: String,
+  pub granted_at: String,
+}
+
+/// 当前用户拥有的课程 slug 列表（前端判断按钮态用；真正鉴权在服务端）。
+#[post("/api/courses/entitlements/mine")]
+pub async fn list_my_entitlements() -> Result<Vec<String>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::entitlement;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    let user = match current_session_user() {
+      Some(u) => u,
+      None => return Ok(vec![]),
+    };
+    let db = open_db().await?;
+    let rows = entitlement::Entity::find()
+      .filter(entitlement::Column::UserId.eq(user.id))
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(rows.into_iter().map(|r| r.course_slug).collect())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
+}
+
+/// Admin：列出全部权益（含用户昵称）。
+#[post("/api/courses/entitlements/list")]
+pub async fn list_entitlements() -> Result<Vec<EntitlementInfo>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::{entitlement, user as user_entity};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+    require_admin_user()?;
+    let db = open_db().await?;
+    let rows = entitlement::Entity::find()
+      .order_by_desc(entitlement::Column::GrantedAt)
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut ids: Vec<i32> = rows.iter().map(|r| r.user_id).collect();
+    ids.sort();
+    ids.dedup();
+    let users = user_entity::Entity::find()
+      .filter(user_entity::Column::Id.is_in(ids))
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let name_of =
+      |id: i32| users.iter().find(|u| u.id == id).map(|u| u.nickname.clone()).unwrap_or_default();
+    Ok(
+      rows
+        .into_iter()
+        .map(|r| EntitlementInfo {
+          user_id: r.user_id,
+          nickname: name_of(r.user_id),
+          course_slug: r.course_slug,
+          source: r.source,
+          granted_at: r.granted_at.to_rfc3339(),
+        })
+        .collect(),
+    )
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
+}
+
+/// Admin：授予课程权益（手动开通，幂等；重复授予刷新来源/时间）。
+#[post("/api/courses/entitlements/grant")]
+pub async fn grant_entitlement(user_id: i32, course_slug: String) -> Result<(), ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::entitlement;
+    use chrono::Utc;
+    use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
+    require_admin_user()?;
+    let db = open_db().await?;
+    let am = entitlement::ActiveModel {
+      user_id: Set(user_id),
+      course_slug: Set(course_slug),
+      source: Set("admin_grant".to_string()),
+      granted_at: Set(Utc::now().fixed_offset()),
+    };
+    entitlement::Entity::insert(am)
+      .on_conflict(
+        OnConflict::columns([entitlement::Column::UserId, entitlement::Column::CourseSlug])
+          .update_columns([entitlement::Column::Source, entitlement::Column::GrantedAt])
+          .to_owned(),
+      )
+      .exec(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = (user_id, course_slug);
+    Ok(())
+  }
+}
+
+/// Admin：撤销课程权益。
+#[post("/api/courses/entitlements/revoke")]
+pub async fn revoke_entitlement(user_id: i32, course_slug: String) -> Result<(), ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::entitlement;
+    use sea_orm::EntityTrait;
+    require_admin_user()?;
+    let db = open_db().await?;
+    entitlement::Entity::delete_by_id((user_id, course_slug))
+      .exec(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = (user_id, course_slug);
+    Ok(())
+  }
+}
+
 #[post("/api/courses/progress/list")]
 pub async fn get_progress(slug: String) -> Result<Vec<LessonProgress>, ServerFnError> {
   #[cfg(feature = "server")]
