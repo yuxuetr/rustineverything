@@ -175,7 +175,8 @@
 - [x] **M5b** 支付宝接入（page/wap/precreate + `/api/pay/alipay/notify` 验签发货，Axum 原生路由；RSA2 签名/验签单测）— 提交 `feat(pay): Alipay integration`。⚠️ 待沙箱+真实密钥端到端验证
 - [x] **M5c** 微信支付 v3 接入（native/h5 + `/api/pay/wechat/notify` 验签+AES-256-GCM 解密；回调用公钥模式）— 提交 `feat(pay): WeChat Pay v3`。⚠️ 待真实商户号端到端验证；平台证书轮换模式可后续扩展
 - [x] **M5d** PurchaseModal（选网关 + 跳转/二维码 + 手动刷新解锁）接到 Paywall — 提交 `feat(pay): PurchaseModal`。happy path 待登录+网关凭据
-- [ ] **M5e（可选）** 我的订单页 + 对账定时任务 + 退款 + 课程详情购买入口
+- [x] **M5e** 我的订单页（/me/orders）+ 课程详情购买入口（含已拥有判断）+ 用户菜单入口 — 提交 `feat(pay): my-orders page + course-detail buy entry`
+- [ ] **M5e 余项（需真实网关）** 对账定时任务（gateway query 回填/关单）+ 退款（gateway refund + admin）
 - 约定：验签是发货前提；金额核验；以 out_trade_no 幂等；回调可重入；密钥经 .env 校验不回显。
 - M5 核心完成（M5a–M5d）：双网关下单 + 回调发货 + 购买 UI 全链路打通（服务端单测覆盖签名/验签/解密）。⚠️ 上线需真实商户号 + 公网 HTTPS 回调端到端验证。
 
