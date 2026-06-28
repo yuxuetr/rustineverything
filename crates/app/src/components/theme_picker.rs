@@ -12,6 +12,12 @@ use crate::server::{list_available_themes, set_user_theme, ThemeInfo};
 /// 主题 cookie 名（与后端 `THEME_COOKIE_NAME` 保持一致）。
 const THEME_COOKIE_NAME: &str = "site_theme";
 
+/// 去掉主题名的 `Theme ` 前缀，只留简短名（如 `Theme Catppuccin` → `Catppuccin`），
+/// 避免按钮 / 下拉项过长换行。
+fn short_theme_label(label: &str) -> String {
+  label.strip_prefix("Theme ").unwrap_or(label).trim().to_string()
+}
+
 /// 全局主题版本号：每次切换主题 +1，App 组件中的 `use_resource` 依赖该值，
 /// 使聚合 CSS 在用户切换主题后立即重取。
 #[derive(Clone, Copy)]
@@ -42,11 +48,11 @@ pub fn ThemePicker() -> Element {
   });
   let themes: Vec<ThemeInfo> = themes_res.read().as_ref().cloned().unwrap_or_default();
 
-  // 找到当前激活主题用于按钮 label
+  // 找到当前激活主题用于按钮 label（只取去前缀后的短名）
   let active_label = themes
     .iter()
     .find(|t| t.is_active)
-    .map(|t| t.label.clone())
+    .map(|t| short_theme_label(&t.label))
     .unwrap_or_else(|| "主题".to_string());
 
   // 不显示 picker 当只有 ≤ 1 个主题（无切换意义）
@@ -111,7 +117,7 @@ pub fn ThemePicker() -> Element {
                       d: "M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"
                   }
               }
-              span { class: "hidden sm:inline", "{active_label}" }
+              span { class: "hidden sm:inline whitespace-nowrap", "{active_label}" }
           }
           if open() {
               div { class: "absolute right-0 top-full mt-1 w-48 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg py-1 z-50",
@@ -122,7 +128,7 @@ pub fn ThemePicker() -> Element {
                       {
                           let is_active = t.is_active;
                           let filename = t.filename.clone();
-                          let label = t.label.clone();
+                          let label = short_theme_label(&t.label);
                           rsx! {
                               button {
                                   key: "{filename}",
