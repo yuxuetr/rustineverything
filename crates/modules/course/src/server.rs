@@ -1158,32 +1158,43 @@ pub async fn list_entitlements() -> Result<Vec<EntitlementInfo>, ServerFnError> 
   }
 }
 
+/// server-only：写入/刷新权益（幂等）。供 admin 授予与支付回调发货共用，不做鉴权。
+#[cfg(feature = "server")]
+async fn grant_entitlement_internal(
+  db: &sea_orm::DatabaseConnection,
+  user_id: i32,
+  course_slug: String,
+  source: &str,
+) -> Result<(), ServerFnError> {
+  use app_core::entities::entitlement;
+  use chrono::Utc;
+  use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
+  let am = entitlement::ActiveModel {
+    user_id: Set(user_id),
+    course_slug: Set(course_slug),
+    source: Set(source.to_string()),
+    granted_at: Set(Utc::now().fixed_offset()),
+  };
+  entitlement::Entity::insert(am)
+    .on_conflict(
+      OnConflict::columns([entitlement::Column::UserId, entitlement::Column::CourseSlug])
+        .update_columns([entitlement::Column::Source, entitlement::Column::GrantedAt])
+        .to_owned(),
+    )
+    .exec(db)
+    .await
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+  Ok(())
+}
+
 /// Admin：授予课程权益（手动开通，幂等；重复授予刷新来源/时间）。
 #[post("/api/courses/entitlements/grant")]
 pub async fn grant_entitlement(user_id: i32, course_slug: String) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use app_core::entities::entitlement;
-    use chrono::Utc;
-    use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
     require_admin_user()?;
     let db = open_db().await?;
-    let am = entitlement::ActiveModel {
-      user_id: Set(user_id),
-      course_slug: Set(course_slug),
-      source: Set("admin_grant".to_string()),
-      granted_at: Set(Utc::now().fixed_offset()),
-    };
-    entitlement::Entity::insert(am)
-      .on_conflict(
-        OnConflict::columns([entitlement::Column::UserId, entitlement::Column::CourseSlug])
-          .update_columns([entitlement::Column::Source, entitlement::Column::GrantedAt])
-          .to_owned(),
-      )
-      .exec(&db)
-      .await
-      .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(())
+    grant_entitlement_internal(&db, user_id, course_slug, "admin_grant").await
   }
   #[cfg(not(feature = "server"))]
   {
@@ -1297,14 +1308,39 @@ pub async fn create_order(
       paid_at: Set(None),
     };
     order::Entity::insert(am).exec(&db).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // 按网关 + 场景生成支付凭据。支付宝（M5b）已接入；微信（M5c）待接入。
+    let (kind, payload) = match provider.as_str() {
+      "alipay" => {
+        let cfg = crate::alipay::config()
+          .ok_or_else(|| ServerFnError::new("支付宝未配置（缺 ALIPAY_* 环境变量）".to_string()))?;
+        match scene.as_str() {
+          "qr" => {
+            let qr = crate::alipay::precreate(&cfg, &out_trade_no, &course.title, course.price)
+              .await
+              .map_err(ServerFnError::new)?;
+            ("qrcode".to_string(), qr)
+          }
+          s => {
+            let scn = if s == "wap" { "wap" } else { "page" };
+            let url =
+              crate::alipay::build_pay_url(&cfg, scn, &out_trade_no, &course.title, course.price)
+                .map_err(ServerFnError::new)?;
+            ("redirect".to_string(), url)
+          }
+        }
+      }
+      _ => return Err(ServerFnError::new("该支付方式暂未开通".to_string())),
+    };
+
     Ok(OrderInit {
       out_trade_no,
       provider,
       scene,
       amount: course.price,
       currency: course.currency,
-      kind: "stub".to_string(),
-      payload: String::new(),
+      kind,
+      payload,
     })
   }
   #[cfg(not(feature = "server"))]
@@ -1340,6 +1376,71 @@ pub async fn query_order(out_trade_no: String) -> Result<OrderStatus, ServerFnEr
     let _ = out_trade_no;
     Err(ServerFnError::new("server only".to_string()))
   }
+}
+
+/// 处理支付宝异步回调（由 app 的 Axum 路由 `/api/pay/alipay/notify` 调用）。
+///
+/// 流程：验签 → 状态成功 → 找单 → 核金额 → 幂等 → 标记 paid + 发货（写权益）。
+/// 返回值为应答给支付宝的纯文本（`success` / `failure`），失败会触发其重试。
+#[cfg(feature = "server")]
+pub async fn handle_alipay_notify(
+  params: std::collections::HashMap<String, String>,
+) -> &'static str {
+  use app_core::entities::order;
+  use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
+
+  let Some(cfg) = crate::alipay::config() else {
+    return "failure";
+  };
+  // 1) 验签——一切发货的前提
+  if !crate::alipay::verify_notify(&cfg, &params) {
+    tracing::warn!("alipay notify: signature verify failed");
+    return "failure";
+  }
+  // 2) 仅成功状态发货；其它状态确认收到（避免无谓重试）但不发货
+  let status = params.get("trade_status").map(|s| s.as_str()).unwrap_or("");
+  if status != "TRADE_SUCCESS" && status != "TRADE_FINISHED" {
+    return "success";
+  }
+  let Some(out_trade_no) = params.get("out_trade_no") else {
+    return "failure";
+  };
+  let total = params.get("total_amount").map(|s| s.as_str()).unwrap_or("");
+
+  let Ok(db) = open_db().await else {
+    return "failure";
+  };
+  let row =
+    match order::Entity::find().filter(order::Column::OutTradeNo.eq(out_trade_no)).one(&db).await {
+      Ok(Some(o)) => o,
+      _ => return "failure",
+    };
+  // 3) 金额核验
+  if !crate::alipay::amount_matches(total, row.amount) {
+    tracing::warn!("alipay notify: amount mismatch for {}", out_trade_no);
+    return "failure";
+  }
+  // 4) 幂等：已处理直接成功
+  if row.status == "paid" {
+    return "success";
+  }
+  let user_id = row.user_id;
+  let slug = row.course_slug.clone();
+  let trade_no = params.get("trade_no").cloned();
+  // 5) 标记 paid
+  let mut am: order::ActiveModel = row.into();
+  am.status = Set("paid".to_string());
+  am.provider_txn = Set(trade_no);
+  am.paid_at = Set(Some(chrono::Utc::now().fixed_offset()));
+  if order::Entity::update(am).exec(&db).await.is_err() {
+    return "failure";
+  }
+  // 6) 发货：写权益（get_lesson 鉴权随即解锁）
+  if grant_entitlement_internal(&db, user_id, slug, "purchase").await.is_err() {
+    return "failure";
+  }
+  tracing::info!("alipay notify: order {} paid + entitlement granted", out_trade_no);
+  "success"
 }
 
 #[post("/api/courses/progress/list")]

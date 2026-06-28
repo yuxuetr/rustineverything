@@ -123,7 +123,7 @@ fn main() {
     use axum::extract::{Path, Query};
     use axum::http::{header::SET_COOKIE, HeaderMap};
     use axum::response::{IntoResponse, Redirect};
-    use axum::routing::get;
+    use axum::routing::{get, post};
     use tower_http::services::ServeDir;
 
     // 加载 .env 环境变量
@@ -342,7 +342,17 @@ fn main() {
       .nest_service("/podcasts", ServeDir::new(format!("{}/podcasts", assets_root)))
       .nest_service("/courses", ServeDir::new(format!("{}/courses", assets_root)))
       .nest_service("/cases", ServeDir::new(format!("{}/cases", assets_root)))
-      .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)));
+      .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)))
+      // M5b：支付宝异步回调（form-urlencoded）。验签 + 发货在 course 模块内完成，
+      // 返回纯文本 success/failure；反代需放行 /api/pay/*。
+      .route(
+        "/api/pay/alipay/notify",
+        post(
+          |axum::extract::Form(params): axum::extract::Form<
+            std::collections::HashMap<String, String>,
+          >| async move { module_course::server::handle_alipay_notify(params).await },
+        ),
+      );
 
     // Phase 2.4: 公开 SEO 路由
     // 为 sitemap / feed 构造 base_url。复用上面已读取的 base_url 变量，

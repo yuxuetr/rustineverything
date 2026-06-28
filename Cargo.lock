@@ -4604,19 +4604,24 @@ name = "module-course"
 version = "0.1.0"
 dependencies = [
  "app-core",
+ "base64",
  "chrono",
  "dioxus",
  "module-blog",
  "module-moderation",
  "rand 0.9.4",
+ "reqwest",
+ "rsa",
  "sdk",
  "sea-orm",
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "tempfile",
  "tokio",
  "tracing",
+ "url",
  "widgets",
 ]
 
@@ -6419,6 +6424,7 @@ dependencies = [
  "pkcs1",
  "pkcs8",
  "rand_core 0.6.4",
+ "sha2",
  "signature",
  "spki",
  "subtle",

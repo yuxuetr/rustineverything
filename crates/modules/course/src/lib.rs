@@ -1,3 +1,5 @@
+#[cfg(feature = "server")]
+pub mod alipay;
 pub mod course;
 pub mod server;
 
