@@ -149,8 +149,8 @@
 - [x] Hero 文案/CTA 更新（查看案例 + 查看课程 + 进入文档）— 提交 `feat(home): hero CTAs + dual-ecosystem pillars`
 - [x] `EcosystemPillars`（Rust 生态 | AI 生态 两张大卡 + 子领域 chips，链接领域路由）
 - [x] 现有 11 卡模块网格下移为「按领域浏览」（home.browse.*）
-- [ ] `FeaturedCases`（复用 cases server fn + `favorite` 过滤，带 领域/分类/技术栈 标签）
-- [ ] `CourseShowcase`/`CourseCard`（cover/课时/级别；资源徽章 🎬📄🎧💻 + 价格/层级留 M4）
+- [x] `FeaturedCases`（`list_cases` + `favorite` 取 6，CaseCard 含封面/分类徽章/stars/描述）— 提交 `feat(home): featured cases + course showcase`
+- [x] `CourseShowcase`/`CourseCard`（cover/级别/课时数；资源徽章 🎬📄🎧💻 + 价格/层级留 M4）
 - [ ] `CommunityFeed`（最新博客 + 论坛热帖，2 列）
 - [ ] `SiteFooter` 加厚（内容 / 社区 / 关于 分栏）
 
