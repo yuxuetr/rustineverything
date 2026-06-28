@@ -218,6 +218,14 @@ fn CourseCard(course: CourseSummary) -> Element {
   let lang = use_i18n();
   let first = course.title.chars().next().unwrap_or('R');
   let lessons = format!("{} {}", course.lesson_count, lang().pick("节课", "lessons"));
+  // 价格/层级徽章：pro → "Pro"，paid 且有价 → "¥{元}"，free → 无。
+  let price_label = if course.access_tier == "pro" {
+    Some("Pro".to_string())
+  } else if course.access_tier == "paid" && course.price > 0 {
+    Some(format!("¥{}", course.price / 100))
+  } else {
+    None
+  };
   rsx! {
       Link {
           to: Route::CourseDetail { slug: course.slug.clone() },
@@ -235,6 +243,9 @@ fn CourseCard(course: CourseSummary) -> Element {
                       span { class: "px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium", "{level}" }
                   }
                   span { "{lessons}" }
+                  if let Some(pl) = price_label.clone() {
+                      span { class: "ml-auto px-2 py-0.5 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-semibold", "{pl}" }
+                  }
               }
               h3 { class: "font-bold text-slate-900 dark:text-white group-hover:text-[var(--color-primary)] transition-colors", "{course.title}" }
               p { class: "mt-1 text-sm text-slate-600 dark:text-slate-400 line-clamp-2 flex-1", "{course.description}" }

@@ -82,6 +82,9 @@ pub struct LessonSummary {
   pub order: i32,
   #[serde(default)]
   pub duration: Option<String>,
+  /// 是否免费试看课节（付费课程里仍可访问）。见 docs/SITE_REDESIGN_SPEC.md §5。
+  #[serde(default)]
+  pub preview: bool,
 }
 
 /// 完整 Lesson（PR-B 中由 LessonPage 使用）
@@ -101,6 +104,12 @@ pub struct Lesson {
   pub code: Vec<CodeFile>,
   #[serde(default)]
   pub downloads: Vec<DownloadFile>,
+  /// 免费试看课节。
+  #[serde(default)]
+  pub preview: bool,
+  /// 服务端鉴权结论：true 表示当前用户无权查看，正文/媒体/代码已清空，前端渲染 Paywall。
+  #[serde(default)]
+  pub locked: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -126,7 +135,32 @@ pub struct Course {
   #[serde(default)]
   pub level: Option<String>,
   pub order: i32,
+  /// 访问层级：`free`（默认）| `paid` | `pro`。见 docs/SITE_REDESIGN_SPEC.md §5。
+  #[serde(default = "default_access_tier")]
+  pub access_tier: String,
+  /// 价格（分）；`access_tier != free` 时有意义。
+  #[serde(default)]
+  pub price: i64,
+  /// 货币代码，默认 CNY。
+  #[serde(default = "default_currency")]
+  pub currency: String,
   pub chapters: Vec<Chapter>,
+}
+
+/// `access_tier` 默认值（serde + 解析回退共用）。
+pub fn default_access_tier() -> String {
+  "free".to_string()
+}
+/// `currency` 默认值。
+pub fn default_currency() -> String {
+  "CNY".to_string()
+}
+
+impl Course {
+  /// 是否付费课程（非 free 层级）。
+  pub fn is_paid(&self) -> bool {
+    self.access_tier != "free"
+  }
 }
 
 /// 课程列表摘要（不含 chapters 详情，仅做卡片网格）
@@ -141,6 +175,12 @@ pub struct CourseSummary {
   pub order: i32,
   pub chapter_count: usize,
   pub lesson_count: usize,
+  #[serde(default = "default_access_tier")]
+  pub access_tier: String,
+  #[serde(default)]
+  pub price: i64,
+  #[serde(default = "default_currency")]
+  pub currency: String,
 }
 
 impl From<&Course> for CourseSummary {
@@ -156,6 +196,9 @@ impl From<&Course> for CourseSummary {
       order: c.order,
       chapter_count: c.chapters.len(),
       lesson_count,
+      access_tier: c.access_tier.clone(),
+      price: c.price,
+      currency: c.currency.clone(),
     }
   }
 }
@@ -179,6 +222,12 @@ struct CourseMeta {
   level: Option<String>,
   #[serde(default)]
   order: Option<i32>,
+  #[serde(default)]
+  access_tier: Option<String>,
+  #[serde(default)]
+  price: Option<i64>,
+  #[serde(default)]
+  currency: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -207,6 +256,8 @@ pub(crate) struct LessonFrontmatter {
   duration: Option<String>,
   #[serde(default)]
   sidebar_position: Option<i32>,
+  #[serde(default)]
+  preview: bool,
 }
 
 // =============================================================
@@ -664,6 +715,8 @@ pub fn read_lesson(course_slug: &str, chapter_slug: &str, lesson_slug: &str) -> 
     video,
     code,
     downloads,
+    preview: frontmatter.preview,
+    locked: false,
   })
 }
 
@@ -721,6 +774,7 @@ pub fn read_chapter(course_slug: &str, chapter_slug: &str) -> Option<Chapter> {
       // 标题：优先取 index.md frontmatter title，再退化目录名
       let mut lesson_title = humanize_title(&name);
       let mut duration: Option<String> = None;
+      let mut preview = false;
       let md = p.join("index.md");
       let mdx = p.join("index.mdx");
       let md_path = if md.exists() {
@@ -737,6 +791,7 @@ pub fn read_chapter(course_slug: &str, chapter_slug: &str) -> Option<Chapter> {
             lesson_title = fm.title;
           }
           duration = fm.duration;
+          preview = fm.preview;
         }
       }
 
@@ -746,6 +801,7 @@ pub fn read_chapter(course_slug: &str, chapter_slug: &str) -> Option<Chapter> {
         kind,
         order: lorder,
         duration,
+        preview,
       });
     }
   }
@@ -832,6 +888,9 @@ pub fn read_course(course_slug: &str) -> Option<Course> {
     tags: meta.tags.clone(),
     level: meta.level.clone(),
     order,
+    access_tier: meta.access_tier.clone().unwrap_or_else(default_access_tier),
+    price: meta.price.unwrap_or(0),
+    currency: meta.currency.clone().unwrap_or_else(default_currency),
     chapters,
   })
 }
