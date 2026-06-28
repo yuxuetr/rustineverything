@@ -162,10 +162,10 @@
 - [ ] 延后（内容相关）：`ecosystem/domain` 标签贯通 docs/blog/course；`/ai` 子领域 tag 化筛选（需先给 ai 文章打 llm/inference/agent/rust-ai 标签）
 
 ## M4 — 课程付费地基（不接网关也能线下售卖）
-- [ ] `course.yaml` 加 `access_tier`(free|paid|pro)/`price`/`currency`；Lesson frontmatter 加 `preview`
-- [ ] Entitlement 表（SeaORM）：`user_id, course_slug, source, granted_at`
-- [ ] 访问控制：`可看 = free || preview || has_entitlement`，server fn 二次校验
-- [ ] Paywall 组件 + 锁定课节覆盖层 + 侧栏锁图标/进度
+- [x] `course.yaml` 加 `access_tier`(free|paid|pro)/`price`/`currency`；Lesson frontmatter 加 `preview`（首页 CourseCard 显价格徽章；rust-basics 示例 paid）— 提交 `feat(course): access tier + preview metadata`
+- [x] Entitlement 表（SeaORM 实体 + 迁移）+ server fns（mine/list/grant/revoke）— 提交 `feat(course): entitlements table + server fns`
+- [ ] 访问控制：`可看 = free || preview || has_entitlement`，server fn（get_lesson）二次校验
+- [ ] Paywall 组件 + 锁定课节覆盖层 + 侧栏锁图标
 - [ ] Admin 手动授权页（[ADMIN_SPEC](docs/ADMIN_SPEC.md)）
 
 ## M5 — 支付集成
