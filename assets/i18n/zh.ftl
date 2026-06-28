@@ -56,6 +56,30 @@ home.card.fullstack.desc = 使用 Dioxus, Axum, SeaORM 快速构建跨平台应�
 home.card.aiwasm.title = AI 与 WASM
 home.card.aiwasm.desc = 探索 WebAssembly 高性能计算与 Rust AI 生态。
 
+# ── 首页模块网格卡片（home.mod.<id>.title / .desc）──
+home.mod.docs.title = 文档
+home.mod.docs.desc = 从所有权到全栈，系统化的 Rust 学习路径。
+home.mod.blog.title = 博客
+home.mod.blog.desc = 持续更新的实战经验与技术笔记。
+home.mod.course.title = 课程
+home.mod.course.desc = 由浅入深、循序渐进的系统化课程。
+home.mod.cases.title = 案例
+home.mod.cases.desc = 可复用的工程模板与实战项目。
+home.mod.ai.title = AI
+home.mod.ai.desc = 大模型、推理与 Rust AI 生态。
+home.mod.wasm.title = WASM
+home.mod.wasm.desc = WebAssembly 高性能计算与跨端运行。
+home.mod.web3.title = Web3
+home.mod.web3.desc = 区块链、智能合约与去中心化应用。
+home.mod.embedded.title = 嵌入式
+home.mod.embedded.desc = 用 Rust 驱动 MCU 与裸机开发。
+home.mod.cli.title = CLI
+home.mod.cli.desc = 打造高效、健壮的命令行工具。
+home.mod.podcast.title = 播客
+home.mod.podcast.desc = 用耳朵学 Rust，通勤路上也能进步。
+home.mod.forum.title = 论坛
+home.mod.forum.desc = 提问、讨论、分享，和社区一起成长。
+
 # ── 板块共享 UI ──
 board.all = 全部
 board.search = 搜索文章 / 标签…

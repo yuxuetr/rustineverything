@@ -124,12 +124,12 @@ pub fn ClassicShell() -> Element {
                           Link {
                               to: Route::Home {},
                               // mobile (<sm) 用 max-w-32 + truncate 防止站名挤占右侧按钮组；
-                              // sm–xl 区间横向导航走 hamburger（见下），空间充足故完整显示；
-                              // xl 起横向导航出现，shrink-0 确保标题不被挤压截断。
-                              class: "font-extrabold tracking-tight text-flow whitespace-nowrap inline-block truncate max-w-32 sm:max-w-none xl:shrink-0",
+                              // sm–lg 区间横向导航走 hamburger（见下），空间充足故完整显示；
+                              // lg 起横向导航出现，shrink-0 确保标题不被挤压截断。
+                              class: "font-extrabold tracking-tight text-flow whitespace-nowrap inline-block truncate max-w-32 sm:max-w-none lg:shrink-0",
                               "Rust in Everything"
                           }
-                          nav { class: "hidden xl:flex items-center gap-3 text-sm font-medium",
+                          nav { class: "hidden lg:flex items-center gap-2 xl:gap-3 text-sm font-medium",
                               if on_blog {
                                   Link { to: Route::BlogIndex {}, class: link_class(Route::BlogIndex {}), "{t_blog}" }
                               }
@@ -161,10 +161,10 @@ pub fn ClassicShell() -> Element {
                       }
 
                       div { class: "flex items-center gap-2 sm:gap-3",
-                          // Phase 9.4: mobile hamburger（md:hidden）。点击展开 header
-                          // 下方的板块抽屉，让 mobile 用户能直接跳到 8 个板块。
+                          // Phase 9.4: mobile hamburger（lg:hidden）。点击展开 header
+                          // 下方的板块抽屉，让窄屏用户能直接跳到 8 个板块。
                           button {
-                              class: "xl:hidden p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors",
+                              class: "lg:hidden p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors",
                               onclick: move |_| show_mobile_menu.set(!show_mobile_menu()),
                               aria_label: "Toggle navigation menu",
                               if show_mobile_menu() {
@@ -281,7 +281,7 @@ pub fn ClassicShell() -> Element {
                   // Phase 9.4: mobile 板块抽屉。md:hidden，仅 mobile/tablet 窄屏可见。
                   // 点 hamburger 切换；点链接后自动收起（show_mobile_menu.set(false)）。
                   if show_mobile_menu() {
-                      nav { class: "xl:hidden border-t border-slate-200/70 dark:border-slate-800 py-2 flex flex-col text-sm font-medium",
+                      nav { class: "lg:hidden border-t border-slate-200/70 dark:border-slate-800 py-2 flex flex-col text-sm font-medium",
                           if on_blog {
                               Link { to: Route::BlogIndex {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_blog}" }
                           }

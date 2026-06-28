@@ -36,31 +36,8 @@ pub fn Hero() -> Element {
                           "{t(lang(), \"hero.btn.cases\")}"
                       }
                   }
-
-                  div { class: "mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm",
-                      HeroStat { value: t(lang(), "hero.stat.docs.value"), label: t(lang(), "hero.stat.docs.label") }
-                      HeroStat { value: t(lang(), "hero.stat.blog.value"), label: t(lang(), "hero.stat.blog.label") }
-                      HeroStat { value: t(lang(), "hero.stat.course.value"), label: t(lang(), "hero.stat.course.label") }
-                      HeroStat { value: t(lang(), "hero.stat.cases.value"), label: t(lang(), "hero.stat.cases.label") }
-                  }
               }
           }
-      }
-  }
-}
-
-#[derive(Clone, PartialEq, Props)]
-struct HeroStatProps {
-  value: String,
-  label: String,
-}
-
-#[component]
-fn HeroStat(props: HeroStatProps) -> Element {
-  rsx! {
-      div { class: "rounded-lg border border-white/10 bg-white/5 p-4",
-          div { class: "text-white font-semibold", "{props.value}" }
-          div { class: "text-slate-300 text-xs mt-1", "{props.label}" }
       }
   }
 }
