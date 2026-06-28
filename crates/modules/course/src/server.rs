@@ -971,22 +971,24 @@ pub async fn get_lesson(
   {
     let mut lesson_opt = read_lesson(&slug, &chapter, &lesson);
     if let Some(lesson_ref) = lesson_opt.as_mut() {
-      // M4c 访问控制：付费课程的非试看课节，需登录且拥有权益（或 admin）。
+      // 访问控制：付费/Pro 课程的非试看课节需鉴权（M4c + M6）。
       // 鉴权在服务端进行，锁定时清空正文/媒体/代码，绝不把付费内容下发到客户端。
       let course = read_course(&slug);
       let course_paid = course.as_ref().map(|c| c.is_paid()).unwrap_or(false);
       if course_paid {
+        let access_tier = course.as_ref().map(|c| c.access_tier.clone()).unwrap_or_default();
         lesson_ref.price = course.as_ref().map(|c| c.price).unwrap_or(0);
-      }
-      if course_paid && !lesson_ref.preview {
-        let allowed = match current_session_user() {
-          Some(u) if u.is_admin() => true,
+        // 收集鉴权信号（admin 直接放行，无需查库）。
+        let (is_admin, has_ent, is_pro) = match current_session_user() {
+          Some(u) if u.is_admin() => (true, false, false),
           Some(u) => {
             let db = open_db().await?;
-            has_entitlement(&db, u.id, &slug).await
+            (false, has_entitlement(&db, u.id, &slug).await, is_pro_member(&db, u.id).await)
           }
-          None => false,
+          None => (false, false, false),
         };
+        let allowed =
+          can_access_lesson(&access_tier, lesson_ref.preview, is_admin, has_ent, is_pro);
         if !allowed {
           lesson_ref.locked = true;
           lesson_ref.doc = None;
@@ -1078,6 +1080,40 @@ async fn has_entitlement(
     .ok()
     .flatten()
     .is_some()
+}
+
+/// server-only：用户是否为**有效** Pro 会员（M6）。
+#[cfg(feature = "server")]
+async fn is_pro_member(db: &sea_orm::DatabaseConnection, user_id: i32) -> bool {
+  use app_core::entities::membership;
+  use sea_orm::EntityTrait;
+  membership::Entity::find_by_id(user_id)
+    .one(db)
+    .await
+    .ok()
+    .flatten()
+    .map(|m| m.tier == "pro" && m.expires_at > chrono::Utc::now().fixed_offset())
+    .unwrap_or(false)
+}
+
+/// 课节访问判定（纯函数，便于单测）。
+///
+/// 规则：free 全开；其余在 试看 / admin / 单课权益 时放行；`pro` 课程额外允许
+/// 有效 Pro 会员。详见 docs/SITE_REDESIGN_SPEC.md §5.4 + §5.6 D。
+pub fn can_access_lesson(
+  access_tier: &str,
+  preview: bool,
+  is_admin: bool,
+  has_entitlement: bool,
+  is_pro_member: bool,
+) -> bool {
+  if access_tier == "free" {
+    return true;
+  }
+  if preview || is_admin || has_entitlement {
+    return true;
+  }
+  access_tier == "pro" && is_pro_member
 }
 
 /// Admin 列表项：一条权益 + 用户昵称。
@@ -2382,6 +2418,25 @@ mod tests {
     assert_eq!(normalize_visibility(Some("hacker-attempt")), "private");
     // None → private
     assert_eq!(normalize_visibility(None), "private");
+  }
+
+  #[test]
+  fn test_can_access_lesson() {
+    // free 全开
+    assert!(can_access_lesson("free", false, false, false, false));
+    // paid：默认锁
+    assert!(!can_access_lesson("paid", false, false, false, false));
+    // paid：试看 / admin / 单课权益放行
+    assert!(can_access_lesson("paid", true, false, false, false));
+    assert!(can_access_lesson("paid", false, true, false, false));
+    assert!(can_access_lesson("paid", false, false, true, false));
+    // paid：Pro 会员**不**解锁单购课程
+    assert!(!can_access_lesson("paid", false, false, false, true));
+    // pro：Pro 会员解锁
+    assert!(can_access_lesson("pro", false, false, false, true));
+    assert!(!can_access_lesson("pro", false, false, false, false));
+    // pro：单课权益（admin 授予）也可解锁
+    assert!(can_access_lesson("pro", false, false, true, false));
   }
 
   #[test]
