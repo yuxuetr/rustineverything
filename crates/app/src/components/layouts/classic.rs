@@ -116,9 +116,11 @@ pub fn ClassicShell() -> Element {
   rsx! {
       div { class: "min-h-screen flex flex-col",
           header { class: "sticky top-0 z-50 border-b border-slate-200/70 bg-white/80 backdrop-blur dark:bg-slate-950/70 dark:border-slate-800",
-              Container {
+              // 顺栏专用加宽容器（比正文 max-w-7xl 更宽）：9 个导航项 + 完整站名 +
+              // 右侧控件在 1280px 内装不下，加宽后才有富余空间让 justify-between 拉开间距。
+              div { class: "mx-auto max-w-[88rem] px-4 sm:px-6 lg:px-8",
                   div { class: "h-14 flex items-center justify-between gap-4",
-                      div { class: "flex items-center gap-6 min-w-0",
+                      div { class: "flex items-center gap-4 min-w-0",
                           Link {
                               to: Route::Home {},
                               // mobile (<sm) 用 max-w-32 + truncate 防止站名挤占右侧按钮组；
@@ -127,7 +129,7 @@ pub fn ClassicShell() -> Element {
                               class: "font-extrabold tracking-tight text-flow whitespace-nowrap inline-block truncate max-w-32 sm:max-w-none xl:shrink-0",
                               "Rust in Everything"
                           }
-                          nav { class: "hidden xl:flex items-center gap-4 text-sm font-medium",
+                          nav { class: "hidden xl:flex items-center gap-3 text-sm font-medium",
                               if on_blog {
                                   Link { to: Route::BlogIndex {}, class: link_class(Route::BlogIndex {}), "{t_blog}" }
                               }
