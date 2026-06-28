@@ -146,12 +146,13 @@
 - 备注：精选案例列 M1 用静态 CTA，M2/M3 接 `cases.favorite` 实时数据。
 
 ## M2 — 首页重排
-- [ ] Hero 文案/CTA 更新（浏览案例 + 查看课程 + 搜索）
-- [ ] `EcosystemPillars`（Rust 生态 | AI 生态 两张大卡 + 子领域 chips + 进入入口）
-- [ ] `FeaturedCases`（复用 cases server fn + `favorite` 过滤，带 生态/领域/行业/技术栈 标签）
-- [ ] `CourseShowcase`/`CourseCard`（资源徽章 🎬📄🎧💻 + 价格/层级/即将上线）
-- [ ] `CommunityFeed`（最新博客·播客 + 论坛热帖，2 列）
-- [ ] 现有 11 卡模块网格下移为「按领域浏览」；`SiteFooter` 加厚
+- [x] Hero 文案/CTA 更新（查看案例 + 查看课程 + 进入文档）— 提交 `feat(home): hero CTAs + dual-ecosystem pillars`
+- [x] `EcosystemPillars`（Rust 生态 | AI 生态 两张大卡 + 子领域 chips，链接领域路由）
+- [x] 现有 11 卡模块网格下移为「按领域浏览」（home.browse.*）
+- [ ] `FeaturedCases`（复用 cases server fn + `favorite` 过滤，带 领域/分类/技术栈 标签）
+- [ ] `CourseShowcase`/`CourseCard`（cover/课时/级别；资源徽章 🎬📄🎧💻 + 价格/层级留 M4）
+- [ ] `CommunityFeed`（最新博客 + 论坛热帖，2 列）
+- [ ] `SiteFooter` 加厚（内容 / 社区 / 关于 分栏）
 
 ## M3 — 分类法统一
 - [ ] `ecosystem/domain` 标签贯通 case/doc/course/blog；`cases.category` 派生映射
