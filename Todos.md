@@ -128,3 +128,48 @@
 - P0 最先；P1 在首个需要 DB 的任务前按需执行。
 - **A2 必须在 B4 之前**（docs 插槽改造影响其 SSR 迁移）。
 - 建议顺序：P0 → A1 → A2 → A3 → A4 → B1 → B2 → B3 → B4 →（按需 P1）→ B5 → B6。
+
+---
+
+# 新阶段 — 站点重设计：双生态首页 + 导航 + 付费课程
+
+> 设计文档：[`docs/SITE_REDESIGN_SPEC.md`](docs/SITE_REDESIGN_SPEC.md)。
+> 定位：Rust 工业用途社区，围绕 **Rust 生态 + AI 生态** 两大支柱；案例为差异化核心，课程为变现核心。
+> 已完成（前置 UI 修复）：导航断点回退 lg + 首页模块卡网格（提交 `fix(ui): restore desktop nav...`）。
+
+## M1 — 导航重构：双生态 mega 菜单
+- [ ] 新增 taxonomy 单一源（ecosystem→domain 配置：rust={embedded,web3,wasm,cli,backend}，ai={llm,inference,agent,rust-ai}），导航/首页/筛选共用
+- [ ] `classic.rs` 顶层改为 `Rust 生态▾  AI 生态▾  案例  课程  博客  论坛`；播客并入博客；保留右侧控件
+- [ ] `EcosystemMega` 组件：三栏（应用领域 / 学习资源 / 精选案例缩略）；精选复用 `cases.favorite`
+- [ ] 响应式：<lg hamburger 抽屉内两个生态变 accordion；a11y（aria-expanded/haspopup、Esc 关闭、focus）
+- [ ] i18n 新键 `nav.eco.*` / `mega.*`（zh/en 同步）；`npm run build` 重建 CSS；构建 + clippy 零告警
+
+## M2 — 首页重排
+- [ ] Hero 文案/CTA 更新（浏览案例 + 查看课程 + 搜索）
+- [ ] `EcosystemPillars`（Rust 生态 | AI 生态 两张大卡 + 子领域 chips + 进入入口）
+- [ ] `FeaturedCases`（复用 cases server fn + `favorite` 过滤，带 生态/领域/行业/技术栈 标签）
+- [ ] `CourseShowcase`/`CourseCard`（资源徽章 🎬📄🎧💻 + 价格/层级/即将上线）
+- [ ] `CommunityFeed`（最新博客·播客 + 论坛热帖，2 列）
+- [ ] 现有 11 卡模块网格下移为「按领域浏览」；`SiteFooter` 加厚
+
+## M3 — 分类法统一
+- [ ] `ecosystem/domain` 标签贯通 case/doc/course/blog；`cases.category` 派生映射
+- [ ] 生态/领域筛选页（`/embedded` 等保留为领域落地页；`ai` 子领域 tag 化）
+
+## M4 — 课程付费地基（不接网关也能线下售卖）
+- [ ] `course.yaml` 加 `access_tier`(free|paid|pro)/`price`/`currency`；Lesson frontmatter 加 `preview`
+- [ ] Entitlement 表（SeaORM）：`user_id, course_slug, source, granted_at`
+- [ ] 访问控制：`可看 = free || preview || has_entitlement`，server fn 二次校验
+- [ ] Paywall 组件 + 锁定课节覆盖层 + 侧栏锁图标/进度
+- [ ] Admin 手动授权页（[ADMIN_SPEC](docs/ADMIN_SPEC.md)）
+
+## M5 — 支付集成
+- [ ] 接支付网关（国内 微信/支付宝；海外 Stripe/Paddle/LemonSqueezy）+ webhook→entitlement
+- [ ] 订单/支付记录表；幂等与回调校验
+
+## M6 —（可选）Pro 订阅会员
+- [ ] 会员层级 + 订阅状态 + 看全部 pro 课程的权益解析
+
+### 依赖与排序
+- M1/M2 不依赖付费，先上线见效；M3 为 M2 的筛选/精选提供数据；M4 起才动 DB 与鉴权；M5 依赖 M4。
+- 顺序：M1 → M2 →（M3 穿插）→ M4 → M5 →（M6 可选）。
