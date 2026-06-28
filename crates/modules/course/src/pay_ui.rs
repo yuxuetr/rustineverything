@@ -11,7 +11,7 @@ use dioxus::document::eval;
 use dioxus::prelude::*;
 use dioxus::router::Link;
 
-use crate::server::{create_order, list_my_orders, query_order, OrderInfo};
+use crate::server::{create_order, list_my_orders, my_membership, query_order, OrderInfo};
 
 /// 由 fast_qr 把支付链接渲染成 SVG 二维码字符串。
 fn qr_svg(data: &str) -> String {
@@ -201,11 +201,38 @@ pub fn MyOrdersPage() -> Element {
   let res = use_resource(|| async move { list_my_orders().await.unwrap_or_default() });
   let orders: Vec<OrderInfo> = res.read().clone().unwrap_or_default();
   let loaded = res.read().is_some();
+  // Pro 会员状态
+  let mem_res = use_resource(|| async move { my_membership().await.ok().flatten() });
+  let membership = mem_res.read().clone().flatten();
 
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950 min-h-[60vh]",
           div { class: "mx-auto max-w-4xl px-4 sm:px-6 lg:px-8",
               h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "我的订单" }
+
+              // Pro 会员横幅
+              if let Some(m) = membership {
+                  {
+                      let date = m.expires_at.split('T').next().unwrap_or(&m.expires_at).to_string();
+                      if m.active {
+                          rsx! {
+                              div { class: "mb-6 flex items-center justify-between gap-4 rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 px-5 py-4",
+                                  div {
+                                      span { class: "font-bold text-[var(--color-primary)]", "Pro 会员" }
+                                      span { class: "ml-2 text-sm text-slate-500 dark:text-slate-400", "有效期至 {date}" }
+                                  }
+                                  span { class: "text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400", "有效" }
+                              }
+                          }
+                      } else {
+                          rsx! {
+                              div { class: "mb-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 px-5 py-4 text-sm text-slate-500",
+                                  "Pro 会员已于 {date} 到期。"
+                              }
+                          }
+                      }
+                  }
+              }
               if !loaded {
                   div { class: "flex items-center justify-center py-16",
                       div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-primary)]" }

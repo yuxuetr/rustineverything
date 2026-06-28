@@ -1262,6 +1262,170 @@ pub async fn revoke_entitlement(user_id: i32, course_slug: String) -> Result<(),
 }
 
 // =============================================================
+// Pro 会员（M6b：我的会员 + admin 授予/撤销/列表）
+// =============================================================
+
+/// 当前用户会员信息。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MembershipInfo {
+  pub tier: String,
+  pub expires_at: String,
+  pub active: bool,
+}
+
+/// Admin 列表项：会员 + 用户昵称。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MembershipAdminInfo {
+  pub user_id: i32,
+  pub nickname: String,
+  pub tier: String,
+  pub expires_at: String,
+  pub active: bool,
+}
+
+/// 当前用户的会员状态（个人中心展示）。
+#[post("/api/courses/membership/mine")]
+pub async fn my_membership() -> Result<Option<MembershipInfo>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::membership;
+    use sea_orm::EntityTrait;
+    let user = match current_session_user() {
+      Some(u) => u,
+      None => return Ok(None),
+    };
+    let db = open_db().await?;
+    let now = chrono::Utc::now().fixed_offset();
+    Ok(membership::Entity::find_by_id(user.id).one(&db).await.ok().flatten().map(|m| {
+      MembershipInfo {
+        active: m.tier == "pro" && m.expires_at > now,
+        tier: m.tier,
+        expires_at: m.expires_at.to_rfc3339(),
+      }
+    }))
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(None)
+  }
+}
+
+/// Admin：列出全部会员（含昵称）。
+#[post("/api/courses/membership/list")]
+pub async fn list_memberships() -> Result<Vec<MembershipAdminInfo>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::{membership, user as user_entity};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+    require_admin_user()?;
+    let db = open_db().await?;
+    let now = chrono::Utc::now().fixed_offset();
+    let rows = membership::Entity::find()
+      .order_by_desc(membership::Column::ExpiresAt)
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut ids: Vec<i32> = rows.iter().map(|r| r.user_id).collect();
+    ids.sort();
+    ids.dedup();
+    let users = user_entity::Entity::find()
+      .filter(user_entity::Column::Id.is_in(ids))
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let name_of =
+      |id: i32| users.iter().find(|u| u.id == id).map(|u| u.nickname.clone()).unwrap_or_default();
+    Ok(
+      rows
+        .into_iter()
+        .map(|m| MembershipAdminInfo {
+          user_id: m.user_id,
+          nickname: name_of(m.user_id),
+          active: m.tier == "pro" && m.expires_at > now,
+          tier: m.tier,
+          expires_at: m.expires_at.to_rfc3339(),
+        })
+        .collect(),
+    )
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
+}
+
+/// Admin：授予/续期 Pro 会员（在现有有效期或当前时间基础上加 `days` 天）。
+#[post("/api/courses/membership/grant")]
+pub async fn grant_membership(user_id: i32, days: i64) -> Result<(), ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::membership;
+    use chrono::Utc;
+    use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
+    require_admin_user()?;
+    if days <= 0 {
+      return Err(ServerFnError::new("天数需为正".to_string()));
+    }
+    let db = open_db().await?;
+    let now = Utc::now().fixed_offset();
+    let base = match membership::Entity::find_by_id(user_id).one(&db).await.ok().flatten() {
+      Some(m) if m.expires_at > now => m.expires_at,
+      _ => now,
+    };
+    let new_expiry = base + chrono::Duration::days(days);
+    let am = membership::ActiveModel {
+      user_id: Set(user_id),
+      tier: Set("pro".to_string()),
+      expires_at: Set(new_expiry),
+      source: Set("admin_grant".to_string()),
+      updated_at: Set(now),
+    };
+    membership::Entity::insert(am)
+      .on_conflict(
+        OnConflict::column(membership::Column::UserId)
+          .update_columns([
+            membership::Column::Tier,
+            membership::Column::ExpiresAt,
+            membership::Column::Source,
+            membership::Column::UpdatedAt,
+          ])
+          .to_owned(),
+      )
+      .exec(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = (user_id, days);
+    Ok(())
+  }
+}
+
+/// Admin：撤销会员。
+#[post("/api/courses/membership/revoke")]
+pub async fn revoke_membership(user_id: i32) -> Result<(), ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::membership;
+    use sea_orm::EntityTrait;
+    require_admin_user()?;
+    let db = open_db().await?;
+    membership::Entity::delete_by_id(user_id)
+      .exec(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = user_id;
+    Ok(())
+  }
+}
+
+// =============================================================
 // Orders / 在线支付（M5a：建单 + 状态查询；网关下单 stub，M5b/M5c 接入）
 // =============================================================
 

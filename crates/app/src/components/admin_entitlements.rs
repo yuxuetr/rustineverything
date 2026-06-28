@@ -8,7 +8,8 @@ use dioxus::prelude::*;
 
 use module_admin::admin::{is_current_user_admin, AdminShell, ForbiddenPanel};
 use module_course::server::{
-  grant_entitlement, list_entitlements, revoke_entitlement, EntitlementInfo,
+  grant_entitlement, grant_membership, list_entitlements, list_memberships, revoke_entitlement,
+  revoke_membership, EntitlementInfo, MembershipAdminInfo,
 };
 
 /// `/admin/entitlements`：列出全部权益 + 手动授予 / 撤销。
@@ -122,6 +123,133 @@ pub fn AdminEntitlementsPage() -> Element {
                                                       let slug = slug.clone();
                                                       spawn(async move {
                                                           let _ = revoke_entitlement(uid, slug).await;
+                                                          rows_res.restart();
+                                                      });
+                                                  },
+                                                  "撤销"
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+
+          MembershipSection {}
+      }
+  }
+}
+
+/// Pro 会员管理区块（授予/续期 + 列表 + 撤销）。
+#[component]
+fn MembershipSection() -> Element {
+  let mut rows_res = use_resource(|| async move { list_memberships().await.unwrap_or_default() });
+  let rows: Vec<MembershipAdminInfo> = rows_res.read().clone().unwrap_or_default();
+  let loaded = rows_res.read().is_some();
+
+  let mut user_id = use_signal(String::new);
+  let mut days = use_signal(|| "30".to_string());
+  let mut msg = use_signal(String::new);
+
+  let do_grant = move |_| {
+    let uid = user_id().trim().parse::<i32>();
+    let d = days().trim().parse::<i64>();
+    match (uid, d) {
+      (Ok(id), Ok(n)) if n > 0 => {
+        spawn(async move {
+          match grant_membership(id, n).await {
+            Ok(_) => {
+              msg.set("已开通/续期".to_string());
+              user_id.set(String::new());
+              rows_res.restart();
+            }
+            Err(e) => msg.set(format!("失败：{e}")),
+          }
+        });
+      }
+      _ => msg.set("请输入有效的用户 ID 与天数".to_string()),
+    }
+  };
+
+  let input_class = "rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500";
+
+  rsx! {
+      div { class: "mt-12",
+          h2 { class: "text-lg font-bold text-slate-900 dark:text-white mb-2", "Pro 会员" }
+          p { class: "text-sm text-slate-500 dark:text-slate-400 mb-4",
+              "为用户开通 / 续期 Pro 会员（解锁全部 pro 课程）。在已有有效期或当前时间上叠加天数。"
+          }
+          div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 mb-6",
+              div { class: "flex flex-col sm:flex-row gap-3",
+                  input {
+                      class: "{input_class} sm:w-40",
+                      r#type: "number",
+                      placeholder: "用户 ID",
+                      value: "{user_id}",
+                      oninput: move |e| user_id.set(e.value()),
+                  }
+                  input {
+                      class: "{input_class} sm:w-32",
+                      r#type: "number",
+                      placeholder: "天数",
+                      value: "{days}",
+                      oninput: move |e| days.set(e.value()),
+                  }
+                  button {
+                      class: "rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm font-semibold text-white whitespace-nowrap transition-colors",
+                      onclick: do_grant,
+                      "开通 / 续期"
+                  }
+              }
+              if !msg().is_empty() {
+                  p { class: "mt-3 text-sm text-slate-600 dark:text-slate-300", "{msg}" }
+              }
+          }
+
+          if !loaded {
+              div { class: "flex items-center justify-center py-8",
+                  div { class: "animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" }
+              }
+          } else if rows.is_empty() {
+              p { class: "text-center text-slate-400 py-6", "暂无会员记录。" }
+          } else {
+              div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
+                  table { class: "w-full text-sm",
+                      thead { class: "bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400",
+                          tr {
+                              th { class: "text-left font-medium px-4 py-2", "用户" }
+                              th { class: "text-left font-medium px-4 py-2", "层级" }
+                              th { class: "text-left font-medium px-4 py-2", "到期" }
+                              th { class: "text-left font-medium px-4 py-2", "状态" }
+                              th { class: "px-4 py-2" }
+                          }
+                      }
+                      tbody { class: "divide-y divide-slate-100 dark:divide-slate-800",
+                          for m in rows.into_iter() {
+                              {
+                                  let uid = m.user_id;
+                                  let date = m.expires_at.split('T').next().unwrap_or(&m.expires_at).to_string();
+                                  rsx! {
+                                      tr { key: "{m.user_id}", class: "text-slate-700 dark:text-slate-200",
+                                          td { class: "px-4 py-2", "{m.nickname} #{m.user_id}" }
+                                          td { class: "px-4 py-2 uppercase text-xs font-semibold", "{m.tier}" }
+                                          td { class: "px-4 py-2 text-slate-400 text-xs", "{date}" }
+                                          td { class: "px-4 py-2",
+                                              if m.active {
+                                                  span { class: "text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400", "有效" }
+                                              } else {
+                                                  span { class: "text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500", "已过期" }
+                                              }
+                                          }
+                                          td { class: "px-4 py-2 text-right",
+                                              button {
+                                                  class: "text-xs font-medium text-rose-600 hover:text-rose-700",
+                                                  onclick: move |_| {
+                                                      spawn(async move {
+                                                          let _ = revoke_membership(uid).await;
                                                           rows_res.restart();
                                                       });
                                                   },
