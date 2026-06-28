@@ -131,33 +131,34 @@ pub enum Route {
 /// Home page
 #[component]
 pub fn Home() -> Element {
+  let lang = use_i18n();
   rsx! {
       Hero {}
       section { class: "py-24 bg-white dark:bg-slate-950",
           Container {
               SectionTitle {
-                  title: "专注 Rust 生态".to_string(),
-                  subtitle: Some("从底层原理到全栈实战，构建高性能、高可靠的软件系统".to_string())
+                  title: t(lang(), "home.section_title"),
+                  subtitle: Some(t(lang(), "home.section_subtitle"))
               }
 
               div { class: "grid grid-cols-1 md:grid-cols-3 gap-8 mt-12",
                   FeatureCard {
-                      title: "Rust 基础".to_string(),
-                      desc: "深入浅出所有权、生命周期、Trait 等核心概念。".to_string(),
+                      title: t(lang(), "home.card.basics.title"),
+                      desc: t(lang(), "home.card.basics.desc"),
                       icon: rsx! {
                           path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.74c0 3.821 1.77 7.239 4.537 9.477a11.981 11.981 0 0014.926 0C25.23 16.979 27 13.561 27 9.74c0-1.302-.209-2.557-.598-3.74A11.959 11.959 0 0112 2.714z" }
                       }
                   }
                   FeatureCard {
-                      title: "全栈开发".to_string(),
-                      desc: "使用 Dioxus, Axum, SeaORM 快速构建跨平台应用。".to_string(),
+                      title: t(lang(), "home.card.fullstack.title"),
+                      desc: t(lang(), "home.card.fullstack.desc"),
                       icon: rsx! {
                           path { stroke_linecap: "round", stroke_linejoin: "round", d: "M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" }
                       }
                   }
                   FeatureCard {
-                      title: "AI 与 WASM".to_string(),
-                      desc: "探索 WebAssembly 高性能计算与 Rust AI 生态。".to_string(),
+                      title: t(lang(), "home.card.aiwasm.title"),
+                      desc: t(lang(), "home.card.aiwasm.desc"),
                       icon: rsx! {
                           path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.048 8.287 8.25 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z" }
                       }

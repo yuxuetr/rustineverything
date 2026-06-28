@@ -13,7 +13,7 @@ use dioxus::router::{Link, Outlet};
 use crate::components::lang_picker::LangPicker;
 use crate::components::theme_picker::ThemePicker;
 use crate::components::view::Container;
-use crate::i18n::{t, use_i18n, use_t};
+use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
 use crate::server::enabled_module_ids;
 use dioxus::document::eval;
@@ -32,10 +32,10 @@ pub fn ClassicShell() -> Element {
   // 点击展开 header 下方的纵向 nav，让窄屏用户也能跳到板块。
   let mut show_mobile_menu = use_signal(|| false);
 
-  // Dynamic Translations from WASM Plugins
-  let t_blog = use_t("nav-blog");
-  let t_podcast = use_t("nav-podcast");
-  let t_forum = use_t("nav-forum");
+  // 同步翻译（方案 A）：读 `lang` 信号即可随语言切换重渲染，无服务端往返。
+  let t_blog = t(lang(), "nav.blog");
+  let t_podcast = t(lang(), "nav.podcast");
+  let t_forum = t(lang(), "nav.forum");
 
   // Phase 3.4：站点模块开关。默认全开（避免首屏闪烁）。
   //
@@ -140,7 +140,7 @@ pub fn ClassicShell() -> Element {
                                   Link { to: Route::TopicsIndex {}, class: link_class(Route::TopicsIndex {}), "{t_forum}" }
                               }
                               if on_embedded {
-                                  Link { to: Route::Embedded {}, class: link_class(Route::Embedded {}), "嵌入式" }
+                                  Link { to: Route::Embedded {}, class: link_class(Route::Embedded {}), "{t(lang(), \"nav.embedded\")}" }
                               }
                               if on_ai {
                                   Link { to: Route::Ai {}, class: link_class(Route::Ai {}), "AI" }
@@ -229,20 +229,20 @@ pub fn ClassicShell() -> Element {
                                               Link {
                                                   to: Route::MyTopics {},
                                                   class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                                                  "我的话题"
+                                                  "{t(lang(), \"user.my_topics\")}"
                                               }
                                           }
                                           Link {
                                               to: Route::MyAnnotations {},
                                               class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                                              "我的标注"
+                                              "{t(lang(), \"user.my_annotations\")}"
                                           }
                                           if u.is_admin() {
                                               div { class: "my-1 border-t border-slate-100 dark:border-slate-800" }
                                               Link {
                                                   to: Route::AdminDashboard {},
                                                   class: "block px-3 py-2 text-sm font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors",
-                                                  "🛡️ 管理后台"
+                                                  "{t(lang(), \"nav.admin\")}"
                                               }
                                           }
                                           div { class: "my-1 border-t border-slate-100 dark:border-slate-800" }
@@ -292,7 +292,7 @@ pub fn ClassicShell() -> Element {
                               Link { to: Route::TopicsIndex {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_forum}" }
                           }
                           if on_embedded {
-                              Link { to: Route::Embedded {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "嵌入式" }
+                          Link { to: Route::Embedded {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), \"nav.embedded\")}" }
                           }
                           if on_ai {
                               Link { to: Route::Ai {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "AI" }
@@ -324,7 +324,7 @@ pub fn ClassicShell() -> Element {
                       div {
                           span { class: "font-semibold text-flow", "Rust in Everything" }
                           span { class: "mx-2", "·" }
-                          span { "专注 Rust 技术栈" }
+                          span { "{t(lang(), \"footer.tagline\")}" }
                       }
                       div { class: "flex gap-4",
                           if on_forum {
