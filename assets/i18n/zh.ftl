@@ -49,7 +49,9 @@ blog.articles = 文章
 blog.no_results = 没有匹配该标签的文章
 
 # ── 页脚 ──
-footer.tagline = 专注 Rust 技术栈
+footer.tagline = 专注 Rust 工业实战与 AI 生态：案例、课程、文档、社区一站式聚合。
+footer.col.content = 内容
+footer.col.community = 社区
 
 # ── 首页 Hero ──
 hero.title = 专注 Rust 技术栈的学习与实战
@@ -80,6 +82,14 @@ home.courses.title = 课程
 home.courses.subtitle = 体系化的 Rust 与 AI 实战课程，配套文档、音频、图与代码
 home.courses.all = 查看全部课程
 home.courses.empty = 课程即将上线
+home.community.title = 社区动态
+home.community.subtitle = 最新文章与论坛讨论，与社区一起成长
+home.community.blog = 最新博客
+home.community.blog_all = 全部博客
+home.community.blog_empty = 暂无文章
+home.community.forum = 论坛热帖
+home.community.forum_all = 进入论坛
+home.community.forum_empty = 还没有讨论，来发第一帖
 home.card.basics.title = Rust 基础
 home.card.basics.desc = 深入浅出所有权、生命周期、Trait 等核心概念。
 home.card.fullstack.title = 全栈开发

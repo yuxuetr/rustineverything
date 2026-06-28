@@ -315,27 +315,47 @@ pub fn ClassicShell() -> Element {
 
           footer { class: "border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shrink-0",
               Container {
-                  div { class: "py-5 text-sm text-slate-600 dark:text-slate-300 flex flex-col md:flex-row gap-3 md:items-center md:justify-between",
+                  // 加厚 footer：品牌简介 + 内容栏 + 社区栏
+                  div { class: "py-12 grid grid-cols-2 md:grid-cols-4 gap-8 text-sm",
+                      div { class: "col-span-2 md:col-span-2",
+                          span { class: "font-extrabold text-flow text-base", "Rust in Everything" }
+                          p { class: "mt-2 max-w-sm text-slate-500 dark:text-slate-400 leading-relaxed", "{t(lang(), \"footer.tagline\")}" }
+                      }
                       div {
-                          span { class: "font-semibold text-flow", "Rust in Everything" }
-                          span { class: "mx-2", "·" }
-                          span { "{t(lang(), \"footer.tagline\")}" }
+                          p { class: "text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3", "{t(lang(), \"footer.col.content\")}" }
+                          div { class: "flex flex-col gap-2 text-slate-600 dark:text-slate-300",
+                              if on_cases {
+                                  Link { to: Route::Cases {}, class: "hover:text-[var(--color-primary)] transition-colors", "{t(lang(), \"nav.cases\")}" }
+                              }
+                              if on_course {
+                                  Link { to: Route::Courses {}, class: "hover:text-[var(--color-primary)] transition-colors", "{t(lang(), \"nav.course\")}" }
+                              }
+                              if on_docs {
+                                  Link { to: Route::Docs {}, class: "hover:text-[var(--color-primary)] transition-colors", "{t(lang(), \"mega.learn.docs\")}" }
+                              }
+                              if on_blog {
+                                  Link { to: Route::BlogIndex {}, class: "hover:text-[var(--color-primary)] transition-colors", "{t_blog}" }
+                              }
+                              if on_podcast {
+                                  Link { to: Route::Podcast {}, class: "hover:text-[var(--color-primary)] transition-colors", "{t_podcast}" }
+                              }
+                          }
                       }
-                      div { class: "flex gap-4",
-                          if on_forum {
-                              Link { to: Route::TopicsIndex {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Topics" }
-                          }
-                          if on_blog {
-                              Link { to: Route::BlogIndex {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Blog" }
-                          }
-                          if on_docs {
-                              Link { to: Route::Docs {}, class: "hover:text-slate-900 dark:hover:text-white transition-colors", "Docs" }
+                      div {
+                          p { class: "text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3", "{t(lang(), \"footer.col.community\")}" }
+                          div { class: "flex flex-col gap-2 text-slate-600 dark:text-slate-300",
+                              if on_forum {
+                                  Link { to: Route::TopicsIndex {}, class: "hover:text-[var(--color-primary)] transition-colors", "{t_forum}" }
+                              }
                           }
                       }
+                  }
+                  div { class: "py-5 border-t border-slate-100 dark:border-slate-900 text-xs text-slate-400",
+                      span { "Rust in Everything · " }
+                      span { "{t(lang(), \"footer.tagline\")}" }
                   }
               }
           }
       }
   }
 }
-// trigger rebuild 1780294934

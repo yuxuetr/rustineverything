@@ -49,7 +49,9 @@ blog.articles = Articles
 blog.no_results = No articles match this tag
 
 # ── Footer ──
-footer.tagline = Focused on the Rust stack
+footer.tagline = Industrial Rust practice and the AI ecosystem — cases, courses, docs, and community in one place.
+footer.col.content = Content
+footer.col.community = Community
 
 # ── Home Hero ──
 hero.title = Learn and build with the Rust stack
@@ -80,6 +82,14 @@ home.courses.title = Courses
 home.courses.subtitle = Systematic Rust & AI courses with docs, audio, diagrams, and code
 home.courses.all = View all courses
 home.courses.empty = Courses coming soon
+home.community.title = Community
+home.community.subtitle = Latest posts and forum discussions — grow with the community
+home.community.blog = Latest posts
+home.community.blog_all = All posts
+home.community.blog_empty = No posts yet
+home.community.forum = Hot topics
+home.community.forum_all = Visit forum
+home.community.forum_empty = No discussions yet — start the first thread
 home.card.basics.title = Rust Fundamentals
 home.card.basics.desc = A clear take on ownership, lifetimes, traits, and other core concepts.
 home.card.fullstack.title = Full-Stack Development

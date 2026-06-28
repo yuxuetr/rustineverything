@@ -12,8 +12,10 @@ use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
 use crate::taxonomy::ecosystems;
+use module_blog::server::{list_blog_posts, BlogPostSummary};
 use module_cases::server::{list_cases, CaseSummary};
 use module_course::server::{list_courses, CourseSummary};
+use module_forum::server::{list_topics, TopicSummary};
 
 /// 两大生态 pillars：Rust 生态 | AI 生态，各列子领域 chips（链接到领域路由）。
 /// `enabled` 用于隐藏被关闭模块对应的领域，与导航保持一致。
@@ -228,6 +230,103 @@ fn CourseCard(course: CourseSummary) -> Element {
               }
               h3 { class: "font-bold text-slate-900 dark:text-white group-hover:text-[var(--color-primary)] transition-colors", "{course.title}" }
               p { class: "mt-1 text-sm text-slate-600 dark:text-slate-400 line-clamp-2 flex-1", "{course.description}" }
+          }
+      }
+  }
+}
+
+// ── 社区动态 ──────────────────────────────────────────────
+
+/// 社区动态：左「最新博客」（SSR 预取）+ 右「论坛热帖」（DB，use_resource）。
+#[component]
+pub fn CommunityFeed() -> Element {
+  let lang = use_i18n();
+  rsx! {
+      section { class: "py-20 bg-white dark:bg-slate-950",
+          Container {
+              div { class: "mb-10",
+                  h2 { class: "text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white", "{t(lang(), \"home.community.title\")}" }
+                  p { class: "mt-2 text-slate-600 dark:text-slate-400", "{t(lang(), \"home.community.subtitle\")}" }
+              }
+              div { class: "grid grid-cols-1 lg:grid-cols-2 gap-6",
+                  div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-5",
+                      div { class: "flex items-center justify-between mb-3",
+                          h3 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200", "{t(lang(), \"home.community.blog\")}" }
+                          Link { to: Route::BlogIndex {}, class: "text-xs text-[var(--color-primary)] hover:underline", "{t(lang(), \"home.community.blog_all\")}" }
+                      }
+                      SuspenseBoundary { fallback: |_| loading_spinner(), BlogColumn {} }
+                  }
+                  div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-5",
+                      div { class: "flex items-center justify-between mb-3",
+                          h3 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200", "{t(lang(), \"home.community.forum\")}" }
+                          Link { to: Route::TopicsIndex {}, class: "text-xs text-[var(--color-primary)] hover:underline", "{t(lang(), \"home.community.forum_all\")}" }
+                      }
+                      ForumColumn {}
+                  }
+              }
+          }
+      }
+  }
+}
+
+#[component]
+fn BlogColumn() -> Element {
+  let lang = use_i18n();
+  let res = use_server_future(|| async move { list_blog_posts().await.unwrap_or_default() })?;
+  let posts: Vec<BlogPostSummary> = res().unwrap_or_default().into_iter().take(4).collect();
+  rsx! {
+      if posts.is_empty() {
+          p { class: "text-sm text-slate-400 py-6 text-center", "{t(lang(), \"home.community.blog_empty\")}" }
+      } else {
+          div { class: "divide-y divide-slate-200 dark:divide-slate-800",
+              for p in posts.into_iter() {
+                  Link {
+                      key: "{p.slug}",
+                      to: Route::Blog { id: p.slug.clone() },
+                      class: "group block py-3",
+                      div { class: "flex items-baseline justify-between gap-3",
+                          span { class: "font-medium text-slate-800 dark:text-slate-100 group-hover:text-[var(--color-primary)] transition-colors line-clamp-1", "{p.title}" }
+                          span { class: "shrink-0 text-xs text-slate-400 tabular-nums", "{p.date}" }
+                      }
+                      p { class: "mt-0.5 text-sm text-slate-500 dark:text-slate-400 line-clamp-1", "{p.description}" }
+                  }
+              }
+          }
+      }
+  }
+}
+
+#[component]
+fn ForumColumn() -> Element {
+  let lang = use_i18n();
+  // 论坛走 DB，用 use_resource（非 SEO、可能未连库）；失败/空时优雅降级。
+  let res = use_resource(|| async move { list_topics(None, Some(0)).await.unwrap_or_default() });
+  let topics: Vec<TopicSummary> =
+    res.read().clone().unwrap_or_default().into_iter().take(5).collect();
+  let loaded = res.read().is_some();
+  let reply_unit = lang().pick("回复", "replies");
+  rsx! {
+      if !loaded {
+          {loading_spinner()}
+      } else if topics.is_empty() {
+          p { class: "text-sm text-slate-400 py-6 text-center", "{t(lang(), \"home.community.forum_empty\")}" }
+      } else {
+          div { class: "divide-y divide-slate-200 dark:divide-slate-800",
+              for tpc in topics.into_iter() {
+                  Link {
+                      key: "{tpc.id}",
+                      to: Route::TopicDetail { id: tpc.id },
+                      class: "group block py-3",
+                      div { class: "flex items-baseline justify-between gap-3",
+                          span { class: "font-medium text-slate-800 dark:text-slate-100 group-hover:text-[var(--color-primary)] transition-colors line-clamp-1", "{tpc.title}" }
+                          span { class: "shrink-0 text-xs text-slate-400 tabular-nums", "{tpc.reply_count} {reply_unit}" }
+                      }
+                      div { class: "mt-0.5 flex items-center gap-2 text-xs text-slate-400",
+                          span { class: "px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800", "{tpc.tag}" }
+                          span { "{tpc.author}" }
+                      }
+                  }
+              }
           }
       }
   }
