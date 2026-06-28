@@ -3,7 +3,7 @@ use dioxus::router::{Link, Routable};
 
 use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
-use crate::components::home_sections::EcosystemPillars;
+use crate::components::home_sections::{CourseShowcase, EcosystemPillars, FeaturedCases};
 use crate::components::module_gate::ModuleGate;
 use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
@@ -167,6 +167,10 @@ pub fn Home() -> Element {
 
       // 两大生态支柱：直接体现「Rust 生态 + AI 生态」定位
       EcosystemPillars { enabled: enabled.clone() }
+
+      // 精选案例（旗舰）+ 课程（变现）
+      FeaturedCases {}
+      CourseShowcase {}
 
       // 按领域浏览：原模块网格下移为次级导航
       section { class: "py-20 bg-white dark:bg-slate-950",
