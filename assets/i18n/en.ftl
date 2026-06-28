@@ -173,3 +173,10 @@ cli.crate.indicatif.blurb = Progress bars and spinners
 cli.crate.console.blurb = Terminal styling, colors, and interaction utilities
 cli.crate.crossterm.blurb = Cross-platform terminal manipulation library
 cli.crate.assert_cmd.blurb = End-to-end CLI test assertions
+
+# ── Pickers (theme / language) ──
+theme.toggle = Switch theme
+theme.heading = Theme
+theme.reset = Reset to default
+lang.toggle = Language
+lang.heading = Language

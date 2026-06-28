@@ -173,3 +173,10 @@ cli.crate.indicatif.blurb = 进度条与 spinner
 cli.crate.console.blurb = 终端样式、颜色与交互工具
 cli.crate.crossterm.blurb = 跨平台终端操作库
 cli.crate.assert_cmd.blurb = CLI 端到端测试断言
+
+# ── 切换器（主题 / 语言） ──
+theme.toggle = 切换主题
+theme.heading = 主题
+theme.reset = 重置为默认
+lang.toggle = 切换语言
+lang.heading = 语言

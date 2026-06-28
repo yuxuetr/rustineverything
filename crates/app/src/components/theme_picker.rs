@@ -7,6 +7,7 @@
 use dioxus::document::eval;
 use dioxus::prelude::*;
 
+use crate::i18n::{t, use_i18n};
 use crate::server::{list_available_themes, set_user_theme, ThemeInfo};
 
 /// 主题 cookie 名（与后端 `THEME_COOKIE_NAME` 保持一致）。
@@ -40,6 +41,7 @@ pub fn use_theme_version() -> Signal<u32> {
 pub fn ThemePicker() -> Element {
   let mut open = use_signal(|| false);
   let mut version = use_theme_version();
+  let lang = use_i18n();
 
   // 拉取可用主题列表，依赖 version 以便切换后刷新激活态。
   let themes_res = use_resource(move || {
@@ -53,7 +55,7 @@ pub fn ThemePicker() -> Element {
     .iter()
     .find(|t| t.is_active)
     .map(|t| short_theme_label(&t.label))
-    .unwrap_or_else(|| "主题".to_string());
+    .unwrap_or_else(|| t(lang(), "theme.heading"));
 
   // 不显示 picker 当只有 ≤ 1 个主题（无切换意义）
   if themes.len() <= 1 {
@@ -104,7 +106,7 @@ pub fn ThemePicker() -> Element {
           button {
               onclick: move |_| open.set(!open()),
               class: "flex items-center gap-1 px-2 py-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors text-xs font-semibold",
-              title: "切换主题",
+              title: "{t(lang(), \"theme.toggle\")}",
               svg {
                   class: "w-4 h-4",
                   fill: "none",
@@ -122,7 +124,7 @@ pub fn ThemePicker() -> Element {
           if open() {
               div { class: "absolute right-0 top-full mt-1 w-48 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg py-1 z-50",
                   div { class: "px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-400",
-                      "主题"
+                      "{t(lang(), \"theme.heading\")}"
                   }
                   for t in themes.iter() {
                       {
@@ -153,7 +155,7 @@ pub fn ThemePicker() -> Element {
                   button {
                       onclick: move |_| switch.call(String::new()),
                       class: "w-full text-left px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                      "重置为默认"
+                      "{t(lang(), \"theme.reset\")}"
                   }
               }
           }

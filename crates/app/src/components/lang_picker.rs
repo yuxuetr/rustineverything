@@ -10,7 +10,7 @@
 use dioxus::document::eval;
 use dioxus::prelude::*;
 
-use crate::i18n::{use_i18n, Language};
+use crate::i18n::{t, use_i18n, Language};
 
 /// 语言 cookie 名（与 App 启动时的恢复逻辑保持一致）。
 /// 论坛等模块用 `<a href>` 整页跳转会重置内存中的语言信号，
@@ -38,7 +38,7 @@ pub fn LangPicker() -> Element {
           button {
               onclick: move |_| open.set(!open()),
               class: "flex items-center gap-1 px-2 py-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors text-xs font-semibold",
-              title: "切换语言 / Language",
+              title: "{t(current, \"lang.toggle\")}",
               svg {
                   class: "w-4 h-4",
                   fill: "none",
@@ -56,7 +56,7 @@ pub fn LangPicker() -> Element {
           if open() {
               div { class: "absolute right-0 top-full mt-1 w-40 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg py-1 z-50",
                   div { class: "px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-400",
-                      "语言"
+                      "{t(current, \"lang.heading\")}"
                   }
                   for (l, _short, full) in LANGUAGES.iter() {
                       {
