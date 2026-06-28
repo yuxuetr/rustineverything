@@ -108,13 +108,13 @@ pub fn MinimalShell() -> Element {
                                           Link {
                                               to: Route::MyAnnotations {},
                                               class: "block px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                                              "我的标注"
+                                              "{t(lang(), \"user.my_annotations\")}"
                                           }
                                           if u.is_admin() {
                                               Link {
                                                   to: Route::AdminDashboard {},
                                                   class: "block px-3 py-1.5 text-sm font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors",
-                                                  "管理后台"
+                                                  "{t(lang(), \"nav.admin\")}"
                                               }
                                           }
                                           a {
