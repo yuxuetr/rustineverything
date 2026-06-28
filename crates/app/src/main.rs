@@ -352,6 +352,23 @@ fn main() {
             std::collections::HashMap<String, String>,
           >| async move { module_course::server::handle_alipay_notify(params).await },
         ),
+      )
+      // M5c：微信支付 v3 异步回调（JSON）。验签需原始 body 逐字节一致 → 用 Bytes。
+      .route(
+        "/api/pay/wechat/notify",
+        post(|headers: HeaderMap, body: axum::body::Bytes| async move {
+          let mut map = std::collections::HashMap::new();
+          for (k, v) in headers.iter() {
+            if let Ok(s) = v.to_str() {
+              map.insert(k.as_str().to_ascii_lowercase(), s.to_string());
+            }
+          }
+          let body_str = String::from_utf8_lossy(&body).to_string();
+          let (code, resp) = module_course::server::handle_wechat_notify(map, body_str).await;
+          let status = axum::http::StatusCode::from_u16(code)
+            .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
+          (status, resp)
+        }),
       );
 
     // Phase 2.4: 公开 SEO 路由

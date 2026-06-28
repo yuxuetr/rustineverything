@@ -27,8 +27,8 @@ fn env_nonempty(key: &str) -> Option<String> {
   std::env::var(key).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
 }
 
-/// 把 .env 里的密钥（PEM 或裸 base64）解码为 DER 字节。
-fn decode_key(raw: &str) -> Option<Vec<u8>> {
+/// 把 .env 里的密钥（PEM 或裸 base64）解码为 DER 字节。支付宝与微信 v3 共用。
+pub(crate) fn decode_key(raw: &str) -> Option<Vec<u8>> {
   let body: String = raw
     .lines()
     .filter(|l| !l.starts_with("-----"))
@@ -68,8 +68,8 @@ fn canonical(params: &BTreeMap<String, String>) -> String {
     .join("&")
 }
 
-/// RSA2 签名 → base64。
-fn rsa2_sign(private_key_der: &[u8], content: &str) -> Result<String, String> {
+/// RSA2 签名 → base64。支付宝与微信 v3 共用。
+pub(crate) fn rsa2_sign(private_key_der: &[u8], content: &str) -> Result<String, String> {
   use rsa::pkcs1::DecodeRsaPrivateKey;
   use rsa::pkcs1v15::SigningKey;
   use rsa::pkcs8::DecodePrivateKey;
@@ -85,8 +85,8 @@ fn rsa2_sign(private_key_der: &[u8], content: &str) -> Result<String, String> {
   Ok(base64::engine::general_purpose::STANDARD.encode(sig.to_bytes()))
 }
 
-/// RSA2 验签。
-fn rsa2_verify(public_key_der: &[u8], content: &str, sign_b64: &str) -> bool {
+/// RSA2 验签。支付宝与微信 v3 共用。
+pub(crate) fn rsa2_verify(public_key_der: &[u8], content: &str, sign_b64: &str) -> bool {
   use rsa::pkcs1v15::{Signature, VerifyingKey};
   use rsa::pkcs8::DecodePublicKey;
   use rsa::sha2::Sha256;

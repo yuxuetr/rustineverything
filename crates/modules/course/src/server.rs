@@ -1309,7 +1309,7 @@ pub async fn create_order(
     };
     order::Entity::insert(am).exec(&db).await.map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // 按网关 + 场景生成支付凭据。支付宝（M5b）已接入；微信（M5c）待接入。
+    // 按网关 + 场景生成支付凭据。
     let (kind, payload) = match provider.as_str() {
       "alipay" => {
         let cfg = crate::alipay::config()
@@ -1327,6 +1327,28 @@ pub async fn create_order(
               crate::alipay::build_pay_url(&cfg, scn, &out_trade_no, &course.title, course.price)
                 .map_err(ServerFnError::new)?;
             ("redirect".to_string(), url)
+          }
+        }
+      }
+      "wechat" => {
+        let cfg = crate::wechat::config().ok_or_else(|| {
+          ServerFnError::new("微信支付未配置（缺 WECHAT_* 环境变量）".to_string())
+        })?;
+        match scene.as_str() {
+          "h5" => {
+            // H5 需付款用户 IP；生产应从请求头 X-Forwarded-For 取，这里占位。
+            let url =
+              crate::wechat::create_h5(&cfg, &out_trade_no, &course.title, course.price, "0.0.0.0")
+                .await
+                .map_err(ServerFnError::new)?;
+            ("h5".to_string(), url)
+          }
+          _ => {
+            let code_url =
+              crate::wechat::create_native(&cfg, &out_trade_no, &course.title, course.price)
+                .await
+                .map_err(ServerFnError::new)?;
+            ("qrcode".to_string(), code_url)
           }
         }
       }
@@ -1441,6 +1463,98 @@ pub async fn handle_alipay_notify(
   }
   tracing::info!("alipay notify: order {} paid + entitlement granted", out_trade_no);
   "success"
+}
+
+/// 处理微信支付 v3 异步回调（由 app 的 Axum 路由 `/api/pay/wechat/notify` 调用）。
+///
+/// 入参：HTTP 头（key 小写）+ 原始 body 字符串（验签需逐字节一致）。
+/// 流程：验签 → 解密 resource → 状态成功 → 找单 → 核金额 → 幂等 → 发货。
+/// 返回 `(http_status, body)`：成功 `(200,{"code":"SUCCESS"})`，失败非 200 触发重试。
+#[cfg(feature = "server")]
+pub async fn handle_wechat_notify(
+  headers: std::collections::HashMap<String, String>,
+  body: String,
+) -> (u16, String) {
+  use app_core::entities::order;
+  use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
+
+  let ok = || (200u16, "{\"code\":\"SUCCESS\"}".to_string());
+  let fail = |m: &str| (500u16, format!("{{\"code\":\"FAIL\",\"message\":\"{m}\"}}"));
+
+  let Some(cfg) = crate::wechat::config() else {
+    return fail("unconfigured");
+  };
+  let get = |k: &str| headers.get(k).map(|s| s.as_str()).unwrap_or("");
+  let (ts, nonce, sig) =
+    (get("wechatpay-timestamp"), get("wechatpay-nonce"), get("wechatpay-signature"));
+  if ts.is_empty() || nonce.is_empty() || sig.is_empty() {
+    return fail("missing signature headers");
+  }
+  // 1) 验签
+  if !crate::wechat::verify_notify(&cfg, ts, nonce, &body, sig) {
+    tracing::warn!("wechat notify: signature verify failed");
+    return fail("bad signature");
+  }
+  // 2) 解密 resource
+  let Ok(envelope) = serde_json::from_str::<serde_json::Value>(&body) else {
+    return fail("bad body");
+  };
+  let res = &envelope["resource"];
+  let (ct, rnonce, aad) = (
+    res["ciphertext"].as_str().unwrap_or(""),
+    res["nonce"].as_str().unwrap_or(""),
+    res["associated_data"].as_str().unwrap_or(""),
+  );
+  let plain = match crate::wechat::decrypt_resource(&cfg, rnonce, aad, ct) {
+    Ok(p) => p,
+    Err(_) => return fail("decrypt failed"),
+  };
+  let Ok(tx) = serde_json::from_str::<serde_json::Value>(&plain) else {
+    return fail("bad plaintext");
+  };
+  // 3) 仅成功状态发货
+  if tx["trade_state"].as_str() != Some("SUCCESS") {
+    return ok();
+  }
+  let out_trade_no = tx["out_trade_no"].as_str().unwrap_or("");
+  if out_trade_no.is_empty() {
+    return fail("no out_trade_no");
+  }
+  let total = tx["amount"]["total"].as_i64().unwrap_or(-1);
+  let transaction_id = tx["transaction_id"].as_str().map(|s| s.to_string());
+
+  let Ok(db) = open_db().await else {
+    return fail("db");
+  };
+  let row =
+    match order::Entity::find().filter(order::Column::OutTradeNo.eq(out_trade_no)).one(&db).await {
+      Ok(Some(o)) => o,
+      _ => return fail("order not found"),
+    };
+  // 4) 金额核验
+  if row.amount != total {
+    tracing::warn!("wechat notify: amount mismatch for {}", out_trade_no);
+    return fail("amount mismatch");
+  }
+  // 5) 幂等
+  if row.status == "paid" {
+    return ok();
+  }
+  let user_id = row.user_id;
+  let slug = row.course_slug.clone();
+  let mut am: order::ActiveModel = row.into();
+  am.status = Set("paid".to_string());
+  am.provider_txn = Set(transaction_id);
+  am.paid_at = Set(Some(chrono::Utc::now().fixed_offset()));
+  if order::Entity::update(am).exec(&db).await.is_err() {
+    return fail("update failed");
+  }
+  // 6) 发货
+  if grant_entitlement_internal(&db, user_id, slug, "purchase").await.is_err() {
+    return fail("grant failed");
+  }
+  tracing::info!("wechat notify: order {} paid + entitlement granted", out_trade_no);
+  ok()
 }
 
 #[post("/api/courses/progress/list")]

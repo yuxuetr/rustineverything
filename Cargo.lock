@@ -4603,6 +4603,7 @@ dependencies = [
 name = "module-course"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
  "app-core",
  "base64",
  "chrono",

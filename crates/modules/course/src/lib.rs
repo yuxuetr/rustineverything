@@ -2,6 +2,8 @@
 pub mod alipay;
 pub mod course;
 pub mod server;
+#[cfg(feature = "server")]
+pub mod wechat;
 
 use sdk::AppModule;
 
