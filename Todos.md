@@ -166,7 +166,8 @@
 - [x] Entitlement 表（SeaORM 实体 + 迁移）+ server fns（mine/list/grant/revoke）— 提交 `feat(course): entitlements table + server fns`
 - [x] 访问控制：get_lesson 服务端校验 `free || preview || has_entitlement || admin`，锁定时清空内容 — 提交 `feat(course): access control + paywall`
 - [x] Paywall 组件（锁定课节）+ 课程目录 试看/🔒 标记
-- [ ] Admin 手动授权页（[ADMIN_SPEC](docs/ADMIN_SPEC.md)）
+- [x] Admin 手动授权页 `/admin/entitlements`（列表 + 授予 + 撤销）— 提交 `feat(admin): manual course entitlement grant page`
+- M4 完成：付费课程内容模型（已有）+ access_tier/preview + entitlements 表 + get_lesson 服务端鉴权 + Paywall + Admin 授权。线上支付留 M5。
 
 ## M5 — 支付集成
 - [ ] 接支付网关（国内 微信/支付宝；海外 Stripe/Paddle/LemonSqueezy）+ webhook→entitlement
