@@ -16,6 +16,7 @@ module-blog = { path = "../blog" }
 app-core = { path = "../../core" }
 module-moderation = { path = "../moderation", optional = true }
 sea-orm = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
@@ -27,6 +28,7 @@ server = [
     "dep:tokio",
     "dep:serde_yaml",
     "dep:sea-orm",
+    "dep:rand",
     "widgets/server",
     "module-blog/server",
     "app-core/server",

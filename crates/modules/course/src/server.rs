@@ -1214,6 +1214,134 @@ pub async fn revoke_entitlement(user_id: i32, course_slug: String) -> Result<(),
   }
 }
 
+// =============================================================
+// Orders / 在线支付（M5a：建单 + 状态查询；网关下单 stub，M5b/M5c 接入）
+// =============================================================
+
+/// 下单结果：订单号 + 支付凭据（M5a 为 stub；M5b/c 按 provider/scene 填真实值）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OrderInit {
+  pub out_trade_no: String,
+  pub provider: String,
+  pub scene: String,
+  pub amount: i64,
+  pub currency: String,
+  /// stub | redirect | qrcode | h5
+  pub kind: String,
+  /// 跳转 URL / code_url / 自动提交表单；M5a 为空。
+  pub payload: String,
+}
+
+/// 订单状态（前端扫码后轮询）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct OrderStatus {
+  pub out_trade_no: String,
+  pub status: String,
+  pub paid: bool,
+}
+
+/// server-only：生成不易猜测的我方订单号（时间戳 + 用户 + 随机段）。
+#[cfg(feature = "server")]
+fn gen_out_trade_no(user_id: i32) -> String {
+  use rand::Rng;
+  let ts = chrono::Utc::now().timestamp_millis();
+  let r: u32 = rand::rng().random();
+  format!("RIE{ts}{user_id}{r:08x}")
+}
+
+/// 创建课程购买订单。校验登录 / 课程付费 / 未拥有，快照价格，建 pending 订单。
+/// M5a：网关下单为 stub（kind=stub）；M5b/M5c 接入后返回真实支付凭据。
+#[post("/api/orders/create")]
+pub async fn create_order(
+  course_slug: String,
+  provider: String,
+  scene: String,
+) -> Result<OrderInit, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::order;
+    use chrono::Utc;
+    use sea_orm::{ActiveValue::NotSet, ActiveValue::Set, EntityTrait};
+
+    let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
+    let provider = match provider.as_str() {
+      "wechat" | "alipay" => provider,
+      _ => return Err(ServerFnError::new("不支持的支付方式".to_string())),
+    };
+    let scene = match scene.as_str() {
+      "native" | "h5" | "page" | "wap" | "qr" => scene,
+      _ => return Err(ServerFnError::new("不支持的支付场景".to_string())),
+    };
+    let course =
+      read_course(&course_slug).ok_or_else(|| ServerFnError::new("课程不存在".to_string()))?;
+    if !course.is_paid() {
+      return Err(ServerFnError::new("该课程无需购买".to_string()));
+    }
+    let db = open_db().await?;
+    if has_entitlement(&db, user.id, &course_slug).await {
+      return Err(ServerFnError::new("你已拥有该课程".to_string()));
+    }
+    let out_trade_no = gen_out_trade_no(user.id);
+    let am = order::ActiveModel {
+      id: NotSet,
+      out_trade_no: Set(out_trade_no.clone()),
+      user_id: Set(user.id),
+      course_slug: Set(course_slug),
+      provider: Set(provider.clone()),
+      scene: Set(scene.clone()),
+      amount: Set(course.price),
+      currency: Set(course.currency.clone()),
+      status: Set("pending".to_string()),
+      provider_txn: Set(None),
+      created_at: Set(Utc::now().fixed_offset()),
+      paid_at: Set(None),
+    };
+    order::Entity::insert(am).exec(&db).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(OrderInit {
+      out_trade_no,
+      provider,
+      scene,
+      amount: course.price,
+      currency: course.currency,
+      kind: "stub".to_string(),
+      payload: String::new(),
+    })
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = (course_slug, provider, scene);
+    Err(ServerFnError::new("server only".to_string()))
+  }
+}
+
+/// 查询订单状态（仅本人可查）。扫码场景前端轮询用。
+#[post("/api/orders/query")]
+pub async fn query_order(out_trade_no: String) -> Result<OrderStatus, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::order;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
+    let db = open_db().await?;
+    let row = order::Entity::find()
+      .filter(order::Column::OutTradeNo.eq(&out_trade_no))
+      .one(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    match row {
+      Some(o) if o.user_id == user.id => {
+        Ok(OrderStatus { paid: o.status == "paid", out_trade_no: o.out_trade_no, status: o.status })
+      }
+      _ => Err(ServerFnError::new("订单不存在".to_string())),
+    }
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = out_trade_no;
+    Err(ServerFnError::new("server only".to_string()))
+  }
+}
+
 #[post("/api/courses/progress/list")]
 pub async fn get_progress(slug: String) -> Result<Vec<LessonProgress>, ServerFnError> {
   #[cfg(feature = "server")]
