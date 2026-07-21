@@ -116,7 +116,10 @@ pub struct AuthProviderEntry {
 }
 
 impl SiteConfig {
-  /// 从路径读取并解析 site.json。
+  /// 从路径读取并解析 site.json（无缓存，每次磁盘 IO）。
+  ///
+  /// 适用于写后立即重读等必须绕过缓存的场景（admin 保存配置）；
+  /// 读多写少的热路径请用 [`SiteConfig::load_cached`]。
   ///
   /// 返回统一的 [`crate::error::AppResult`]，底层 IO 失败会变为
   /// `AppError::Io`，不合法 JSON 会变为 `AppError::Validation`。
@@ -124,6 +127,44 @@ impl SiteConfig {
     let content = std::fs::read_to_string(path)?;
     let config: SiteConfig = serde_json::from_str(&content)?;
     Ok(config)
+  }
+
+  /// S10（风险 R11）：按 (path, mtime) 缓存的统一读取入口。
+  ///
+  /// 此前多处 server fn（主题 CSS / 布局 / feed / auth）每次请求都
+  /// `from_file` 直读磁盘 + serde 解析。改用本入口后：
+  /// - mtime 未变 → 直接 clone Arc（一次 metadata 系统调用，无读盘/解析）
+  /// - mtime 变化（admin 保存 / 手改文件）→ 自动重读，无需显式失效
+  ///
+  /// 缓存 key 为路径字符串；实际部署只有一个 site.json，表容量恒为 1。
+  pub fn load_cached(path: &str) -> crate::error::AppResult<std::sync::Arc<Self>> {
+    use std::collections::HashMap as Map;
+    use std::sync::{Arc, Mutex, OnceLock};
+    use std::time::SystemTime;
+
+    struct Entry {
+      mtime: SystemTime,
+      cfg: Arc<SiteConfig>,
+    }
+    static CACHE: OnceLock<Mutex<Map<String, Entry>>> = OnceLock::new();
+
+    let mtime = std::fs::metadata(path)?.modified()?;
+    let cache = CACHE.get_or_init(|| Mutex::new(Map::new()));
+
+    if let Ok(guard) = cache.lock() {
+      if let Some(entry) = guard.get(path) {
+        if entry.mtime == mtime {
+          return Ok(entry.cfg.clone());
+        }
+      }
+    }
+
+    // 未命中 / mtime 变化 → 锁外重读，写回缓存（锁失败仅跳过本次缓存）。
+    let cfg = Arc::new(Self::from_file(path)?);
+    if let Ok(mut guard) = cache.lock() {
+      guard.insert(path.to_string(), Entry { mtime, cfg: cfg.clone() });
+    }
+    Ok(cfg)
   }
 
   /// 解析后的主题栈（Phase 3.1）。
@@ -188,6 +229,54 @@ impl SiteConfig {
 #[allow(clippy::field_reassign_with_default)] // 测试 setup：Default + 逐字段赋值更易读
 mod tests {
   use super::*;
+
+  // ─── S10 load_cached ──────────────────────────────────
+
+  fn minimal_site_json(name: &str) -> String {
+    format!(
+      r#"{{"site_name":"{}","site_description":"","active_theme":"t.wasm","default_language":"zh","author":"","paths":{{}},"navigation":[]}}"#,
+      name
+    )
+  }
+
+  /// 同 mtime 下重复读取应命中缓存（返回同一个 Arc）。
+  #[test]
+  fn load_cached_hits_on_same_mtime() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("site.json");
+    std::fs::write(&path, minimal_site_json("A")).expect("write");
+    let p = path.to_str().expect("utf8 path");
+
+    let first = SiteConfig::load_cached(p).expect("first load");
+    let second = SiteConfig::load_cached(p).expect("second load");
+    assert!(std::sync::Arc::ptr_eq(&first, &second), "同 mtime 应返回同一 Arc");
+    assert_eq!(first.site_name, "A");
+  }
+
+  /// mtime 变化后应自动重读新内容。
+  #[test]
+  fn load_cached_reloads_on_mtime_change() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("site.json");
+    std::fs::write(&path, minimal_site_json("OLD")).expect("write old");
+    let p = path.to_str().expect("utf8 path");
+    let first = SiteConfig::load_cached(p).expect("first load");
+    assert_eq!(first.site_name, "OLD");
+
+    // 写新内容并显式把 mtime 向后拨 2 秒（避免文件系统 mtime 粒度引发 flaky）
+    std::fs::write(&path, minimal_site_json("NEW")).expect("write new");
+    let f = std::fs::OpenOptions::new().append(true).open(&path).expect("open");
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(2);
+    f.set_modified(later).expect("set mtime");
+
+    let second = SiteConfig::load_cached(p).expect("reload");
+    assert_eq!(second.site_name, "NEW", "mtime 变化应重读");
+  }
+
+  #[test]
+  fn load_cached_missing_file_errors() {
+    assert!(SiteConfig::load_cached("/nonexistent/__site__.json").is_err());
+  }
 
   #[test]
   fn theme_stack_prefers_themes_field() {

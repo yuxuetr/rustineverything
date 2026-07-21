@@ -213,9 +213,10 @@ pub fn default_module_engine() -> std::sync::Arc<ModuleEngine> {
   }
 
   // 慢路径：构建 + 写入。所有 IO 在锁外做以最小化争用。
+  // S10：走 load_cached，与其它 site.json 读取点共享 mtime 缓存。
   let mut e = ModuleEngine::with_specs(default_module_specs());
   let site_path = crate::utils::get_asset_root().join("site.json");
-  if let Ok(cfg) = SiteConfig::from_file(site_path.to_str().unwrap_or_default()) {
+  if let Ok(cfg) = SiteConfig::load_cached(site_path.to_str().unwrap_or_default()) {
     e.apply_site_config(&cfg);
   }
   let arc = Arc::new(e);

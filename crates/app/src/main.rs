@@ -267,9 +267,10 @@ fn main() {
     // 后续 get_or_load_module 自动 SHA256 比对；空表（fork 首次部署）= warn-only。
     let site_json_path =
       app_core::utils::get_asset_root().join("site.json").to_string_lossy().to_string();
-    if let Ok(cfg) = app_core::settings::SiteConfig::from_file(&site_json_path) {
+    // S10：走 load_cached（启动期预热缓存，后续 server fn 直接命中）。
+    if let Ok(cfg) = app_core::settings::SiteConfig::load_cached(&site_json_path) {
       let lock_count = cfg.plugins_lock.len();
-      app_core::shared_plugin_manager().set_plugins_lock(cfg.plugins_lock);
+      app_core::shared_plugin_manager().set_plugins_lock(cfg.plugins_lock.clone());
       if lock_count == 0 {
         tracing::warn!(
           "startup: site.json has empty plugins_lock; SHA256 verification disabled (warn-only)"

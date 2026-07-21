@@ -249,9 +249,18 @@
 - [x] workspace lints：`[workspace.lints.clippy] unwrap_used/expect_used = "warn"`（配合 -D warnings 即拒绝）；app-core / app / migration 三 crate 接入 `[lints] workspace = true`，其余 crate 渐进；测试代码 crate 根 `#![cfg_attr(test, allow(...))]` 豁免
 - [x] 顺带清理 S4 遗留死代码（forum 本地 require_session 包装）；clippy 零警告，三 crate 188 测试全过
 
-### S10 — site.json 读取缓存（风险 R11）
-- [ ] `core::settings` 提供 mtime 缓存的统一读取入口，替换 main.rs / feed 等直读点
+### S10 — site.json 读取缓存（风险 R11）✅
+- [x] 新增 `SiteConfig::load_cached(path) -> AppResult<Arc<SiteConfig>>`（`settings.rs`）：按 (path, mtime) 缓存，mtime 未变只走一次 metadata 系统调用；mtime 变化（admin 保存/手改）自动重读，无需显式失效
+- [x] 热路径接入：主题 CSS、布局、主题列表、站点配置、auth service、feed、module/content-transformer 引擎慢路径、启动 plugins_lock 共 9 处直读点改用 load_cached；`from_file` 保留给写后重读场景（admin/moderation hook 未动）
+- [x] 3 个新单测（同 mtime 命中 Arc::ptr_eq / mtime 变化重读 / 缺文件报错）；settings 19 测试全过
 
 ### 依赖与排序
 - S1/S2/S3 为低冲突基础设施，先行；S4/S5 触及 DB 与密钥，居中单独提交；S6 审计后按需改动；S7 结构重构放在安全项之后避免冲突；S8–S10 收尾。
 - 顺序：S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9 → S10。
+
+## 阶段验收（2026-07-21）
+全部任务 S1–S10 已完成并逐个提交（无共同作者行）。
+- 最终验证：全工作区 `cargo test --features server` **693 通过 / 0 失败**；`cargo clippy --workspace --features server --all-targets` 零警告；app 默认 web 目标 check 通过。
+- 安全：安全头（S1）+ 限流（S2）+ JWT 即时吊销（S4）+ 独立加密密钥/密文版本化（S5）+ 支付回调加固（S6）+ CSS 反混淆（S8）。
+- 运维：/healthz + STRICT_MIGRATION（S3）；结构：main.rs 组装拆分（S7）；质量：unwrap/expect lint（S9）；性能：site.json mtime 缓存（S10）。
+- 遗留可选项：course 进度写入升级 verified 会话；admin/moderation 的 site.json 读取接入 load_cached；CSS 白名单解析器；CSP nonce 化；其余 crate 接入 unwrap lint。均非阻塞。

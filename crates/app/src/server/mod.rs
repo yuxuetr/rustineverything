@@ -67,7 +67,9 @@ pub async fn get_site_config() -> Result<SiteConfig, ServerFnError> {
   #[cfg(feature = "server")]
   {
     let config_path = get_asset_root().join("site.json");
-    SiteConfig::from_file(config_path.to_str().unwrap_or_default())
+    // S10：mtime 缓存读取；返回需要 owned，clone 一次（配置体积小）。
+    SiteConfig::load_cached(config_path.to_str().unwrap_or_default())
+      .map(|cfg| (*cfg).clone())
       .map_err(|e| ServerFnError::new(format!("配置文件加载失败: {}", e)))
   }
   #[cfg(not(feature = "server"))]
@@ -191,7 +193,8 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
     use app_core::engines::theme::theme_with_override;
 
     let asset_root = get_asset_root();
-    let config = SiteConfig::from_file(asset_root.join("site.json").to_str().unwrap_or_default())
+    // S10：热路径（每次页面渲染拉主题 CSS）——mtime 缓存读取。
+    let config = SiteConfig::load_cached(asset_root.join("site.json").to_str().unwrap_or_default())
       .unwrap_or_default();
     let plugin_dir = asset_root.join("plugins");
 
@@ -229,7 +232,8 @@ pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
 
     let asset_root = get_asset_root();
     let plugin_dir = asset_root.join("plugins");
-    let config = SiteConfig::from_file(asset_root.join("site.json").to_str().unwrap_or_default())
+    // S10：mtime 缓存读取。
+    let config = SiteConfig::load_cached(asset_root.join("site.json").to_str().unwrap_or_default())
       .unwrap_or_default();
     let stack = config.theme_stack();
     // 激活态优先看用户 cookie（与 `get_aggregated_theme_css` 的覆盖语义一致），
@@ -364,8 +368,12 @@ fn build_auth_service() -> (app_core::auth::AuthService, SiteConfig) {
     std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
   let config = AuthConfig { base_url };
   let site_path = get_asset_root().join("site.json");
-  let site_config =
-    site_path.to_str().and_then(|p| SiteConfig::from_file(p).ok()).unwrap_or_default();
+  // S10：mtime 缓存读取；返回需要 owned，clone 一次（配置体积小）。
+  let site_config = site_path
+    .to_str()
+    .and_then(|p| SiteConfig::load_cached(p).ok())
+    .map(|cfg| (*cfg).clone())
+    .unwrap_or_default();
   let auth_service = AuthService::new(config, get_asset_root().join("plugins"));
   (auth_service, site_config)
 }
@@ -538,8 +546,9 @@ pub async fn is_module_enabled(id: String) -> Result<bool, ServerFnError> {
 pub async fn get_active_layout() -> Result<String, ServerFnError> {
   #[cfg(feature = "server")]
   {
+    // S10：mtime 缓存读取（每次布局渲染都会调）。
     let cfg =
-      SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap_or_default())
+      SiteConfig::load_cached(get_asset_root().join("site.json").to_str().unwrap_or_default())
         .unwrap_or_default();
     Ok(cfg.active_layout_or_default().to_string())
   }

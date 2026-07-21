@@ -170,7 +170,8 @@ pub fn default_content_transformer_engine() -> std::sync::Arc<ContentTransformer
 
   let mut e = ContentTransformerEngine::new();
   let site_path = crate::utils::get_asset_root().join("site.json");
-  if let Ok(cfg) = SiteConfig::from_file(site_path.to_str().unwrap_or_default()) {
+  // S10：走 load_cached，与其它 site.json 读取点共享 mtime 缓存。
+  if let Ok(cfg) = SiteConfig::load_cached(site_path.to_str().unwrap_or_default()) {
     e.apply_site_config(&cfg, &crate::utils::get_asset_root());
   }
   let arc = Arc::new(e);

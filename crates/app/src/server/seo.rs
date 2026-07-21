@@ -100,8 +100,8 @@ async fn feed_handler(base: String) -> axum::response::Response {
   entries.sort_by(|a, b| b.date.cmp(&a.date));
   entries.truncate(50);
 
-  // 取站点元信息：如取不到 site.json 则走默认。
-  let cfg = app_core::settings::SiteConfig::from_file(
+  // 取站点元信息：如取不到 site.json 则走默认。S10：mtime 缓存读取。
+  let cfg = app_core::settings::SiteConfig::load_cached(
     app_core::utils::get_asset_root().join("site.json").to_str().unwrap_or_default(),
   )
   .unwrap_or_default();
