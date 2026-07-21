@@ -1653,21 +1653,45 @@ pub async fn list_my_orders() -> Result<Vec<OrderInfo>, ServerFnError> {
 
 /// 处理支付宝异步回调（由 app 的 Axum 路由 `/api/pay/alipay/notify` 调用）。
 ///
-/// 流程：验签 → 状态成功 → 找单 → 核金额 → 幂等 → 标记 paid + 发货（写权益）。
+/// 流程：验签 → app_id 比对 → 状态成功 → 找单 → 核金额 → 原子认领（幂等 +
+/// 防并发双发货）→ 发货（写权益）。
 /// 返回值为应答给支付宝的纯文本（`success` / `failure`），失败会触发其重试。
+///
+/// S6（风险 R7）加固：
+/// - `app_id` 比对：拒绝其它商户应用的合法签名回调串单。
+/// - 原子认领：`UPDATE … WHERE out_trade_no = ? AND status != 'paid'`，
+///   rows_affected = 0 视为已处理（并发重试 / 重放只会有一次发货生效）。
+/// - 入口审计日志（target=pay_audit）：关键字段留痕供对账 / 排查。
 #[cfg(feature = "server")]
 pub async fn handle_alipay_notify(
   params: std::collections::HashMap<String, String>,
 ) -> &'static str {
   use app_core::entities::order;
-  use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
+  use sea_orm::sea_query::Expr;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+  // 审计留痕：验签前先记录关键字段（不含买家敏感信息），便于对账与攻击排查。
+  tracing::info!(
+    target: "pay_audit",
+    provider = "alipay",
+    out_trade_no = %params.get("out_trade_no").map(|s| s.as_str()).unwrap_or(""),
+    trade_status = %params.get("trade_status").map(|s| s.as_str()).unwrap_or(""),
+    total_amount = %params.get("total_amount").map(|s| s.as_str()).unwrap_or(""),
+    "notify received"
+  );
 
   let Some(cfg) = crate::alipay::config() else {
     return "failure";
   };
   // 1) 验签——一切发货的前提
   if !crate::alipay::verify_notify(&cfg, &params) {
-    tracing::warn!("alipay notify: signature verify failed");
+    tracing::warn!(target: "pay_audit", "alipay notify: signature verify failed");
+    return "failure";
+  }
+  // 1.5) S6：app_id 比对。签名是支付宝全局公钥签的，其它商户应用的合法
+  // 回调也能过验签；比对 app_id 封死跨应用串单。
+  if params.get("app_id").map(|s| s.as_str()) != Some(cfg.app_id.as_str()) {
+    tracing::warn!(target: "pay_audit", "alipay notify: app_id mismatch");
     return "failure";
   }
   // 2) 仅成功状态发货；其它状态确认收到（避免无谓重试）但不发货
@@ -1690,44 +1714,55 @@ pub async fn handle_alipay_notify(
     };
   // 3) 金额核验
   if !crate::alipay::amount_matches(total, row.amount) {
-    tracing::warn!("alipay notify: amount mismatch for {}", out_trade_no);
+    tracing::warn!(target: "pay_audit", "alipay notify: amount mismatch for {}", out_trade_no);
     return "failure";
   }
-  // 4) 幂等：已处理直接成功
+  // 4) 幂等快路径：已处理直接成功
   if row.status == "paid" {
     return "success";
   }
   let user_id = row.user_id;
   let slug = row.course_slug.clone();
   let trade_no = params.get("trade_no").cloned();
-  // 5) 标记 paid
-  let mut am: order::ActiveModel = row.into();
-  am.status = Set("paid".to_string());
-  am.provider_txn = Set(trade_no);
-  am.paid_at = Set(Some(chrono::Utc::now().fixed_offset()));
-  if order::Entity::update(am).exec(&db).await.is_err() {
-    return "failure";
+  // 5) S6：原子认领——条件 UPDATE 取代「读-判-写」，并发回调只有一个能认领。
+  let claim = order::Entity::update_many()
+    .col_expr(order::Column::Status, Expr::value("paid"))
+    .col_expr(order::Column::ProviderTxn, Expr::value(trade_no))
+    .col_expr(order::Column::PaidAt, Expr::value(Some(chrono::Utc::now().fixed_offset())))
+    .filter(order::Column::OutTradeNo.eq(out_trade_no))
+    .filter(order::Column::Status.ne("paid"))
+    .exec(&db)
+    .await;
+  match claim {
+    Ok(res) if res.rows_affected == 0 => return "success", // 并发回调已处理
+    Ok(_) => {}
+    Err(_) => return "failure",
   }
-  // 6) 发货：写权益（get_lesson 鉴权随即解锁）
+  // 6) 发货：写权益（get_lesson 鉴权随即解锁；幂等 upsert）
   if grant_entitlement_internal(&db, user_id, slug, "purchase").await.is_err() {
     return "failure";
   }
-  tracing::info!("alipay notify: order {} paid + entitlement granted", out_trade_no);
+  tracing::info!(target: "pay_audit", "alipay notify: order {} paid + entitlement granted", out_trade_no);
   "success"
 }
 
 /// 处理微信支付 v3 异步回调（由 app 的 Axum 路由 `/api/pay/wechat/notify` 调用）。
 ///
 /// 入参：HTTP 头（key 小写）+ 原始 body 字符串（验签需逐字节一致）。
-/// 流程：验签 → 解密 resource → 状态成功 → 找单 → 核金额 → 幂等 → 发货。
+/// 流程：时间戳新鲜度 → 验签 → 解密 resource → appid/mchid 比对 → 状态成功
+/// → 找单 → 核金额 → 原子认领（幂等 + 防并发双发货）→ 发货。
 /// 返回 `(http_status, body)`：成功 `(200,{"code":"SUCCESS"})`，失败非 200 触发重试。
+///
+/// S6（风险 R7）加固：时间戳 ±5min 新鲜度（缩小重放窗口）、解密后
+/// appid/mchid 交叉校验、原子认领、入口审计日志（target=pay_audit）。
 #[cfg(feature = "server")]
 pub async fn handle_wechat_notify(
   headers: std::collections::HashMap<String, String>,
   body: String,
 ) -> (u16, String) {
   use app_core::entities::order;
-  use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
+  use sea_orm::sea_query::Expr;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
   let ok = || (200u16, "{\"code\":\"SUCCESS\"}".to_string());
   let fail = |m: &str| (500u16, format!("{{\"code\":\"FAIL\",\"message\":\"{m}\"}}"));
@@ -1741,9 +1776,21 @@ pub async fn handle_wechat_notify(
   if ts.is_empty() || nonce.is_empty() || sig.is_empty() {
     return fail("missing signature headers");
   }
+  // 0) S6：时间戳新鲜度。签名覆盖 ts，但不限制时效；拒绝 ±5 分钟外的
+  // 回调，把捕获重放的窗口从无限缩到 5 分钟（幂等认领是第二道防线）。
+  match ts.parse::<i64>() {
+    Ok(ts_secs) => {
+      let skew = (chrono::Utc::now().timestamp() - ts_secs).abs();
+      if skew > 300 {
+        tracing::warn!(target: "pay_audit", skew, "wechat notify: stale timestamp");
+        return fail("stale timestamp");
+      }
+    }
+    Err(_) => return fail("bad timestamp"),
+  }
   // 1) 验签
   if !crate::wechat::verify_notify(&cfg, ts, nonce, &body, sig) {
-    tracing::warn!("wechat notify: signature verify failed");
+    tracing::warn!(target: "pay_audit", "wechat notify: signature verify failed");
     return fail("bad signature");
   }
   // 2) 解密 resource
@@ -1763,6 +1810,28 @@ pub async fn handle_wechat_notify(
   let Ok(tx) = serde_json::from_str::<serde_json::Value>(&plain) else {
     return fail("bad plaintext");
   };
+  // 2.5) S6：appid / mchid 交叉校验（字段存在时强制一致），防跨商户/应用串单。
+  if let Some(appid) = tx["appid"].as_str() {
+    if appid != cfg.appid {
+      tracing::warn!(target: "pay_audit", "wechat notify: appid mismatch");
+      return fail("appid mismatch");
+    }
+  }
+  if let Some(mchid) = tx["mchid"].as_str() {
+    if mchid != cfg.mchid {
+      tracing::warn!(target: "pay_audit", "wechat notify: mchid mismatch");
+      return fail("mchid mismatch");
+    }
+  }
+  // 审计留痕：解密成功后记录关键字段。
+  tracing::info!(
+    target: "pay_audit",
+    provider = "wechat",
+    out_trade_no = %tx["out_trade_no"].as_str().unwrap_or(""),
+    trade_state = %tx["trade_state"].as_str().unwrap_or(""),
+    total = tx["amount"]["total"].as_i64().unwrap_or(-1),
+    "notify received (decrypted)"
+  );
   // 3) 仅成功状态发货
   if tx["trade_state"].as_str() != Some("SUCCESS") {
     return ok();
@@ -1784,27 +1853,34 @@ pub async fn handle_wechat_notify(
     };
   // 4) 金额核验
   if row.amount != total {
-    tracing::warn!("wechat notify: amount mismatch for {}", out_trade_no);
+    tracing::warn!(target: "pay_audit", "wechat notify: amount mismatch for {}", out_trade_no);
     return fail("amount mismatch");
   }
-  // 5) 幂等
+  // 5) 幂等快路径
   if row.status == "paid" {
     return ok();
   }
   let user_id = row.user_id;
   let slug = row.course_slug.clone();
-  let mut am: order::ActiveModel = row.into();
-  am.status = Set("paid".to_string());
-  am.provider_txn = Set(transaction_id);
-  am.paid_at = Set(Some(chrono::Utc::now().fixed_offset()));
-  if order::Entity::update(am).exec(&db).await.is_err() {
-    return fail("update failed");
+  // 5.5) S6：原子认领（同 alipay）：并发回调只有一个能认领。
+  let claim = order::Entity::update_many()
+    .col_expr(order::Column::Status, Expr::value("paid"))
+    .col_expr(order::Column::ProviderTxn, Expr::value(transaction_id))
+    .col_expr(order::Column::PaidAt, Expr::value(Some(chrono::Utc::now().fixed_offset())))
+    .filter(order::Column::OutTradeNo.eq(out_trade_no))
+    .filter(order::Column::Status.ne("paid"))
+    .exec(&db)
+    .await;
+  match claim {
+    Ok(res) if res.rows_affected == 0 => return ok(), // 并发回调已处理
+    Ok(_) => {}
+    Err(_) => return fail("update failed"),
   }
-  // 6) 发货
+  // 6) 发货（幂等 upsert）
   if grant_entitlement_internal(&db, user_id, slug, "purchase").await.is_err() {
     return fail("grant failed");
   }
-  tracing::info!("wechat notify: order {} paid + entitlement granted", out_trade_no);
+  tracing::info!(target: "pay_audit", "wechat notify: order {} paid + entitlement granted", out_trade_no);
   ok()
 }
 

@@ -228,8 +228,11 @@
 - [x] 7 个 crypto 单测（含 v1 兼容 / 独立密钥轮换语义）+ 11 个 PKCE cookie 测试全部通过
 - 备注：当前 crypto 唯一调用点是短生命周期 PKCE cookie（无长期存量密文），v1 回退路径可在下个版本安全移除
 
-### S6 — 支付回调专项加固审计（风险 R7）
-- [ ] 审查 alipay/wechat notify：验签、金额核验、`out_trade_no` 幂等、重放；补齐缺失项 + 日志留痕
+### S6 — 支付回调专项加固审计（风险 R7）✅
+- [x] 审计结论：验签/金额核验/幂等快路径已具备；发现 3 个可加固点并全部修复（`course/src/server.rs` notify 两处）
+- [x] 原子认领：条件 `UPDATE … WHERE out_trade_no=? AND status!='paid'` 取代「读-判-写」，rows_affected=0 视为已处理——消除并发回调双发货竞态（alipay + wechat）
+- [x] alipay：新增 `app_id` 比对（防跨商户应用合法签名串单）；wechat：时间戳 ±5min 新鲜度（缩小重放窗口）+ 解密后 appid/mchid 交叉校验
+- [x] 入口审计日志 `target=pay_audit`（关键字段留痕，不含买家敏感信息）；module-course 45 测试全部通过
 
 ### S7 — 拆分 app/main.rs router 组装（风险 R8）
 - [ ] 抽 `server/seo.rs`（sitemap/feed 统一条目收集，消除重复宏）、auth / pay / 静态资源子模块；main.rs 只留引导；行为不变
