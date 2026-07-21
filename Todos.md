@@ -239,8 +239,10 @@
 - [x] `main.rs` 从 737 行减到 ~370 行，router 组装段只剩 9 行引导；新增内容板块只需改 seo.rs 一处，消除 sitemap/feed 漏改不一致风险
 - [x] 行为不变：server 构建 + 默认 web check 双目标通过，app 13 测试全过
 
-### S8 — 主题 CSS 防护强化（风险 R5）
-- [ ] `sanitize_theme_css` 补 `@import`、unicode escape、`expression()` 等绕过场景；修正注释黑/白名单语义；补测试
+### S8 — 主题 CSS 防护强化（风险 R5）✅
+- [x] 新增 `normalize_css_for_scan`（`plugin_security.rs`）：扫描前解码 CSS hex/字面转义 + 去注释 + 去全部空白 + 小写——封堵 `\75 rl(`、`url( http://`、`url(/**/http://`、`@\69mport` 等混淆绕过（@import/expression 本身已在旧黑名单中）
+- [x] 黑名单补 `-moz-binding:`、`url('//`、`url(\"//`；修正 lib.rs / 模块注释的 "allowlist" 误导措辞（明确为 blacklist + fail-closed，白名单解析器列为后续升级方向）
+- [x] 新增 8 个测试（7 混淆绕过 + 1 合法 CSS 不误拒），css_sanitize 共 19 测试全部通过
 
 ### S9 — 生产路径 unwrap/expect 收敛（风险 R12）
 - [ ] 清理 app/core/migration 生产路径 panic 点；workspace 启用 `clippy::unwrap_used`/`expect_used` lint（测试豁免）
