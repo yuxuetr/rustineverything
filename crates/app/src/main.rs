@@ -546,8 +546,12 @@ fn main() {
         }),
       );
 
+    // S2（风险 R4）：应用层 per-IP 限流，仅作用于 /api/*（auth / pay 更严）。
+    // gateway 限流仍是第一道防线；这里是 app 裸跑时的兑底。
+    let router = router.layer(axum::middleware::from_fn(crate::server::rate_limit::rate_limit_mw));
+
     // S1（风险 R6）：全站安全响应头（CSP / nosniff / Referrer-Policy / X-Frame-Options）。
-    // 挂在最外层，覆盖页面、server fn、静态资源与上面全部自定义路由。
+    // 挂在最外层，覆盖页面、server fn、静态资源与上面全部自定义路由（含 429 响应）。
     let router =
       router.layer(axum::middleware::from_fn(crate::server::security::security_headers_mw));
 

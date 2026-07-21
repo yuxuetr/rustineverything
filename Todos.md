@@ -205,9 +205,10 @@
 - [x] 运维开关：`CSP_POLICY` 覆盖/置空禁发；`SECURITY_HEADERS_DISABLED=1` 整体禁用；nonce 化方向写入模块注释
 - [x] 4 个单测通过（指令存在性 / 无 CSP 基线 / 非法值不 panic）；server + 默认 web 双目标编译通过
 
-### S2 — 应用层限流中间件（风险 R4）
-- [ ] Axum 层默认 per-IP 限流（gateway 限流保留为第一道防线）；覆盖 `/api/auth/*`、`/api/pay/*` 与 server fn 入口
-- [ ] 限流参数 env 可调；超限返回 429；单测覆盖
+### S2 — 应用层限流中间件（风险 R4）✅
+- [x] 新增 `crates/app/src/server/rate_limit.rs`：手写 token-bucket per-IP 限流（无新依赖），仅作用于 `/api/*`；`/api/auth/*`、`/api/pay/*` 用更严 sensitive 桶（5 rps/15），其余 20 rps/60；key 取 XFF 首 IP → x-real-ip → global 共享桶
+- [x] 容量防御：桶表上限 50k + 10min 过期剪枝 + overflow 折叠桶（防伪造海量 IP 内存放大）；超限 429 + Retry-After
+- [x] env 可调：`RATE_LIMIT_{API,SENSITIVE}_{RPS,BURST}`、`RATE_LIMIT_DISABLED=1`；7 个单测通过（burst/回填/隔离/分类/key 提取/非法配置 clamp）
 
 ### S3 — 迁移失败降级/严格模式 + 健康检查（风险 R3）
 - [ ] 启动状态标记：迁移失败 → degraded；新增 `/healthz`（ok/degraded）
