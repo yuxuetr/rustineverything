@@ -222,9 +222,11 @@
 - [x] `admin_set_user_role` 角色变更时 bump token_version（同角色重复提交不 bump）；全工作区测试 0 失败
 - 备注：course 模块的进度写入仍用轻量 `current_session_user`（低风险，后续可按需升级）；登出仍为清 cookie，全局吊销需 bump 版本
 
-### S5 — 独立数据加密密钥 + key-id 密文格式（风险 R2）
-- [ ] 引入 `DATA_ENCRYPTION_KEY`（缺省回退 JWT_SECRET 派生并 warn）
-- [ ] 新密文格式 `v2:<base64>`；解密兼容旧裸 base64（v1）；测试覆盖轮换与兼容
+### S5 — 独立数据加密密钥 + key-id 密文格式（风险 R2）✅
+- [x] `crypto.rs` 重构：`DATA_ENCRYPTION_KEY` 优先（域 tag `data-encryption-v2` 派生），缺省回退 JWT_SECRET 派生并 warn（仅首次）；启动期 + 加密路径均做 placeholder 校验；`.env.example` 补说明
+- [x] 新密文格式 `v2:<base64url>`（key-id 前缀，为 v3/多密钥渐进轮换预留）；解密按前缀选密钥，无前缀回退 v1（JWT_SECRET 派生）兼容在途 cookie；新密文不再产出 v1
+- [x] 7 个 crypto 单测（含 v1 兼容 / 独立密钥轮换语义）+ 11 个 PKCE cookie 测试全部通过
+- 备注：当前 crypto 唯一调用点是短生命周期 PKCE cookie（无长期存量密文），v1 回退路径可在下个版本安全移除
 
 ### S6 — 支付回调专项加固审计（风险 R7）
 - [ ] 审查 alipay/wechat notify：验签、金额核验、`out_trade_no` 幂等、重放；补齐缺失项 + 日志留痕

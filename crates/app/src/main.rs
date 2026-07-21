@@ -152,6 +152,13 @@ fn main() {
       std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
     app_core::session::assert_not_placeholder("BASE_URL", &base_url);
     let cookie_is_secure = base_url.starts_with("https://");
+    // S5（风险 R2）：独立数据加密密钥。可选；配了就不能是占位值。
+    // 未配置时 crypto 模块会回退到 JWT_SECRET 派生并 warn。
+    if let Ok(dek) = std::env::var("DATA_ENCRYPTION_KEY") {
+      if !dek.is_empty() {
+        app_core::session::assert_not_placeholder("DATA_ENCRYPTION_KEY", &dek);
+      }
+    }
 
     // 3) 提前初始化数据库连接池，后续 server fn 都走共享连接。
     //    DATABASE_URL 也按 placeholder 校验，避免「忘了改 docker-compose 密码」
