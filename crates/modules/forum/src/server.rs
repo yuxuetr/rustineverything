@@ -323,10 +323,8 @@ fn current_session_user() -> Option<app_core::session::SessionUser> {
   parse_session_from_cookie_header(cookie_str.as_deref())
 }
 
-#[cfg(feature = "server")]
-fn require_session() -> Result<app_core::session::SessionUser, ServerFnError> {
-  current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))
-}
+// S4：写路径已改用 `app_core::session::require_session_verified`（DB 回查
+// token_version），本地 require_session 包装随之移除。
 
 #[cfg(feature = "server")]
 async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {

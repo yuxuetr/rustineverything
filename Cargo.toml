@@ -40,6 +40,15 @@ members = [
 exclude = ["crates/gateway"]
 resolver = "2"
 
+# S9（风险 R12）：生产代码禁用 unwrap / expect（配合 clippy -D warnings 即拒绝）。
+# 测试代码在各 crate 根用 `#![cfg_attr(test, allow(...))]` 豁免；有意为之的
+# 启动门禁 panic 用局部 `#[allow]` + 理由注释。
+# 接入方式：crate 的 Cargo.toml 加 `[lints] workspace = true`。
+# 当前已接入：app-core / app / migration；其余 crate 渐进接入。
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
 [workspace.dependencies]
 dioxus = { version = "0.7.1", features = ["router", "fullstack"] }
 tokio = { version = "1.49.0", features = ["full"] }

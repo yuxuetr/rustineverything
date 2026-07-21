@@ -244,8 +244,10 @@
 - [x] 黑名单补 `-moz-binding:`、`url('//`、`url(\"//`；修正 lib.rs / 模块注释的 "allowlist" 误导措辞（明确为 blacklist + fail-closed，白名单解析器列为后续升级方向）
 - [x] 新增 8 个测试（7 混淆绕过 + 1 合法 CSS 不误拒），css_sanitize 共 19 测试全部通过
 
-### S9 — 生产路径 unwrap/expect 收敛（风险 R12）
-- [ ] 清理 app/core/migration 生产路径 panic 点；workspace 启用 `clippy::unwrap_used`/`expect_used` lint（测试豁免）
+### S9 — 生产路径 unwrap/expect 收敛（风险 R12）✅
+- [x] 审计结果：core/app/migration 生产路径仅 2 处 `expect`（BASE_URL 启动门禁，有意 fail-fast），均加 `#[allow]` + 理由注释保留；build.rs 整文件豁免（构建期 panic 是惯例）
+- [x] workspace lints：`[workspace.lints.clippy] unwrap_used/expect_used = "warn"`（配合 -D warnings 即拒绝）；app-core / app / migration 三 crate 接入 `[lints] workspace = true`，其余 crate 渐进；测试代码 crate 根 `#![cfg_attr(test, allow(...))]` 豁免
+- [x] 顺带清理 S4 遗留死代码（forum 本地 require_session 包装）；clippy 零警告，三 crate 188 测试全过
 
 ### S10 — site.json 读取缓存（风险 R11）
 - [ ] `core::settings` 提供 mtime 缓存的统一读取入口，替换 main.rs / feed 等直读点

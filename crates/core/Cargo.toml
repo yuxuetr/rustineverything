@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["yuxuetr <54.yeying@gmail.com>"]
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 dioxus = { workspace = true, optional = true, features = ["fullstack"] }
 tokio = { workspace = true, optional = true }

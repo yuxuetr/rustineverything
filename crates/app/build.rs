@@ -1,3 +1,6 @@
+// S9 豁免：build script 内 panic = 构建失败时响亮报错，是可接受惯例。
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::env;
 use std::fs;
 use std::path::Path;

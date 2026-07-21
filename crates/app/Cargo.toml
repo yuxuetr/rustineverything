@@ -5,6 +5,9 @@ authors = ["yuxuetr <54.yeying@gmail.com>"]
 edition = "2021"
 build = "build.rs"
 
+[lints]
+workspace = true
+
 [dependencies]
 dioxus = { workspace = true, features = ["router", "fullstack", "html"] }
 serde = { workspace = true, features = ["derive"] }

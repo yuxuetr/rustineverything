@@ -21,6 +21,9 @@
 //!   预期的迁移列表对齐。
 //! - 集成测试（需 DATABASE_URL）：`cargo test -p migration -- --ignored`
 
+// S9（风险 R12）：生产代码禁 unwrap/expect（workspace lints）；测试代码豁免。
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 pub use sea_orm_migration::prelude::*;
 
 mod m20260527_000001_initial_schema;

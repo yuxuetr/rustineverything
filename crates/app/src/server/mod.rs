@@ -358,6 +358,8 @@ fn build_auth_service() -> (app_core::auth::AuthService, SiteConfig) {
   use app_core::auth::{AuthConfig, AuthService};
 
   // BASE_URL 未配置时 panic，避免生产环境误用 localhost
+  // S9 豁免：与启动门禁同策略，缺失即 panic 是有意的 fail-fast。
+  #[allow(clippy::expect_used)]
   let base_url =
     std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
   let config = AuthConfig { base_url };

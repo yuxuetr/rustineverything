@@ -1,3 +1,6 @@
+// S9（风险 R12）：生产代码禁 unwrap/expect（workspace lints）；测试代码豁免。
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use dioxus::prelude::*;
 use dioxus::router::Router;
 
@@ -144,6 +147,8 @@ fn main() {
     // 1) JWT_SECRET 必须配置且非 placeholder（panic on missing / 命中模板片段）
     let _ = app_core::session::get_jwt_secret();
     // 2) BASE_URL 必须配置为可访问的公网 / 内网地址，且不能仍是 .env.example 占位
+    // S9 豁免：启动门禁有意 fail-fast，缺失即 panic 是安全策略而非疏忽。
+    #[allow(clippy::expect_used)]
     let base_url =
       std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
     app_core::session::assert_not_placeholder("BASE_URL", &base_url);

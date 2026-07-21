@@ -10,7 +10,9 @@ use widgets::{parse_mdx, Markdown};
 use app_core::i18n::{t, Language};
 
 use crate::server::{get_embedded_article, list_embedded_articles, ArticleSummary};
-use crate::text::{matches_query, normalize_tag, BOARD_ID, BOARD_ROUTE, FEATURED_CRATES, SUBTOPICS};
+use crate::text::{
+  matches_query, normalize_tag, BOARD_ID, BOARD_ROUTE, FEATURED_CRATES, SUBTOPICS,
+};
 
 /// 读取全局语言信号（缺省回退 Zh）。方案 A：板块文案随该信号切换。
 fn current_lang() -> Language {
