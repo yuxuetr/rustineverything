@@ -1,9 +1,17 @@
 #[cfg(feature = "server")]
+pub mod auth_routes;
+#[cfg(feature = "server")]
 pub mod health;
+#[cfg(feature = "server")]
+pub mod pay_routes;
 #[cfg(feature = "server")]
 pub mod rate_limit;
 #[cfg(feature = "server")]
 pub mod security;
+#[cfg(feature = "server")]
+pub mod seo;
+#[cfg(feature = "server")]
+pub mod static_assets;
 
 use app_core::session::SessionUser;
 use app_core::settings::SiteConfig;

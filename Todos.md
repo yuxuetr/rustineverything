@@ -234,8 +234,10 @@
 - [x] alipay：新增 `app_id` 比对（防跨商户应用合法签名串单）；wechat：时间戳 ±5min 新鲜度（缩小重放窗口）+ 解密后 appid/mchid 交叉校验
 - [x] 入口审计日志 `target=pay_audit`（关键字段留痕，不含买家敏感信息）；module-course 45 测试全部通过
 
-### S7 — 拆分 app/main.rs router 组装（风险 R8）
-- [ ] 抽 `server/seo.rs`（sitemap/feed 统一条目收集，消除重复宏）、auth / pay / 静态资源子模块；main.rs 只留引导；行为不变
+### S7 — 拆分 app/main.rs router 组装（风险 R8）✅
+- [x] 新增 4 个 server 子模块：`seo.rs`（sitemap/feed/robots，`collect_content_entries` 统一条目收集，`collect_board!` 宏只剩一份）、`auth_routes.rs`、`pay_routes.rs`、`static_assets.rs`，各提供 `mount(router, …)` 函数
+- [x] `main.rs` 从 737 行减到 ~370 行，router 组装段只剩 9 行引导；新增内容板块只需改 seo.rs 一处，消除 sitemap/feed 漏改不一致风险
+- [x] 行为不变：server 构建 + 默认 web check 双目标通过，app 13 测试全过
 
 ### S8 — 主题 CSS 防护强化（风险 R5）
 - [ ] `sanitize_theme_css` 补 `@import`、unicode escape、`expression()` 等绕过场景；修正注释黑/白名单语义；补测试
