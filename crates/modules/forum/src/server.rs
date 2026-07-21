@@ -605,7 +605,8 @@ pub async fn create_topic(input: NewTopicInput) -> Result<TopicSummary, ServerFn
     use sea_orm::{ActiveValue::Set, EntityTrait};
 
     validate_new_topic(&input).map_err(ServerFnError::new)?;
-    let user = require_session()?;
+    // S4：写路径用 verified 会话（DB 回查 token_version，支持即时吊销）
+    let user = app_core::session::require_session_verified().await?;
 
     // ── 审核：标题 + 正文一起评估 ──
     let combined = format!("标题：{}\n\n{}", input.title.trim(), input.content);
@@ -661,7 +662,8 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter, TransactionTrait};
 
     validate_new_reply(&content).map_err(ServerFnError::new)?;
-    let user = require_session()?;
+    // S4：写路径用 verified 会话（DB 回查 token_version，支持即时吊销）
+    let user = app_core::session::require_session_verified().await?;
 
     // ── 审核 ──
     let ref_path = format!("topic:{}", topic_id);

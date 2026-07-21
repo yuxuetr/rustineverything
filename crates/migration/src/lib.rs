@@ -30,6 +30,7 @@ mod m20260601_000004_comments_index;
 mod m20260628_000005_entitlements;
 mod m20260628_000006_orders;
 mod m20260628_000007_memberships;
+mod m20260721_000008_users_token_version;
 
 pub struct Migrator;
 
@@ -44,6 +45,7 @@ impl MigratorTrait for Migrator {
       Box::new(m20260628_000005_entitlements::Migration),
       Box::new(m20260628_000006_orders::Migration),
       Box::new(m20260628_000007_memberships::Migration),
+      Box::new(m20260721_000008_users_token_version::Migration),
     ]
   }
 }
@@ -65,6 +67,7 @@ mod tests {
         "m20260628_000005_entitlements".to_string(),
         "m20260628_000006_orders".to_string(),
         "m20260628_000007_memberships".to_string(),
+        "m20260721_000008_users_token_version".to_string(),
       ]
     );
   }

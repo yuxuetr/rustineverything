@@ -215,10 +215,12 @@
 - [x] `STRICT_MIGRATION=1` 时 DB 连接失败 / 迁移失败直接 panic 拒绝启动（生产推荐）；默认保持可用性优先但 /healthz 可观测（`main.rs:161-225`）
 - [x] 2 个单测通过（降级矩阵 / 快照语义）
 
-### S4 — JWT 撤销基础 token_version（风险 R1）
-- [ ] 迁移：`users.token_version int not null default 0`
-- [ ] JWT claims 携带 `tv`（serde default 兼容旧 token）；`create_jwt` 写入
-- [ ] 会话校验回查版本（admin 回查逻辑复用）；封禁/降级/删除时 bump version 即时失效旧 token
+### S4 — JWT 撤销基础 token_version（风险 R1）✅
+- [x] 迁移 `m20260721_000008_users_token_version`：`users.token_version int not null default 0`；实体同步加字段（serde default，存量用户/旧 JSON 兼容）
+- [x] JWT claims 携带 `tv`（serde default，旧 token → 0 与 DB 默认 0 匹配，存量登录不受影响）；`create_jwt`/`verify_jwt` 贯通；`SessionUser.token_version` 新增（向后兼容单测覆盖）
+- [x] 新增 `require_session_verified()`（`session.rs:197`，fail-closed）；写路径接入：forum create_topic/post_reply、comments post_comment、uploads upload_image；`require_admin` 复用同次 DB 查询加版本比对
+- [x] `admin_set_user_role` 角色变更时 bump token_version（同角色重复提交不 bump）；全工作区测试 0 失败
+- 备注：course 模块的进度写入仍用轻量 `current_session_user`（低风险，后续可按需升级）；登出仍为清 cookie，全局吊销需 bump 版本
 
 ### S5 — 独立数据加密密钥 + key-id 密文格式（风险 R2）
 - [ ] 引入 `DATA_ENCRYPTION_KEY`（缺省回退 JWT_SECRET 派生并 warn）

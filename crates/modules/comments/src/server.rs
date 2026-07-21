@@ -74,7 +74,7 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
   {
     use app_core::db::get_or_init_pool;
     use app_core::entities::comment;
-    use app_core::session::current_session_user;
+    use app_core::session::require_session_verified;
     use chrono::Utc;
     use module_moderation::{
       absolutize_image_url, enqueue_if_flagged, evaluate_submission, extract_image_urls,
@@ -83,8 +83,8 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
     use sdk::{ImageRef, ModerationSubmission};
     use sea_orm::{ActiveModelTrait, Set};
 
-    let session_user =
-      current_session_user().ok_or_else(|| ServerFnError::new("请先登录后再发表评论"))?;
+    // S4：写路径用 verified 会话（DB 回查 token_version，支持即时吊销）
+    let session_user = require_session_verified().await?;
 
     // ── 审核（默认 disabled → pipeline 为空 → 直接 Allow，零开销） ──
     let base_url = std::env::var("BASE_URL").unwrap_or_default();

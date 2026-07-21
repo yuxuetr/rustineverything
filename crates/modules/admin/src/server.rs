@@ -376,6 +376,12 @@ pub async fn admin_set_user_role(
 
     let mut am: user_entity::ActiveModel = target.clone().into();
     am.role = Set(role.clone());
+    // S4（风险 R1）：角色变更时 bump token_version，吊销该用户全部已签发
+    // JWT（旧 cookie 携带的旧角色 / 旧版本会在写路径校验中被拒）。
+    // 无变更（同角色重复提交）不 bump，避免无谓登出。
+    if target.role != role {
+      am.token_version = Set(target.token_version + 1);
+    }
     am.updated_at = Set(Utc::now().fixed_offset());
     let updated = user_entity::Entity::update(am)
       .exec(&db)

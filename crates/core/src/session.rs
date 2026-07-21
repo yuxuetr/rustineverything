@@ -20,6 +20,11 @@ pub struct SessionUser {
   pub nickname: String,
   pub avatar_url: Option<String>,
   pub role: String,
+  /// S4（风险 R1）：JWT 签发时的 token 版本。服务端写路径回查 DB
+  /// 当前版本，不一致即拒绝（用户被降级/封禁后旧 JWT 立即失效）。
+  /// 旧 JWT 无该字段时 default 0，与存量用户的 DB 默认值 0 匹配。
+  #[serde(default)]
+  pub token_version: i32,
 }
 
 impl SessionUser {
@@ -37,6 +42,9 @@ struct Claims {
   nickname: String,
   avatar_url: Option<String>,
   role: String,
+  /// S4：token 版本（见 [`SessionUser::token_version`]）。旧 token 无此字段 → 0。
+  #[serde(default)]
+  tv: i32,
   exp: usize,
 }
 
@@ -100,6 +108,7 @@ pub fn create_jwt(user: &crate::entities::user::Model) -> crate::error::AppResul
     nickname: user.nickname.clone(),
     avatar_url: user.avatar_url.clone(),
     role: user.role.clone(),
+    tv: user.token_version,
     exp: expiration,
   };
 
@@ -128,6 +137,7 @@ pub fn verify_jwt(token: &str) -> crate::error::AppResult<SessionUser> {
     nickname: token_data.claims.nickname,
     avatar_url: token_data.claims.avatar_url,
     role: token_data.claims.role,
+    token_version: token_data.claims.tv,
   })
 }
 
@@ -167,10 +177,42 @@ pub fn current_session_user() -> Option<SessionUser> {
 }
 
 /// 要求当前请求带有合法 SessionUser；否则返回中文错误。
+///
+/// 仅验 JWT 签名（无 DB 回查），适用于读路径。**写路径请用**
+/// [`require_session_verified`]（S4：额外回查 token_version，支持即时吊销）。
 #[cfg(feature = "server")]
 pub fn require_session() -> Result<SessionUser, dioxus::fullstack::ServerFnError> {
   current_session_user()
     .ok_or_else(|| dioxus::fullstack::ServerFnError::new("请先登录".to_string()))
+}
+
+/// S4（风险 R1）：验证会话 + DB 回查 token_version。
+///
+/// 适用于**写路径**（发帖 / 评论 / 上传等）：多一次 DB round-trip，
+/// 换来「用户被降级 / 封禁 / 删除后旧 JWT 立即失效」。读路径本就要
+/// 查 DB，这一次额外查询在写入场景下占比微小。
+///
+/// 失败语义：DB 不可达 / 用户已删 / 版本不匹配 → 拒绝（fail-closed）。
+#[cfg(feature = "server")]
+pub async fn require_session_verified() -> Result<SessionUser, dioxus::fullstack::ServerFnError> {
+  use crate::db::get_or_init_pool;
+  use crate::entities::user;
+  use dioxus::fullstack::ServerFnError;
+  use sea_orm::EntityTrait;
+
+  let session = require_session()?;
+  let db = get_or_init_pool()
+    .await
+    .map_err(|e| ServerFnError::new(format!("会话校验失败（DB 不可达）: {}", e)))?;
+  let db_user = user::Entity::find_by_id(session.id)
+    .one(&db)
+    .await
+    .map_err(|e| ServerFnError::new(format!("会话校验失败: {}", e)))?
+    .ok_or_else(|| ServerFnError::new("用户已不存在或已被删除".to_string()))?;
+  if db_user.token_version != session.token_version {
+    return Err(ServerFnError::new("会话已失效，请重新登录".to_string()));
+  }
+  Ok(session)
 }
 
 /// 要求当前请求带有 admin 角色；非 admin 返回 403 风格错误。
@@ -208,6 +250,10 @@ pub async fn require_admin() -> Result<SessionUser, dioxus::fullstack::ServerFnE
   if db_user.role != ROLE_ADMIN {
     return Err(ServerFnError::new(format!("管理员权限已撤销（当前角色: {}）", db_user.role)));
   }
+  // S4：token 版本回查（复用同一次 DB 查询结果，无额外 round-trip）。
+  if db_user.token_version != user_from_jwt.token_version {
+    return Err(ServerFnError::new("会话已失效，请重新登录".to_string()));
+  }
   Ok(user_from_jwt)
 }
 
@@ -216,7 +262,21 @@ mod tests {
   use super::*;
 
   fn user_with_role(role: &str) -> SessionUser {
-    SessionUser { id: 1, nickname: "tester".to_string(), avatar_url: None, role: role.to_string() }
+    SessionUser {
+      id: 1,
+      nickname: "tester".to_string(),
+      avatar_url: None,
+      role: role.to_string(),
+      token_version: 0,
+    }
+  }
+
+  /// S4：旧版 SessionUser JSON（无 token_version 字段）反序列化向后兼容。
+  #[test]
+  fn session_user_back_compat_without_token_version() {
+    let json = r#"{"id":7,"nickname":"old","avatar_url":null,"role":"member"}"#;
+    let parsed: SessionUser = serde_json::from_str(json).expect("旧 JSON 应可解析");
+    assert_eq!(parsed.token_version, 0, "缺失字段默认 0");
   }
 
   #[test]
