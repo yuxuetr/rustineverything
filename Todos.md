@@ -189,3 +189,53 @@
 ### 依赖与排序
 - M1/M2 不依赖付费，先上线见效；M3 为 M2 的筛选/精选提供数据；M4 起才动 DB 与鉴权；M5 依赖 M4。
 - 顺序：M1 → M2 →（M3 穿插）→ M4 → M5 →（M6 可选）。
+
+---
+
+# 新阶段 — 架构风险治理（2026-07-21 评估落地）
+
+> 来源：2026-07-21 全面架构评估（架构分层 / 可扩展性 / 安全性 / 性能）。
+> 原则：增量治理，不推倒现有架构；每任务一提交（无共同作者行）；提交后同步本文档。
+> 校验命令沿用「持续约定」章节；涉及 DB 的任务先确认迁移向后兼容（不破坏现有登录用户与已加密 token）。
+
+## 任务清单（按优先级）
+
+### S1 — 安全响应头中间件（风险 R6）
+- [ ] app server 侧统一注入：CSP（保守策略，兼容现有内联 style/script + prism/mermaid）、`X-Content-Type-Options: nosniff`、`Referrer-Policy`、`X-Frame-Options: DENY`
+- [ ] 单测覆盖响应头存在性；记录后续 nonce 化 CSP 的方向
+
+### S2 — 应用层限流中间件（风险 R4）
+- [ ] Axum 层默认 per-IP 限流（gateway 限流保留为第一道防线）；覆盖 `/api/auth/*`、`/api/pay/*` 与 server fn 入口
+- [ ] 限流参数 env 可调；超限返回 429；单测覆盖
+
+### S3 — 迁移失败降级/严格模式 + 健康检查（风险 R3）
+- [ ] 启动状态标记：迁移失败 → degraded；新增 `/healthz`（ok/degraded）
+- [ ] `STRICT_MIGRATION=1` 时迁移失败 fail-fast 退出
+
+### S4 — JWT 撤销基础 token_version（风险 R1）
+- [ ] 迁移：`users.token_version int not null default 0`
+- [ ] JWT claims 携带 `tv`（serde default 兼容旧 token）；`create_jwt` 写入
+- [ ] 会话校验回查版本（admin 回查逻辑复用）；封禁/降级/删除时 bump version 即时失效旧 token
+
+### S5 — 独立数据加密密钥 + key-id 密文格式（风险 R2）
+- [ ] 引入 `DATA_ENCRYPTION_KEY`（缺省回退 JWT_SECRET 派生并 warn）
+- [ ] 新密文格式 `v2:<base64>`；解密兼容旧裸 base64（v1）；测试覆盖轮换与兼容
+
+### S6 — 支付回调专项加固审计（风险 R7）
+- [ ] 审查 alipay/wechat notify：验签、金额核验、`out_trade_no` 幂等、重放；补齐缺失项 + 日志留痕
+
+### S7 — 拆分 app/main.rs router 组装（风险 R8）
+- [ ] 抽 `server/seo.rs`（sitemap/feed 统一条目收集，消除重复宏）、auth / pay / 静态资源子模块；main.rs 只留引导；行为不变
+
+### S8 — 主题 CSS 防护强化（风险 R5）
+- [ ] `sanitize_theme_css` 补 `@import`、unicode escape、`expression()` 等绕过场景；修正注释黑/白名单语义；补测试
+
+### S9 — 生产路径 unwrap/expect 收敛（风险 R12）
+- [ ] 清理 app/core/migration 生产路径 panic 点；workspace 启用 `clippy::unwrap_used`/`expect_used` lint（测试豁免）
+
+### S10 — site.json 读取缓存（风险 R11）
+- [ ] `core::settings` 提供 mtime 缓存的统一读取入口，替换 main.rs / feed 等直读点
+
+### 依赖与排序
+- S1/S2/S3 为低冲突基础设施，先行；S4/S5 触及 DB 与密钥，居中单独提交；S6 审计后按需改动；S7 结构重构放在安全项之后避免冲突；S8–S10 收尾。
+- 顺序：S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9 → S10。
