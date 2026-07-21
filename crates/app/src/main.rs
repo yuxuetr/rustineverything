@@ -158,31 +158,69 @@ fn main() {
     //    导致 sqlx 拒绝认证的难以排查的失败。
     //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
     //    成功连上数据库后再跑 sea-orm-migration（Phase 7.1）。
+    // S3（风险 R3）：启动结果记入健康快照（/healthz 暴露）；
+    // `STRICT_MIGRATION=1` 时迁移/连接失败 fail-fast，避免带着不一致
+    // schema 静默接受写请求（生产推荐开启）。
+    use crate::server::health::{set_startup_health, MigrationStatus, StartupHealth};
+    let strict_migration = std::env::var("STRICT_MIGRATION").map(|v| v == "1").unwrap_or(false);
+
     if let Ok(db_url) = std::env::var("DATABASE_URL") {
       app_core::session::assert_not_placeholder("DATABASE_URL", &db_url);
       match app_core::db::init_pool(&db_url).await {
         Err(e) => {
-          tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)")
+          tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)");
+          if strict_migration {
+            panic!("STRICT_MIGRATION=1：DB 连接失败，拒绝启动: {}", e);
+          }
+          set_startup_health(StartupHealth {
+            db_configured: true,
+            db_connected: false,
+            migrations: MigrationStatus::Skipped,
+          });
         }
         Ok(()) => {
           tracing::info!("startup: DB pool initialized");
           // 自动迁移：用同一连接池跑 sea-orm-migration。
-          // 失败仅日志，不退出，避免因为 schema 已存在的细节差异（例如
-          // init.sql 已手动落地）阻塞启动；运维通过日志确认即可。
-          match app_core::db::get_or_init_pool().await {
-            Err(e) => tracing::error!(error = %e, "startup: cannot get pool for migration"),
+          // 默认失败仅日志 + /healthz 报 degraded；STRICT_MIGRATION=1 时退出。
+          let mig_status = match app_core::db::get_or_init_pool().await {
+            Err(e) => {
+              tracing::error!(error = %e, "startup: cannot get pool for migration");
+              if strict_migration {
+                panic!("STRICT_MIGRATION=1：迁移前取连接池失败，拒绝启动: {}", e);
+              }
+              MigrationStatus::Skipped
+            }
             Ok(db) => {
               use migration::MigratorTrait;
               match migration::Migrator::up(&db, None).await {
-                Ok(()) => tracing::info!("startup: schema migrations applied"),
-                Err(e) => tracing::error!(error = %e, "startup: migration failed"),
+                Ok(()) => {
+                  tracing::info!("startup: schema migrations applied");
+                  MigrationStatus::Applied
+                }
+                Err(e) => {
+                  tracing::error!(error = %e, "startup: migration failed");
+                  if strict_migration {
+                    panic!("STRICT_MIGRATION=1：schema 迁移失败，拒绝启动: {}", e);
+                  }
+                  MigrationStatus::Failed
+                }
               }
             }
-          }
+          };
+          set_startup_health(StartupHealth {
+            db_configured: true,
+            db_connected: true,
+            migrations: mig_status,
+          });
         }
       }
     } else {
       tracing::warn!("startup: DATABASE_URL not set; DB-backed features will error on first call");
+      set_startup_health(StartupHealth {
+        db_configured: false,
+        db_connected: false,
+        migrations: MigrationStatus::Skipped,
+      });
     }
 
     // Phase 8.8：用 OnceLock 取代 Box::leak，避免 `dx serve` 反复重启的开发态泄漏
@@ -234,6 +272,8 @@ fn main() {
     }
 
     let router = dioxus::server::router(App)
+      // S3：健康检查（ok/degraded），供 LB / 监控 / 部署脚本判活。
+      .route("/healthz", get(crate::server::health::healthz))
       // 1. 处理登录跳转：生成 state + verifier，加密成 oauth_pkce cookie 下发，
       //    然后 302 到 OAuth 授权 URL。state / verifier 自此随浏览器走 → 支持多副本。
       .route(

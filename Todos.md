@@ -210,9 +210,10 @@
 - [x] 容量防御：桶表上限 50k + 10min 过期剪枝 + overflow 折叠桶（防伪造海量 IP 内存放大）；超限 429 + Retry-After
 - [x] env 可调：`RATE_LIMIT_{API,SENSITIVE}_{RPS,BURST}`、`RATE_LIMIT_DISABLED=1`；7 个单测通过（burst/回填/隔离/分类/key 提取/非法配置 clamp）
 
-### S3 — 迁移失败降级/严格模式 + 健康检查（风险 R3）
-- [ ] 启动状态标记：迁移失败 → degraded；新增 `/healthz`（ok/degraded）
-- [ ] `STRICT_MIGRATION=1` 时迁移失败 fail-fast 退出
+### S3 — 迁移失败降级/严格模式 + 健康检查（风险 R3）✅
+- [x] 新增 `crates/app/src/server/health.rs`：启动期记录 `StartupHealth`（db_configured/db_connected/migrations）；`/healthz` 返回 `200 ok` / `503 degraded`（JSON，no-store）；未配置 DATABASE_URL 的纯静态站不算降级
+- [x] `STRICT_MIGRATION=1` 时 DB 连接失败 / 迁移失败直接 panic 拒绝启动（生产推荐）；默认保持可用性优先但 /healthz 可观测（`main.rs:161-225`）
+- [x] 2 个单测通过（降级矩阵 / 快照语义）
 
 ### S4 — JWT 撤销基础 token_version（风险 R1）
 - [ ] 迁移：`users.token_version int not null default 0`
