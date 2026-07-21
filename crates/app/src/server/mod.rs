@@ -1,3 +1,6 @@
+#[cfg(feature = "server")]
+pub mod security;
+
 use app_core::session::SessionUser;
 use app_core::settings::SiteConfig;
 #[cfg(feature = "server")]

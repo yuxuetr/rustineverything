@@ -200,9 +200,10 @@
 
 ## 任务清单（按优先级）
 
-### S1 — 安全响应头中间件（风险 R6）
-- [ ] app server 侧统一注入：CSP（保守策略，兼容现有内联 style/script + prism/mermaid）、`X-Content-Type-Options: nosniff`、`Referrer-Policy`、`X-Frame-Options: DENY`
-- [ ] 单测覆盖响应头存在性；记录后续 nonce 化 CSP 的方向
+### S1 — 安全响应头中间件（风险 R6）✅
+- [x] 新增 `crates/app/src/server/security.rs`：`security_headers_mw` 挂在 router 最外层（`main.rs:551`），注入 CSP（保守策略，兼容内联 style/script + WASM + YouTube/Bilibili 嵌入）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`X-Frame-Options: DENY`；已存在同名头不覆盖
+- [x] 运维开关：`CSP_POLICY` 覆盖/置空禁发；`SECURITY_HEADERS_DISABLED=1` 整体禁用；nonce 化方向写入模块注释
+- [x] 4 个单测通过（指令存在性 / 无 CSP 基线 / 非法值不 panic）；server + 默认 web 双目标编译通过
 
 ### S2 — 应用层限流中间件（风险 R4）
 - [ ] Axum 层默认 per-IP 限流（gateway 限流保留为第一道防线）；覆盖 `/api/auth/*`、`/api/pay/*` 与 server fn 入口

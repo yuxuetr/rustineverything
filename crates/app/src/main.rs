@@ -546,6 +546,11 @@ fn main() {
         }),
       );
 
+    // S1（风险 R6）：全站安全响应头（CSP / nosniff / Referrer-Policy / X-Frame-Options）。
+    // 挂在最外层，覆盖页面、server fn、静态资源与上面全部自定义路由。
+    let router =
+      router.layer(axum::middleware::from_fn(crate::server::security::security_headers_mw));
+
     Ok(router)
   });
 
