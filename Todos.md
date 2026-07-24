@@ -264,3 +264,14 @@
 - 安全：安全头（S1）+ 限流（S2）+ JWT 即时吊销（S4）+ 独立加密密钥/密文版本化（S5）+ 支付回调加固（S6）+ CSS 反混淆（S8）。
 - 运维：/healthz + STRICT_MIGRATION（S3）；结构：main.rs 组装拆分（S7）；质量：unwrap/expect lint（S9）；性能：site.json mtime 缓存（S10）。
 - 遗留可选项：course 进度写入升级 verified 会话；admin/moderation 的 site.json 读取接入 load_cached；CSS 白名单解析器；CSP nonce 化；其余 crate 接入 unwrap lint。均非阻塞。
+
+## 运行时验证与配置收尾（2026-07-24）
+环境：apple container `rie-postgres`（postgres:16-alpine）+ `dx serve` 编译产物直跑 server 二进制。全部项目通过：
+- **迁移（S4）**：启动日志 `Applying migration 'm20260721_000008_users_token_version'` → `schema migrations applied`；psql 确认 `users.token_version` 列存在、default 0。
+- **/healthz（S3）**：`{"status":"ok","db":"connected","migrations":"applied"}`。
+- **安全头（S1）**：`curl -I /` 四个头全部在线（CSP 完整策略 / nosniff / strict-origin-when-cross-origin / DENY）。
+- **限流（S2）**：`/api/auth/login/github` 连发 20 次 → 前 15 个放行（= sensitive burst），第 16 起精确 429。
+- **SSR**：`/blog` 首屏含正文。
+- **密钥（S5）**：本地 `.env` 已注入 `DATA_ENCRYPTION_KEY`（openssl 生成，未入库）；重启后触发 PKCE 加密，日志无回退 warn = 独立密钥生效。
+- **配置收尾**（本次提交）：docker-compose.yml app 环境新增 DATA_ENCRYPTION_KEY / STRICT_MIGRATION（compose 默认 1）/ RATE_LIMIT_* / CSP_POLICY 透传；`.env.example` 补运维开关文档。
+- 待办（需公网环境）：浏览器 Console 确认无 CSP violation；gateway 反代环境下确认 /healthz 放行与 XFF 链。

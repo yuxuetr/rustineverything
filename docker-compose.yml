@@ -62,6 +62,20 @@ services:
       # 必须项（启动时校验，缺失会 panic）：
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必须设置（建议 32+ 字符随机）}
       BASE_URL: ${BASE_URL:?BASE_URL 必须设置（如 https://example.com）}
+      # 推荐（S5）：独立数据加密密钥，与 JWT_SECRET 解耦可单独轮换。
+      # 留空时回退 JWT_SECRET 派生（启动日志会 warn）。
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:-}
+      # S3：compose = 部署环境，默认严格模式——schema 迁移失败拒绝启动，
+      # 避免带着不一致 schema 静默接受写请求。本地排障可设为 0。
+      STRICT_MIGRATION: ${STRICT_MIGRATION:-1}
+      # 可选（S2）：应用层限流参数；留空用代码默认（api 20rps/60，
+      # auth/pay 5rps/15）。经 CDN/反代时确保 XFF 链正确传到 app。
+      RATE_LIMIT_API_RPS: ${RATE_LIMIT_API_RPS:-}
+      RATE_LIMIT_API_BURST: ${RATE_LIMIT_API_BURST:-}
+      RATE_LIMIT_SENSITIVE_RPS: ${RATE_LIMIT_SENSITIVE_RPS:-}
+      RATE_LIMIT_SENSITIVE_BURST: ${RATE_LIMIT_SENSITIVE_BURST:-}
+      # 可选（S1）：覆盖默认 CSP（留空用内置保守策略）。
+      CSP_POLICY: ${CSP_POLICY:-}
       # 可选：OAuth 凭据，对应 Auth 插件读取
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
