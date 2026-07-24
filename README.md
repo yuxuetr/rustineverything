@@ -39,6 +39,7 @@ Tailwind 源文件和 npm 工具链位于 `crates/app/` 下：
 
 ## 文档
 
+- [架构评估总结报告](docs/ARCHITECTURE_ASSESSMENT.md)
 - [开发者指南](docs/DEVELOPER.md)
 - [认证系统说明](docs/AUTH_SPEC.md)
 - [认证配置指南](docs/AUTH_GUIDE.md)
