@@ -1,0 +1,51 @@
+[package]
+name = "module-payment"
+version = "0.1.0"
+edition = "2021"
+description = "支付网关抽象：PaymentProvider trait + 中立类型 + 统一 notify 流水线（可选 crate，feature 门控）"
+
+[lib]
+name = "module_payment"
+
+# S9：接入 workspace 级 unwrap/expect lint（新 crate 从第一天起零豁免）。
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+
+# ── server-only 依赖（PM2 网关实现 / PM3 流水线迁入时使用）──
+# 签名 / 验签 / 解密等 crypto 工具在宿主侧（本 crate 的 server 部分），不入 trait。
+chrono = { workspace = true, features = ["serde"], optional = true }
+tracing = { workspace = true, optional = true }
+rsa = { version = "0.9", features = ["pem", "sha2"], optional = true }
+base64 = { workspace = true, optional = true }
+aes-gcm = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+url = { version = "2", optional = true }
+sea-orm = { workspace = true, optional = true }
+app-core = { path = "../../core", optional = true }
+
+[features]
+# 网关按 feature 选装，默认全开；关闭其一可裁剪对应协议实现。
+default = ["alipay", "wechat"]
+alipay = []
+wechat = []
+# server：启用网关实现 + crypto 工具 + notify 流水线（重依赖只进 server 目标，
+# 保证 web/wasm 目标只编译中立类型与 trait）。由调用方（module-course）的
+# server feature 经弱依赖 `module-payment?/server` 级联开启。
+server = [
+    "dep:chrono",
+    "dep:tracing",
+    "dep:rsa",
+    "dep:base64",
+    "dep:aes-gcm",
+    "dep:rand",
+    "dep:reqwest",
+    "dep:url",
+    "dep:sea-orm",
+    "dep:app-core",
+    "app-core/server",
+]

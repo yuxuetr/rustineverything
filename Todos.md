@@ -290,10 +290,10 @@
 
 ## 任务清单
 
-### PM1 — 新建 `crates/modules/payment`（module-payment）骨架
-- [ ] `PaymentProvider` trait：`build_order` / `parse_order_response` / `parse_notify` / `build_query` / `parse_query`；签名、验签、解密不入 trait（宿主 crypto 工具注入）
-- [ ] 中立类型：`OrderRequest` / `PayRequest`（url/method/headers/body/sign_payload）/ `PayAction`（pay_url | qr_code）/ `PaymentEvent`（out_trade_no/amount_cents/status/txn_id）/ `PayError`
-- [ ] features：`alipay`、`wechat`（默认全开）；`[lints] workspace = true` 接入 unwrap/expect lint；登记进根 Cargo.toml workspace members
+### PM1 — 新建 `crates/modules/payment`（module-payment）骨架 ✅
+- [x] `PaymentProvider` trait（`payment/src/lib.rs:161`）：`build_order` / `parse_order_response` / `parse_notify` + `build_query` / `parse_query`（默认 `Unsupported`，对账预留）；签名、验签、解密不入 trait（宿主 `crypto` 模块承担，WASM 化红线预留）
+- [x] 中立类型：`OrderRequest` / `PayRequest`（url/method/headers/body/sign_payload）/ `PayAction`（PayUrl | QrCode）/ `OrderCall`（Direct | Http）/ `NotifyPayload`（Form | Json）/ `PaymentEvent`（out_trade_no/amount_cents/status/txn_id）/ `PayError`（5 类语义错误）
+- [x] features：`alipay`、`wechat`（默认全开）+ `server`（重依赖门控，web 目标只编译类型与 trait）；`[lints] workspace = true`；登记 workspace members；crypto/alipay/wechat/pipeline 占位模块待 PM2/PM3 填充；3 单测 + clippy --all-features -D warnings 零告警
 
 ### PM2 — 迁移网关实现
 - [ ] `course/src/alipay.rs` → `payment/src/alipay.rs`，`course/src/wechat.rs` → `payment/src/wechat.rs`，适配为两个 `PaymentProvider` impl（纯搬移 + 适配，不改协议逻辑）

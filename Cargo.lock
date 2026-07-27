@@ -4702,6 +4702,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "module-payment"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "app-core",
+ "base64",
+ "chrono",
+ "rand 0.9.4",
+ "reqwest",
+ "rsa",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "module-podcast"
 version = "0.1.0"
 dependencies = [
