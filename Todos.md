@@ -300,10 +300,10 @@
 - [x] crypto 工具迁入 `payment/src/crypto.rs`（decode_key / rsa2_sign / rsa2_verify / aes256_gcm_decrypt）；旧 5 个签名/验签/解密单测全部随迁通过，另补 7 个 Provider 适配单测（build_order 场景分派 / 响应解析 / notify 中立化 + 严格 yuan_to_cents），payment 共 15 测
 - [x] 配置加载（env 读取 + 缺项降级 None）随迁；密钥仍经 .env 不回显；course 剔除 rsa/sha2/base64/reqwest/url/aes-gcm 依赖（server feature 改级联 `module-payment/server`）；course 40 测 + app server 构建 + 默认 web check 通过，clippy -D warnings 零告警
 
-### PM3 — 统一 notify 流水线 `payment/src/pipeline.rs`
-- [ ] 合并两处 ~90% 重复的 notify 处理：验签/解密（宿主侧）→ `parse_notify` → 金额核验（以 DB 订单为准）→ 原子认领（条件 UPDATE，rows_affected=0 幂等）→ 发货回调 → pay_audit 日志（S6 成果完整收敛）
-- [ ] 发货用注入回调（`on_paid: …(user_id, course_slug)`），payment crate 不反向依赖 course 的 entitlement（符合 §11 依赖方向：db 句柄 + 订单实体由调用方提供或下沉 core）
-- [ ] 流水线单测：幂等/金额不匹配拒绝/并发认领语义（纯逻辑部分 mock 发货回调）
+### PM3 — 统一 notify 流水线 `payment/src/pipeline.rs` ✅
+- [x] `process_event`：验签/解密留在宿主侧 → 非成功状态查单前确认 → 查单 → 金额核验（DB 快照为准，`decide` 纯函数）→ 幂等快路径 → 原子认领（条件 UPDATE，rows_affected=0 确认不发货）→ 发货 → pay_audit 日志（S6 成果完整收敛，失败原因串与旧 wechat 应答一致）
+- [x] 发货用注入回调 `on_paid(user_id, course_slug)`，不反向依赖 course entitlement；存储经 `OrderStore` trait（find_order / claim_paid）抽象，`sea_orm::DatabaseConnection` 自带实现（订单实体已下沉 app-core）。注：故意不用 sea-orm mock feature（会经 feature 统一禁用 `DatabaseConnection: Clone` 破坏 app-core 连接池）
+- [x] 9 个流水线单测（纯 mock store + mock 发货回调）：decide 矩阵 / happy path / 幂等重放不二次发货 / 金额不匹配拒 / 并发认领败方不发货 / 非成功零 DB / 查无此单 / UPDATE 失败 / 发货失败；payment 共 24 测 + clippy -D warnings 零告警
 
 ### PM4 — course/app 接线（feature 门控）
 - [ ] `module-course` 以 `optional = true` 依赖 module-payment；新增 `payments` feature；`orders`/`create_order`/`query_order`/notify 入口改走 provider + pipeline；PurchaseModal / 我的订单 / 购买入口 feature 门控（关闭时 Paywall 退化为「联系管理员开通」）

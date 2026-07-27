@@ -28,6 +28,12 @@ url = { version = "2", optional = true }
 sea-orm = { workspace = true, optional = true }
 app-core = { path = "../../core", optional = true }
 
+[dev-dependencies]
+# 流水线单测：mock OrderStore + 发货回调；tokio 跑 async 测试。
+# 注意：不用 sea-orm 的 mock feature——它会经 feature 统一全局禁用
+# `DatabaseConnection: Clone`，破坏 app-core 连接池。
+tokio = { workspace = true, features = ["macros", "rt"] }
+
 [features]
 # 网关按 feature 选装，默认全开；关闭其一可裁剪对应协议实现。
 default = ["alipay", "wechat"]
