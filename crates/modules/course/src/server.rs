@@ -1524,42 +1524,57 @@ pub async fn create_order(
     // 按网关 + 场景生成支付凭据。
     let (kind, payload) = match provider.as_str() {
       "alipay" => {
-        let cfg = crate::alipay::config()
+        let cfg = module_payment::alipay::config()
           .ok_or_else(|| ServerFnError::new("支付宝未配置（缺 ALIPAY_* 环境变量）".to_string()))?;
         match scene.as_str() {
           "qr" => {
-            let qr = crate::alipay::precreate(&cfg, &out_trade_no, &course.title, course.price)
-              .await
-              .map_err(ServerFnError::new)?;
+            let qr =
+              module_payment::alipay::precreate(&cfg, &out_trade_no, &course.title, course.price)
+                .await
+                .map_err(ServerFnError::new)?;
             ("qrcode".to_string(), qr)
           }
           s => {
             let scn = if s == "wap" { "wap" } else { "page" };
-            let url =
-              crate::alipay::build_pay_url(&cfg, scn, &out_trade_no, &course.title, course.price)
-                .map_err(ServerFnError::new)?;
+            let url = module_payment::alipay::build_pay_url(
+              &cfg,
+              scn,
+              &out_trade_no,
+              &course.title,
+              course.price,
+            )
+            .map_err(ServerFnError::new)?;
             ("redirect".to_string(), url)
           }
         }
       }
       "wechat" => {
-        let cfg = crate::wechat::config().ok_or_else(|| {
+        let cfg = module_payment::wechat::config().ok_or_else(|| {
           ServerFnError::new("微信支付未配置（缺 WECHAT_* 环境变量）".to_string())
         })?;
         match scene.as_str() {
           "h5" => {
             // H5 需付款用户 IP；生产应从请求头 X-Forwarded-For 取，这里占位。
-            let url =
-              crate::wechat::create_h5(&cfg, &out_trade_no, &course.title, course.price, "0.0.0.0")
-                .await
-                .map_err(ServerFnError::new)?;
+            let url = module_payment::wechat::create_h5(
+              &cfg,
+              &out_trade_no,
+              &course.title,
+              course.price,
+              "0.0.0.0",
+            )
+            .await
+            .map_err(ServerFnError::new)?;
             ("h5".to_string(), url)
           }
           _ => {
-            let code_url =
-              crate::wechat::create_native(&cfg, &out_trade_no, &course.title, course.price)
-                .await
-                .map_err(ServerFnError::new)?;
+            let code_url = module_payment::wechat::create_native(
+              &cfg,
+              &out_trade_no,
+              &course.title,
+              course.price,
+            )
+            .await
+            .map_err(ServerFnError::new)?;
             ("qrcode".to_string(), code_url)
           }
         }
@@ -1680,11 +1695,11 @@ pub async fn handle_alipay_notify(
     "notify received"
   );
 
-  let Some(cfg) = crate::alipay::config() else {
+  let Some(cfg) = module_payment::alipay::config() else {
     return "failure";
   };
   // 1) 验签——一切发货的前提
-  if !crate::alipay::verify_notify(&cfg, &params) {
+  if !module_payment::alipay::verify_notify(&cfg, &params) {
     tracing::warn!(target: "pay_audit", "alipay notify: signature verify failed");
     return "failure";
   }
@@ -1713,7 +1728,7 @@ pub async fn handle_alipay_notify(
       _ => return "failure",
     };
   // 3) 金额核验
-  if !crate::alipay::amount_matches(total, row.amount) {
+  if !module_payment::alipay::amount_matches(total, row.amount) {
     tracing::warn!(target: "pay_audit", "alipay notify: amount mismatch for {}", out_trade_no);
     return "failure";
   }
@@ -1767,7 +1782,7 @@ pub async fn handle_wechat_notify(
   let ok = || (200u16, "{\"code\":\"SUCCESS\"}".to_string());
   let fail = |m: &str| (500u16, format!("{{\"code\":\"FAIL\",\"message\":\"{m}\"}}"));
 
-  let Some(cfg) = crate::wechat::config() else {
+  let Some(cfg) = module_payment::wechat::config() else {
     return fail("unconfigured");
   };
   let get = |k: &str| headers.get(k).map(|s| s.as_str()).unwrap_or("");
@@ -1789,7 +1804,7 @@ pub async fn handle_wechat_notify(
     Err(_) => return fail("bad timestamp"),
   }
   // 1) 验签
-  if !crate::wechat::verify_notify(&cfg, ts, nonce, &body, sig) {
+  if !module_payment::wechat::verify_notify(&cfg, ts, nonce, &body, sig) {
     tracing::warn!(target: "pay_audit", "wechat notify: signature verify failed");
     return fail("bad signature");
   }
@@ -1803,7 +1818,7 @@ pub async fn handle_wechat_notify(
     res["nonce"].as_str().unwrap_or(""),
     res["associated_data"].as_str().unwrap_or(""),
   );
-  let plain = match crate::wechat::decrypt_resource(&cfg, rnonce, aad, ct) {
+  let plain = match module_payment::wechat::decrypt_resource(&cfg, rnonce, aad, ct) {
     Ok(p) => p,
     Err(_) => return fail("decrypt failed"),
   };

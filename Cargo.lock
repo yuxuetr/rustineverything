@@ -4609,27 +4609,22 @@ dependencies = [
 name = "module-course"
 version = "0.1.0"
 dependencies = [
- "aes-gcm",
  "app-core",
- "base64",
  "chrono",
  "dioxus",
  "fast_qr",
  "module-blog",
  "module-moderation",
+ "module-payment",
  "rand 0.9.4",
- "reqwest",
- "rsa",
  "sdk",
  "sea-orm",
  "serde",
  "serde_json",
  "serde_yaml",
- "sha2",
  "tempfile",
  "tokio",
  "tracing",
- "url",
  "widgets",
 ]
 

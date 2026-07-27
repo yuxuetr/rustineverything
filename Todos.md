@@ -295,10 +295,10 @@
 - [x] 中立类型：`OrderRequest` / `PayRequest`（url/method/headers/body/sign_payload）/ `PayAction`（PayUrl | QrCode）/ `OrderCall`（Direct | Http）/ `NotifyPayload`（Form | Json）/ `PaymentEvent`（out_trade_no/amount_cents/status/txn_id）/ `PayError`（5 类语义错误）
 - [x] features：`alipay`、`wechat`（默认全开）+ `server`（重依赖门控，web 目标只编译类型与 trait）；`[lints] workspace = true`；登记 workspace members；crypto/alipay/wechat/pipeline 占位模块待 PM2/PM3 填充；3 单测 + clippy --all-features -D warnings 零告警
 
-### PM2 — 迁移网关实现
-- [ ] `course/src/alipay.rs` → `payment/src/alipay.rs`，`course/src/wechat.rs` → `payment/src/wechat.rs`，适配为两个 `PaymentProvider` impl（纯搬移 + 适配，不改协议逻辑）
-- [ ] RSA2 签名/验签、AES-256-GCM 解密等 crypto 工具随迁（`payment/src/crypto.rs` 或保留在 provider 内部）；现有签名/验签/解密单测全部随迁且通过
-- [ ] 配置加载（env 读取 + 缺项降级 None）随迁；密钥仍经 .env，不回显
+### PM2 — 迁移网关实现 ✅
+- [x] `course/src/alipay.rs` → `payment/src/alipay.rs`（`AlipayProvider`：page/wap 签名直跳 = Direct，qr precreate = Http），`course/src/wechat.rs` → `payment/src/wechat.rs`（`WechatProvider`：native/h5 = Http + Authorization 头）；纯搬移 + 适配，协议逻辑不变；course 调用点机械替换 `crate::alipay/wechat` → `module_payment::alipay/wechat`（行为不变，PM4 再改 provider+pipeline）
+- [x] crypto 工具迁入 `payment/src/crypto.rs`（decode_key / rsa2_sign / rsa2_verify / aes256_gcm_decrypt）；旧 5 个签名/验签/解密单测全部随迁通过，另补 7 个 Provider 适配单测（build_order 场景分派 / 响应解析 / notify 中立化 + 严格 yuan_to_cents），payment 共 15 测
+- [x] 配置加载（env 读取 + 缺项降级 None）随迁；密钥仍经 .env 不回显；course 剔除 rsa/sha2/base64/reqwest/url/aes-gcm 依赖（server feature 改级联 `module-payment/server`）；course 40 测 + app server 构建 + 默认 web check 通过，clippy -D warnings 零告警
 
 ### PM3 — 统一 notify 流水线 `payment/src/pipeline.rs`
 - [ ] 合并两处 ~90% 重复的 notify 处理：验签/解密（宿主侧）→ `parse_notify` → 金额核验（以 DB 订单为准）→ 原子认领（条件 UPDATE，rows_affected=0 幂等）→ 发货回调 → pay_audit 日志（S6 成果完整收敛）
