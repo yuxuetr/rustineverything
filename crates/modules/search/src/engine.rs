@@ -17,7 +17,9 @@ use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
 use tantivy::schema::{Field, Schema, TextFieldIndexing, TextOptions, FAST, STORED, STRING};
 use tantivy::tokenizer::TextAnalyzer;
-use tantivy::{doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, TantivyError, Term};
+use tantivy::{
+  doc, Index, IndexReader, IndexWriter, ReloadPolicy, TantivyDocument, TantivyError, Term,
+};
 
 use crate::indexer::{
   collect_dyn_documents, collect_file_documents, diff_for_reindex, filter_versioned_by_enabled,
@@ -280,7 +282,8 @@ fn wipe_index_dir(dir: &Path) -> Result<(), String> {
     .map_err(|e| format!("search: read_dir {} failed: {}", dir.display(), e))?;
   for entry in entries.flatten() {
     let path = entry.path();
-    let result = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+    let result =
+      if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
     result.map_err(|e| format!("search: wipe {} failed: {}", path.display(), e))?;
   }
   Ok(())
@@ -308,17 +311,47 @@ fn first_text(doc: &TantivyDocument, field: Field) -> String {
 }
 
 /// 简单 snippet：命中位置前后取 max_chars/2 的窗口，过短则取开头。
+///
+/// Phase 8.8：之前 `body.to_lowercase()` 会对整个文章 body 做一次 Unicode 折叠分配，
+/// 100KB 文章每个查询都额外 200KB+ 内存 + 整体 O(body) 工作；命中位置一般在前 1KB
+/// 内时这种浪费完全无谓。改成只对 body 前 2KB 做 ASCII lowercase（足够覆盖
+/// 命中），找不到再降级到完整 lowercase 搜索一次。
 fn make_snippet(body: &str, query: &str, max_chars: usize) -> String {
   let trimmed_body = body.trim();
   if trimmed_body.is_empty() {
     return String::new();
   }
   let token = query.split_whitespace().max_by_key(|t| t.chars().count()).unwrap_or(query);
-  let lower_body = trimmed_body.to_lowercase();
   let lower_token = token.to_lowercase();
   let half = max_chars / 2;
 
-  if let Some(byte_pos) = lower_body.find(&lower_token) {
+  /// 在 `haystack` 中查找 lowercase 的 `lower_token`。返回 byte offset。
+  fn find_lower(haystack: &str, lower_token: &str) -> Option<usize> {
+    haystack.to_lowercase().find(lower_token)
+  }
+
+  // 第一轮：仅对前 SNIPPET_HEAD_BYTES 字节做 lowercase 搜索（多数命中都落在这里）；
+  // SnippetGenerator 的复杂度暂时不引入。这里足够把全文 to_lowercase 的 hot path 去掉。
+  const SNIPPET_HEAD_BYTES: usize = 2048;
+  let head_end = SNIPPET_HEAD_BYTES.min(trimmed_body.len());
+  // safe slice：扩到 UTF-8 边界
+  let head_end = if trimmed_body.is_char_boundary(head_end) {
+    head_end
+  } else {
+    let mut e = head_end;
+    while e > 0 && !trimmed_body.is_char_boundary(e) {
+      e -= 1;
+    }
+    e
+  };
+  let head = &trimmed_body[..head_end];
+
+  let byte_pos = find_lower(head, &lower_token).or_else(|| {
+    // 头部没命中 → 第二轮全文 fallback（极少触发；保留正确性）
+    find_lower(trimmed_body, &lower_token)
+  });
+
+  if let Some(byte_pos) = byte_pos {
     let char_pos = trimmed_body[..byte_pos.min(trimmed_body.len())].chars().count();
     let start_char = char_pos.saturating_sub(half);
     let mut chars_iter = trimmed_body.char_indices();
@@ -351,8 +384,34 @@ fn engine_slot() -> &'static Mutex<Option<Arc<SearchEngine>>> {
   ENGINE.get_or_init(|| Mutex::new(None))
 }
 
+/// 串行化「首次初始化」的异步锁。
+///
+/// 修复 typeahead 并发首查（如 `q_len=1` / `q_len=2` 同一瞬间触发）各自进入
+/// [`init_or_load`] → 在同一 `MmapDirectory` 上各开一个 `IndexWriter` 抢锁，
+/// 第二个失败 `LockBusy` 的问题。该锁仅在引擎尚未就绪时短暂持有；一旦就绪，
+/// 后续查询走 [`engine_slot`] 快路径，不再加锁、也不再创建 writer。
+static INIT_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+fn init_lock() -> &'static tokio::sync::Mutex<()> {
+  INIT_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
 /// 获取当前引擎；若未初始化则在默认目录上 [`init_or_load`]。
+///
+/// 初始化通过 [`INIT_LOCK`] 串行化 + 双检：并发首查只会有一个真正执行
+/// `init_or_load`，其余在拿到锁后发现引擎已就绪，直接复用，避免 writer 抢锁。
 pub async fn get_or_build() -> Result<Arc<SearchEngine>, String> {
+  // 快路径：引擎已就绪，无需加初始化锁。
+  {
+    let guard = engine_slot().lock().map_err(|e| format!("search lock poisoned: {}", e))?;
+    if let Some(e) = guard.as_ref() {
+      return Ok(e.clone());
+    }
+  }
+
+  // 慢路径：串行化初始化。
+  let _init = init_lock().lock().await;
+  // 双检：等待锁期间可能已被其他调用者完成初始化。
   {
     let guard = engine_slot().lock().map_err(|e| format!("search lock poisoned: {}", e))?;
     if let Some(e) = guard.as_ref() {
@@ -466,7 +525,6 @@ async fn full_populate_with_manifest(engine: &SearchEngine) -> Result<usize, Str
   diff.next.save(&engine.dir)?;
   Ok(count)
 }
-
 
 #[cfg(test)]
 mod tests {

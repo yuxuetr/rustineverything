@@ -3,6 +3,9 @@ name = "migration"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 # Phase 7.1：数据库 schema 迁移。
 #
 # 取代 `init.sql`，由 SeaORM 的 sea-orm-migration 在应用启动时自动跑：

@@ -162,8 +162,8 @@ impl ModerationPipeline {
 #[allow(clippy::field_reassign_with_default)] // 测试 setup：Default + 逐字段赋值更易读
 mod tests {
   use super::*;
-  use async_trait::async_trait;
   use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
+  use async_trait::async_trait;
 
   struct StubStage(&'static str, Verdict);
 

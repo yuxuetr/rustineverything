@@ -14,9 +14,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Engine, EngineContext};
-use crate::error::AppResult;
-
 /// 与 Tantivy 索引 schema 一一对应的纯数据。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchDocument {
@@ -79,23 +76,8 @@ impl SearchEngine {
   }
 }
 
-impl Engine for SearchEngine {
-  fn name(&self) -> &'static str {
-    "search"
-  }
-
-  fn init(&mut self, _ctx: &EngineContext) -> AppResult<()> {
-    Ok(())
-  }
-
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-
-  fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-    self
-  }
-}
+// Phase 8.7：删除了 Engine trait + EngineRegistry，SearchEngine 现在
+// 只是普通的注册中心 + 聚合工具。
 
 #[cfg(test)]
 mod tests {
@@ -132,11 +114,7 @@ mod tests {
     }
   }
 
-  #[test]
-  fn engine_name_is_search() {
-    let e = SearchEngine::new();
-    assert_eq!(<SearchEngine as Engine>::name(&e), "search");
-  }
+  // Phase 8.7：删除了 Engine trait，原 engine_name_is_search 不再有意义。
 
   #[test]
   fn collect_all_unions_sources() {

@@ -1,12 +1,17 @@
 use dioxus::prelude::*;
 use dioxus::router::{Link, Routable};
 
+use crate::components::admin_entitlements::AdminEntitlementsPage;
 use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
+use crate::components::home_sections::{
+  CommunityFeed, CourseShowcase, EcosystemPage, EcosystemPillars, FeaturedCases,
+};
 use crate::components::module_gate::ModuleGate;
 use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
 use crate::i18n::{t, use_i18n};
+use crate::server::enabled_module_ids;
 use crate::server::get_seo_base_url;
 use crate::server::{list_public_plugins, PublicPluginInfo};
 use module_admin::admin::{
@@ -20,6 +25,7 @@ use module_cli::cli::{CliArticlePage, CliIndexPage};
 use module_course::course::{
   AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
 };
+use module_course::pay_ui::MyOrdersPage;
 use module_docs::docs::{DocPage as DocPageView, Docs as DocsView};
 use module_embedded::embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
 use module_forum::forum::{
@@ -37,6 +43,10 @@ pub enum Route {
     #[layout(Navbar)]
         #[route("/")]
         Home {},
+
+        // 生态落地页（双生态 IA 的落地）：/ecosystem/rust | /ecosystem/ai
+        #[route("/ecosystem/:id")]
+        EcosystemPage { id: String },
 
         #[route("/docs")]
         Docs {},
@@ -110,6 +120,8 @@ pub enum Route {
         MyAnnotations {},
         #[route("/me/topics")]
         MyTopics {},
+        #[route("/me/orders")]
+        MyOrders {},
 
         // Admin 后台（页面内部判断 role，非 admin 渲染 403 占位）
         #[route("/admin")]
@@ -122,6 +134,8 @@ pub enum Route {
         AdminTopics {},
         #[route("/admin/plugins")]
         AdminPlugins {},
+        #[route("/admin/entitlements")]
+        AdminEntitlements {},
         #[route("/admin/moderation")]
         AdminModeration {},
         #[route("/admin/moderation/settings")]
@@ -131,35 +145,66 @@ pub enum Route {
 /// Home page
 #[component]
 pub fn Home() -> Element {
+  let lang = use_i18n();
+
+  // 与 navbar 共用「站点模块开关」：默认全开避免首屏闪烁，server fn 返回后收敛。
+  fn all_default_ids() -> Vec<String> {
+    app_core::engines::module::default_module_specs().into_iter().map(|s| s.id).collect()
+  }
+  let enabled_res =
+    use_resource(
+      || async move { enabled_module_ids().await.unwrap_or_else(|_| all_default_ids()) },
+    );
+  let enabled: Vec<String> = enabled_res.read().as_ref().cloned().unwrap_or_else(all_default_ids);
+
+  // 首页模块网格的展示顺序：内容主线（文档/博客/课程/案例）在前，
+  // 垂直领域（AI/WASM/Web3/嵌入式/CLI）居中，社区/收听（播客/论坛）在后。
+  // 每张卡片 gate 于 `enabled`，与导航栏保持一致——新增模块只动这一处 + i18n。
+  let modules: Vec<(&str, Route)> = vec![
+    ("docs", Route::Docs {}),
+    ("blog", Route::BlogIndex {}),
+    ("course", Route::Courses {}),
+    ("cases", Route::Cases {}),
+    ("ai", Route::Ai {}),
+    ("wasm", Route::Wasm {}),
+    ("web3", Route::Web3 {}),
+    ("embedded", Route::Embedded {}),
+    ("cli", Route::Cli {}),
+    ("podcast", Route::Podcast {}),
+    ("forum", Route::TopicsIndex {}),
+  ];
+
   rsx! {
       Hero {}
-      section { class: "py-24 bg-white dark:bg-slate-950",
+
+      // 两大生态支柱：直接体现「Rust 生态 + AI 生态」定位
+      EcosystemPillars { enabled: enabled.clone() }
+
+      // 精选案例（旗舰）+ 课程（变现）
+      FeaturedCases {}
+      CourseShowcase {}
+
+      // 社区动态：最新博客 + 论坛热帖
+      CommunityFeed {}
+
+      // 按领域浏览：原模块网格下移为次级导航
+      section { class: "py-20 bg-white dark:bg-slate-950",
           Container {
               SectionTitle {
-                  title: "专注 Rust 生态".to_string(),
-                  subtitle: Some("从底层原理到全栈实战，构建高性能、高可靠的软件系统".to_string())
+                  title: t(lang(), "home.browse.title"),
+                  subtitle: Some(t(lang(), "home.browse.subtitle"))
               }
 
-              div { class: "grid grid-cols-1 md:grid-cols-3 gap-8 mt-12",
-                  FeatureCard {
-                      title: "Rust 基础".to_string(),
-                      desc: "深入浅出所有权、生命周期、Trait 等核心概念。".to_string(),
-                      icon: rsx! {
-                          path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.74c0 3.821 1.77 7.239 4.537 9.477a11.981 11.981 0 0014.926 0C25.23 16.979 27 13.561 27 9.74c0-1.302-.209-2.557-.598-3.74A11.959 11.959 0 0112 2.714z" }
-                      }
-                  }
-                  FeatureCard {
-                      title: "全栈开发".to_string(),
-                      desc: "使用 Dioxus, Axum, SeaORM 快速构建跨平台应用。".to_string(),
-                      icon: rsx! {
-                          path { stroke_linecap: "round", stroke_linejoin: "round", d: "M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" }
-                      }
-                  }
-                  FeatureCard {
-                      title: "AI 与 WASM".to_string(),
-                      desc: "探索 WebAssembly 高性能计算与 Rust AI 生态。".to_string(),
-                      icon: rsx! {
-                          path { stroke_linecap: "round", stroke_linejoin: "round", d: "M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.048 8.287 8.25 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z" }
+              div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-12",
+                  for (id , route) in modules.into_iter() {
+                      if enabled.iter().any(|e| e == id) {
+                          ModuleCard {
+                              key: "{id}",
+                              to: route,
+                              icon: module_icon(id),
+                              title: t(lang(), &format!("home.mod.{id}.title")),
+                              desc: t(lang(), &format!("home.mod.{id}.desc")),
+                          }
                       }
                   }
               }
@@ -168,18 +213,49 @@ pub fn Home() -> Element {
   }
 }
 
+/// 首页模块卡片：整卡可点击，跳转到对应板块入口路由。
 #[component]
-fn FeatureCard(title: String, desc: String, icon: Element) -> Element {
+fn ModuleCard(to: Route, icon: Element, title: String, desc: String) -> Element {
   rsx! {
-      div { class: "p-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 hover:shadow-lg transition-all",
-          div { class: "w-12 h-12 rounded-lg bg-blue-600/10 flex items-center justify-center text-blue-600 mb-6",
-              svg { class: "w-6 h-6", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", stroke_width: "1.5",
-                  {icon}
+      Link {
+          to,
+          class: "group flex flex-col p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 hover:shadow-lg hover:border-[var(--color-primary)]/40 transition-all",
+          div { class: "flex items-center justify-between mb-4",
+              div { class: "w-11 h-11 rounded-lg bg-[var(--color-primary)]/10 flex items-center justify-center text-[var(--color-primary)]",
+                  svg { class: "w-6 h-6", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", stroke_width: "1.5",
+                      {icon}
+                  }
+              }
+              svg {
+                  class: "w-5 h-5 text-slate-300 dark:text-slate-600 transition-all group-hover:translate-x-1 group-hover:text-[var(--color-primary)]",
+                  fill: "none", stroke: "currentColor", view_box: "0 0 24 24", stroke_width: "2",
+                  path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9 5l7 7-7 7" }
               }
           }
-          h3 { class: "text-xl font-bold text-slate-900 dark:text-white mb-3", "{title}" }
-          p { class: "text-slate-600 dark:text-slate-400 leading-relaxed", "{desc}" }
+          h3 { class: "text-lg font-bold text-slate-900 dark:text-white mb-1.5", "{title}" }
+          p { class: "text-sm text-slate-600 dark:text-slate-400 leading-relaxed", "{desc}" }
       }
+  }
+}
+
+/// 按模块 id 返回卡片图标的 `<path>`（Heroicons outline，统一 24×24 viewBox）。
+fn module_icon(id: &str) -> Element {
+  let d = match id {
+    "docs" => "M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z",
+    "blog" => "M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10",
+    "course" => "M4.26 10.147a60.438 60.438 0 0 0-.491 6.347A48.62 48.62 0 0 1 12 20.904a48.62 48.62 0 0 1 8.232-4.41 60.46 60.46 0 0 0-.491-6.347m-15.482 0a50.636 50.636 0 0 0-2.658-.813A59.906 59.906 0 0 1 12 3.493a59.903 59.903 0 0 1 10.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.717 50.717 0 0 1 12 13.489a50.702 50.702 0 0 1 7.74-3.342M6.75 15a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0 0v-3.675A55.378 55.378 0 0 1 12 8.443m-7.007 11.55A5.981 5.981 0 0 0 6.75 15.75v-1.5",
+    "cases" => "M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z",
+    "ai" => "M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456Z",
+    "wasm" => "M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z",
+    "web3" => "M21 7.5l-2.25-1.313M21 7.5v2.25m0-2.25l-2.25 1.313M3 7.5l2.25-1.313M3 7.5l2.25 1.313M3 7.5v2.25m9 3l2.25-1.313M12 12.75l-2.25-1.313M12 12.75V15m0 6.75l2.25-1.313M12 21.75V19.5m0 2.25l-2.25-1.313m0-16.875L12 2.25l2.25 1.313M21 14.25v2.25l-2.25 1.313m-13.5 0L3 16.5v-2.25",
+    "embedded" => "M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z",
+    "cli" => "M6.75 7.5l3 2.25-3 2.25m4.5 0h3m-9 8.25h13.5A2.25 2.25 0 0 0 21 18V6a2.25 2.25 0 0 0-2.25-2.25H5.25A2.25 2.25 0 0 0 3 6v12a2.25 2.25 0 0 0 2.25 2.25Z",
+    "podcast" => "M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z",
+    "forum" => "M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155",
+    _ => "M9 5l7 7-7 7",
+  };
+  rsx! {
+      path { stroke_linecap: "round", stroke_linejoin: "round", d }
   }
 }
 
@@ -189,10 +265,29 @@ pub fn Docs() -> Element {
   rsx! { ModuleGate { id: "docs".to_string(), DocsView {} } }
 }
 
-/// 文档详情页：转交给 docs 模块的 DocPage 组件渲染
+/// 文档详情页：转交给 docs 模块的 DocPage 组件渲染。
+/// 标注层（course）+ 讨论面板（forum）是跨模块组合，在组合根 app 这里装配后
+/// 通过 DocPage 的 `footer` 插槽注入，docs 模块本身不依赖 course / forum。
 #[component]
 pub fn DocPage(path: Vec<String>) -> Element {
-  rsx! { ModuleGate { id: "docs".to_string(), DocPageView { path: path } } }
+  let doc_path = path.join("/");
+  rsx! {
+      ModuleGate { id: "docs".to_string(),
+          DocPageView {
+              path: path.clone(),
+              footer: rsx! {
+                  AnnotationLayer {
+                      resource_kind: "doc".to_string(),
+                      resource_path: doc_path.clone(),
+                  }
+                  DiscussionPanel {
+                      resource_kind: "doc".to_string(),
+                      resource_path: doc_path.clone(),
+                  }
+              },
+          }
+      }
+  }
 }
 
 #[component]
@@ -204,8 +299,37 @@ pub fn BlogIndex() -> Element {
 fn BlogIndexInner() -> Element {
   let lang = use_i18n();
 
-  let posts_res = use_resource(move || async move { list_blog_posts().await.unwrap_or_default() });
-  let posts = posts_res.read().as_ref().cloned().unwrap_or_default();
+  rsx! {
+      section { class: "py-12 bg-white dark:bg-slate-950",
+          div { class: "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8",
+              // 页面标题（静态，始终展示）
+              div { class: "text-center mb-10",
+                  h2 { class: "text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl", "{t(lang(), \"blog.title\")}" }
+                  p { class: "mt-4 text-lg text-slate-500 dark:text-slate-400", "{t(lang(), \"blog.subtitle\")}" }
+              }
+
+              // 重构 B2：文章列表改由 BlogList 用 use_server_future 服务端预取（随 SSR HTML 下发）。
+              SuspenseBoundary {
+                  fallback: |_| rsx! {
+                      div { class: "flex items-center justify-center py-20",
+                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                      }
+                  },
+                  BlogList {}
+              }
+          }
+      }
+  }
+}
+
+/// 博客文章列表（重构 B2）：`list_blog_posts` 经 `use_server_future` 服务端预取，
+/// 标签筛选 / 分页仍是客户端 signal 交互。置于 SuspenseBoundary 内。
+#[component]
+fn BlogList() -> Element {
+  let lang = use_i18n();
+
+  let posts_res = use_server_future(|| async move { list_blog_posts().await.unwrap_or_default() })?;
+  let posts = posts_res().unwrap_or_default();
 
   let mut active_tag = use_signal::<Option<String>>(|| None);
   let mut current_page = use_signal(|| 0usize);
@@ -235,23 +359,8 @@ fn BlogIndexInner() -> Element {
     filtered.iter().skip(safe_page * PAGE_SIZE).take(PAGE_SIZE).cloned().collect();
 
   rsx! {
-      section { class: "py-12 bg-white dark:bg-slate-950",
-          div { class: "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8",
-              // 页面标题
-              div { class: "text-center mb-10",
-                  h2 { class: "text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl", "{t(lang(), \"blog.title\")}" }
-                  p { class: "mt-4 text-lg text-slate-500 dark:text-slate-400", "{t(lang(), \"blog.subtitle\")}" }
-              }
-
-              match posts_res.read().as_ref() {
-                  None => rsx! {
-                      div { class: "flex items-center justify-center py-20",
-                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
-                      }
-                  },
-                  Some(_) => rsx! {
-                      // 4列网格：标签(1列=25%) | 文章列表(3列=75%)
-                      div { class: "grid grid-cols-1 lg:grid-cols-4 gap-6 lg:items-start",
+      // 4列网格：标签(1列=25%) | 文章列表(3列=75%)
+      div { class: "grid grid-cols-1 lg:grid-cols-4 gap-6 lg:items-start",
 
                           // ── 左列：标签筛选 (sticky, 辅助内容) ──
                           div { class: "lg:sticky lg:top-20",
@@ -376,10 +485,6 @@ fn BlogIndexInner() -> Element {
                               }
                           }
                       }
-                  },
-              }
-          }
-      }
   }
 }
 
@@ -390,50 +495,20 @@ pub fn Blog(id: String) -> Element {
 
 #[component]
 fn BlogInner(id: String) -> Element {
-  // 修复：在闭包外先克隆一次 id 用于 resource，保留原 id 用于后续组件
-  let id_for_res = id.clone();
-  let blog_content = use_resource(move || {
-    let inner_id = id_for_res.clone();
-    async move { get_blog_content(inner_id).await }
-  });
-  // 标注资源路径：resource_kind="blog"，resource_path = 博客 id
-  let anno_path = id.clone();
-
-  // Phase 2.3: 从 server 读 BASE_URL 以拼接 canonical URL
-  let base_url_res = use_resource(|| async move { get_seo_base_url().await.unwrap_or_default() });
-  let base_url: String = base_url_res.read().as_ref().cloned().unwrap_or_default();
-  let blog_path = format!("/blog/{}", id);
-
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950",
           Container {
               div { class: "max-w-4xl mx-auto",
                   div { class: "text-slate-700 dark:text-slate-200 mb-12",
-                      match blog_content() {
-                          Some(Ok(content)) => rsx! {
-                              // SEO 注入：inject_seo 从 frontmatter 取 metadata，只走一次。
-                              {
-                                  let (meta, _body) = parse_mdx(&content);
-                                  rsx! { {inject_seo(&meta, &blog_path, &base_url)} }
-                              }
-                              // `blog_id` 在 widgets::Markdown 内仅用于拼图片相对路径 `/posts/<id>/...`，
-                              // **必须传纯 slug**（如 "welcome"），不能传标注层的复合 key
-                              // `blog:welcome` —— 否则浏览器请求 `/posts/blog:welcome/x.webp` 直接 404。
-                              Markdown { content: content.clone(), blog_id: id.clone() }
-                              // 标注层（resource_kind="blog"，path = 博客 id）
-                              AnnotationLayer {
-                                  resource_kind: "blog".to_string(),
-                                  resource_path: anno_path.clone(),
-                              }
-                          },
-                          Some(Err(e)) => rsx! {
-                              div { class: "p-4 bg-red-50 text-red-700 rounded-lg", "Error loading post: {e}" }
-                          },
-                          None => rsx! {
+                      // 重构 B1：正文改由 BlogArticle 用 use_server_future 服务端预取（随 SSR HTML 下发）。
+                      // SuspenseBoundary 捕获 BlogArticle 内 `?` 的挂起，未就绪时渲染 spinner。
+                      SuspenseBoundary {
+                          fallback: |_| rsx! {
                               div { class: "flex items-center justify-center py-20",
                                   div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
                               }
                           },
+                          BlogArticle { id: id.clone() }
                       }
                   }
 
@@ -449,6 +524,49 @@ fn BlogInner(id: String) -> Element {
               }
           }
       }
+  }
+}
+
+/// 博客正文（重构 B1 参照实现）：用 `use_server_future` 在服务端预取并随 SSR HTML
+/// 下发，客户端 hydration 直接拿到内容，避免首屏 spinner + 二次抓取。
+///
+/// 必须置于 SuspenseBoundary 内：`?` 会在数据未就绪时挂起，由边界渲染 fallback。
+#[component]
+fn BlogArticle(id: String) -> Element {
+  let anno_path = id.clone();
+  let blog_path = format!("/blog/{}", id);
+  // 正文随路由参数 id 变化重取：use_reactive 让闭包订阅 id（避免 SPA 导航后内容 stale）。
+  let blog_content =
+    use_server_future(use_reactive!(|id| async move { get_blog_content(id).await }))?;
+  // BASE_URL 用于 canonical URL，常量级，无需响应式依赖。
+  let base_url_res =
+    use_server_future(|| async move { get_seo_base_url().await.unwrap_or_default() })?;
+  let base_url: String = base_url_res().unwrap_or_default();
+
+  match blog_content() {
+    Some(Ok(content)) => rsx! {
+        // SEO 注入：inject_seo 从 frontmatter 取 metadata。
+        {
+            let (meta, _body) = parse_mdx(&content);
+            rsx! { {inject_seo(&meta, &blog_path, &base_url)} }
+        }
+        // `blog_id` 在 widgets::Markdown 内仅用于拼图片相对路径 `/posts/<id>/...`，
+        // **必须传纯 slug**（如 "welcome"）。
+        Markdown { content: content.clone(), blog_id: id.clone() }
+        // 标注层（resource_kind="blog"，path = 博客 id）
+        AnnotationLayer {
+            resource_kind: "blog".to_string(),
+            resource_path: anno_path.clone(),
+        }
+    },
+    Some(Err(e)) => rsx! {
+        div { class: "p-4 bg-red-50 text-red-700 rounded-lg", "Error loading post: {e}" }
+    },
+    None => rsx! {
+        div { class: "flex items-center justify-center py-20",
+            div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+        }
+    },
   }
 }
 
@@ -644,6 +762,12 @@ pub fn MyTopics() -> Element {
   rsx! { ModuleGate { id: "forum".to_string(), MyTopicsPage {} } }
 }
 
+/// /me/orders 我的订单页
+#[component]
+pub fn MyOrders() -> Element {
+  rsx! { ModuleGate { id: "course".to_string(), MyOrdersPage {} } }
+}
+
 #[component]
 pub fn Podcast() -> Element {
   rsx! {
@@ -680,6 +804,11 @@ pub fn AdminTopics() -> Element {
 #[component]
 pub fn AdminPlugins() -> Element {
   rsx! { AdminPluginsPage {} }
+}
+
+#[component]
+pub fn AdminEntitlements() -> Element {
+  rsx! { AdminEntitlementsPage {} }
 }
 
 #[component]

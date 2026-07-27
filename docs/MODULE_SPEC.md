@@ -230,3 +230,51 @@ pub fn BlogIndex() -> Element {
 - **Phase 6**（已完成）：5 个内容板块（embedded / ai / web3 / wasm / cli）已通过 `default_module_specs` 注册，享受同样的开关能力（nav / 路由 gate / sitemap / feed）。
 - **Phase 5**：Admin 页面提供 UI 切换 `modules.<id>.enabled`，写回 site.json（目前只能手改文件 + hot reload「重新载入」生效）。
 - **Phase 7**：CI/CD 在不同环境（staging / prod）通过 site.json 控制模块灰度。
+
+## 11. 模块依赖规则（Module Dependency Policy）
+
+> 来源：2026-06-26 架构评估。目标是保持分层单向、避免内容模块间的“横向”编译期耦合。
+
+### 11.1 允许的依赖方向
+
+```text
+sdk-macros → sdk → {core, widgets}
+core → llm
+{core, widgets, sdk} → modules/*        （单向：基础设施 → 业务模块）
+modules/* → app                          （单向：业务模块 → 组合根）
+```
+
+- **内容模块（`crates/modules/<id>`）只可依赖 `app-core` / `sdk` / `widgets`**，
+  不得依赖其他兄弟内容模块。
+- **跨模块的 UI 组合发生在组合根 `app`**（它可以依赖一切模块）：需要把
+  A 模块的组件放进 B 模块页面时，由 `app` 通过插槽（`Element` prop / children）注入，
+  而不是让 B 直接依赖 A。
+- **跨模块的数据依赖通过 `app-core` 中立抽象倒置**（IoC 注册表），由 `app`
+  在启动期注入具体实现，避免消费方编译期依赖生产方。
+- **`module-moderation`** 是可选的审核基础设施（依赖 `core`+`llm`+`sdk`），可被其他
+  内容模块以 `optional = true` 引入（如 forum / comments / admin）——这属于“业务模块 →
+  审核基设”的单向依赖，不违反本规则。
+
+### 11.2 实现手法与现状
+
+- **UI 组合插槽**：`docs` 不再依赖 `course` / `forum`。`module_docs::docs::DocPage`
+  接受 `footer: Element` 插槽，由 `app/src/routes/mod.rs` 的 `DocPage` 包装传入
+  `AnnotationLayer`（course）+ `DiscussionPanel`（forum）。
+- **数据源 IoC**：`search` 不再依赖 `cases`。`app_core::engines::doc_source` 提供
+  `register_doc_source` / `collect_registered_docs`；`app` 在启动期把 `cases` 注册为
+  外部索引文档来源（见 `app/src/main.rs`）。
+- **死依赖清理**：`forum` / `docs` 原有的 `module-blog` / `module-course` 是未使用的
+  死依赖，已移除。
+
+### 11.3 当前合规边与例外
+
+- ✅ 所有内容模块仅依赖 `core` / `sdk` / `widgets`（及可选 `module-moderation`）。
+- ✅ `app` 依赖全部模块，是唯一的跨模块组合点。
+- ⚠️ 例外：`module-moderation` 被 `forum` / `comments` / `admin` 以 `optional` 引入。
+  这是可接受的“业务模块 → 审核基设”单向依赖（moderation 不反向依赖任何业务模块）。
+
+### 11.4 新增跨模块交互时的决策
+
+1. 只是“把 A 的组件放进 B 页面”→ 用 `app` 层插槽注入（同 A2）。
+2. “B 需要 A 的数据”→ 在 `core` 定义中立类型 + 注册表，`app` 注入（同 A3）。
+3. 真正的公共领域类型（多模块共享）→ 上提到 `core` 或 `sdk`。

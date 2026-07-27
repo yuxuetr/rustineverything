@@ -1,7 +1,11 @@
+pub mod admin_entitlements;
 pub mod auth_modal;
 pub mod comment;
 pub mod echo;
+pub mod ecosystem_menu;
 pub mod hero;
+pub mod home_sections;
+pub mod lang_picker;
 pub mod layouts;
 pub mod module_gate;
 pub mod nav;

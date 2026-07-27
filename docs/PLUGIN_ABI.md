@@ -69,9 +69,13 @@ pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
 | `i18n` | `translate` | `{"key": "...", "lang": "..."}` JSON | 翻译文本 |
 | `auth-provider` | `get_config` / `exchange_code` / `fetch_profile` / `get_display_info` | OAuth 流程相关 JSON | OAuth 流程相关 JSON |
 | `moderation-provider` | `get_endpoint` / `map_request` / `map_verdict` (Phase 4.3) | 见 [MODERATION_SPEC](MODERATION_SPEC.md) | 同上 |
+| `content-transformer` | `transform_markdown` (Phase 9.3) | `TransformRequest` JSON `{content, kind, stage}` | `TransformResponse` JSON `{content, changed}` |
 | `mdx-component` | （宿主侧 ComponentRegistry 注册，不通过 wasm） | — | — |
 | `layout` | （预留，Phase 5+） | — | — |
 | `notification` | （预留） | — | — |
+
+详细规范见 [CONTENT_TRANSFORMER_SPEC](CONTENT_TRANSFORMER_SPEC.md)：包括 kind / stage
+枚举、chain 顺序、fail-open 行为、示例插件等。
 
 ## 3. 数据打包约定
 
@@ -172,6 +176,7 @@ pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
 | `google-auth` | auth-provider | `assets/plugins/google_auth_plugin.wasm` |
 | `discord-auth` | auth-provider | `assets/plugins/discord_auth_plugin.wasm` |
 | `twitter-auth` | auth-provider | `assets/plugins/twitter_auth_plugin.wasm` |
+| `content-toc` (Phase 9.3 示例) | content-transformer | `assets/plugins/content_toc_plugin.wasm` |
 
 ## 10. 测试覆盖
 
@@ -184,3 +189,4 @@ pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
 - [ENGINES_SPEC.md](ENGINES_SPEC.md)：8 大引擎抽象 + 生命周期
 - [THEME_SPEC.md](THEME_SPEC.md)：主题栈 + cookie 覆盖
 - [MODERATION_SPEC.md](MODERATION_SPEC.md)：审核插件（Phase 4.3+）
+- [CONTENT_TRANSFORMER_SPEC.md](CONTENT_TRANSFORMER_SPEC.md)：内容变换器插件（Phase 9.3+）

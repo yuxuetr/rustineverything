@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["yuxuetr <54.yeying@gmail.com>"]
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 dioxus = { workspace = true, optional = true, features = ["fullstack"] }
 tokio = { workspace = true, optional = true }
@@ -28,6 +31,8 @@ server = ["dep:dioxus", "dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest",
 
 [dev-dependencies]
 tempfile = "3"
+# Phase 9.2: 测试时用 WAT 文本构造小 wasm 验证 import scan / manifest 一致性。
+wat = "1"
 # 仅用于 live-DB 集成测试（#[ignore]）：在测试库上跑真实 schema 迁移。
 # migration crate 不依赖 core，故无依赖环。
 migration = { path = "../migration" }

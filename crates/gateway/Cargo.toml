@@ -16,6 +16,9 @@ pingora-core = "0.8"
 pingora-http = "0.8"
 log = "0.4"
 env_logger = "0.11"
+# Phase 8.3：per-IP token-bucket 限流，纯 Rust，与 Pingora 兼容
+governor = "0.10"
+once_cell = "1"
 
 [profile.release]
 lto = "thin"

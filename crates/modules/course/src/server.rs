@@ -82,6 +82,9 @@ pub struct LessonSummary {
   pub order: i32,
   #[serde(default)]
   pub duration: Option<String>,
+  /// 是否免费试看课节（付费课程里仍可访问）。见 docs/SITE_REDESIGN_SPEC.md §5。
+  #[serde(default)]
+  pub preview: bool,
 }
 
 /// 完整 Lesson（PR-B 中由 LessonPage 使用）
@@ -101,6 +104,15 @@ pub struct Lesson {
   pub code: Vec<CodeFile>,
   #[serde(default)]
   pub downloads: Vec<DownloadFile>,
+  /// 免费试看课节。
+  #[serde(default)]
+  pub preview: bool,
+  /// 服务端鉴权结论：true 表示当前用户无权查看，正文/媒体/代码已清空，前端渲染 Paywall。
+  #[serde(default)]
+  pub locked: bool,
+  /// 所属课程价格（分）；锁定时供 Paywall 展示。
+  #[serde(default)]
+  pub price: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -126,7 +138,32 @@ pub struct Course {
   #[serde(default)]
   pub level: Option<String>,
   pub order: i32,
+  /// 访问层级：`free`（默认）| `paid` | `pro`。见 docs/SITE_REDESIGN_SPEC.md §5。
+  #[serde(default = "default_access_tier")]
+  pub access_tier: String,
+  /// 价格（分）；`access_tier != free` 时有意义。
+  #[serde(default)]
+  pub price: i64,
+  /// 货币代码，默认 CNY。
+  #[serde(default = "default_currency")]
+  pub currency: String,
   pub chapters: Vec<Chapter>,
+}
+
+/// `access_tier` 默认值（serde + 解析回退共用）。
+pub fn default_access_tier() -> String {
+  "free".to_string()
+}
+/// `currency` 默认值。
+pub fn default_currency() -> String {
+  "CNY".to_string()
+}
+
+impl Course {
+  /// 是否付费课程（非 free 层级）。
+  pub fn is_paid(&self) -> bool {
+    self.access_tier != "free"
+  }
 }
 
 /// 课程列表摘要（不含 chapters 详情，仅做卡片网格）
@@ -141,6 +178,12 @@ pub struct CourseSummary {
   pub order: i32,
   pub chapter_count: usize,
   pub lesson_count: usize,
+  #[serde(default = "default_access_tier")]
+  pub access_tier: String,
+  #[serde(default)]
+  pub price: i64,
+  #[serde(default = "default_currency")]
+  pub currency: String,
 }
 
 impl From<&Course> for CourseSummary {
@@ -156,6 +199,9 @@ impl From<&Course> for CourseSummary {
       order: c.order,
       chapter_count: c.chapters.len(),
       lesson_count,
+      access_tier: c.access_tier.clone(),
+      price: c.price,
+      currency: c.currency.clone(),
     }
   }
 }
@@ -179,6 +225,12 @@ struct CourseMeta {
   level: Option<String>,
   #[serde(default)]
   order: Option<i32>,
+  #[serde(default)]
+  access_tier: Option<String>,
+  #[serde(default)]
+  price: Option<i64>,
+  #[serde(default)]
+  currency: Option<String>,
 }
 
 #[allow(dead_code)]
@@ -207,6 +259,8 @@ pub(crate) struct LessonFrontmatter {
   duration: Option<String>,
   #[serde(default)]
   sidebar_position: Option<i32>,
+  #[serde(default)]
+  preview: bool,
 }
 
 // =============================================================
@@ -664,6 +718,9 @@ pub fn read_lesson(course_slug: &str, chapter_slug: &str, lesson_slug: &str) -> 
     video,
     code,
     downloads,
+    preview: frontmatter.preview,
+    locked: false,
+    price: 0,
   })
 }
 
@@ -721,6 +778,7 @@ pub fn read_chapter(course_slug: &str, chapter_slug: &str) -> Option<Chapter> {
       // 标题：优先取 index.md frontmatter title，再退化目录名
       let mut lesson_title = humanize_title(&name);
       let mut duration: Option<String> = None;
+      let mut preview = false;
       let md = p.join("index.md");
       let mdx = p.join("index.mdx");
       let md_path = if md.exists() {
@@ -737,6 +795,7 @@ pub fn read_chapter(course_slug: &str, chapter_slug: &str) -> Option<Chapter> {
             lesson_title = fm.title;
           }
           duration = fm.duration;
+          preview = fm.preview;
         }
       }
 
@@ -746,6 +805,7 @@ pub fn read_chapter(course_slug: &str, chapter_slug: &str) -> Option<Chapter> {
         kind,
         order: lorder,
         duration,
+        preview,
       });
     }
   }
@@ -832,6 +892,9 @@ pub fn read_course(course_slug: &str) -> Option<Course> {
     tags: meta.tags.clone(),
     level: meta.level.clone(),
     order,
+    access_tier: meta.access_tier.clone().unwrap_or_else(default_access_tier),
+    price: meta.price.unwrap_or(0),
+    currency: meta.currency.clone().unwrap_or_else(default_currency),
     chapters,
   })
 }
@@ -906,7 +969,43 @@ pub async fn get_lesson(
 ) -> Result<Option<Lesson>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    Ok(read_lesson(&slug, &chapter, &lesson))
+    let mut lesson_opt = read_lesson(&slug, &chapter, &lesson);
+    if let Some(lesson_ref) = lesson_opt.as_mut() {
+      // 访问控制：付费/Pro 课程的非试看课节需鉴权（M4c + M6）。
+      // 鉴权在服务端进行，锁定时清空正文/媒体/代码，绝不把付费内容下发到客户端。
+      let course = read_course(&slug);
+      let course_paid = course.as_ref().map(|c| c.is_paid()).unwrap_or(false);
+      if course_paid {
+        let access_tier = course.as_ref().map(|c| c.access_tier.clone()).unwrap_or_default();
+        lesson_ref.price = course.as_ref().map(|c| c.price).unwrap_or(0);
+        // 收集鉴权信号（admin 直接放行，无需查库）。
+        let (is_admin, has_ent, is_pro) = match current_session_user() {
+          Some(u) if u.is_admin() => (true, false, false),
+          Some(u) => {
+            let db = open_db().await?;
+            (false, has_entitlement(&db, u.id, &slug).await, is_pro_member(&db, u.id).await)
+          }
+          None => (false, false, false),
+        };
+        let allowed =
+          can_access_lesson(&access_tier, lesson_ref.preview, is_admin, has_ent, is_pro);
+        if !allowed {
+          lesson_ref.locked = true;
+          lesson_ref.doc = None;
+          lesson_ref.audio = None;
+          lesson_ref.video = None;
+          lesson_ref.code = Vec::new();
+          lesson_ref.downloads = Vec::new();
+        }
+      }
+      // 仅对可见正文跑 transformer
+      if let Some(doc) = lesson_ref.doc.as_mut() {
+        // Phase 9.3：pre-stage content transformers chain（fail-open，空链路零开销直通）。
+        doc.markdown =
+          app_core::engines::content_transformer::apply_default_pre(&doc.markdown, "course").await;
+      }
+    }
+    Ok(lesson_opt)
   }
   #[cfg(not(feature = "server"))]
   {
@@ -929,8 +1028,8 @@ pub struct LessonProgress {
 /// server-only: 从请求 cookie 提取当前用户
 #[cfg(feature = "server")]
 fn current_session_user() -> Option<app_core::session::SessionUser> {
-  use dioxus::fullstack::FullstackContext;
   use app_core::session::parse_session_from_cookie_header;
+  use dioxus::fullstack::FullstackContext;
 
   let ctx = FullstackContext::current()?;
   let parts = ctx.parts_mut();
@@ -953,6 +1052,836 @@ fn require_writer() -> Result<app_core::session::SessionUser, ServerFnError> {
 #[cfg(feature = "server")]
 async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
   app_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
+}
+
+/// 限制：仅 admin 可授予 / 撤销权益。
+#[cfg(feature = "server")]
+fn require_admin_user() -> Result<app_core::session::SessionUser, ServerFnError> {
+  let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
+  if user.is_admin() {
+    Ok(user)
+  } else {
+    Err(ServerFnError::new("需要管理员权限".to_string()))
+  }
+}
+
+/// server-only：用户是否拥有某课程权益（get_lesson 访问控制复用）。
+#[cfg(feature = "server")]
+async fn has_entitlement(
+  db: &sea_orm::DatabaseConnection,
+  user_id: i32,
+  course_slug: &str,
+) -> bool {
+  use app_core::entities::entitlement;
+  use sea_orm::EntityTrait;
+  entitlement::Entity::find_by_id((user_id, course_slug.to_string()))
+    .one(db)
+    .await
+    .ok()
+    .flatten()
+    .is_some()
+}
+
+/// server-only：用户是否为**有效** Pro 会员（M6）。
+#[cfg(feature = "server")]
+async fn is_pro_member(db: &sea_orm::DatabaseConnection, user_id: i32) -> bool {
+  use app_core::entities::membership;
+  use sea_orm::EntityTrait;
+  membership::Entity::find_by_id(user_id)
+    .one(db)
+    .await
+    .ok()
+    .flatten()
+    .map(|m| m.tier == "pro" && m.expires_at > chrono::Utc::now().fixed_offset())
+    .unwrap_or(false)
+}
+
+/// 课节访问判定（纯函数，便于单测）。
+///
+/// 规则：free 全开；其余在 试看 / admin / 单课权益 时放行；`pro` 课程额外允许
+/// 有效 Pro 会员。详见 docs/SITE_REDESIGN_SPEC.md §5.4 + §5.6 D。
+pub fn can_access_lesson(
+  access_tier: &str,
+  preview: bool,
+  is_admin: bool,
+  has_entitlement: bool,
+  is_pro_member: bool,
+) -> bool {
+  if access_tier == "free" {
+    return true;
+  }
+  if preview || is_admin || has_entitlement {
+    return true;
+  }
+  access_tier == "pro" && is_pro_member
+}
+
+/// Admin 列表项：一条权益 + 用户昵称。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EntitlementInfo {
+  pub user_id: i32,
+  pub nickname: String,
+  pub course_slug: String,
+  pub source: String,
+  pub granted_at: String,
+}
+
+/// 当前用户拥有的课程 slug 列表（前端判断按钮态用；真正鉴权在服务端）。
+#[post("/api/courses/entitlements/mine")]
+pub async fn list_my_entitlements() -> Result<Vec<String>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::entitlement;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    let user = match current_session_user() {
+      Some(u) => u,
+      None => return Ok(vec![]),
+    };
+    let db = open_db().await?;
+    let rows = entitlement::Entity::find()
+      .filter(entitlement::Column::UserId.eq(user.id))
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(rows.into_iter().map(|r| r.course_slug).collect())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
+}
+
+/// Admin：列出全部权益（含用户昵称）。
+#[post("/api/courses/entitlements/list")]
+pub async fn list_entitlements() -> Result<Vec<EntitlementInfo>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::{entitlement, user as user_entity};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+    require_admin_user()?;
+    let db = open_db().await?;
+    let rows = entitlement::Entity::find()
+      .order_by_desc(entitlement::Column::GrantedAt)
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut ids: Vec<i32> = rows.iter().map(|r| r.user_id).collect();
+    ids.sort();
+    ids.dedup();
+    let users = user_entity::Entity::find()
+      .filter(user_entity::Column::Id.is_in(ids))
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let name_of =
+      |id: i32| users.iter().find(|u| u.id == id).map(|u| u.nickname.clone()).unwrap_or_default();
+    Ok(
+      rows
+        .into_iter()
+        .map(|r| EntitlementInfo {
+          user_id: r.user_id,
+          nickname: name_of(r.user_id),
+          course_slug: r.course_slug,
+          source: r.source,
+          granted_at: r.granted_at.to_rfc3339(),
+        })
+        .collect(),
+    )
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
+}
+
+/// server-only：写入/刷新权益（幂等）。供 admin 授予与支付回调发货共用，不做鉴权。
+#[cfg(feature = "server")]
+async fn grant_entitlement_internal(
+  db: &sea_orm::DatabaseConnection,
+  user_id: i32,
+  course_slug: String,
+  source: &str,
+) -> Result<(), ServerFnError> {
+  use app_core::entities::entitlement;
+  use chrono::Utc;
+  use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
+  let am = entitlement::ActiveModel {
+    user_id: Set(user_id),
+    course_slug: Set(course_slug),
+    source: Set(source.to_string()),
+    granted_at: Set(Utc::now().fixed_offset()),
+  };
+  entitlement::Entity::insert(am)
+    .on_conflict(
+      OnConflict::columns([entitlement::Column::UserId, entitlement::Column::CourseSlug])
+        .update_columns([entitlement::Column::Source, entitlement::Column::GrantedAt])
+        .to_owned(),
+    )
+    .exec(db)
+    .await
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+  Ok(())
+}
+
+/// Admin：授予课程权益（手动开通，幂等；重复授予刷新来源/时间）。
+#[post("/api/courses/entitlements/grant")]
+pub async fn grant_entitlement(user_id: i32, course_slug: String) -> Result<(), ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    require_admin_user()?;
+    let db = open_db().await?;
+    grant_entitlement_internal(&db, user_id, course_slug, "admin_grant").await
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = (user_id, course_slug);
+    Ok(())
+  }
+}
+
+/// Admin：撤销课程权益。
+#[post("/api/courses/entitlements/revoke")]
+pub async fn revoke_entitlement(user_id: i32, course_slug: String) -> Result<(), ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::entitlement;
+    use sea_orm::EntityTrait;
+    require_admin_user()?;
+    let db = open_db().await?;
+    entitlement::Entity::delete_by_id((user_id, course_slug))
+      .exec(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = (user_id, course_slug);
+    Ok(())
+  }
+}
+
+// =============================================================
+// Pro 会员（M6b：我的会员 + admin 授予/撤销/列表）
+// =============================================================
+
+/// 当前用户会员信息。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MembershipInfo {
+  pub tier: String,
+  pub expires_at: String,
+  pub active: bool,
+}
+
+/// Admin 列表项：会员 + 用户昵称。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MembershipAdminInfo {
+  pub user_id: i32,
+  pub nickname: String,
+  pub tier: String,
+  pub expires_at: String,
+  pub active: bool,
+}
+
+/// 当前用户的会员状态（个人中心展示）。
+#[post("/api/courses/membership/mine")]
+pub async fn my_membership() -> Result<Option<MembershipInfo>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::membership;
+    use sea_orm::EntityTrait;
+    let user = match current_session_user() {
+      Some(u) => u,
+      None => return Ok(None),
+    };
+    let db = open_db().await?;
+    let now = chrono::Utc::now().fixed_offset();
+    Ok(membership::Entity::find_by_id(user.id).one(&db).await.ok().flatten().map(|m| {
+      MembershipInfo {
+        active: m.tier == "pro" && m.expires_at > now,
+        tier: m.tier,
+        expires_at: m.expires_at.to_rfc3339(),
+      }
+    }))
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(None)
+  }
+}
+
+/// Admin：列出全部会员（含昵称）。
+#[post("/api/courses/membership/list")]
+pub async fn list_memberships() -> Result<Vec<MembershipAdminInfo>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::{membership, user as user_entity};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+    require_admin_user()?;
+    let db = open_db().await?;
+    let now = chrono::Utc::now().fixed_offset();
+    let rows = membership::Entity::find()
+      .order_by_desc(membership::Column::ExpiresAt)
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut ids: Vec<i32> = rows.iter().map(|r| r.user_id).collect();
+    ids.sort();
+    ids.dedup();
+    let users = user_entity::Entity::find()
+      .filter(user_entity::Column::Id.is_in(ids))
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let name_of =
+      |id: i32| users.iter().find(|u| u.id == id).map(|u| u.nickname.clone()).unwrap_or_default();
+    Ok(
+      rows
+        .into_iter()
+        .map(|m| MembershipAdminInfo {
+          user_id: m.user_id,
+          nickname: name_of(m.user_id),
+          active: m.tier == "pro" && m.expires_at > now,
+          tier: m.tier,
+          expires_at: m.expires_at.to_rfc3339(),
+        })
+        .collect(),
+    )
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
+}
+
+/// Admin：授予/续期 Pro 会员（在现有有效期或当前时间基础上加 `days` 天）。
+#[post("/api/courses/membership/grant")]
+pub async fn grant_membership(user_id: i32, days: i64) -> Result<(), ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::membership;
+    use chrono::Utc;
+    use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
+    require_admin_user()?;
+    if days <= 0 {
+      return Err(ServerFnError::new("天数需为正".to_string()));
+    }
+    let db = open_db().await?;
+    let now = Utc::now().fixed_offset();
+    let base = match membership::Entity::find_by_id(user_id).one(&db).await.ok().flatten() {
+      Some(m) if m.expires_at > now => m.expires_at,
+      _ => now,
+    };
+    let new_expiry = base + chrono::Duration::days(days);
+    let am = membership::ActiveModel {
+      user_id: Set(user_id),
+      tier: Set("pro".to_string()),
+      expires_at: Set(new_expiry),
+      source: Set("admin_grant".to_string()),
+      updated_at: Set(now),
+    };
+    membership::Entity::insert(am)
+      .on_conflict(
+        OnConflict::column(membership::Column::UserId)
+          .update_columns([
+            membership::Column::Tier,
+            membership::Column::ExpiresAt,
+            membership::Column::Source,
+            membership::Column::UpdatedAt,
+          ])
+          .to_owned(),
+      )
+      .exec(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = (user_id, days);
+    Ok(())
+  }
+}
+
+/// Admin：撤销会员。
+#[post("/api/courses/membership/revoke")]
+pub async fn revoke_membership(user_id: i32) -> Result<(), ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::membership;
+    use sea_orm::EntityTrait;
+    require_admin_user()?;
+    let db = open_db().await?;
+    membership::Entity::delete_by_id(user_id)
+      .exec(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = user_id;
+    Ok(())
+  }
+}
+
+// =============================================================
+// Orders / 在线支付（M5a：建单 + 状态查询；网关下单 stub，M5b/M5c 接入）
+// =============================================================
+
+/// 下单结果：订单号 + 支付凭据（M5a 为 stub；M5b/c 按 provider/scene 填真实值）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OrderInit {
+  pub out_trade_no: String,
+  pub provider: String,
+  pub scene: String,
+  pub amount: i64,
+  pub currency: String,
+  /// stub | redirect | qrcode | h5
+  pub kind: String,
+  /// 跳转 URL / code_url / 自动提交表单；M5a 为空。
+  pub payload: String,
+}
+
+/// 订单状态（前端扫码后轮询）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct OrderStatus {
+  pub out_trade_no: String,
+  pub status: String,
+  pub paid: bool,
+}
+
+/// 「我的订单」列表项。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OrderInfo {
+  pub out_trade_no: String,
+  pub course_slug: String,
+  pub provider: String,
+  pub amount: i64,
+  pub status: String,
+  pub created_at: String,
+  pub paid_at: Option<String>,
+}
+
+/// server-only：生成不易猜测的我方订单号（时间戳 + 用户 + 随机段）。
+#[cfg(feature = "server")]
+fn gen_out_trade_no(user_id: i32) -> String {
+  use rand::Rng;
+  let ts = chrono::Utc::now().timestamp_millis();
+  let r: u32 = rand::rng().random();
+  format!("RIE{ts}{user_id}{r:08x}")
+}
+
+/// 创建课程购买订单。校验登录 / 课程付费 / 未拥有，快照价格，建 pending 订单。
+/// M5a：网关下单为 stub（kind=stub）；M5b/M5c 接入后返回真实支付凭据。
+#[post("/api/orders/create")]
+pub async fn create_order(
+  course_slug: String,
+  provider: String,
+  scene: String,
+) -> Result<OrderInit, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::order;
+    use chrono::Utc;
+    use sea_orm::{ActiveValue::NotSet, ActiveValue::Set, EntityTrait};
+
+    let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
+    let provider = match provider.as_str() {
+      "wechat" | "alipay" => provider,
+      _ => return Err(ServerFnError::new("不支持的支付方式".to_string())),
+    };
+    let scene = match scene.as_str() {
+      "native" | "h5" | "page" | "wap" | "qr" => scene,
+      _ => return Err(ServerFnError::new("不支持的支付场景".to_string())),
+    };
+    let course =
+      read_course(&course_slug).ok_or_else(|| ServerFnError::new("课程不存在".to_string()))?;
+    if !course.is_paid() {
+      return Err(ServerFnError::new("该课程无需购买".to_string()));
+    }
+    let db = open_db().await?;
+    if has_entitlement(&db, user.id, &course_slug).await {
+      return Err(ServerFnError::new("你已拥有该课程".to_string()));
+    }
+    let out_trade_no = gen_out_trade_no(user.id);
+    let am = order::ActiveModel {
+      id: NotSet,
+      out_trade_no: Set(out_trade_no.clone()),
+      user_id: Set(user.id),
+      course_slug: Set(course_slug),
+      provider: Set(provider.clone()),
+      scene: Set(scene.clone()),
+      amount: Set(course.price),
+      currency: Set(course.currency.clone()),
+      status: Set("pending".to_string()),
+      provider_txn: Set(None),
+      created_at: Set(Utc::now().fixed_offset()),
+      paid_at: Set(None),
+    };
+    order::Entity::insert(am).exec(&db).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // 按网关 + 场景生成支付凭据。
+    let (kind, payload) = match provider.as_str() {
+      "alipay" => {
+        let cfg = crate::alipay::config()
+          .ok_or_else(|| ServerFnError::new("支付宝未配置（缺 ALIPAY_* 环境变量）".to_string()))?;
+        match scene.as_str() {
+          "qr" => {
+            let qr = crate::alipay::precreate(&cfg, &out_trade_no, &course.title, course.price)
+              .await
+              .map_err(ServerFnError::new)?;
+            ("qrcode".to_string(), qr)
+          }
+          s => {
+            let scn = if s == "wap" { "wap" } else { "page" };
+            let url =
+              crate::alipay::build_pay_url(&cfg, scn, &out_trade_no, &course.title, course.price)
+                .map_err(ServerFnError::new)?;
+            ("redirect".to_string(), url)
+          }
+        }
+      }
+      "wechat" => {
+        let cfg = crate::wechat::config().ok_or_else(|| {
+          ServerFnError::new("微信支付未配置（缺 WECHAT_* 环境变量）".to_string())
+        })?;
+        match scene.as_str() {
+          "h5" => {
+            // H5 需付款用户 IP；生产应从请求头 X-Forwarded-For 取，这里占位。
+            let url =
+              crate::wechat::create_h5(&cfg, &out_trade_no, &course.title, course.price, "0.0.0.0")
+                .await
+                .map_err(ServerFnError::new)?;
+            ("h5".to_string(), url)
+          }
+          _ => {
+            let code_url =
+              crate::wechat::create_native(&cfg, &out_trade_no, &course.title, course.price)
+                .await
+                .map_err(ServerFnError::new)?;
+            ("qrcode".to_string(), code_url)
+          }
+        }
+      }
+      _ => return Err(ServerFnError::new("该支付方式暂未开通".to_string())),
+    };
+
+    Ok(OrderInit {
+      out_trade_no,
+      provider,
+      scene,
+      amount: course.price,
+      currency: course.currency,
+      kind,
+      payload,
+    })
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = (course_slug, provider, scene);
+    Err(ServerFnError::new("server only".to_string()))
+  }
+}
+
+/// 查询订单状态（仅本人可查）。扫码场景前端轮询用。
+#[post("/api/orders/query")]
+pub async fn query_order(out_trade_no: String) -> Result<OrderStatus, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::order;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
+    let db = open_db().await?;
+    let row = order::Entity::find()
+      .filter(order::Column::OutTradeNo.eq(&out_trade_no))
+      .one(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    match row {
+      Some(o) if o.user_id == user.id => {
+        Ok(OrderStatus { paid: o.status == "paid", out_trade_no: o.out_trade_no, status: o.status })
+      }
+      _ => Err(ServerFnError::new("订单不存在".to_string())),
+    }
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = out_trade_no;
+    Err(ServerFnError::new("server only".to_string()))
+  }
+}
+
+/// 当前用户的订单列表（个人中心「我的订单」）。
+#[post("/api/orders/mine")]
+pub async fn list_my_orders() -> Result<Vec<OrderInfo>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::order;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+    let user = match current_session_user() {
+      Some(u) => u,
+      None => return Ok(vec![]),
+    };
+    let db = open_db().await?;
+    let rows = order::Entity::find()
+      .filter(order::Column::UserId.eq(user.id))
+      .order_by_desc(order::Column::CreatedAt)
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    Ok(
+      rows
+        .into_iter()
+        .map(|o| OrderInfo {
+          out_trade_no: o.out_trade_no,
+          course_slug: o.course_slug,
+          provider: o.provider,
+          amount: o.amount,
+          status: o.status,
+          created_at: o.created_at.to_rfc3339(),
+          paid_at: o.paid_at.map(|t| t.to_rfc3339()),
+        })
+        .collect(),
+    )
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
+}
+
+/// 处理支付宝异步回调（由 app 的 Axum 路由 `/api/pay/alipay/notify` 调用）。
+///
+/// 流程：验签 → app_id 比对 → 状态成功 → 找单 → 核金额 → 原子认领（幂等 +
+/// 防并发双发货）→ 发货（写权益）。
+/// 返回值为应答给支付宝的纯文本（`success` / `failure`），失败会触发其重试。
+///
+/// S6（风险 R7）加固：
+/// - `app_id` 比对：拒绝其它商户应用的合法签名回调串单。
+/// - 原子认领：`UPDATE … WHERE out_trade_no = ? AND status != 'paid'`，
+///   rows_affected = 0 视为已处理（并发重试 / 重放只会有一次发货生效）。
+/// - 入口审计日志（target=pay_audit）：关键字段留痕供对账 / 排查。
+#[cfg(feature = "server")]
+pub async fn handle_alipay_notify(
+  params: std::collections::HashMap<String, String>,
+) -> &'static str {
+  use app_core::entities::order;
+  use sea_orm::sea_query::Expr;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+  // 审计留痕：验签前先记录关键字段（不含买家敏感信息），便于对账与攻击排查。
+  tracing::info!(
+    target: "pay_audit",
+    provider = "alipay",
+    out_trade_no = %params.get("out_trade_no").map(|s| s.as_str()).unwrap_or(""),
+    trade_status = %params.get("trade_status").map(|s| s.as_str()).unwrap_or(""),
+    total_amount = %params.get("total_amount").map(|s| s.as_str()).unwrap_or(""),
+    "notify received"
+  );
+
+  let Some(cfg) = crate::alipay::config() else {
+    return "failure";
+  };
+  // 1) 验签——一切发货的前提
+  if !crate::alipay::verify_notify(&cfg, &params) {
+    tracing::warn!(target: "pay_audit", "alipay notify: signature verify failed");
+    return "failure";
+  }
+  // 1.5) S6：app_id 比对。签名是支付宝全局公钥签的，其它商户应用的合法
+  // 回调也能过验签；比对 app_id 封死跨应用串单。
+  if params.get("app_id").map(|s| s.as_str()) != Some(cfg.app_id.as_str()) {
+    tracing::warn!(target: "pay_audit", "alipay notify: app_id mismatch");
+    return "failure";
+  }
+  // 2) 仅成功状态发货；其它状态确认收到（避免无谓重试）但不发货
+  let status = params.get("trade_status").map(|s| s.as_str()).unwrap_or("");
+  if status != "TRADE_SUCCESS" && status != "TRADE_FINISHED" {
+    return "success";
+  }
+  let Some(out_trade_no) = params.get("out_trade_no") else {
+    return "failure";
+  };
+  let total = params.get("total_amount").map(|s| s.as_str()).unwrap_or("");
+
+  let Ok(db) = open_db().await else {
+    return "failure";
+  };
+  let row =
+    match order::Entity::find().filter(order::Column::OutTradeNo.eq(out_trade_no)).one(&db).await {
+      Ok(Some(o)) => o,
+      _ => return "failure",
+    };
+  // 3) 金额核验
+  if !crate::alipay::amount_matches(total, row.amount) {
+    tracing::warn!(target: "pay_audit", "alipay notify: amount mismatch for {}", out_trade_no);
+    return "failure";
+  }
+  // 4) 幂等快路径：已处理直接成功
+  if row.status == "paid" {
+    return "success";
+  }
+  let user_id = row.user_id;
+  let slug = row.course_slug.clone();
+  let trade_no = params.get("trade_no").cloned();
+  // 5) S6：原子认领——条件 UPDATE 取代「读-判-写」，并发回调只有一个能认领。
+  let claim = order::Entity::update_many()
+    .col_expr(order::Column::Status, Expr::value("paid"))
+    .col_expr(order::Column::ProviderTxn, Expr::value(trade_no))
+    .col_expr(order::Column::PaidAt, Expr::value(Some(chrono::Utc::now().fixed_offset())))
+    .filter(order::Column::OutTradeNo.eq(out_trade_no))
+    .filter(order::Column::Status.ne("paid"))
+    .exec(&db)
+    .await;
+  match claim {
+    Ok(res) if res.rows_affected == 0 => return "success", // 并发回调已处理
+    Ok(_) => {}
+    Err(_) => return "failure",
+  }
+  // 6) 发货：写权益（get_lesson 鉴权随即解锁；幂等 upsert）
+  if grant_entitlement_internal(&db, user_id, slug, "purchase").await.is_err() {
+    return "failure";
+  }
+  tracing::info!(target: "pay_audit", "alipay notify: order {} paid + entitlement granted", out_trade_no);
+  "success"
+}
+
+/// 处理微信支付 v3 异步回调（由 app 的 Axum 路由 `/api/pay/wechat/notify` 调用）。
+///
+/// 入参：HTTP 头（key 小写）+ 原始 body 字符串（验签需逐字节一致）。
+/// 流程：时间戳新鲜度 → 验签 → 解密 resource → appid/mchid 比对 → 状态成功
+/// → 找单 → 核金额 → 原子认领（幂等 + 防并发双发货）→ 发货。
+/// 返回 `(http_status, body)`：成功 `(200,{"code":"SUCCESS"})`，失败非 200 触发重试。
+///
+/// S6（风险 R7）加固：时间戳 ±5min 新鲜度（缩小重放窗口）、解密后
+/// appid/mchid 交叉校验、原子认领、入口审计日志（target=pay_audit）。
+#[cfg(feature = "server")]
+pub async fn handle_wechat_notify(
+  headers: std::collections::HashMap<String, String>,
+  body: String,
+) -> (u16, String) {
+  use app_core::entities::order;
+  use sea_orm::sea_query::Expr;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+  let ok = || (200u16, "{\"code\":\"SUCCESS\"}".to_string());
+  let fail = |m: &str| (500u16, format!("{{\"code\":\"FAIL\",\"message\":\"{m}\"}}"));
+
+  let Some(cfg) = crate::wechat::config() else {
+    return fail("unconfigured");
+  };
+  let get = |k: &str| headers.get(k).map(|s| s.as_str()).unwrap_or("");
+  let (ts, nonce, sig) =
+    (get("wechatpay-timestamp"), get("wechatpay-nonce"), get("wechatpay-signature"));
+  if ts.is_empty() || nonce.is_empty() || sig.is_empty() {
+    return fail("missing signature headers");
+  }
+  // 0) S6：时间戳新鲜度。签名覆盖 ts，但不限制时效；拒绝 ±5 分钟外的
+  // 回调，把捕获重放的窗口从无限缩到 5 分钟（幂等认领是第二道防线）。
+  match ts.parse::<i64>() {
+    Ok(ts_secs) => {
+      let skew = (chrono::Utc::now().timestamp() - ts_secs).abs();
+      if skew > 300 {
+        tracing::warn!(target: "pay_audit", skew, "wechat notify: stale timestamp");
+        return fail("stale timestamp");
+      }
+    }
+    Err(_) => return fail("bad timestamp"),
+  }
+  // 1) 验签
+  if !crate::wechat::verify_notify(&cfg, ts, nonce, &body, sig) {
+    tracing::warn!(target: "pay_audit", "wechat notify: signature verify failed");
+    return fail("bad signature");
+  }
+  // 2) 解密 resource
+  let Ok(envelope) = serde_json::from_str::<serde_json::Value>(&body) else {
+    return fail("bad body");
+  };
+  let res = &envelope["resource"];
+  let (ct, rnonce, aad) = (
+    res["ciphertext"].as_str().unwrap_or(""),
+    res["nonce"].as_str().unwrap_or(""),
+    res["associated_data"].as_str().unwrap_or(""),
+  );
+  let plain = match crate::wechat::decrypt_resource(&cfg, rnonce, aad, ct) {
+    Ok(p) => p,
+    Err(_) => return fail("decrypt failed"),
+  };
+  let Ok(tx) = serde_json::from_str::<serde_json::Value>(&plain) else {
+    return fail("bad plaintext");
+  };
+  // 2.5) S6：appid / mchid 交叉校验（字段存在时强制一致），防跨商户/应用串单。
+  if let Some(appid) = tx["appid"].as_str() {
+    if appid != cfg.appid {
+      tracing::warn!(target: "pay_audit", "wechat notify: appid mismatch");
+      return fail("appid mismatch");
+    }
+  }
+  if let Some(mchid) = tx["mchid"].as_str() {
+    if mchid != cfg.mchid {
+      tracing::warn!(target: "pay_audit", "wechat notify: mchid mismatch");
+      return fail("mchid mismatch");
+    }
+  }
+  // 审计留痕：解密成功后记录关键字段。
+  tracing::info!(
+    target: "pay_audit",
+    provider = "wechat",
+    out_trade_no = %tx["out_trade_no"].as_str().unwrap_or(""),
+    trade_state = %tx["trade_state"].as_str().unwrap_or(""),
+    total = tx["amount"]["total"].as_i64().unwrap_or(-1),
+    "notify received (decrypted)"
+  );
+  // 3) 仅成功状态发货
+  if tx["trade_state"].as_str() != Some("SUCCESS") {
+    return ok();
+  }
+  let out_trade_no = tx["out_trade_no"].as_str().unwrap_or("");
+  if out_trade_no.is_empty() {
+    return fail("no out_trade_no");
+  }
+  let total = tx["amount"]["total"].as_i64().unwrap_or(-1);
+  let transaction_id = tx["transaction_id"].as_str().map(|s| s.to_string());
+
+  let Ok(db) = open_db().await else {
+    return fail("db");
+  };
+  let row =
+    match order::Entity::find().filter(order::Column::OutTradeNo.eq(out_trade_no)).one(&db).await {
+      Ok(Some(o)) => o,
+      _ => return fail("order not found"),
+    };
+  // 4) 金额核验
+  if row.amount != total {
+    tracing::warn!(target: "pay_audit", "wechat notify: amount mismatch for {}", out_trade_no);
+    return fail("amount mismatch");
+  }
+  // 5) 幂等快路径
+  if row.status == "paid" {
+    return ok();
+  }
+  let user_id = row.user_id;
+  let slug = row.course_slug.clone();
+  // 5.5) S6：原子认领（同 alipay）：并发回调只有一个能认领。
+  let claim = order::Entity::update_many()
+    .col_expr(order::Column::Status, Expr::value("paid"))
+    .col_expr(order::Column::ProviderTxn, Expr::value(transaction_id))
+    .col_expr(order::Column::PaidAt, Expr::value(Some(chrono::Utc::now().fixed_offset())))
+    .filter(order::Column::OutTradeNo.eq(out_trade_no))
+    .filter(order::Column::Status.ne("paid"))
+    .exec(&db)
+    .await;
+  match claim {
+    Ok(res) if res.rows_affected == 0 => return ok(), // 并发回调已处理
+    Ok(_) => {}
+    Err(_) => return fail("update failed"),
+  }
+  // 6) 发货（幂等 upsert）
+  if grant_entitlement_internal(&db, user_id, slug, "purchase").await.is_err() {
+    return fail("grant failed");
+  }
+  tracing::info!(target: "pay_audit", "wechat notify: order {} paid + entitlement granted", out_trade_no);
+  ok()
 }
 
 #[post("/api/courses/progress/list")]
@@ -998,8 +1927,8 @@ pub async fn mark_lesson_complete(
 ) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use chrono::Utc;
     use app_core::entities::course_progress;
+    use chrono::Utc;
     use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
     let user = require_writer()?;
     let db = open_db().await?;
@@ -1287,9 +2216,9 @@ pub async fn create_annotation(payload: AnnotationCreate) -> Result<Annotation, 
     if !read_annotations_switch(&payload.resource_kind) {
       return Err(ServerFnError::new("当前资源未启用标注".to_string()));
     }
-    use chrono::Utc;
     use app_core::engines::moderation::ModerationLabel;
     use app_core::entities::annotation;
+    use chrono::Utc;
     use module_moderation::{enqueue_if_flagged, evaluate_submission};
     use sdk::ModerationSubmission;
     use sea_orm::{ActiveValue::Set, EntityTrait};
@@ -1406,8 +2335,8 @@ pub async fn update_annotation(
 ) -> Result<Annotation, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use chrono::Utc;
     use app_core::entities::annotation;
+    use chrono::Utc;
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
     let user = require_writer()?;
     let db = open_db().await?;
@@ -1729,6 +2658,25 @@ mod tests {
     assert_eq!(normalize_visibility(Some("hacker-attempt")), "private");
     // None → private
     assert_eq!(normalize_visibility(None), "private");
+  }
+
+  #[test]
+  fn test_can_access_lesson() {
+    // free 全开
+    assert!(can_access_lesson("free", false, false, false, false));
+    // paid：默认锁
+    assert!(!can_access_lesson("paid", false, false, false, false));
+    // paid：试看 / admin / 单课权益放行
+    assert!(can_access_lesson("paid", true, false, false, false));
+    assert!(can_access_lesson("paid", false, true, false, false));
+    assert!(can_access_lesson("paid", false, false, true, false));
+    // paid：Pro 会员**不**解锁单购课程
+    assert!(!can_access_lesson("paid", false, false, false, true));
+    // pro：Pro 会员解锁
+    assert!(can_access_lesson("pro", false, false, false, true));
+    assert!(!can_access_lesson("pro", false, false, false, false));
+    // pro：单课权益（admin 授予）也可解锁
+    assert!(can_access_lesson("pro", false, false, true, false));
   }
 
   #[test]

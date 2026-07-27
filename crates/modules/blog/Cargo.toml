@@ -11,6 +11,8 @@ sdk = { path = "../../sdk" }
 serde_yaml = "0.9"
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
+# Phase 8.5：sharing DirListingCache helper with other server fns
+app-core = { path = "../../core" }
 
 [features]
-server = ["dioxus/server", "dep:tokio"]
+server = ["dioxus/server", "dep:tokio", "app-core/server"]

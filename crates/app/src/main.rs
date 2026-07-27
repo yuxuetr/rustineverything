@@ -1,3 +1,6 @@
+// S9（风险 R12）：生产代码禁 unwrap/expect（workspace lints）；测试代码豁免。
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 use dioxus::prelude::*;
 use dioxus::router::Router;
 
@@ -5,6 +8,7 @@ mod components;
 mod i18n;
 mod routes;
 mod server;
+mod taxonomy;
 
 use crate::components::theme_picker::use_theme_version_provider;
 use crate::i18n::init_i18n;
@@ -89,14 +93,37 @@ fn main() {
   // 2) 各业务模块注册自身提供的组件 (PodcastCard ...)
   module_podcast::register_components();
 
+  // 3) A3 解耦：把 cases 注册为搜索索引的外部文档来源（IoC）。
+  //    使 module-search 不再编译期依赖 module-cases —— 数据由组合根 app 在此注入。
+  //    仅 server 端需要（scan_cases 读磁盘 + 索引只在服务端构建）。
+  #[cfg(feature = "server")]
+  app_core::engines::doc_source::register_doc_source(|| {
+    module_cases::server::scan_cases()
+      .into_iter()
+      .map(|case| {
+        let readme = case.readme_md.unwrap_or_default();
+        let body = format!(
+          "{} {} {}",
+          case.description,
+          case.tags.join(" "),
+          module_search::text::truncate_chars(&readme, 4000)
+        );
+        app_core::engines::doc_source::ExternalIndexedDoc {
+          kind: "case".to_string(),
+          ref_id: case.slug.clone(),
+          title: case.name,
+          body,
+          url: format!("/case/{}", case.slug),
+          created_at: case.date_added,
+        }
+      })
+      .collect()
+  });
+
   // Server: customize the Axum router to serve blog post static assets
   #[cfg(feature = "server")]
   dioxus::serve(|| async move {
-    use axum::extract::{Path, Query};
-    use axum::http::{header::SET_COOKIE, HeaderMap};
-    use axum::response::{IntoResponse, Redirect};
     use axum::routing::get;
-    use tower_http::services::ServeDir;
 
     // 加载 .env 环境变量
     dotenvy::dotenv().ok();
@@ -117,379 +144,162 @@ fn main() {
       .try_init();
 
     // 安全门禁：启动时必须提供关键环境变量，避免 fallback 到不安全默认值
-    // 1) JWT_SECRET必须配置（panic on missing）
+    // 1) JWT_SECRET 必须配置且非 placeholder（panic on missing / 命中模板片段）
     let _ = app_core::session::get_jwt_secret();
-    // 2) BASE_URL 必须配置为可访问的公网 / 内网地址
+    // 2) BASE_URL 必须配置为可访问的公网 / 内网地址，且不能仍是 .env.example 占位
+    // S9 豁免：启动门禁有意 fail-fast，缺失即 panic 是安全策略而非疏忽。
+    #[allow(clippy::expect_used)]
     let base_url =
       std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
+    app_core::session::assert_not_placeholder("BASE_URL", &base_url);
     let cookie_is_secure = base_url.starts_with("https://");
+    // S5（风险 R2）：独立数据加密密钥。可选；配了就不能是占位值。
+    // 未配置时 crypto 模块会回退到 JWT_SECRET 派生并 warn。
+    if let Ok(dek) = std::env::var("DATA_ENCRYPTION_KEY") {
+      if !dek.is_empty() {
+        app_core::session::assert_not_placeholder("DATA_ENCRYPTION_KEY", &dek);
+      }
+    }
 
     // 3) 提前初始化数据库连接池，后续 server fn 都走共享连接。
+    //    DATABASE_URL 也按 placeholder 校验，避免「忘了改 docker-compose 密码」
+    //    导致 sqlx 拒绝认证的难以排查的失败。
     //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
     //    成功连上数据库后再跑 sea-orm-migration（Phase 7.1）。
+    // S3（风险 R3）：启动结果记入健康快照（/healthz 暴露）；
+    // `STRICT_MIGRATION=1` 时迁移/连接失败 fail-fast，避免带着不一致
+    // schema 静默接受写请求（生产推荐开启）。
+    use crate::server::health::{set_startup_health, MigrationStatus, StartupHealth};
+    let strict_migration = std::env::var("STRICT_MIGRATION").map(|v| v == "1").unwrap_or(false);
+
     if let Ok(db_url) = std::env::var("DATABASE_URL") {
+      app_core::session::assert_not_placeholder("DATABASE_URL", &db_url);
       match app_core::db::init_pool(&db_url).await {
         Err(e) => {
-          tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)")
+          tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)");
+          if strict_migration {
+            panic!("STRICT_MIGRATION=1：DB 连接失败，拒绝启动: {}", e);
+          }
+          set_startup_health(StartupHealth {
+            db_configured: true,
+            db_connected: false,
+            migrations: MigrationStatus::Skipped,
+          });
         }
         Ok(()) => {
           tracing::info!("startup: DB pool initialized");
           // 自动迁移：用同一连接池跑 sea-orm-migration。
-          // 失败仅日志，不退出，避免因为 schema 已存在的细节差异（例如
-          // init.sql 已手动落地）阻塞启动；运维通过日志确认即可。
-          match app_core::db::get_or_init_pool().await {
-            Err(e) => tracing::error!(error = %e, "startup: cannot get pool for migration"),
+          // 默认失败仅日志 + /healthz 报 degraded；STRICT_MIGRATION=1 时退出。
+          let mig_status = match app_core::db::get_or_init_pool().await {
+            Err(e) => {
+              tracing::error!(error = %e, "startup: cannot get pool for migration");
+              if strict_migration {
+                panic!("STRICT_MIGRATION=1：迁移前取连接池失败，拒绝启动: {}", e);
+              }
+              MigrationStatus::Skipped
+            }
             Ok(db) => {
               use migration::MigratorTrait;
               match migration::Migrator::up(&db, None).await {
-                Ok(()) => tracing::info!("startup: schema migrations applied"),
-                Err(e) => tracing::error!(error = %e, "startup: migration failed"),
+                Ok(()) => {
+                  tracing::info!("startup: schema migrations applied");
+                  MigrationStatus::Applied
+                }
+                Err(e) => {
+                  tracing::error!(error = %e, "startup: migration failed");
+                  if strict_migration {
+                    panic!("STRICT_MIGRATION=1：schema 迁移失败，拒绝启动: {}", e);
+                  }
+                  MigrationStatus::Failed
+                }
               }
             }
-          }
+          };
+          set_startup_health(StartupHealth {
+            db_configured: true,
+            db_connected: true,
+            migrations: mig_status,
+          });
         }
       }
     } else {
       tracing::warn!("startup: DATABASE_URL not set; DB-backed features will error on first call");
+      set_startup_health(StartupHealth {
+        db_configured: false,
+        db_connected: false,
+        migrations: MigrationStatus::Skipped,
+      });
     }
 
-    // 使用 core::utils::get_asset_root 返回的 PathBuf，保证与
-    // 其他 server fn 扫描资产的逻辑一致。转换为 String
-    // 并 `Box::leak` 为静态生命周期字符串，方便下面 ServeDir
-    // format! 调用（启动期仅泄露一次，不会被锁定。）
-    let assets_root: &'static str = Box::leak(
-      app_core::utils::get_asset_root()
-        .to_string_lossy()
-        .into_owned()
-        .into_boxed_str(),
-    );
+    // Phase 8.8：用 OnceLock 取代 Box::leak，避免 `dx serve` 反复重启的开发态泄漏
+    // 累积。`OnceLock<&'static str>` 在首次写入时把 String leak 成 &'static，
+    // 后续运行直接读 cell（无重复 leak、无可观察的语义差异）。
+    static ASSETS_ROOT: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    let assets_root: &'static str = ASSETS_ROOT.get_or_init(|| {
+      Box::leak(app_core::utils::get_asset_root().to_string_lossy().into_owned().into_boxed_str())
+    });
 
-    let router = dioxus::server::router(App)
-      // 1. 处理登录跳转：生成 state + verifier，加密成 oauth_pkce cookie 下发，
-      //    然后 302 到 OAuth 授权 URL。state / verifier 自此随浏览器走 → 支持多副本。
-      .route(
-        "/api/auth/login/{provider}",
-        get(move |Path(provider): Path<String>| async move {
-          use app_core::auth::build_pkce_set_cookie;
-          match crate::server::prepare_login_for_provider(provider).await {
-            Ok((url, cookie_value)) => {
-              let set_cookie = build_pkce_set_cookie(&cookie_value, cookie_is_secure);
-              let mut response = Redirect::temporary(&url).into_response();
-              if let Ok(v) = set_cookie.parse() {
-                response.headers_mut().insert(SET_COOKIE, v);
-              }
-              response
-            }
+    // Phase 8.8：插件 hot reload 会留下 `assets/plugins/<name>.wasm.bak`
+    // 备份。超过 7 天的旧备份在启动时清理，避免长跑站点磁盘占用持续累加。
+    let plugin_dir = app_core::utils::get_asset_root().join("plugins");
+    if let Ok(entries) = std::fs::read_dir(&plugin_dir) {
+      let week = std::time::Duration::from_secs(7 * 24 * 3600);
+      let now = std::time::SystemTime::now();
+      for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("bak") {
+          continue;
+        }
+        let Ok(meta) = entry.metadata() else { continue };
+        let Ok(modified) = meta.modified() else { continue };
+        if now.duration_since(modified).map(|age| age > week).unwrap_or(false) {
+          match std::fs::remove_file(&path) {
+            Ok(()) => tracing::info!(path = %path.display(), "startup: pruned stale .bak (>7d)"),
             Err(e) => {
-              tracing::error!(error = %e, "auth: prepare_login failed");
-              Redirect::temporary("/?error=login_failed").into_response()
+              tracing::warn!(error = %e, path = %path.display(), "startup: failed to prune .bak")
             }
           }
-        }),
-      )
-      // 2. 处理 OAuth 回调：读 oauth_pkce cookie → 校验 + 签发 JWT Cookie + 清掉 PKCE cookie + 跳转。
-      .route(
-        "/api/auth/callback/{provider}",
-        get(
-          move |Path(provider): Path<String>,
-                Query(params): Query<std::collections::HashMap<String, String>>,
-                headers: HeaderMap| async move {
-            use app_core::auth::{
-              build_pkce_clear_cookie, extract_pkce_cookie, PkceCookiePayload,
-            };
-            let code = params.get("code").cloned().unwrap_or_default();
-            let received_state = params.get("state").cloned().unwrap_or_default();
+        }
+      }
+    }
 
-            // 从 Cookie 头里抽出 oauth_pkce 并解密
-            let cookie_value = headers
-              .get_all(axum::http::header::COOKIE)
-              .iter()
-              .filter_map(|v| v.to_str().ok())
-              .find_map(extract_pkce_cookie);
+    // Phase 9.2：从 site.json 读 plugins_lock，灌入全局 PluginManager。
+    // 后续 get_or_load_module 自动 SHA256 比对；空表（fork 首次部署）= warn-only。
+    let site_json_path =
+      app_core::utils::get_asset_root().join("site.json").to_string_lossy().to_string();
+    // S10：走 load_cached（启动期预热缓存，后续 server fn 直接命中）。
+    if let Ok(cfg) = app_core::settings::SiteConfig::load_cached(&site_json_path) {
+      let lock_count = cfg.plugins_lock.len();
+      app_core::shared_plugin_manager().set_plugins_lock(cfg.plugins_lock.clone());
+      if lock_count == 0 {
+        tracing::warn!(
+          "startup: site.json has empty plugins_lock; SHA256 verification disabled (warn-only)"
+        );
+      } else {
+        tracing::info!(count = lock_count, "startup: loaded plugins_lock entries");
+      }
+    }
 
-            let clear_pkce_cookie = build_pkce_clear_cookie(cookie_is_secure);
-            let attach_clear = |mut resp: axum::response::Response| {
-              if let Ok(v) = clear_pkce_cookie.parse() {
-                resp.headers_mut().append(SET_COOKIE, v);
-              }
-              resp
-            };
+    // S7（风险 R8）：router 组装拆到 server 子模块，main.rs 只留引导。
+    // auth / pay / 静态资源 / SEO 各自一个 mount 函数，行为与拆分前一致。
+    let router = dioxus::server::router(App)
+      // S3：健康检查（ok/degraded），供 LB / 监控 / 部署脚本判活。
+      .route("/healthz", get(crate::server::health::healthz));
+    let router = crate::server::auth_routes::mount(router, cookie_is_secure);
+    let router = crate::server::static_assets::mount(router, assets_root);
+    let router = crate::server::pay_routes::mount(router);
+    // Phase 2.4：公开 SEO 路由（sitemap / feed / robots），条目收集逻辑
+    // 已统一到 server::seo::collect_content_entries（消除双份宏重复）。
+    let router = crate::server::seo::mount(router, &base_url);
 
-            let pkce = match cookie_value.as_deref().map(PkceCookiePayload::decode) {
-              Some(Ok(p)) => p,
-              Some(Err(e)) => {
-                tracing::warn!(error = %e, "auth: oauth_pkce cookie decode failed");
-                return attach_clear(
-                  Redirect::temporary("/?error=auth_session_invalid").into_response(),
-                );
-              }
-              None => {
-                tracing::warn!("auth: oauth_pkce cookie missing on callback");
-                return attach_clear(
-                  Redirect::temporary("/?error=auth_session_missing").into_response(),
-                );
-              }
-            };
+    // S2（风险 R4）：应用层 per-IP 限流，仅作用于 /api/*（auth / pay 更严）。
+    // gateway 限流仍是第一道防线；这里是 app 裸跑时的兑底。
+    let router = router.layer(axum::middleware::from_fn(crate::server::rate_limit::rate_limit_mw));
 
-            match crate::server::auth_callback_internal(code, provider, received_state, pkce)
-              .await
-            {
-              Ok((_message, jwt_token)) => {
-                let secure_flag = if cookie_is_secure { "; Secure" } else { "" };
-                let session_cookie = format!(
-                  "session={}; HttpOnly; Path=/; Max-Age=604800; SameSite=Lax{}",
-                  jwt_token, secure_flag
-                );
-                let mut response = Redirect::temporary("/").into_response();
-                if let Ok(v) = session_cookie.parse() {
-                  response.headers_mut().append(SET_COOKIE, v);
-                }
-                attach_clear(response)
-              }
-              Err(e) => {
-                tracing::error!(error = %e, "auth callback failed");
-                attach_clear(Redirect::temporary("/?error=auth_failed").into_response())
-              }
-            }
-          },
-        ),
-      )
-      // 3. 登出：清除 Cookie
-      .route(
-        "/api/auth/logout",
-        get(move || async move {
-          let secure_flag = if cookie_is_secure { "; Secure" } else { "" };
-          let cookie_str =
-            format!("session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax{}", secure_flag);
-          let mut response = Redirect::temporary("/").into_response();
-          if let Ok(cookie_val) = cookie_str.parse() {
-            response.headers_mut().insert(axum::http::header::SET_COOKIE, cookie_val);
-          }
-          response
-        }),
-      )
-      .nest_service("/images", ServeDir::new(format!("{}/images", assets_root)))
-      .nest_service("/posts", ServeDir::new(format!("{}/posts", assets_root)))
-      .nest_service("/js", ServeDir::new(format!("{}/js", assets_root)))
-      .nest_service("/uploads", ServeDir::new(format!("{}/uploads", assets_root)))
-      .nest_service("/audio", ServeDir::new(format!("{}/audio", assets_root)))
-      .nest_service("/podcasts", ServeDir::new(format!("{}/podcasts", assets_root)))
-      .nest_service("/courses", ServeDir::new(format!("{}/courses", assets_root)))
-      .nest_service("/cases", ServeDir::new(format!("{}/cases", assets_root)))
-      .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)));
-
-    // Phase 2.4: 公开 SEO 路由
-    // 为 sitemap / feed 构造 base_url。复用上面已读取的 base_url 变量，
-    // 避免重复读 env。router 各闭包需要拥有该字符串，这里 clone
-    // 三份分别交给 sitemap / feed / robots。
-    let base_url_for_routes = base_url.clone();
-    let sitemap_base = base_url.clone();
-    let feed_base = base_url.clone();
-    let robots_base = base_url_for_routes.clone();
-    let _ = base_url_for_routes; // 仅为下面闭包提供变量名锁定
-
-    let router = router
-      .route(
-        "/sitemap.xml",
-        get(move || {
-          let base = sitemap_base.clone();
-          async move {
-            use widgets::{build_sitemap_xml, ContentEntry};
-            // Phase 3.4：按模块开关过滤静态路径与博客条目。
-            let module_engine = app_core::engines::module::default_module_engine();
-            let enabled = module_engine.enabled_ids();
-            let is_on = |id: &str| enabled.iter().any(|s| s == id);
-
-            // 仅在 blog 启用时枚举博客条目（避免无谓 IO）
-            let mut entries: Vec<ContentEntry> = if is_on("blog") {
-              let posts =
-                module_blog::server::list_blog_posts().await.unwrap_or_default();
-              posts
-                .into_iter()
-                .map(|p| ContentEntry {
-                  url_path: format!("/blog/{}", p.slug),
-                  title: p.title,
-                  description: p.description,
-                  date: p.date,
-                  tags: p.tags,
-                })
-                .collect()
-            } else {
-              Vec::new()
-            };
-
-            // Phase 6：内容板块文章条目，按开关收录。
-            macro_rules! collect_board {
-              ($id:literal, $list:path, $route:literal) => {
-                if is_on($id) {
-                  for a in $list().await.unwrap_or_default() {
-                    entries.push(ContentEntry {
-                      url_path: format!(concat!($route, "/{}"), a.slug),
-                      title: a.title,
-                      description: a.description,
-                      date: a.date,
-                      tags: a.tags,
-                    });
-                  }
-                }
-              };
-            }
-            collect_board!(
-              "embedded",
-              module_embedded::server::list_embedded_articles,
-              "/embedded"
-            );
-            collect_board!("ai", module_ai::server::list_ai_articles, "/ai");
-            collect_board!(
-              "web3",
-              module_web3::server::list_web3_articles,
-              "/web3"
-            );
-            collect_board!(
-              "wasm",
-              module_wasm::server::list_wasm_articles,
-              "/wasm"
-            );
-            collect_board!("cli", module_cli::server::list_cli_articles, "/cli");
-
-            // 静态路径：首页恒收录；其它模块按开关动态拼接。
-            let mut static_paths: Vec<&'static str> = vec!["/"];
-            if is_on("blog") {
-              static_paths.push("/blog");
-            }
-            if is_on("podcast") {
-              static_paths.push("/podcast");
-            }
-            if is_on("course") {
-              static_paths.push("/course");
-            }
-            if is_on("cases") {
-              static_paths.push("/case");
-            }
-            if is_on("docs") {
-              static_paths.push("/docs");
-            }
-            if is_on("forum") {
-              static_paths.push("/topics");
-            }
-            if is_on("embedded") {
-              static_paths.push("/embedded");
-            }
-            if is_on("ai") {
-              static_paths.push("/ai");
-            }
-            if is_on("web3") {
-              static_paths.push("/web3");
-            }
-            if is_on("wasm") {
-              static_paths.push("/wasm");
-            }
-            if is_on("cli") {
-              static_paths.push("/cli");
-            }
-
-            let xml = build_sitemap_xml(&entries, &static_paths, &base);
-            axum::response::Response::builder()
-              .header("content-type", "application/xml; charset=utf-8")
-              .body(axum::body::Body::from(xml))
-              .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-          }
-        }),
-      )
-      .route(
-        "/feed.xml",
-        get(move || {
-          let base = feed_base.clone();
-          async move {
-            use widgets::{build_atom_feed, ContentEntry};
-            // Phase 3.4：blog 关闭时输出空 feed，但保留站点元信息。
-            let module_engine = app_core::engines::module::default_module_engine();
-            let blog_on = module_engine.is_enabled("blog");
-
-            let is_on = |id: &str| module_engine.enabled_ids().iter().any(|s| s == id);
-            let mut entries: Vec<ContentEntry> = if blog_on {
-              module_blog::server::list_blog_posts()
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .map(|p| ContentEntry {
-                  url_path: format!("/blog/{}", p.slug),
-                  title: p.title,
-                  description: p.description,
-                  date: p.date,
-                  tags: p.tags,
-                })
-                .collect()
-            } else {
-              Vec::new()
-            };
-
-            // Phase 6：内容板块文章也进 feed。
-            macro_rules! collect_board {
-              ($id:literal, $list:path, $route:literal) => {
-                if is_on($id) {
-                  for a in $list().await.unwrap_or_default() {
-                    entries.push(ContentEntry {
-                      url_path: format!(concat!($route, "/{}"), a.slug),
-                      title: a.title,
-                      description: a.description,
-                      date: a.date,
-                      tags: a.tags,
-                    });
-                  }
-                }
-              };
-            }
-            collect_board!(
-              "embedded",
-              module_embedded::server::list_embedded_articles,
-              "/embedded"
-            );
-            collect_board!("ai", module_ai::server::list_ai_articles, "/ai");
-            collect_board!(
-              "web3",
-              module_web3::server::list_web3_articles,
-              "/web3"
-            );
-            collect_board!(
-              "wasm",
-              module_wasm::server::list_wasm_articles,
-              "/wasm"
-            );
-            collect_board!("cli", module_cli::server::list_cli_articles, "/cli");
-
-            // 全站按日期降序，取最近 50 篇。
-            entries.sort_by(|a, b| b.date.cmp(&a.date));
-            entries.truncate(50);
-            // 取站点元信息：如取不到 site.json 则走默认。
-            let cfg = app_core::settings::SiteConfig::from_file(
-              app_core::utils::get_asset_root()
-                .join("site.json")
-                .to_str()
-                .unwrap_or_default(),
-            )
-            .unwrap_or_default();
-            let xml = build_atom_feed(&entries, &cfg.site_name, &cfg.site_description, &base);
-            axum::response::Response::builder()
-              .header("content-type", "application/atom+xml; charset=utf-8")
-              .body(axum::body::Body::from(xml))
-              .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-          }
-        }),
-      )
-      .route(
-        "/robots.txt",
-        get(move || {
-          let base = robots_base.clone();
-          async move {
-            let body = widgets::build_robots_txt(&base);
-            axum::response::Response::builder()
-              .header("content-type", "text/plain; charset=utf-8")
-              .body(axum::body::Body::from(body))
-              .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::empty()))
-          }
-        }),
-      );
+    // S1（风险 R6）：全站安全响应头（CSP / nosniff / Referrer-Policy / X-Frame-Options）。
+    // 挂在最外层，覆盖页面、server fn、静态资源与上面全部自定义路由（含 429 响应）。
+    let router =
+      router.layer(axum::middleware::from_fn(crate::server::security::security_headers_mw));
 
     Ok(router)
   });
@@ -509,51 +319,14 @@ pub fn use_session_user() -> Signal<Option<SessionUser>> {
   use_context::<Signal<Option<SessionUser>>>()
 }
 
+/// 静态 head 资源（图标 / 全局 CSS / 语法高亮 + mermaid 脚本）。
+///
+/// 这些节点内容固定、与任何响应式状态无关。单独封成无 props 的组件后会被
+/// Dioxus memoize：仅首次渲染挂载一次，App 因主题 / 语言切换 bump 信号重渲时
+/// **不会**重渲它们，从而消除 dioxus-document 的
+/// "Changing the props of `Style {}` / `Script {}` is not supported" 警告。
 #[component]
-fn App() -> Element {
-  init_i18n();
-  let show_auth = use_signal(|| false);
-  use_context_provider(|| show_auth);
-
-  // 搜索 modal 全局状态(Cmd+K 快捷键 + 导航栏按钮共享)
-  let _ = use_search_open_provider();
-
-  // Phase 3.1：ThemeVersion context。Navbar 的 ThemePicker 切换后 bump 该 Signal，
-  // 下面的 theme_css use_resource 将重新拉取聚合 CSS。
-  let theme_version = use_theme_version_provider();
-
-  // 全局用户会话
-  let user: Signal<Option<SessionUser>> = use_signal(|| None);
-  use_context_provider(|| user);
-
-  // 加载当前用户
-  let mut user_signal = user;
-  use_effect(move || {
-    spawn(async move {
-      if let Ok(Some(u)) = get_current_user().await {
-        user_signal.set(Some(u));
-      }
-    });
-  });
-
-  // Fetch aggregated theme CSS from WASM plugins。订阅 theme_version 以便切换重拉。
-  let theme_css = use_resource(move || {
-    let _ = theme_version();
-    async move {
-      let result = get_aggregated_theme_css().await;
-      match &result {
-        Ok(css) => tracing::debug!(len = css.len(), "frontend: fetched theme CSS"),
-        Err(e) => tracing::warn!(error = ?e, "frontend: failed to fetch theme"),
-      }
-      result.unwrap_or_default()
-    }
-  });
-
-  // 原生渲染：读取当前 theme CSS，由下面的 RSX 直接输出为 <style> 节点。
-  // 避免 dioxus::document::eval(...) 这种依赖浏览器 DOM API 的街道，
-  // 从而保留 desktop / mobile 等跨平台能力。
-  let theme_css_value: String = theme_css.read().as_ref().cloned().unwrap_or_default();
-
+fn HeadAssets() -> Element {
   rsx! {
       // Head links
       document::Link { rel: "icon", href: FAVICON }
@@ -579,22 +352,7 @@ fn App() -> Element {
         .prose-comment .prose img {{ max-height: 200px; border-radius: 0.5rem; margin: 0.5em 0; }}
       " }
 
-      // 从 WASM 插件聚合出的主题 CSS。
-      // 注意：**不能**用 `document::Style`：theme_css_value 会随用户切换
-      // 主题变化，而 `document::Style/Script` 只支持一次性挂载（变更 props
-      // 会触发 dioxus-document "Changing the props … is not supported" 警告
-      // 且不更新 DOM）。改用普通 `style` 元素 + `dangerous_inner_html`：
-      // CSS 落在 <body> 仍全局生效，且 vdom diff 正常更新内容。
-      if !theme_css_value.is_empty() {
-          style {
-              id: "wasm-theme-style",
-              dangerous_inner_html: "{theme_css_value}",
-          }
-      }
-
-      // mdx 内容的全局静态样式（math / 评论 prose 缩排）。原本住在
-      // widgets/src/mdx.rs 的 document::Style，但 mdx 组件每次路由切换都
-      // 重渲，会触发 props-change 警告 → 上提到 App 根，挂载一次。
+      // mdx 内容的全局静态样式（math / 评论 prose 缩排）。
       document::Style { "
         math {{ font-size: 1.1em; }}
         .math-display math {{ font-size: 1.4em; }}
@@ -617,18 +375,110 @@ fn App() -> Element {
       // Mermaid.js for diagram rendering
       document::Script { src: "/js/mermaid.min.js" }
 
-      // 全局 rehighlight / mermaid 触发器。**只在 App 根挂载一次**，靠
-      // MutationObserver 自动捕获后续插入到 DOM 的代码块 / mermaid 块（包括
-      // SPA 路由切换换入的新 Markdown 内容）。
-      //
-      // 为什么不放在 widgets/mdx.rs 里：那个组件每次路由切换都重渲，会触发
-      // dioxus-document "Changing the props of Script is not supported" 警告，
-      // 且更换后的脚本不会再次执行 → SPA 导航后 Prism / Mermaid 不重跑。
-      // MutationObserver 一次挂载 → 长期生效，幂等且零警告。
+      // 全局 rehighlight / mermaid 触发器。**只挂载一次**，靠 MutationObserver
+      // 自动捕获后续插入到 DOM 的代码块 / mermaid 块（含 SPA 路由切换换入的内容）。
       document::Script { {GLOBAL_REHIGHLIGHT_BOOT_SCRIPT} }
 
       // 运行时标注运行时（PR-D）
       document::Script { src: "/js/annotations.js" }
+  }
+}
+
+#[component]
+fn App() -> Element {
+  init_i18n();
+
+  // 语言持久化恢复：论坛等模块用 `<a href>` 整页跳转（如 /topics/new、
+  // 评论/回复后的重定向）会重载整个应用，内存中的 `Signal<Language>`
+  // 会被重置为默认 Zh。这里在挂载后从 `site_lang` cookie（LangPicker
+  // 切换时写入）恢复用户选择，保证跳转 / 刷新后仍是英文页面。
+  {
+    let mut lang = crate::i18n::use_i18n();
+    use_effect(move || {
+      spawn(async move {
+        let mut handle = dioxus::document::eval(
+          "const m = document.cookie.match(/(?:^|; )site_lang=([^;]+)/); dioxus.send(m ? decodeURIComponent(m[1]) : '');",
+        );
+        if let Ok(v) = handle.recv::<String>().await {
+          let want = if v == "en" { crate::i18n::Language::En } else { crate::i18n::Language::Zh };
+          if *lang.peek() != want {
+            lang.set(want);
+          }
+        }
+      });
+    });
+  }
+
+  let show_auth = use_signal(|| false);
+  use_context_provider(|| show_auth);
+
+  // 搜索 modal 全局状态(Cmd+K 快捷键 + 导航栏按钮共享)
+  let _ = use_search_open_provider();
+
+  // Phase 3.1：ThemeVersion context。Navbar 的 ThemePicker 切换后 bump 该 Signal，
+  // 下面的 theme_css use_resource 将重新拉取聚合 CSS。
+  let theme_version = use_theme_version_provider();
+
+  // 全局用户会话
+  let user: Signal<Option<SessionUser>> = use_signal(|| None);
+  use_context_provider(|| user);
+
+  // 加载当前用户。
+  //
+  // 重构 B6 评估：有意保留客户端加载（use_effect + server fn），**不** 迁移到
+  // use_server_future。理由：`get_current_user` 是每请求的登录态（读 session
+  // cookie）；若随 SSR 预渲染会把个性化用户信息烘进页面 HTML，与 CDN /
+  // 代理层的公共缓存（sitemap/feed 已用 public Cache-Control）相冲，且有信息泄露风险。
+  let mut user_signal = user;
+  use_effect(move || {
+    spawn(async move {
+      if let Ok(Some(u)) = get_current_user().await {
+        user_signal.set(Some(u));
+      }
+    });
+  });
+
+  // Fetch aggregated theme CSS from WASM plugins。订阅 theme_version 以便切换重拉。
+  //
+  // 重构 B6 评估：保留 use_resource，**不** 迁移到 use_server_future。理由：该调用
+  // 位于 App 根组件，`use_server_future` 的 `?` 需要祖先 SuspenseBoundary，会把整个
+  // 应用根挂起（blast radius 极大）；且它订阅 theme_version signal 以支持用户
+  // 实时切主题（客户端交互）。主题 CSS 通过 <style> 注入，首屏 FOUC 可接受。
+  let theme_css = use_resource(move || {
+    let _ = theme_version();
+    async move {
+      let result = get_aggregated_theme_css().await;
+      match &result {
+        Ok(css) => tracing::debug!(len = css.len(), "frontend: fetched theme CSS"),
+        Err(e) => tracing::warn!(error = ?e, "frontend: failed to fetch theme"),
+      }
+      result.unwrap_or_default()
+    }
+  });
+
+  // 原生渲染：读取当前 theme CSS，由下面的 RSX 直接输出为 <style> 节点。
+  // Phase 8.8：项目当前是 web-first via dioxus_fullstack（SSR + WASM hydration）。
+  // 原措辞「保留 desktop / mobile 等跨平台能力」与现状不符；其他 16 处
+  // `dioxus::document::eval` 在 widgets crate 中保留是为了避免大规模重写
+  // （见 `docs/PLUGIN_DEV.md`）。
+  let theme_css_value: String = theme_css.read().as_ref().cloned().unwrap_or_default();
+
+  rsx! {
+      // 静态 head 资源（图标 / CSS / 脚本）。抽到独立 memoized 组件，避免随 App
+      // 重渲（主题 / 语言切换会 bump 信号触发 App 重渲）反复重挂 document::Style /
+      // Script，进而触发 dioxus-document "Changing the props … is not supported" 警告。
+      HeadAssets {}
+
+      // 从 WASM 插件聚合出的主题 CSS（随用户切换变化，必须留在 App 内响应式渲染）。
+      // 注意：**不能**用 `document::Style`（变更 props 会触发警告且不更新 DOM）；
+      // 改用普通 `style` + `dangerous_inner_html`：CSS 落在 <body> 仍全局生效，
+      // 且 vdom diff 正常更新内容。
+      if !theme_css_value.is_empty() {
+          style {
+              id: "wasm-theme-style",
+              dangerous_inner_html: "{theme_css_value}",
+          }
+      }
 
       // Main router entry
       Router::<Route> {}

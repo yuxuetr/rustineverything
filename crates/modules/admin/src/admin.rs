@@ -1,15 +1,14 @@
 use crate::server::{
   admin_approve_moderation, admin_bulk_approve_moderation, admin_bulk_reject_moderation,
-  admin_delete_comment, admin_delete_reply, admin_delete_topic,
-  admin_get_moderation_settings, admin_list_comments, admin_list_moderation_queue,
-  admin_list_plugins, admin_list_topics, admin_list_users, admin_overview,
-  admin_reject_moderation, admin_reload_plugins, admin_set_moderation_settings,
-  admin_set_user_role, admin_upload_plugin, AdminCommentRow, AdminPluginRow, AdminTopicRow,
-  AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
+  admin_delete_comment, admin_delete_reply, admin_delete_topic, admin_get_moderation_settings,
+  admin_list_comments, admin_list_moderation_queue, admin_list_plugins, admin_list_topics,
+  admin_list_users, admin_overview, admin_reject_moderation, admin_reload_plugins,
+  admin_set_moderation_settings, admin_set_user_role, admin_upload_plugin, AdminCommentRow,
+  AdminPluginRow, AdminTopicRow, AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
 };
+use app_core::session::{SessionUser, ALL_ROLES};
 use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
 use dioxus::prelude::*;
-use app_core::session::{SessionUser, ALL_ROLES};
 
 // =============================================================
 // 共享上下文 hooks
@@ -20,7 +19,7 @@ fn use_session_user_ctx() -> Option<Signal<Option<SessionUser>>> {
 }
 
 /// 当前用户是否为 admin
-fn is_current_user_admin() -> bool {
+pub fn is_current_user_admin() -> bool {
   use_session_user_ctx()
     .map(|s| s.read().as_ref().map(|u| u.is_admin()).unwrap_or(false))
     .unwrap_or(false)
@@ -31,7 +30,7 @@ fn is_current_user_admin() -> bool {
 // =============================================================
 
 #[component]
-fn ForbiddenPanel() -> Element {
+pub fn ForbiddenPanel() -> Element {
   rsx! {
       section { class: "min-h-screen flex items-center justify-center bg-white dark:bg-slate-950",
           div { class: "max-w-md text-center px-4",
@@ -50,8 +49,10 @@ fn ForbiddenPanel() -> Element {
   }
 }
 
+/// 管理后台公共外壳（侧边导航 + 内容区）。app 组合根可复用此 chrome
+/// 渲染跨模块管理页（如课程权益）而无需让 admin 模块反向依赖业务模块。
 #[component]
-fn AdminShell(active: String, children: Element) -> Element {
+pub fn AdminShell(active: String, children: Element) -> Element {
   rsx! {
       section { class: "min-h-screen bg-slate-50 dark:bg-slate-950",
           div { class: "max-w-7xl mx-auto flex",
@@ -66,6 +67,7 @@ fn AdminShell(active: String, children: Element) -> Element {
                       AdminNavLink { href: "/admin/topics", label: "话题".to_string(), key_id: "topics".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/moderation", label: "审核".to_string(), key_id: "moderation".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/moderation/settings", label: "审核设置".to_string(), key_id: "moderation-settings".to_string(), active: active.clone() }
+                      AdminNavLink { href: "/admin/entitlements", label: "课程权益".to_string(), key_id: "entitlements".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/plugins", label: "插件".to_string(), key_id: "plugins".to_string(), active: active.clone() }
                   }
               }
@@ -109,6 +111,9 @@ pub fn AdminDashboardPage() -> Element {
     return rsx! { ForbiddenPanel {} };
   }
 
+  // 重构 B6 评估：admin 后台全部保留 use_resource，**不** 迁移到 use_server_future。
+  // 理由：后台鉴权（非 admin 渲染 403）、纯交互管理面板，不需 SEO / 首屏预渲染，
+  // 且不应被公共缓存。
   let res = use_resource(|| async move { admin_overview().await.ok() });
   let overview = res.read().as_ref().cloned().flatten();
 
@@ -1071,11 +1076,7 @@ fn input_to_opt_f32(raw: &str) -> Result<Option<f32>, String> {
 
 /// 按行拆分 textarea 文本，去重空行 + trim，得到 Vec<String>。
 fn lines_to_vec(text: &str) -> Vec<String> {
-  text
-    .lines()
-    .map(|s| s.trim().to_string())
-    .filter(|s| !s.is_empty())
-    .collect()
+  text.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
 }
 
 /// Vec<String> 拼回多行文本，便于初始化 textarea。

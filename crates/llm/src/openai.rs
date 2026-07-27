@@ -23,9 +23,9 @@
 //! { "choices": [{"message": {"role": "assistant", "content": "..."}}] }
 //! ```
 
+use app_core::error::{AppError, AppResult};
 use async_trait::async_trait;
 use reqwest::Client;
-use app_core::error::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 

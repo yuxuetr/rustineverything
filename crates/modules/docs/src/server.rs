@@ -236,6 +236,8 @@ pub async fn get_doc_content(path: String) -> Result<DocContentResponse, ServerF
     let raw =
       fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
     let (meta, content) = parse_doc_frontmatter(&raw);
+    // Phase 9.3：pre-stage content transformers chain（fail-open，空链路零开销直通）。
+    let content = app_core::engines::content_transformer::apply_default_pre(&content, "doc").await;
     Ok(DocContentResponse { content, meta })
   }
   #[cfg(not(feature = "server"))]

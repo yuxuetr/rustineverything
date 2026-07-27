@@ -1,9 +1,9 @@
 use crate::server::{
   get_case, list_case_categories, list_case_tags, list_cases, Case, CaseSummary, TagSummary,
 };
+use app_core::i18n::Language;
 use dioxus::prelude::try_use_context;
 use dioxus::prelude::*;
-use app_core::i18n::Language;
 use module_forum::forum::DiscussionPanel;
 use widgets::Markdown;
 
@@ -167,20 +167,11 @@ pub fn CasesIndexPage() -> Element {
   let mut selected_category = use_signal::<Option<String>>(|| None);
   let mut selected_tag = use_signal::<Option<String>>(|| None);
 
-  let cases_res = use_resource(move || {
-    let q = query();
-    let category = selected_category();
-    let tag = selected_tag();
-    async move {
-      let tags = tag.map(|value| vec![value]);
-      list_cases(tags, category, Some(q)).await.unwrap_or_default()
-    }
-  });
+  // 标签 / 分类是筛选 UI chrome（非 SEO 关键），保留客户端 use_resource。
   let tags_res = use_resource(|| async move { list_case_tags().await.unwrap_or_default() });
   let categories_res =
     use_resource(|| async move { list_case_categories().await.unwrap_or_default() });
 
-  let cases = cases_res.read().as_ref().cloned();
   let tags = tags_res.read().as_ref().cloned();
   let categories = categories_res.read().as_ref().cloned();
   let submit_url = submit_case_url();
@@ -270,23 +261,46 @@ pub fn CasesIndexPage() -> Element {
                   }
               }
 
-              match cases {
-                  None => rsx! { Spinner {} },
-                  Some(list) if list.is_empty() => rsx! {
-                      div { class: "rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 py-20 text-center text-slate-500 dark:text-slate-400",
-                          "{tc(lang, \"case.empty\")}"
-                      }
-                  },
-                  Some(list) => rsx! {
-                      div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6",
-                          for case in list.iter() {
-                              CaseCard { key: "{case.slug}", case: case.clone() }
-                          }
-                      }
-                  },
+              // 重构 B5：结果网格改由 `CasesGrid` 用 use_server_future 服务端预取（首屏随 SSR
+              // 下发）；筛选 signal 作为 prop 传入，变化时 use_reactive 重取。搜索 UI 始终可见。
+              SuspenseBoundary {
+                  fallback: |_| rsx! { Spinner {} },
+                  CasesGrid {
+                      query: query(),
+                      category: selected_category(),
+                      tag: selected_tag(),
+                  }
               }
           }
       }
+  }
+}
+
+/// 结果网格（重构 B5）：`list_cases` 经 `use_server_future` + `use_reactive!` 服务端预取，
+/// 筛选条件（query / category / tag）作为 prop，变化时重取。置于 SuspenseBoundary 内。
+#[component]
+fn CasesGrid(query: String, category: Option<String>, tag: Option<String>) -> Element {
+  let lang = use_language_ctx();
+  let cases_res = use_server_future(use_reactive!(|query, category, tag| async move {
+    let tags = tag.map(|value| vec![value]);
+    list_cases(tags, category, Some(query)).await.unwrap_or_default()
+  }))?;
+  let list = cases_res().unwrap_or_default();
+
+  if list.is_empty() {
+    rsx! {
+        div { class: "rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 py-20 text-center text-slate-500 dark:text-slate-400",
+            "{tc(lang, \"case.empty\")}"
+        }
+    }
+  } else {
+    rsx! {
+        div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6",
+            for case in list.iter() {
+                CaseCard { key: "{case.slug}", case: case.clone() }
+            }
+        }
+    }
   }
 }
 
@@ -428,34 +442,41 @@ fn CaseCard(case: CaseSummary) -> Element {
   }
 }
 
+/// 重构 B5：案例详情页拆为 SuspenseBoundary 外壳 + `CaseDetailLoaded`；案例内容
+/// （get_case）由 use_server_future 服务端预取（随 SSR HTML 下发，SEO）。
 #[component]
 pub fn CaseDetailPage(slug: String) -> Element {
-  let lang = use_language_ctx();
-  let slug_for_res = slug.clone();
-  let case_res = use_resource(move || {
-    let s = slug_for_res.clone();
-    async move { get_case(s).await.unwrap_or_default() }
-  });
-  let case = case_res.read().as_ref().cloned();
-
   rsx! {
       section { class: "py-12 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
-              match case {
-                  None => rsx! { Spinner {} },
-                  Some(None) => rsx! {
-                      div { class: "py-20 text-center",
-                          h1 { class: "text-2xl font-bold text-slate-900 dark:text-white", "{tc(lang, \"case.not_found\")}" }
-                          p { class: "mt-3 text-slate-500 dark:text-slate-400", "\"{slug}\" " }
-                          a { href: "/case", class: "mt-6 inline-flex rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700",
-                              "{tc(lang, \"case.back\")}"
-                          }
-                      }
-                  },
-                  Some(Some(case)) => rsx! { CaseDetailBody { case } },
+              SuspenseBoundary {
+                  fallback: |_| rsx! { Spinner {} },
+                  CaseDetailLoaded { slug: slug.clone() }
               }
           }
       }
+  }
+}
+
+#[component]
+fn CaseDetailLoaded(slug: String) -> Element {
+  let lang = use_language_ctx();
+  let case_res =
+    use_server_future(use_reactive!(
+      |slug| async move { get_case(slug).await.unwrap_or_default() }
+    ))?;
+
+  match case_res() {
+    Some(Some(case)) => rsx! { CaseDetailBody { case } },
+    _ => rsx! {
+        div { class: "py-20 text-center",
+            h1 { class: "text-2xl font-bold text-slate-900 dark:text-white", "{tc(lang, \"case.not_found\")}" }
+            p { class: "mt-3 text-slate-500 dark:text-slate-400", "\"{slug}\" " }
+            a { href: "/case", class: "mt-6 inline-flex rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700",
+                "{tc(lang, \"case.back\")}"
+            }
+        }
+    },
   }
 }
 

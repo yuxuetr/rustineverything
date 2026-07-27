@@ -1,88 +1,51 @@
 //! 板块元数据 + 纯逻辑（无 IO / 无 dioxus），可独立单测。
+//!
+//! 方案 A：展示文案（label / blurb / tagline）统一由 `app_core::i18n` 从
+//! `assets/i18n/{zh,en}.ftl` 提供。这里只保留结构性数据（slug / crate 名 / url）。
 
 pub const BOARD_ID: &str = "web3";
-pub const BOARD_LABEL: &str = "Web3";
 pub const BOARD_ROUTE: &str = "/web3";
-pub const BOARD_TAGLINE: &str =
-  "区块链与去中心化应用的 Rust 工具链：以太坊、Solana、Substrate 与智能合约。";
 
+/// 一个子主题。展示用 label / blurb 经 i18n key `{BOARD_ID}.sub.{slug}.*` 查表。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Subtopic {
   pub slug: &'static str,
-  pub label: &'static str,
-  pub blurb: &'static str,
 }
 
+/// 一个精选 crate。`name` 为品牌名（语言中性），`url` 为外链；blurb 经 i18n key
+/// `{BOARD_ID}.crate.{normalize_tag(name)}.blurb` 查表。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FeaturedCrate {
   pub name: &'static str,
-  pub blurb: &'static str,
   pub url: &'static str,
 }
 
 pub const SUBTOPICS: &[Subtopic] = &[
-  Subtopic {
-    slug: "evm",
-    label: "以太坊 / EVM",
-    blurb: "用 alloy 读写链上状态、发交易、解析事件日志。",
-  },
-  Subtopic {
-    slug: "solana", label: "Solana", blurb: "Solana 程序与客户端开发，高吞吐链上逻辑。"
-  },
-  Subtopic {
-    slug: "substrate",
-    label: "Substrate",
-    blurb: "用 polkadot-sdk 搭建自定义区块链与 runtime pallet。",
-  },
-  Subtopic {
-    slug: "contracts",
-    label: "智能合约",
-    blurb: "ink! / Solana 程序 / EVM 字节码与合约交互。",
-  },
-  Subtopic {
-    slug: "wallet", label: "钱包与签名", blurb: "密钥管理、签名方案与交易构造。"
-  },
-  Subtopic {
-    slug: "indexing", label: "链上索引", blurb: "区块/事件扫描、状态重建与数据服务。"
-  },
+  Subtopic { slug: "evm" },
+  Subtopic { slug: "solana" },
+  Subtopic { slug: "substrate" },
+  Subtopic { slug: "contracts" },
+  Subtopic { slug: "wallet" },
+  Subtopic { slug: "indexing" },
 ];
 
 pub const FEATURED_CRATES: &[FeaturedCrate] = &[
-  FeaturedCrate {
-    name: "alloy",
-    blurb: "以太坊互操作的现代 Rust 工具集",
-    url: "https://github.com/alloy-rs/alloy",
-  },
-  FeaturedCrate {
-    name: "revm",
-    blurb: "高性能纯 Rust EVM 实现",
-    url: "https://github.com/bluealloy/revm",
-  },
-  FeaturedCrate {
-    name: "solana-sdk",
-    blurb: "Solana 链上程序与客户端 SDK",
-    url: "https://github.com/solana-labs/solana",
-  },
-  FeaturedCrate {
-    name: "anchor",
-    blurb: "Solana 程序开发框架",
-    url: "https://www.anchor-lang.com",
-  },
-  FeaturedCrate {
-    name: "polkadot-sdk",
-    blurb: "Substrate / Polkadot 区块链框架",
-    url: "https://github.com/paritytech/polkadot-sdk",
-  },
-  FeaturedCrate {
-    name: "ink!", blurb: "面向 Substrate 的智能合约 eDSL", url: "https://use.ink"
-  },
+  FeaturedCrate { name: "alloy", url: "https://github.com/alloy-rs/alloy" },
+  FeaturedCrate { name: "revm", url: "https://github.com/bluealloy/revm" },
+  FeaturedCrate { name: "solana-sdk", url: "https://github.com/solana-labs/solana" },
+  FeaturedCrate { name: "anchor", url: "https://www.anchor-lang.com" },
+  FeaturedCrate { name: "polkadot-sdk", url: "https://github.com/paritytech/polkadot-sdk" },
+  FeaturedCrate { name: "ink!", url: "https://use.ink" },
 ];
 
+/// 文章排序所需的最小契约，[`text`] 测试与 [`server`] 列表共用。
 pub trait DatedArticle {
   fn date(&self) -> &str;
   fn title(&self) -> &str;
 }
 
+/// 归一化标签：trim + 小写，仅保留字母数字 / `-` / `_`。
+/// 也用于把 crate `name` 映射为稳定的 i18n key 片段。
 pub fn normalize_tag(raw: &str) -> String {
   raw
     .trim()
@@ -92,6 +55,7 @@ pub fn normalize_tag(raw: &str) -> String {
     .collect()
 }
 
+/// 归一化一组标签：去空、去重、排序。
 pub fn normalize_tags(tags: &[String]) -> Vec<String> {
   let mut out: Vec<String> =
     tags.iter().map(|t| normalize_tag(t)).filter(|t| !t.is_empty()).collect();
@@ -100,10 +64,7 @@ pub fn normalize_tags(tags: &[String]) -> Vec<String> {
   out
 }
 
-pub fn subtopic_label(slug: &str) -> Option<&'static str> {
-  SUBTOPICS.iter().find(|s| s.slug == slug).map(|s| s.label)
-}
-
+/// 全文匹配：标题 / 描述 / 标签任一命中即返回 true。空查询返回 true。
 pub fn matches_query(title: &str, description: &str, tags: &[String], query: &str) -> bool {
   let q = query.trim().to_lowercase();
   if q.is_empty() {
@@ -114,6 +75,7 @@ pub fn matches_query(title: &str, description: &str, tags: &[String], query: &st
     || tags.iter().any(|t| t.to_lowercase().contains(&q))
 }
 
+/// 按日期降序、再按标题升序排序（稳定）。
 pub fn sort_by_date_desc<T: DatedArticle>(items: &mut [T]) {
   items.sort_by(|a, b| {
     b.date().cmp(a.date()).then_with(|| a.title().to_lowercase().cmp(&b.title().to_lowercase()))
@@ -141,8 +103,6 @@ mod tests {
   fn board_constants_well_formed() {
     assert_eq!(BOARD_ID, "web3");
     assert!(BOARD_ROUTE.starts_with('/'));
-    assert!(!BOARD_LABEL.is_empty());
-    assert!(!BOARD_TAGLINE.is_empty());
   }
 
   #[test]
@@ -159,8 +119,6 @@ mod tests {
     assert!(SUBTOPICS.len() >= 4);
     for s in SUBTOPICS {
       assert!(!s.slug.is_empty());
-      assert!(!s.label.is_empty());
-      assert!(!s.blurb.is_empty());
     }
   }
 
@@ -177,7 +135,6 @@ mod tests {
     for c in FEATURED_CRATES {
       assert!(c.url.starts_with("https://"), "{} 应为 https URL", c.name);
       assert!(!c.name.is_empty());
-      assert!(!c.blurb.is_empty());
     }
   }
 
@@ -191,6 +148,15 @@ mod tests {
   }
 
   #[test]
+  fn featured_crate_i18n_keys_unique() {
+    let mut keys: Vec<String> = FEATURED_CRATES.iter().map(|c| normalize_tag(c.name)).collect();
+    let n = keys.len();
+    keys.sort();
+    keys.dedup();
+    assert_eq!(keys.len(), n, "crate 的 i18n key（normalize_tag(name)）应唯一");
+  }
+
+  #[test]
   fn normalize_tag_lowercases_and_strips() {
     assert_eq!(normalize_tag(" Alloy!! "), "alloy");
     assert_eq!(normalize_tag("solana-sdk"), "solana-sdk");
@@ -199,14 +165,8 @@ mod tests {
   #[test]
   fn normalize_tags_dedups_and_drops_empty() {
     let tags =
-      vec!["Alloy".to_string(), "alloy".to_string(), "   ".to_string(), "Solana".to_string()];
-    assert_eq!(normalize_tags(&tags), vec!["alloy".to_string(), "solana".to_string()]);
-  }
-
-  #[test]
-  fn subtopic_label_known_and_unknown() {
-    assert_eq!(subtopic_label("solana"), Some("Solana"));
-    assert_eq!(subtopic_label("does-not-exist"), None);
+      vec!["Alloy".to_string(), "alloy".to_string(), "   ".to_string(), "Revm".to_string()];
+    assert_eq!(normalize_tags(&tags), vec!["alloy".to_string(), "revm".to_string()]);
   }
 
   #[test]
@@ -218,16 +178,16 @@ mod tests {
   #[test]
   fn matches_query_hits_title_description_tags() {
     let tags = vec!["alloy".to_string(), "evm".to_string()];
-    assert!(matches_query("Alloy 入门", "以太坊交互", &tags, "alloy"));
-    assert!(matches_query("Alloy 入门", "以太坊交互", &tags, "以太坊"));
-    assert!(matches_query("Alloy 入门", "以太坊交互", &tags, "evm"));
-    assert!(!matches_query("Alloy 入门", "以太坊交互", &tags, "candle"));
+    assert!(matches_query("用 alloy 读链上状态", "以太坊", &tags, "alloy"));
+    assert!(matches_query("用 alloy 读链上状态", "以太坊", &tags, "以太坊"));
+    assert!(matches_query("用 alloy 读链上状态", "以太坊", &tags, "evm"));
+    assert!(!matches_query("用 alloy 读链上状态", "以太坊", &tags, "candle"));
   }
 
   #[test]
   fn matches_query_supports_chinese() {
-    let tags = vec!["substrate".to_string()];
-    assert!(matches_query("自建链", "substrate runtime", &tags, "自建"));
+    let tags = vec!["solana".to_string()];
+    assert!(matches_query("链上索引", "区块扫描", &tags, "区块"));
   }
 
   #[test]

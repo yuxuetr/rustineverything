@@ -1,9 +1,24 @@
-use dioxus::fullstack::{post, ServerFnError};
-use dioxus::prelude::*;
+#[cfg(feature = "server")]
+pub mod auth_routes;
+#[cfg(feature = "server")]
+pub mod health;
+#[cfg(feature = "server")]
+pub mod pay_routes;
+#[cfg(feature = "server")]
+pub mod rate_limit;
+#[cfg(feature = "server")]
+pub mod security;
+#[cfg(feature = "server")]
+pub mod seo;
+#[cfg(feature = "server")]
+pub mod static_assets;
+
 use app_core::session::SessionUser;
 use app_core::settings::SiteConfig;
 #[cfg(feature = "server")]
 use app_core::utils::get_asset_root;
+use dioxus::fullstack::{post, ServerFnError};
+use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 
 // ========== 辅助：从 FullstackContext 读取 Cookie 中的用户 ==========
@@ -11,8 +26,8 @@ use serde::{Deserialize, Serialize};
 /// server-only: 从当前请求上下文的 Cookie 中解析 SessionUser
 #[cfg(feature = "server")]
 fn current_session_user() -> Option<SessionUser> {
-  use dioxus::fullstack::FullstackContext;
   use app_core::session::parse_session_from_cookie_header;
+  use dioxus::fullstack::FullstackContext;
 
   let ctx = FullstackContext::current()?;
   let parts = ctx.parts_mut();
@@ -52,7 +67,9 @@ pub async fn get_site_config() -> Result<SiteConfig, ServerFnError> {
   #[cfg(feature = "server")]
   {
     let config_path = get_asset_root().join("site.json");
-    SiteConfig::from_file(config_path.to_str().unwrap_or_default())
+    // S10：mtime 缓存读取；返回需要 owned，clone 一次（配置体积小）。
+    SiteConfig::load_cached(config_path.to_str().unwrap_or_default())
+      .map(|cfg| (*cfg).clone())
       .map_err(|e| ServerFnError::new(format!("配置文件加载失败: {}", e)))
   }
   #[cfg(not(feature = "server"))]
@@ -101,7 +118,7 @@ pub async fn list_public_plugins() -> Result<Vec<PublicPluginInfo>, ServerFnErro
         continue;
       }
       let path = entry.path();
-      let manifest_json = match manager.call_path_with_string(&path, "get_manifest", "") {
+      let manifest_json = match manager.call_path_with_string(&path, "get_manifest", "").await {
         Ok(j) => j,
         Err(_) => continue, // 无 manifest（老插件）→ 跳过
       };
@@ -144,6 +161,7 @@ pub async fn translate_server(key: String, lang: String) -> Result<String, Serve
     let input = serde_json::json!({ "key": key, "lang": lang }).to_string();
     manager
       .call_path_with_string(&wasm_path, "translate", &input)
+      .await
       .map_err(|e| ServerFnError::new(e.to_string()))
   }
   #[cfg(not(feature = "server"))]
@@ -175,7 +193,8 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
     use app_core::engines::theme::theme_with_override;
 
     let asset_root = get_asset_root();
-    let config = SiteConfig::from_file(asset_root.join("site.json").to_str().unwrap_or_default())
+    // S10：热路径（每次页面渲染拉主题 CSS）——mtime 缓存读取。
+    let config = SiteConfig::load_cached(asset_root.join("site.json").to_str().unwrap_or_default())
       .unwrap_or_default();
     let plugin_dir = asset_root.join("plugins");
 
@@ -193,7 +212,7 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
       return Ok(String::new());
     }
     let manager = app_core::shared_plugin_manager();
-    Ok(manager.aggregate_theme_css_paths(&resolved))
+    Ok(manager.aggregate_theme_css_paths(&resolved).await)
   }
   #[cfg(not(feature = "server"))]
   {
@@ -213,10 +232,16 @@ pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
 
     let asset_root = get_asset_root();
     let plugin_dir = asset_root.join("plugins");
-    let config = SiteConfig::from_file(asset_root.join("site.json").to_str().unwrap_or_default())
+    // S10：mtime 缓存读取。
+    let config = SiteConfig::load_cached(asset_root.join("site.json").to_str().unwrap_or_default())
       .unwrap_or_default();
     let stack = config.theme_stack();
-    let active_top = stack.last().cloned().unwrap_or_default();
+    // 激活态优先看用户 cookie（与 `get_aggregated_theme_css` 的覆盖语义一致），
+    // 没有 cookie 时回退到 site.json 主题栈顶。
+    let active_top = read_request_cookie(THEME_COOKIE_NAME)
+      .map(|c| c.trim().to_string())
+      .filter(|c| !c.is_empty())
+      .unwrap_or_else(|| stack.last().cloned().unwrap_or_default());
 
     let manager = app_core::shared_plugin_manager();
 
@@ -237,7 +262,7 @@ pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
       let path = entry.path();
 
       // 读 manifest。读不到时以启发式判定。
-      let manifest_json = manager.call_path_with_string(&path, "get_manifest", "").ok();
+      let manifest_json = manager.call_path_with_string(&path, "get_manifest", "").await.ok();
       let (id, label, is_theme) =
         match manifest_json.as_deref().and_then(|s| serde_json::from_str::<PluginManifest>(s).ok())
         {
@@ -305,11 +330,13 @@ pub async fn set_user_theme(filename: String) -> Result<(), ServerFnError> {
       .map(|_| "; Secure")
       .unwrap_or("");
 
+    // 主题名是非敏感展示偏好，不使用 HttpOnly；前端也会用 document.cookie 兜底写入，
+    // 确保随后的主题 CSS 重新请求能立即携带新 cookie，刷新后也能保持选择。
     let header_value = if cookie_value.is_empty() {
-      format!("{}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax{}", THEME_COOKIE_NAME, secure_flag)
+      format!("{}=; Path=/; Max-Age=0; SameSite=Lax{}", THEME_COOKIE_NAME, secure_flag)
     } else {
       format!(
-        "{}={}; HttpOnly; Path=/; Max-Age=31536000; SameSite=Lax{}",
+        "{}={}; Path=/; Max-Age=31536000; SameSite=Lax{}",
         THEME_COOKIE_NAME, cookie_value, secure_flag
       )
     };
@@ -335,12 +362,18 @@ fn build_auth_service() -> (app_core::auth::AuthService, SiteConfig) {
   use app_core::auth::{AuthConfig, AuthService};
 
   // BASE_URL 未配置时 panic，避免生产环境误用 localhost
+  // S9 豁免：与启动门禁同策略，缺失即 panic 是有意的 fail-fast。
+  #[allow(clippy::expect_used)]
   let base_url =
     std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
   let config = AuthConfig { base_url };
   let site_path = get_asset_root().join("site.json");
-  let site_config =
-    site_path.to_str().and_then(|p| SiteConfig::from_file(p).ok()).unwrap_or_default();
+  // S10：mtime 缓存读取；返回需要 owned，clone 一次（配置体积小）。
+  let site_config = site_path
+    .to_str()
+    .and_then(|p| SiteConfig::load_cached(p).ok())
+    .map(|cfg| (*cfg).clone())
+    .unwrap_or_default();
   let auth_service = AuthService::new(config, get_asset_root().join("plugins"));
   (auth_service, site_config)
 }
@@ -353,12 +386,11 @@ fn find_plugin_filename(site_config: &SiteConfig, provider: &str) -> Option<Stri
 // ========== Auth 端点 ==========
 
 #[post("/api/auth/providers")]
-pub async fn get_auth_providers(
-) -> Result<Vec<app_core::AuthProviderDisplay>, ServerFnError> {
+pub async fn get_auth_providers() -> Result<Vec<app_core::AuthProviderDisplay>, ServerFnError> {
   #[cfg(feature = "server")]
   {
     let (auth_service, site_config) = build_auth_service();
-    Ok(auth_service.list_available_providers(&site_config))
+    Ok(auth_service.list_available_providers(&site_config).await)
   }
   #[cfg(not(feature = "server"))]
   {
@@ -376,7 +408,7 @@ pub async fn prepare_login_for_provider(
   let (auth_service, site_config) = build_auth_service();
   let plugin_filename = find_plugin_filename(&site_config, &provider)
     .ok_or_else(|| format!("未在 site.json 中配置 provider: {}", provider))?;
-  let (url, payload) = auth_service.prepare_login(&provider, &plugin_filename)?;
+  let (url, payload) = auth_service.prepare_login(&provider, &plugin_filename).await?;
   let cookie_value = payload.encode()?;
   Ok((url, cookie_value))
 }
@@ -514,8 +546,9 @@ pub async fn is_module_enabled(id: String) -> Result<bool, ServerFnError> {
 pub async fn get_active_layout() -> Result<String, ServerFnError> {
   #[cfg(feature = "server")]
   {
+    // S10：mtime 缓存读取（每次布局渲染都会调）。
     let cfg =
-      SiteConfig::from_file(get_asset_root().join("site.json").to_str().unwrap_or_default())
+      SiteConfig::load_cached(get_asset_root().join("site.json").to_str().unwrap_or_default())
         .unwrap_or_default();
     Ok(cfg.active_layout_or_default().to_string())
   }

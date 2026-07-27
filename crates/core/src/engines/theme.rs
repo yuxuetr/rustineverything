@@ -12,8 +12,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::plugin::PluginEngine;
-use super::{Engine, EngineContext};
-use crate::error::AppResult;
 use crate::settings::SiteConfig;
 
 /// ThemeEngine：管理主题插件路径列表，按顺序聚合 CSS。
@@ -58,10 +56,11 @@ impl ThemeEngine {
   }
 
   /// 聚合所有主题插件的 CSS。失败的插件会被跳过（不阻断其他主题）。
-  pub fn aggregate_css(&self) -> String {
+  #[cfg(feature = "server")]
+  pub async fn aggregate_css(&self) -> String {
     let mut out = String::new();
     for path in &self.themes {
-      match self.plugin.call(path, "get_theme_css", "") {
+      match self.plugin.call(path, "get_theme_css", "").await {
         Ok(css) => {
           out.push_str(&css);
           out.push('\n');
@@ -113,27 +112,7 @@ pub fn theme_with_override(
   result
 }
 
-impl Engine for ThemeEngine {
-  fn name(&self) -> &'static str {
-    "theme"
-  }
-
-  fn init(&mut self, ctx: &EngineContext) -> AppResult<()> {
-    // Phase 3.1：走主题栈语义，成为唯一装填路径。
-    self.apply_site_config(&ctx.site_config, &ctx.asset_root);
-    Ok(())
-  }
-
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-
-  fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-    self
-  }
-}
-
-#[cfg(test)]
+#[cfg(all(test, feature = "server"))]
 #[allow(clippy::field_reassign_with_default)] // 测试 setup：Default + 逐字段赋值更易读
 mod tests {
   use super::*;
@@ -153,12 +132,6 @@ mod tests {
   }
 
   #[test]
-  fn name_is_theme() {
-    let e = make();
-    assert_eq!(<ThemeEngine as Engine>::name(&e), "theme");
-  }
-
-  #[test]
   fn register_and_set() {
     let mut e = make();
     e.register_theme(PathBuf::from("a.wasm"));
@@ -169,18 +142,18 @@ mod tests {
   }
 
   #[test]
-  fn init_loads_active_theme_from_site_config() {
+  fn apply_site_config_loads_active_theme() {
+    // 默认 SiteConfig 的 active_theme = "theme_ocean_plugin.wasm"
     let mut e = make();
-    let ctx = EngineContext::for_tests();
-    e.init(&ctx).unwrap();
+    e.apply_site_config(&SiteConfig::default(), std::path::Path::new("assets"));
     assert_eq!(e.themes().len(), 1);
     assert!(e.themes()[0].ends_with("theme_ocean_plugin.wasm"));
   }
 
-  #[test]
-  fn aggregate_css_with_no_themes_is_empty() {
+  #[tokio::test]
+  async fn aggregate_css_with_no_themes_is_empty() {
     let e = make();
-    assert_eq!(e.aggregate_css(), "");
+    assert_eq!(e.aggregate_css().await, "");
   }
 
   #[test]

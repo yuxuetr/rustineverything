@@ -2,6 +2,7 @@
 title: 什么是 Rust
 description: 一门兼顾性能、可靠性与开发效率的系统级语言。
 duration: "5:00"
+preview: true
 ---
 
 # 什么是 Rust

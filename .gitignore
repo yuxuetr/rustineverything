@@ -19,6 +19,9 @@ public/data/
 # crates/app/assets/ is a build-time mirror of root assets/ (populated by build.rs)
 # Only root assets/ is the source of truth — do not track the copy.
 crates/app/assets/
-
 # tailwind.css is compiled output (not hand-edited); tracked in root assets/ only
 # Source: crates/app/tailwind-input.css → compile → crates/app/assets/tailwind.css → sync → assets/tailwind.css
+search-index
+
+# 本地运行时数据（tantivy 搜索索引等，对应 SEARCH_INDEX_DIR）——不入库
+/data/

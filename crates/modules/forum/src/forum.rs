@@ -2,9 +2,9 @@ use crate::server::{
   create_topic, get_topic, list_my_topics, list_tags, list_topics, list_topics_by_ref, post_reply,
   NewTopicInput, Reply, TagSummary, TopicDetail, TopicRef, TopicSummary,
 };
-use dioxus::prelude::*;
 use app_core::i18n::Language;
 use app_core::session::SessionUser;
+use dioxus::prelude::*;
 use widgets::Markdown;
 
 // =============================================================
@@ -235,6 +235,9 @@ fn TopicCard(topic: TopicSummary) -> Element {
 
 #[component]
 pub fn TopicsIndexPage() -> Element {
+  // 重构 B6 评估：论坛页（话题列表 / 详情 / 回复）保留 use_resource，**不** 迁移到
+  // use_server_future。理由：论坛是强交互 + 登录态相关（发帖 / 回复 / 实时刷新），
+  // 内容动态且非 SEO 关键；客户端加载更契合其交互模型。
   let topics_res =
     use_resource(|| async move { list_topics(None, Some(0)).await.unwrap_or_default() });
   let tags_res = use_resource(|| async move { list_tags().await.unwrap_or_default() });

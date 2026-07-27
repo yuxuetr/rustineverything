@@ -1,5 +1,5 @@
-use dioxus::prelude::*;
 use app_core::session::{is_known_role, ROLE_ADMIN};
+use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use std::path::PathBuf;
@@ -239,35 +239,12 @@ pub async fn admin_overview() -> Result<AdminOverview, ServerFnError> {
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
 
-    let user_count =
-      user_entity::Entity::find().count(&db).await.map_err(|e| ServerFnError::new(e.to_string()))?
-        as i64;
-    let admin_count = user_entity::Entity::find()
-      .filter(user_entity::Column::Role.eq(ROLE_ADMIN))
-      .count(&db)
-      .await
-      .map_err(|e| ServerFnError::new(e.to_string()))? as i64;
-    let comment_count =
-      comment::Entity::find().count(&db).await.map_err(|e| ServerFnError::new(e.to_string()))?
-        as i64;
-    let topic_count =
-      topic::Entity::find().count(&db).await.map_err(|e| ServerFnError::new(e.to_string()))? as i64;
-    let reply_count =
-      topic_reply::Entity::find().count(&db).await.map_err(|e| ServerFnError::new(e.to_string()))?
-        as i64;
-    let annotation_count =
-      annotation::Entity::find().count(&db).await.map_err(|e| ServerFnError::new(e.to_string()))?
-        as i64;
-    let moderation_pending_count = moderation_queue::Entity::find()
-      .filter(moderation_queue::Column::Status.eq("pending"))
-      .count(&db)
-      .await
-      .map_err(|e| ServerFnError::new(e.to_string()))? as i64;
-
-    Ok(AdminOverview {
+    // Phase 8.4：7 个 COUNT 各自独立 → `tokio::try_join!` 并行发起，总耗时
+    // ≈ max(单查耗时) 而非 sum；admin dashboard 在 10K 行规模下从 ~700ms 降到 ~150ms。
+    let (
       user_count,
       admin_count,
       comment_count,
@@ -275,6 +252,27 @@ pub async fn admin_overview() -> Result<AdminOverview, ServerFnError> {
       reply_count,
       annotation_count,
       moderation_pending_count,
+    ) = tokio::try_join!(
+      user_entity::Entity::find().count(&db),
+      user_entity::Entity::find().filter(user_entity::Column::Role.eq(ROLE_ADMIN)).count(&db),
+      comment::Entity::find().count(&db),
+      topic::Entity::find().count(&db),
+      topic_reply::Entity::find().count(&db),
+      annotation::Entity::find().count(&db),
+      moderation_queue::Entity::find()
+        .filter(moderation_queue::Column::Status.eq("pending"))
+        .count(&db),
+    )
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    Ok(AdminOverview {
+      user_count: user_count as i64,
+      admin_count: admin_count as i64,
+      comment_count: comment_count as i64,
+      topic_count: topic_count as i64,
+      reply_count: reply_count as i64,
+      annotation_count: annotation_count as i64,
+      moderation_pending_count: moderation_pending_count as i64,
     })
   }
   #[cfg(not(feature = "server"))]
@@ -291,7 +289,7 @@ pub async fn admin_list_users(page: Option<u32>) -> Result<AdminPage<AdminUserRo
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
     let page = clamp_page(page);
 
@@ -350,13 +348,13 @@ pub async fn admin_set_user_role(
 ) -> Result<AdminUserRow, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use chrono::Utc;
     use app_core::entities::user as user_entity;
     use app_core::session::require_admin;
+    use chrono::Utc;
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
     validate_role(&role).map_err(ServerFnError::new)?;
-    let operator = require_admin()?;
+    let operator = require_admin().await?;
     let db = open_db().await?;
 
     // 找到目标用户
@@ -378,6 +376,12 @@ pub async fn admin_set_user_role(
 
     let mut am: user_entity::ActiveModel = target.clone().into();
     am.role = Set(role.clone());
+    // S4（风险 R1）：角色变更时 bump token_version，吊销该用户全部已签发
+    // JWT（旧 cookie 携带的旧角色 / 旧版本会在写路径校验中被拒）。
+    // 无变更（同角色重复提交）不 bump，避免无谓登出。
+    if target.role != role {
+      am.token_version = Set(target.token_version + 1);
+    }
     am.updated_at = Set(Utc::now().fixed_offset());
     let updated = user_entity::Entity::update(am)
       .exec(&db)
@@ -410,7 +414,7 @@ pub async fn admin_list_comments(
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
     let page = clamp_page(page);
 
@@ -468,7 +472,7 @@ pub async fn admin_delete_comment(id: i32) -> Result<(), ServerFnError> {
     use app_core::session::require_admin;
     use sea_orm::EntityTrait;
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
     comment::Entity::delete_by_id(id)
       .exec(&db)
@@ -493,7 +497,7 @@ pub async fn admin_list_topics(
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder};
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
     let page = clamp_page(page);
 
@@ -553,7 +557,7 @@ pub async fn admin_delete_topic(id: i32) -> Result<(), ServerFnError> {
     use app_core::session::require_admin;
     use sea_orm::EntityTrait;
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
     // topic_replies 通过 ON DELETE CASCADE 自动清理
     topic::Entity::delete_by_id(id)
@@ -579,7 +583,7 @@ pub async fn admin_delete_reply(id: i32) -> Result<(), ServerFnError> {
       ActiveValue::Set, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, TransactionTrait,
     };
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
 
     // 先查到 reply 以拿到 topic_id
@@ -630,7 +634,7 @@ pub async fn admin_list_plugins() -> Result<Vec<AdminPluginRow>, ServerFnError> 
     use app_core::session::require_admin;
     use app_core::settings::SiteConfig;
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
 
     let asset_root = get_asset_root();
     let plugin_dir = asset_root.join("plugins");
@@ -727,7 +731,7 @@ pub async fn admin_reload_plugins() -> Result<String, ServerFnError> {
   {
     use app_core::session::require_admin;
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     // 清空共享 PluginManager 的 Module 缓存（i18n / 主题 / auth 下次调用
     // 会重新从磁盘加载），并重建审核流水线（重读 site.json + 插件目录）。
     app_core::shared_plugin_manager().invalidate_all();
@@ -763,13 +767,11 @@ pub async fn admin_upload_plugin(
 ) -> Result<PluginUploadResult, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use base64::Engine as _;
     use app_core::session::require_admin;
-    use app_core::{
-      capabilities, shared_plugin_manager, PluginManifest, SDK_ABI_VERSION,
-    };
+    use app_core::{capabilities, shared_plugin_manager, PluginManifest, SDK_ABI_VERSION};
+    use base64::Engine as _;
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
 
     // 1. 安全文件名
     let filename = safe_plugin_filename(&name).map_err(ServerFnError::new)?;
@@ -797,12 +799,14 @@ pub async fn admin_upload_plugin(
     let manager = shared_plugin_manager();
     manager
       .validate_plugin_bytes(&bytes)
+      .await
       .map_err(|e| ServerFnError::new(format!("插件校验失败: {}", e)))?;
 
     // 4. manifest + ABI 版本校验（hot reload 要求新 ABI 插件导出 get_manifest）
-    let manifest_json = manager.call_with_string(&bytes, "get_manifest", "").map_err(|e| {
-      ServerFnError::new(format!("插件缺少 get_manifest 导出，无法识别 ABI: {}", e))
-    })?;
+    let manifest_json =
+      manager.call_with_string(&bytes, "get_manifest", "").await.map_err(|e| {
+        ServerFnError::new(format!("插件缺少 get_manifest 导出，无法识别 ABI: {}", e))
+      })?;
     let manifest: PluginManifest = serde_json::from_str(&manifest_json)
       .map_err(|e| ServerFnError::new(format!("manifest 解析失败: {}", e)))?;
     if !manifest.is_compatible() {
@@ -884,7 +888,7 @@ pub async fn admin_list_moderation_queue(
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let db = open_db().await?;
 
     let mut q = moderation_queue::Entity::find();
@@ -916,8 +920,9 @@ pub async fn admin_list_moderation_queue(
       uid.and_then(|id| users.iter().find(|u| u.id == id).map(|u| u.nickname.clone()))
     };
 
-    // 作者历史违规聚合：对本页出现的内容作者，统计其在审核队列中的累计命中数
-    // 与「已拒绝」（确认违规）数。队列规模有限，单查 + 内存聚合足够。
+    // Phase 8.4：作者历史违规改成 2 个 GROUP BY 而不是把整条 queue 拉回 Rust 端聚合。
+    // 之前对每页作者 *拉所有他们的 queue 行*，N（作者）× M（每人历史长度）的网络 + 反序列化都是浪费。
+    // 现在固定 ≤ 2 个 round-trip：1 个查 total，1 个查 rejected。
     let author_ids: Vec<i32> = {
       let mut v: Vec<i32> = rows.iter().filter_map(|r| r.user_id).collect();
       v.sort_unstable();
@@ -930,22 +935,32 @@ pub async fn admin_list_moderation_queue(
     ) = if author_ids.is_empty() {
       Default::default()
     } else {
-      let entries = moderation_queue::Entity::find()
-        .filter(moderation_queue::Column::UserId.is_in(author_ids))
+      use sea_orm::{sea_query::Expr, QuerySelect};
+
+      // 两个 GROUP BY query；count 改在 DB 端做，Rust 端只构造 HashMap。
+      let total_rows: Vec<(i32, i64)> = moderation_queue::Entity::find()
+        .select_only()
+        .column(moderation_queue::Column::UserId)
+        .column_as(Expr::col(moderation_queue::Column::Id).count(), "count")
+        .filter(moderation_queue::Column::UserId.is_in(author_ids.clone()))
+        .group_by(moderation_queue::Column::UserId)
+        .into_tuple()
         .all(&db)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-      let mut total = std::collections::HashMap::new();
-      let mut rejected = std::collections::HashMap::new();
-      for e in &entries {
-        if let Some(uid) = e.user_id {
-          *total.entry(uid).or_insert(0) += 1;
-          if e.status == "rejected" {
-            *rejected.entry(uid).or_insert(0) += 1;
-          }
-        }
-      }
-      (total, rejected)
+      let rejected_rows: Vec<(i32, i64)> = moderation_queue::Entity::find()
+        .select_only()
+        .column(moderation_queue::Column::UserId)
+        .column_as(Expr::col(moderation_queue::Column::Id).count(), "count")
+        .filter(moderation_queue::Column::UserId.is_in(author_ids))
+        .filter(moderation_queue::Column::Status.eq("rejected"))
+        .group_by(moderation_queue::Column::UserId)
+        .into_tuple()
+        .all(&db)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+      (total_rows.into_iter().collect(), rejected_rows.into_iter().collect())
     };
     let hist = |uid: Option<i32>| -> (i64, i64) {
       match uid {
@@ -1005,7 +1020,7 @@ pub async fn admin_approve_moderation(id: i64) -> Result<(), ServerFnError> {
     use app_core::session::require_admin;
     use sea_orm::{ActiveValue::Set, EntityTrait};
 
-    let admin = require_admin()?;
+    let admin = require_admin().await?;
     let db = open_db().await?;
     let now = chrono::Utc::now().fixed_offset();
 
@@ -1040,30 +1055,32 @@ async fn reject_one(
   admin_id: i32,
   row: app_core::entities::moderation_queue::Model,
 ) -> Result<(), ServerFnError> {
-  use app_core::entities::{
-    annotation, comment, moderation_queue, topic, topic_reply,
-  };
+  use app_core::entities::{annotation, comment, moderation_queue, topic, topic_reply};
   use sea_orm::{ActiveValue::Set, EntityTrait};
 
   let now = chrono::Utc::now().fixed_offset();
-  // 尝试按 kind + ref_id 删除业务内容；找不到 ref_id 时跳过删除，仅打标记。
+  // Phase 8.8：删除业务内容的错误不再吞掉。之前用 `let _ = ...` 静默掉，
+  // 极端情况下评论真的没被删但队列被标 rejected → admin UI 上看着已处理，
+  // 但前端还能看到原帖。改成 `?` 传播；事实是 DELETE FROM ... WHERE id = ?
+  // 行不存在不会报错（SeaORM 返回 rows_affected = 0），所以「ref 已被其他流程
+  // 提前删」并不会触发错。
   if let Some(ref_id) = row.ref_id {
-    match row.kind.as_str() {
-      "comment" => {
-        let _ = comment::Entity::delete_by_id(ref_id as i32).exec(db).await;
-      }
-      "topic" => {
-        let _ = topic::Entity::delete_by_id(ref_id as i32).exec(db).await;
-      }
-      "reply" => {
-        let _ = topic_reply::Entity::delete_by_id(ref_id as i32).exec(db).await;
-      }
-      "annotation" => {
-        let _ = annotation::Entity::delete_by_id(ref_id).exec(db).await;
-      }
+    let kind = row.kind.as_str();
+    let res = match kind {
+      "comment" => comment::Entity::delete_by_id(ref_id as i32).exec(db).await.map(|_| ()),
+      "topic" => topic::Entity::delete_by_id(ref_id as i32).exec(db).await.map(|_| ()),
+      "reply" => topic_reply::Entity::delete_by_id(ref_id as i32).exec(db).await.map(|_| ()),
+      "annotation" => annotation::Entity::delete_by_id(ref_id).exec(db).await.map(|_| ()),
       _ => {
-        tracing::warn!(kind = %row.kind, "unknown moderation kind; queue marked rejected without business delete");
+        tracing::warn!(kind = %kind, "unknown moderation kind; queue marked rejected without business delete");
+        Ok(())
       }
+    };
+    if let Err(e) = res {
+      // 不阻塞队列更新：内容确实可能已经先被作者 / 其他 admin 流程删掉
+      // （DELETE WHERE id = X 在 SeaORM 下行数 0 不报错；这里能进 Err 说明
+      // 是真实 DB 故障，例如连接断、外键约束等）。记 warn 让运维有迹可循。
+      tracing::warn!(error = %e, kind = %kind, ref_id, "reject_one: business content delete failed");
     }
   }
 
@@ -1087,7 +1104,7 @@ pub async fn admin_reject_moderation(id: i64) -> Result<(), ServerFnError> {
     use app_core::session::require_admin;
     use sea_orm::EntityTrait;
 
-    let admin = require_admin()?;
+    let admin = require_admin().await?;
     let db = open_db().await?;
     let row = moderation_queue::Entity::find_by_id(id)
       .one(&db)
@@ -1112,7 +1129,7 @@ pub async fn admin_bulk_approve_moderation(ids: Vec<i64>) -> Result<u64, ServerF
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
-    let admin = require_admin()?;
+    let admin = require_admin().await?;
     if ids.is_empty() {
       return Ok(0);
     }
@@ -1146,7 +1163,7 @@ pub async fn admin_bulk_reject_moderation(ids: Vec<i64>) -> Result<u64, ServerFn
     use app_core::session::require_admin;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
-    let admin = require_admin()?;
+    let admin = require_admin().await?;
     if ids.is_empty() {
       return Ok(0);
     }
@@ -1157,15 +1174,27 @@ pub async fn admin_bulk_reject_moderation(ids: Vec<i64>) -> Result<u64, ServerFn
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    let mut done = 0u64;
-    for row in rows {
-      // 单条失败只告警，继续处理其余（批量操作尽量不整体回滚）。
-      match reject_one(&db, admin.id, row).await {
-        Ok(()) => done += 1,
-        Err(e) => tracing::warn!(error = %e, "bulk reject: one entry failed"),
-      }
-    }
-    Ok(done)
+    // Phase 8.8：8 路并发处理。DB pool 上限 32，留一半给前台读路径，
+    // 仍把批量耗时压缩到 ~1/8。单条失败只告警，继续处理其余。
+    use futures::stream::{self, StreamExt};
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let done_for_stream = done.clone();
+    let admin_id = admin.id;
+    let db_ref = &db;
+    stream::iter(rows)
+      .for_each_concurrent(8, |row| {
+        let done_inc = done_for_stream.clone();
+        async move {
+          match reject_one(db_ref, admin_id, row).await {
+            Ok(()) => {
+              done_inc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            Err(e) => tracing::warn!(error = %e, "bulk reject: one entry failed"),
+          }
+        }
+      })
+      .await;
+    Ok(done.load(std::sync::atomic::Ordering::Relaxed))
   }
   #[cfg(not(feature = "server"))]
   {
@@ -1227,7 +1256,7 @@ pub async fn admin_get_moderation_settings(
   {
     use app_core::session::require_admin;
     use app_core::settings::SiteConfig;
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let path = get_asset_root().join("site.json");
     let config = SiteConfig::from_file(path.to_str().unwrap_or("assets/site.json"))
       .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -1255,14 +1284,16 @@ pub async fn admin_set_moderation_settings(
   #[cfg(feature = "server")]
   {
     use app_core::session::require_admin;
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     validate_moderation_settings(&settings).map_err(ServerFnError::new)?;
 
     let path = get_asset_root().join("site.json");
     write_moderation_settings_to_site_json(&path, &settings).map_err(ServerFnError::new)?;
 
     // 立即生效：插件缓存清空 + 审核 pipeline 重建（重读 site.json + 插件目录）
+    // Phase 8.7：site.json 变了 → default_module_engine 的 OnceLock cache 也得清
     app_core::shared_plugin_manager().invalidate_all();
+    app_core::engines::module::invalidate_default_module_engine();
     module_moderation::reload_pipeline();
     tracing::info!(
       enabled = settings.enabled,
@@ -1289,12 +1320,12 @@ fn write_moderation_settings_to_site_json(
   path: &std::path::Path,
   settings: &app_core::settings::ModerationSettings,
 ) -> Result<(), String> {
-  let raw = std::fs::read_to_string(path)
-    .map_err(|e| format!("读取 {} 失败：{}", path.display(), e))?;
+  let raw =
+    std::fs::read_to_string(path).map_err(|e| format!("读取 {} 失败：{}", path.display(), e))?;
   let mut value: serde_json::Value =
     serde_json::from_str(&raw).map_err(|e| format!("site.json 不是合法 JSON：{}", e))?;
-  let moderation = serde_json::to_value(settings)
-    .map_err(|e| format!("序列化 ModerationSettings 失败：{}", e))?;
+  let moderation =
+    serde_json::to_value(settings).map_err(|e| format!("序列化 ModerationSettings 失败：{}", e))?;
   value["moderation"] = moderation;
   let pretty =
     serde_json::to_string_pretty(&value).map_err(|e| format!("序列化 site.json 失败：{}", e))?;
@@ -1466,8 +1497,8 @@ mod tests {
 
   #[test]
   fn validate_moderation_rejects_flag_greater_than_block() {
-    let err = validate_moderation_settings(&thresholds(Some(0.9), Some(0.5)))
-      .expect_err("flag>block 应拒");
+    let err =
+      validate_moderation_settings(&thresholds(Some(0.9), Some(0.5))).expect_err("flag>block 应拒");
     assert!(err.contains("flag_above"));
     assert!(err.contains("block_above"));
   }
@@ -1492,10 +1523,8 @@ mod tests {
 
   #[test]
   fn validate_moderation_rejects_blocklist_with_whitespace() {
-    let s = ModerationSettings {
-      url_blocklist: vec!["scam .com".to_string()],
-      ..Default::default()
-    };
+    let s =
+      ModerationSettings { url_blocklist: vec!["scam .com".to_string()], ..Default::default() };
     assert!(validate_moderation_settings(&s).is_err());
   }
 

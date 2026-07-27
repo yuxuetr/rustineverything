@@ -9,6 +9,9 @@ pub struct Model {
   pub nickname: String,
   pub avatar_url: Option<String>,
   pub role: String, // "admin", "member", "guest"
+  /// S4（风险 R1）：JWT 撤销版本。bump = 吊销该用户全部已签发 JWT。
+  #[serde(default)]
+  pub token_version: i32,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }

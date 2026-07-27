@@ -26,27 +26,41 @@ ALL_THEMES=(
     "theme-catppuccin-plugin:theme_catppuccin_plugin.wasm"
 )
 
-# 解析参数：缺省构建全部，否则按短名（去掉 theme- 前缀和 -plugin 后缀）匹配
+# Phase 9.3 起：content-transformer 系列示例插件也跟着这个脚本一起构建，
+# 不另开 build_content_transformers.sh —— 命令行 / CI 流水线只需调一次。
+# 短名匹配规则：去掉 `-plugin` 后缀（content-toc-plugin → content-toc）。
+ALL_CONTENT_TRANSFORMERS=(
+    "content-toc-plugin:content_toc_plugin.wasm"
+)
+
+# 合并所有支持的插件入口。`-` 前缀短名仍按子类别匹配。
+ALL_PLUGINS=("${ALL_THEMES[@]}" "${ALL_CONTENT_TRANSFORMERS[@]}")
+
+# 解析参数：缺省构建全部，否则按短名匹配。
 SELECTED=()
 if [ "$#" -eq 0 ]; then
-    SELECTED=("${ALL_THEMES[@]}")
+    SELECTED=("${ALL_PLUGINS[@]}")
 else
     for arg in "$@"; do
-        for entry in "${ALL_THEMES[@]}"; do
+        matched=0
+        for entry in "${ALL_PLUGINS[@]}"; do
             crate="${entry%%:*}"
+            # 主题：theme-X-plugin → 短名 X；内容变换器：content-X-plugin → 短名 content-X
             short="${crate#theme-}"
             short="${short%-plugin}"
             if [ "$arg" = "$short" ] || [ "$arg" = "$crate" ]; then
                 SELECTED+=("$entry")
+                matched=1
                 break
             fi
         done
+        if [ "$matched" -eq 0 ]; then
+            echo "错误：未识别的插件参数: $arg" >&2
+            echo "可用主题：ocean / sunset / catppuccin" >&2
+            echo "可用 content-transformer：content-toc" >&2
+            exit 1
+        fi
     done
-    if [ "${#SELECTED[@]}" -eq 0 ]; then
-        echo "错误：未识别的主题参数: $*" >&2
-        echo "可用主题: ocean / sunset / catppuccin" >&2
-        exit 1
-    fi
 fi
 
 # 1) 确保 wasm32 target 已安装

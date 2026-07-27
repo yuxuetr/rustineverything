@@ -28,7 +28,6 @@ use std::sync::Arc;
 
 use sdk::{PluginManifest, SDK_ABI_VERSION};
 
-use super::{Engine, EngineContext};
 use crate::error::{AppError, AppResult};
 
 /// 默认插件输出大小限制：8MB。
@@ -69,8 +68,9 @@ impl PluginEngine {
   /// - 若插件实现了 `get_manifest`，校验 `abi_version`：不兼容则拒绝调用。
   /// - 若未实现（老插件），跳过校验保留兼容性（要严格请用 [`Self::strict_call`]）。
   /// - 输出长度超过 `output_limit` 直接报错。
-  pub fn call(&self, path: &Path, func_name: &str, input: &str) -> AppResult<String> {
-    if let Some(manifest) = self.try_get_manifest(path) {
+  #[cfg(feature = "server")]
+  pub async fn call(&self, path: &Path, func_name: &str, input: &str) -> AppResult<String> {
+    if let Some(manifest) = self.try_get_manifest(path).await {
       if !manifest.is_compatible() {
         return Err(AppError::plugin(format!(
           "插件 ABI 版本不兼容 ({}): 期望 {}，得到 {}",
@@ -80,13 +80,14 @@ impl PluginEngine {
         )));
       }
     }
-    self.invoke(path, func_name, input)
+    self.invoke(path, func_name, input).await
   }
 
   /// 严格调用：必须有合法 manifest（缺失视为不兼容），且 ABI 版本一致。
   /// 适合内置/受信任插件路径，老插件未迁移时会失败。
-  pub fn strict_call(&self, path: &Path, func_name: &str, input: &str) -> AppResult<String> {
-    let manifest = self.get_manifest(path)?;
+  #[cfg(feature = "server")]
+  pub async fn strict_call(&self, path: &Path, func_name: &str, input: &str) -> AppResult<String> {
+    let manifest = self.get_manifest(path).await?;
     if !manifest.is_compatible() {
       return Err(AppError::plugin(format!(
         "插件 ABI 版本不兼容 ({}): 期望 {}，得到 {}",
@@ -95,14 +96,16 @@ impl PluginEngine {
         manifest.abi_version
       )));
     }
-    self.invoke(path, func_name, input)
+    self.invoke(path, func_name, input).await
   }
 
   /// 实际执行调用 + 输出大小限制。
-  fn invoke(&self, path: &Path, func_name: &str, input: &str) -> AppResult<String> {
+  #[cfg(feature = "server")]
+  async fn invoke(&self, path: &Path, func_name: &str, input: &str) -> AppResult<String> {
     let result = self
       .manager
       .call_path_with_string(path, func_name, input)
+      .await
       .map_err(|e| AppError::plugin(format!("插件调用失败: {}", e)))?;
 
     if result.len() > self.output_limit {
@@ -118,72 +121,58 @@ impl PluginEngine {
 
   /// 拿到插件 manifest（不存在 / 解析失败 → None，不报错）。
   /// 适合老插件兼容场景。
-  pub fn try_get_manifest(&self, path: &Path) -> Option<PluginManifest> {
-    let json = self.manager.call_path_with_string(path, "get_manifest", "").ok()?;
+  #[cfg(feature = "server")]
+  pub async fn try_get_manifest(&self, path: &Path) -> Option<PluginManifest> {
+    let json = self.manager.call_path_with_string(path, "get_manifest", "").await.ok()?;
     serde_json::from_str(&json).ok()
   }
 
   /// 严格读取 manifest：失败返回 `AppError`。
-  pub fn get_manifest(&self, path: &Path) -> AppResult<PluginManifest> {
+  #[cfg(feature = "server")]
+  pub async fn get_manifest(&self, path: &Path) -> AppResult<PluginManifest> {
     let json = self
       .manager
       .call_path_with_string(path, "get_manifest", "")
+      .await
       .map_err(|e| AppError::plugin(format!("get_manifest 失败 ({}): {}", path.display(), e)))?;
     serde_json::from_str::<PluginManifest>(&json)
       .map_err(|e| AppError::plugin(format!("manifest JSON 解析失败 ({}): {}", path.display(), e)))
   }
 
   /// 列出某插件声明的能力清单（老插件无 manifest 时返回空 Vec）。
-  pub fn capabilities_of(&self, path: &Path) -> Vec<String> {
-    self.try_get_manifest(path).map(|m| m.capabilities).unwrap_or_default()
+  #[cfg(feature = "server")]
+  pub async fn capabilities_of(&self, path: &Path) -> Vec<String> {
+    self.try_get_manifest(path).await.map(|m| m.capabilities).unwrap_or_default()
   }
 
   /// 检查一组插件路径，过滤出声明了 `cap` 能力且 ABI 兼容的。
   /// 用于按能力分发：例如 ThemeEngine 只关心 `capability == "theme"`。
-  pub fn filter_by_capability<'a, I>(&self, paths: I, cap: &str) -> Vec<PathBuf>
+  #[cfg(feature = "server")]
+  pub async fn filter_by_capability<'a, I>(&self, paths: I, cap: &str) -> Vec<PathBuf>
   where
     I: IntoIterator<Item = &'a Path>,
   {
-    paths
-      .into_iter()
-      .filter_map(|p| {
-        let m = self.try_get_manifest(p)?;
+    let mut out = Vec::new();
+    for p in paths {
+      if let Some(m) = self.try_get_manifest(p).await {
         if m.is_compatible() && m.has_capability(cap) {
-          Some(p.to_path_buf())
-        } else {
-          None
+          out.push(p.to_path_buf());
         }
-      })
-      .collect()
+      }
+    }
+    out
   }
 }
 
-impl Engine for PluginEngine {
-  fn name(&self) -> &'static str {
-    "plugin"
-  }
-
-  fn init(&mut self, _ctx: &EngineContext) -> AppResult<()> {
-    // 无需特殊初始化：PluginManager 自带懒加载缓存。
-    Ok(())
-  }
-
-  fn shutdown(&mut self) -> AppResult<()> {
-    // 释放所有 wasmi Module / Instance / Memory 缓存。
+impl PluginEngine {
+  /// 旧 Engine::shutdown 的等价物：清空所有 wasmi Module / Instance / Memory 缓存。
+  /// 给 admin 显式重新加载所有插件时调用。
+  pub fn shutdown(&self) {
     self.manager.invalidate_all();
-    Ok(())
-  }
-
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-
-  fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-    self
   }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "server"))]
 mod tests {
   use super::*;
   use sdk::{capabilities, PluginManifest};
@@ -192,11 +181,7 @@ mod tests {
     PluginEngine::new(Arc::new(crate::PluginManager::new()))
   }
 
-  #[test]
-  fn engine_name_is_plugin() {
-    let e = make_engine();
-    assert_eq!(e.name(), "plugin");
-  }
+  // Phase 8.7：删除了 Engine trait，原 engine_name_is_plugin 测试不再有意义。
 
   #[test]
   fn output_limit_default_is_8mb() {
@@ -211,26 +196,23 @@ mod tests {
     assert_eq!(e.output_limit(), 1024);
   }
 
-  #[test]
-  fn shutdown_invalidates_cache() {
-    let mut e = make_engine();
+  #[tokio::test]
+  async fn shutdown_invalidates_cache() {
+    let e = make_engine();
     // 用一个真实存在的 wasm 路径生成缓存条目；不存在则跳过
     let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
     if wasm.exists() {
-      let _ = e.manager.call_path_with_string(
-        wasm,
-        "translate",
-        &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string(),
-      );
+      let _ = e
+        .manager
+        .call_path_with_string(
+          wasm,
+          "translate",
+          &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string(),
+        )
+        .await;
     }
-    assert!(e.shutdown().is_ok());
-  }
-
-  #[test]
-  fn engine_ctx_init_is_noop_for_plugin() {
-    let mut e = make_engine();
-    let ctx = EngineContext::for_tests();
-    assert!(e.init(&ctx).is_ok());
+    // shutdown 不返回 Result（无可失败步骤）—— 仅验证 cache 被清空。
+    e.shutdown();
   }
 
   /// 当 manifest ABI 不兼容时 `strict_call` 应拒绝。
@@ -247,27 +229,28 @@ mod tests {
   }
 
   /// `filter_by_capability` 在所有插件无 manifest 时返回空。
-  #[test]
-  fn filter_by_capability_with_no_manifests_returns_empty() {
+  #[tokio::test]
+  async fn filter_by_capability_with_no_manifests_returns_empty() {
     let e = make_engine();
     let nonexistent = [PathBuf::from("/tmp/__no_such_plugin__.wasm")];
     let refs: Vec<&Path> = nonexistent.iter().map(|p| p.as_path()).collect();
-    let result = e.filter_by_capability(refs, capabilities::THEME);
+    let result = e.filter_by_capability(refs, capabilities::THEME).await;
     assert!(result.is_empty());
   }
 
   /// 真实插件场景：assets/plugins/ 中的插件未导出 get_manifest 时，
   /// `try_get_manifest` 应返回 None，`call` 仍然可工作。
-  #[test]
-  fn real_plugin_call_without_manifest_works() {
+  #[tokio::test]
+  async fn real_plugin_call_without_manifest_works() {
     let e = make_engine();
     let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
     if !wasm.exists() {
       return;
     }
     // 这些插件还没迁移到新 ABI（无 get_manifest），call 必须降级允许。
-    let res =
-      e.call(wasm, "translate", &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string());
+    let res = e
+      .call(wasm, "translate", &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string())
+      .await;
     // 调用本身能成功，但结果是否准确取决于插件是否迁移；这里仅验证不报错或报错合理
     match res {
       Ok(_) => {} // 老插件直接成功
@@ -283,16 +266,17 @@ mod tests {
   }
 
   /// 输出大小超限时返回 AppError::Plugin。
-  #[test]
-  fn output_over_limit_is_rejected() {
+  #[tokio::test]
+  async fn output_over_limit_is_rejected() {
     // 贴近零的限制下调用真实插件，输出必然超过 1 字节
     let e = make_engine().with_output_limit(1);
     let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
     if !wasm.exists() {
       return; // 插件未构建跳过
     }
-    let res =
-      e.call(wasm, "translate", &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string());
+    let res = e
+      .call(wasm, "translate", &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string())
+      .await;
     match res {
       Err(err) => {
         let msg = format!("{}", err);
@@ -304,14 +288,14 @@ mod tests {
 
   /// 集成测试：验证迁移后的插件能被读出 manifest，ABI 匹配且能力被声明。
   /// 插件 wasm 未构建时跳过。
-  #[test]
-  fn integration_real_plugin_manifest() {
+  #[tokio::test]
+  async fn integration_real_plugin_manifest() {
     let e = make_engine();
     let wasm = Path::new("../../assets/plugins/github_auth_plugin.wasm");
     if !wasm.exists() {
       return;
     }
-    let manifest = match e.get_manifest(wasm) {
+    let manifest = match e.get_manifest(wasm).await {
       Ok(m) => m,
       Err(_) => return, // 插件未迁移也允许跳过
     };
@@ -320,41 +304,43 @@ mod tests {
     assert!(manifest.has_capability(capabilities::AUTH_PROVIDER));
   }
 
-  #[test]
-  fn integration_real_plugin_strict_call_succeeds() {
+  #[tokio::test]
+  async fn integration_real_plugin_strict_call_succeeds() {
     let e = make_engine();
     let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
     if !wasm.exists() {
       return;
     }
-    if e.try_get_manifest(wasm).is_none() {
+    if e.try_get_manifest(wasm).await.is_none() {
       return; // 插件未迁移跳过
     }
-    let result = e.strict_call(
-      wasm,
-      "translate",
-      &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string(),
-    );
+    let result = e
+      .strict_call(
+        wasm,
+        "translate",
+        &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string(),
+      )
+      .await;
     match result {
       Ok(s) => assert_eq!(s, "Blog"),
       Err(err) => panic!("strict_call 在已迁移插件上不应该失败: {}", err),
     }
   }
 
-  #[test]
-  fn integration_filter_by_capability_finds_theme() {
+  #[tokio::test]
+  async fn integration_filter_by_capability_finds_theme() {
     let e = make_engine();
     let theme = PathBuf::from("../../assets/plugins/theme_ocean_plugin.wasm");
     let auth = PathBuf::from("../../assets/plugins/github_auth_plugin.wasm");
     if !theme.exists() || !auth.exists() {
       return;
     }
-    if e.try_get_manifest(&theme).is_none() {
+    if e.try_get_manifest(&theme).await.is_none() {
       return;
     }
     let refs: Vec<&Path> = vec![theme.as_path(), auth.as_path()];
-    let themes = e.filter_by_capability(refs.clone(), capabilities::THEME);
-    let auths = e.filter_by_capability(refs, capabilities::AUTH_PROVIDER);
+    let themes = e.filter_by_capability(refs.clone(), capabilities::THEME).await;
+    let auths = e.filter_by_capability(refs, capabilities::AUTH_PROVIDER).await;
     assert_eq!(themes.len(), 1);
     assert!(themes[0].ends_with("theme_ocean_plugin.wasm"));
     assert_eq!(auths.len(), 1);
