@@ -1426,10 +1426,12 @@ pub async fn revoke_membership(user_id: i32) -> Result<(), ServerFnError> {
 }
 
 // =============================================================
-// Orders / 在线支付（M5a：建单 + 状态查询；网关下单 stub，M5b/M5c 接入）
+// Orders / 在线支付（M5； PM4 起整区 feature = "payments" 门控，
+// 网关实现经 module-payment 的 PaymentProvider + 统一 notify 流水线）
 // =============================================================
 
-/// 下单结果：订单号 + 支付凭据（M5a 为 stub；M5b/c 按 provider/scene 填真实值）。
+/// 下单结果：订单号 + 支付凭据。
+#[cfg(feature = "payments")]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OrderInit {
   pub out_trade_no: String,
@@ -1444,6 +1446,7 @@ pub struct OrderInit {
 }
 
 /// 订单状态（前端扫码后轮询）。
+#[cfg(feature = "payments")]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct OrderStatus {
   pub out_trade_no: String,
@@ -1452,6 +1455,7 @@ pub struct OrderStatus {
 }
 
 /// 「我的订单」列表项。
+#[cfg(feature = "payments")]
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OrderInfo {
   pub out_trade_no: String,
@@ -1464,7 +1468,7 @@ pub struct OrderInfo {
 }
 
 /// server-only：生成不易猜测的我方订单号（时间戳 + 用户 + 随机段）。
-#[cfg(feature = "server")]
+#[cfg(all(feature = "server", feature = "payments"))]
 fn gen_out_trade_no(user_id: i32) -> String {
   use rand::Rng;
   let ts = chrono::Utc::now().timestamp_millis();
@@ -1472,8 +1476,23 @@ fn gen_out_trade_no(user_id: i32) -> String {
   format!("RIE{ts}{user_id}{r:08x}")
 }
 
-/// 创建课程购买订单。校验登录 / 课程付费 / 未拥有，快照价格，建 pending 订单。
-/// M5a：网关下单为 stub（kind=stub）；M5b/M5c 接入后返回真实支付凭据。
+/// server-only：把 PayError 展开为用户可读错误（取内层文案，与重构前
+/// 直接透传 String 错误的响应文案一致）。
+#[cfg(all(feature = "server", feature = "payments"))]
+fn pay_err(e: module_payment::PayError) -> ServerFnError {
+  use module_payment::PayError;
+  match e {
+    PayError::Unconfigured(m)
+    | PayError::Sign(m)
+    | PayError::Gateway(m)
+    | PayError::Parse(m)
+    | PayError::Unsupported(m) => ServerFnError::new(m),
+  }
+}
+
+/// 创建课程购买订单。校验登录 / 课程付费 / 未拥有，快照价格，建 pending 订单，
+/// 再经 PaymentProvider + host 执行器生成支付凭据（PM4）。
+#[cfg(feature = "payments")]
 #[post("/api/orders/create")]
 pub async fn create_order(
   course_slug: String,
@@ -1521,65 +1540,36 @@ pub async fn create_order(
     };
     order::Entity::insert(am).exec(&db).await.map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // 按网关 + 场景生成支付凭据。
-    let (kind, payload) = match provider.as_str() {
+    // 按网关 + 场景生成支付凭据（PM4：统一走 PaymentProvider + host 执行器）。
+    use module_payment::{host, OrderRequest as PayOrderRequest, PayAction};
+    let pay_req = PayOrderRequest {
+      out_trade_no: out_trade_no.clone(),
+      subject: course.title.clone(),
+      amount_cents: course.price,
+      currency: course.currency.clone(),
+      scene: scene.clone(),
+      // H5 需付款用户 IP；生产应从请求头 X-Forwarded-For 取，这里占位
+      // （None → provider 内缺省 0.0.0.0，同旧实现）。
+      client_ip: None,
+    };
+    let action = match provider.as_str() {
       "alipay" => {
-        let cfg = module_payment::alipay::config()
-          .ok_or_else(|| ServerFnError::new("支付宝未配置（缺 ALIPAY_* 环境变量）".to_string()))?;
-        match scene.as_str() {
-          "qr" => {
-            let qr =
-              module_payment::alipay::precreate(&cfg, &out_trade_no, &course.title, course.price)
-                .await
-                .map_err(ServerFnError::new)?;
-            ("qrcode".to_string(), qr)
-          }
-          s => {
-            let scn = if s == "wap" { "wap" } else { "page" };
-            let url = module_payment::alipay::build_pay_url(
-              &cfg,
-              scn,
-              &out_trade_no,
-              &course.title,
-              course.price,
-            )
-            .map_err(ServerFnError::new)?;
-            ("redirect".to_string(), url)
-          }
-        }
+        let p = module_payment::alipay::AlipayProvider::from_env()
+          .map_err(|_| ServerFnError::new("支付宝未配置（缺 ALIPAY_* 环境变量）".to_string()))?;
+        host::execute_order(&p, &pay_req).await.map_err(pay_err)?
       }
       "wechat" => {
-        let cfg = module_payment::wechat::config().ok_or_else(|| {
-          ServerFnError::new("微信支付未配置（缺 WECHAT_* 环境变量）".to_string())
-        })?;
-        match scene.as_str() {
-          "h5" => {
-            // H5 需付款用户 IP；生产应从请求头 X-Forwarded-For 取，这里占位。
-            let url = module_payment::wechat::create_h5(
-              &cfg,
-              &out_trade_no,
-              &course.title,
-              course.price,
-              "0.0.0.0",
-            )
-            .await
-            .map_err(ServerFnError::new)?;
-            ("h5".to_string(), url)
-          }
-          _ => {
-            let code_url = module_payment::wechat::create_native(
-              &cfg,
-              &out_trade_no,
-              &course.title,
-              course.price,
-            )
-            .await
-            .map_err(ServerFnError::new)?;
-            ("qrcode".to_string(), code_url)
-          }
-        }
+        let p = module_payment::wechat::WechatProvider::from_env()
+          .map_err(|_| ServerFnError::new("微信支付未配置（缺 WECHAT_* 环境变量）".to_string()))?;
+        host::execute_order(&p, &pay_req).await.map_err(pay_err)?
       }
       _ => return Err(ServerFnError::new("该支付方式暂未开通".to_string())),
+    };
+    // kind 标签保持旧协议：二维码 → qrcode；微信 h5 → h5；其余跳转 → redirect。
+    let (kind, payload) = match action {
+      PayAction::QrCode(qr) => ("qrcode".to_string(), qr),
+      PayAction::PayUrl(u) if provider == "wechat" && scene == "h5" => ("h5".to_string(), u),
+      PayAction::PayUrl(u) => ("redirect".to_string(), u),
     };
 
     Ok(OrderInit {
@@ -1600,6 +1590,7 @@ pub async fn create_order(
 }
 
 /// 查询订单状态（仅本人可查）。扫码场景前端轮询用。
+#[cfg(feature = "payments")]
 #[post("/api/orders/query")]
 pub async fn query_order(out_trade_no: String) -> Result<OrderStatus, ServerFnError> {
   #[cfg(feature = "server")]
@@ -1628,6 +1619,7 @@ pub async fn query_order(out_trade_no: String) -> Result<OrderStatus, ServerFnEr
 }
 
 /// 当前用户的订单列表（个人中心「我的订单」）。
+#[cfg(feature = "payments")]
 #[post("/api/orders/mine")]
 pub async fn list_my_orders() -> Result<Vec<OrderInfo>, ServerFnError> {
   #[cfg(feature = "server")]
@@ -1668,22 +1660,15 @@ pub async fn list_my_orders() -> Result<Vec<OrderInfo>, ServerFnError> {
 
 /// 处理支付宝异步回调（由 app 的 Axum 路由 `/api/pay/alipay/notify` 调用）。
 ///
-/// 流程：验签 → app_id 比对 → 状态成功 → 找单 → 核金额 → 原子认领（幂等 +
-/// 防并发双发货）→ 发货（写权益）。
+/// 流程（PM4）：验签 + app_id 比对（宿主侧，S6）→ 状态成功 →
+/// `parse_notify` 中立化 → 统一流水线 `pipeline::process_event`
+/// （找单 / 核金额 / 原子认领 / 注入发货 / pay_audit，S6 成果收敛）。
 /// 返回值为应答给支付宝的纯文本（`success` / `failure`），失败会触发其重试。
-///
-/// S6（风险 R7）加固：
-/// - `app_id` 比对：拒绝其它商户应用的合法签名回调串单。
-/// - 原子认领：`UPDATE … WHERE out_trade_no = ? AND status != 'paid'`，
-///   rows_affected = 0 视为已处理（并发重试 / 重放只会有一次发货生效）。
-/// - 入口审计日志（target=pay_audit）：关键字段留痕供对账 / 排查。
-#[cfg(feature = "server")]
+#[cfg(all(feature = "server", feature = "payments"))]
 pub async fn handle_alipay_notify(
   params: std::collections::HashMap<String, String>,
 ) -> &'static str {
-  use app_core::entities::order;
-  use sea_orm::sea_query::Expr;
-  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+  use module_payment::{pipeline, NotifyPayload, PaymentProvider};
 
   // 审计留痕：验签前先记录关键字段（不含买家敏感信息），便于对账与攻击排查。
   tracing::info!(
@@ -1695,96 +1680,67 @@ pub async fn handle_alipay_notify(
     "notify received"
   );
 
-  let Some(cfg) = module_payment::alipay::config() else {
+  let Ok(provider) = module_payment::alipay::AlipayProvider::from_env() else {
     return "failure";
   };
-  // 1) 验签——一切发货的前提
-  if !module_payment::alipay::verify_notify(&cfg, &params) {
+  // 1) 验签——一切发货的前提（宿主侧，不入 provider trait）。
+  if !module_payment::alipay::verify_notify(provider.config(), &params) {
     tracing::warn!(target: "pay_audit", "alipay notify: signature verify failed");
     return "failure";
   }
   // 1.5) S6：app_id 比对。签名是支付宝全局公钥签的，其它商户应用的合法
   // 回调也能过验签；比对 app_id 封死跨应用串单。
-  if params.get("app_id").map(|s| s.as_str()) != Some(cfg.app_id.as_str()) {
+  if params.get("app_id").map(|s| s.as_str()) != Some(provider.config().app_id.as_str()) {
     tracing::warn!(target: "pay_audit", "alipay notify: app_id mismatch");
     return "failure";
   }
-  // 2) 仅成功状态发货；其它状态确认收到（避免无谓重试）但不发货
+  // 2) 仅成功状态发货；其它状态确认收到（避免无谓重试）但不发货。
   let status = params.get("trade_status").map(|s| s.as_str()).unwrap_or("");
   if status != "TRADE_SUCCESS" && status != "TRADE_FINISHED" {
     return "success";
   }
-  let Some(out_trade_no) = params.get("out_trade_no") else {
+  // 3) 中立化 → 统一流水线（找单 / 核金额 / 原子认领 / 发货 / 审计）。
+  let Ok(event) = provider.parse_notify(&NotifyPayload::Form(params)) else {
     return "failure";
   };
-  let total = params.get("total_amount").map(|s| s.as_str()).unwrap_or("");
-
   let Ok(db) = open_db().await else {
     return "failure";
   };
-  let row =
-    match order::Entity::find().filter(order::Column::OutTradeNo.eq(out_trade_no)).one(&db).await {
-      Ok(Some(o)) => o,
-      _ => return "failure",
-    };
-  // 3) 金额核验
-  if !module_payment::alipay::amount_matches(total, row.amount) {
-    tracing::warn!(target: "pay_audit", "alipay notify: amount mismatch for {}", out_trade_no);
-    return "failure";
+  let outcome = pipeline::process_event(&db, &event, |user_id, slug| {
+    let db = db.clone();
+    async move {
+      grant_entitlement_internal(&db, user_id, slug, "purchase").await.map_err(|e| e.to_string())
+    }
+  })
+  .await;
+  if outcome.is_ok() {
+    "success"
+  } else {
+    "failure"
   }
-  // 4) 幂等快路径：已处理直接成功
-  if row.status == "paid" {
-    return "success";
-  }
-  let user_id = row.user_id;
-  let slug = row.course_slug.clone();
-  let trade_no = params.get("trade_no").cloned();
-  // 5) S6：原子认领——条件 UPDATE 取代「读-判-写」，并发回调只有一个能认领。
-  let claim = order::Entity::update_many()
-    .col_expr(order::Column::Status, Expr::value("paid"))
-    .col_expr(order::Column::ProviderTxn, Expr::value(trade_no))
-    .col_expr(order::Column::PaidAt, Expr::value(Some(chrono::Utc::now().fixed_offset())))
-    .filter(order::Column::OutTradeNo.eq(out_trade_no))
-    .filter(order::Column::Status.ne("paid"))
-    .exec(&db)
-    .await;
-  match claim {
-    Ok(res) if res.rows_affected == 0 => return "success", // 并发回调已处理
-    Ok(_) => {}
-    Err(_) => return "failure",
-  }
-  // 6) 发货：写权益（get_lesson 鉴权随即解锁；幂等 upsert）
-  if grant_entitlement_internal(&db, user_id, slug, "purchase").await.is_err() {
-    return "failure";
-  }
-  tracing::info!(target: "pay_audit", "alipay notify: order {} paid + entitlement granted", out_trade_no);
-  "success"
 }
 
 /// 处理微信支付 v3 异步回调（由 app 的 Axum 路由 `/api/pay/wechat/notify` 调用）。
 ///
 /// 入参：HTTP 头（key 小写）+ 原始 body 字符串（验签需逐字节一致）。
-/// 流程：时间戳新鲜度 → 验签 → 解密 resource → appid/mchid 比对 → 状态成功
-/// → 找单 → 核金额 → 原子认领（幂等 + 防并发双发货）→ 发货。
+/// 流程（PM4）：时间戳新鲜度 → 验签 → 解密 resource → appid/mchid 比对
+/// （以上宿主侧，S6）→ 状态成功 → `parse_notify` 中立化 → 统一流水线
+/// `pipeline::process_event`（找单 / 核金额 / 原子认领 / 注入发货 / pay_audit）。
 /// 返回 `(http_status, body)`：成功 `(200,{"code":"SUCCESS"})`，失败非 200 触发重试。
-///
-/// S6（风险 R7）加固：时间戳 ±5min 新鲜度（缩小重放窗口）、解密后
-/// appid/mchid 交叉校验、原子认领、入口审计日志（target=pay_audit）。
-#[cfg(feature = "server")]
+#[cfg(all(feature = "server", feature = "payments"))]
 pub async fn handle_wechat_notify(
   headers: std::collections::HashMap<String, String>,
   body: String,
 ) -> (u16, String) {
-  use app_core::entities::order;
-  use sea_orm::sea_query::Expr;
-  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+  use module_payment::{pipeline, NotifyPayload, PaymentProvider};
 
   let ok = || (200u16, "{\"code\":\"SUCCESS\"}".to_string());
   let fail = |m: &str| (500u16, format!("{{\"code\":\"FAIL\",\"message\":\"{m}\"}}"));
 
-  let Some(cfg) = module_payment::wechat::config() else {
+  let Ok(provider) = module_payment::wechat::WechatProvider::from_env() else {
     return fail("unconfigured");
   };
+  let cfg = provider.config();
   let get = |k: &str| headers.get(k).map(|s| s.as_str()).unwrap_or("");
   let (ts, nonce, sig) =
     (get("wechatpay-timestamp"), get("wechatpay-nonce"), get("wechatpay-signature"));
@@ -1803,12 +1759,12 @@ pub async fn handle_wechat_notify(
     }
     Err(_) => return fail("bad timestamp"),
   }
-  // 1) 验签
-  if !module_payment::wechat::verify_notify(&cfg, ts, nonce, &body, sig) {
+  // 1) 验签（宿主侧，不入 provider trait）。
+  if !module_payment::wechat::verify_notify(cfg, ts, nonce, &body, sig) {
     tracing::warn!(target: "pay_audit", "wechat notify: signature verify failed");
     return fail("bad signature");
   }
-  // 2) 解密 resource
+  // 2) 解密 resource（宿主侧）。
   let Ok(envelope) = serde_json::from_str::<serde_json::Value>(&body) else {
     return fail("bad body");
   };
@@ -1818,7 +1774,7 @@ pub async fn handle_wechat_notify(
     res["nonce"].as_str().unwrap_or(""),
     res["associated_data"].as_str().unwrap_or(""),
   );
-  let plain = match module_payment::wechat::decrypt_resource(&cfg, rnonce, aad, ct) {
+  let plain = match module_payment::wechat::decrypt_resource(cfg, rnonce, aad, ct) {
     Ok(p) => p,
     Err(_) => return fail("decrypt failed"),
   };
@@ -1847,56 +1803,29 @@ pub async fn handle_wechat_notify(
     total = tx["amount"]["total"].as_i64().unwrap_or(-1),
     "notify received (decrypted)"
   );
-  // 3) 仅成功状态发货
+  // 3) 仅成功状态发货；其它状态确认收到但不发货。
   if tx["trade_state"].as_str() != Some("SUCCESS") {
     return ok();
   }
-  let out_trade_no = tx["out_trade_no"].as_str().unwrap_or("");
-  if out_trade_no.is_empty() {
-    return fail("no out_trade_no");
-  }
-  let total = tx["amount"]["total"].as_i64().unwrap_or(-1);
-  let transaction_id = tx["transaction_id"].as_str().map(|s| s.to_string());
-
+  // 4) 中立化 → 统一流水线（找单 / 核金额 / 原子认领 / 发货 / 审计）。
+  let event = match provider.parse_notify(&NotifyPayload::Json(tx)) {
+    Ok(e) => e,
+    Err(_) => return fail("no out_trade_no"),
+  };
   let Ok(db) = open_db().await else {
     return fail("db");
   };
-  let row =
-    match order::Entity::find().filter(order::Column::OutTradeNo.eq(out_trade_no)).one(&db).await {
-      Ok(Some(o)) => o,
-      _ => return fail("order not found"),
-    };
-  // 4) 金额核验
-  if row.amount != total {
-    tracing::warn!(target: "pay_audit", "wechat notify: amount mismatch for {}", out_trade_no);
-    return fail("amount mismatch");
+  let outcome = pipeline::process_event(&db, &event, |user_id, slug| {
+    let db = db.clone();
+    async move {
+      grant_entitlement_internal(&db, user_id, slug, "purchase").await.map_err(|e| e.to_string())
+    }
+  })
+  .await;
+  match outcome {
+    pipeline::NotifyOutcome::Ok => ok(),
+    pipeline::NotifyOutcome::Failed(m) => fail(m),
   }
-  // 5) 幂等快路径
-  if row.status == "paid" {
-    return ok();
-  }
-  let user_id = row.user_id;
-  let slug = row.course_slug.clone();
-  // 5.5) S6：原子认领（同 alipay）：并发回调只有一个能认领。
-  let claim = order::Entity::update_many()
-    .col_expr(order::Column::Status, Expr::value("paid"))
-    .col_expr(order::Column::ProviderTxn, Expr::value(transaction_id))
-    .col_expr(order::Column::PaidAt, Expr::value(Some(chrono::Utc::now().fixed_offset())))
-    .filter(order::Column::OutTradeNo.eq(out_trade_no))
-    .filter(order::Column::Status.ne("paid"))
-    .exec(&db)
-    .await;
-  match claim {
-    Ok(res) if res.rows_affected == 0 => return ok(), // 并发回调已处理
-    Ok(_) => {}
-    Err(_) => return fail("update failed"),
-  }
-  // 6) 发货（幂等 upsert）
-  if grant_entitlement_internal(&db, user_id, slug, "purchase").await.is_err() {
-    return fail("grant failed");
-  }
-  tracing::info!(target: "pay_audit", "wechat notify: order {} paid + entitlement granted", out_trade_no);
-  ok()
 }
 
 #[post("/api/courses/progress/list")]

@@ -250,6 +250,11 @@ impl PaymentProvider for WechatProvider {
   fn parse_order_response(&self, req: &OrderRequest, body: &str) -> Result<PayAction, PayError> {
     let json: serde_json::Value =
       serde_json::from_str(body).map_err(|e| PayError::Parse(format!("解析微信响应失败: {e}")))?;
+    // 业务错误响应含 code + message（成功响应只有 code_url / h5_url）——
+    // 透传网关 message，与旧 post_v3 的错误文案一致。
+    if let (Some(msg), true) = (json["message"].as_str(), json["code"].is_string()) {
+      return Err(PayError::Gateway(format!("微信支付下单失败: {msg}")));
+    }
     match req.scene.as_str() {
       "h5" => json["h5_url"]
         .as_str()

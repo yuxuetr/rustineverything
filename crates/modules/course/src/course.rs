@@ -298,7 +298,7 @@ fn CourseDetailBody(
                   } else {
                       div { class: "mt-6 flex items-center gap-4",
                           span { class: "text-2xl font-extrabold text-[var(--color-primary)]", "¥{yuan}" }
-                          crate::pay_ui::PurchaseButton { course_slug: course.slug.clone(), price: course.price }
+                          PurchaseEntry { course_slug: course.slug.clone(), price: course.price }
                       }
                   }
               }
@@ -592,12 +592,34 @@ fn LessonPaywall(course_slug: String, price: i64) -> Element {
               div { class: "mt-5 text-3xl font-extrabold text-[var(--color-primary)]", "¥{yuan}" }
           }
           div { class: "mt-6",
-              crate::pay_ui::PurchaseButton { course_slug, price }
+              PurchaseEntry { course_slug, price }
           }
           p { class: "mt-4 text-sm text-slate-400",
               "需登录后购买；试看课节免费开放。"
           }
       }
+  }
+}
+
+/// 购买入口（PM4 feature 门控）：`payments` 开启时渲染在线购买按钮；
+/// 关闭时退化为「联系管理员开通」提示（权益仍可由 /admin/entitlements
+/// 手动授予，Paywall 鉴权不变）。
+#[component]
+fn PurchaseEntry(course_slug: String, price: i64) -> Element {
+  #[cfg(feature = "payments")]
+  {
+    rsx! {
+        crate::pay_ui::PurchaseButton { course_slug, price }
+    }
+  }
+  #[cfg(not(feature = "payments"))]
+  {
+    let _ = (course_slug, price);
+    rsx! {
+        span { class: "inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-500 dark:text-slate-400",
+            "在线购买未开通，请联系管理员开通课程权益"
+        }
+    }
   }
 }
 

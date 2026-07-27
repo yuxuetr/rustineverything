@@ -305,10 +305,10 @@
 - [x] 发货用注入回调 `on_paid(user_id, course_slug)`，不反向依赖 course entitlement；存储经 `OrderStore` trait（find_order / claim_paid）抽象，`sea_orm::DatabaseConnection` 自带实现（订单实体已下沉 app-core）。注：故意不用 sea-orm mock feature（会经 feature 统一禁用 `DatabaseConnection: Clone` 破坏 app-core 连接池）
 - [x] 9 个流水线单测（纯 mock store + mock 发货回调）：decide 矩阵 / happy path / 幂等重放不二次发货 / 金额不匹配拒 / 并发认领败方不发货 / 非成功零 DB / 查无此单 / UPDATE 失败 / 发货失败；payment 共 24 测 + clippy -D warnings 零告警
 
-### PM4 — course/app 接线（feature 门控）
-- [ ] `module-course` 以 `optional = true` 依赖 module-payment；新增 `payments` feature；`orders`/`create_order`/`query_order`/notify 入口改走 provider + pipeline；PurchaseModal / 我的订单 / 购买入口 feature 门控（关闭时 Paywall 退化为「联系管理员开通」）
-- [ ] app 新增 `payments` feature（默认开）级联 `module-course/payments`；`server/pay_routes.rs` 的 mount 按 feature 条件编译（关闭时 /api/pay/* 不注册）
-- [ ] 行为基线：默认 feature 组合下与重构前完全等价（路由/响应/日志 target 不变）
+### PM4 — course/app 接线（feature 门控）✅
+- [x] `module-course` 改 `optional = true` 依赖 module-payment + fast_qr；新增 `payments = ["dep:module-payment", "dep:fast_qr"]`，server 改弱依赖 `module-payment?/server`；订单类型/订单 fns/notify 整区 payments 门控；`create_order` 改走 `PaymentProvider::from_env` + `host::execute_order`（payment 新增 host 执行器发送 PayRequest；kind 标签 qrcode/h5/redirect 保持旧协议；pay_err 展开内层文案保响应一致）；两个 notify handler 保留宿主侧验签/app_id/时间戳/解密/appid+mchid 校验后，`parse_notify` 中立化 → `pipeline::process_event`（发货回调 = grant_entitlement_internal）；课程详情/Paywall 购买入口收敛为 `PurchaseEntry` shim（关闭时退化「联系管理员开通」）；wechat `parse_order_response` 透传网关 message（与旧 post_v3 错误文案一致）
+- [x] app 新增 `payments` feature（default = ["web", "payments"]）级联 `module-course/payments`；`pay_routes::mount` 条件编译（关闭时恒等，/api/pay/* 不注册）；/me/orders 路由保留但页面退化占位；classic/minimal 用户菜单「我的订单」`cfg!` 隐藏
+- [x] 行为基线：默认组合路由/响应/日志 target（pay_audit）不变；双组合验证：默认（payments 开）clippy -D warnings 零告警 + course 40 测/payment 24 测 + app server 构建 + web check；禁用 payments（course server-only / app --no-default-features 的 server 与 web）均编译通过
 
 ### PM5 — 验证与文档
 - [ ] 双 feature 组合验证：默认（含 payments）+ 禁用 payments 均通过 server/web 双目标编译；全量测试 + clippy -D warnings 零警告；CI（ci.yml）补 no-payments 编译检查

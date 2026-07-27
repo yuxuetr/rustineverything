@@ -25,6 +25,7 @@ use module_cli::cli::{CliArticlePage, CliIndexPage};
 use module_course::course::{
   AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
 };
+#[cfg(feature = "payments")]
 use module_course::pay_ui::MyOrdersPage;
 use module_docs::docs::{DocPage as DocPageView, Docs as DocsView};
 use module_embedded::embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
@@ -762,10 +763,24 @@ pub fn MyTopics() -> Element {
   rsx! { ModuleGate { id: "forum".to_string(), MyTopicsPage {} } }
 }
 
-/// /me/orders 我的订单页
+/// /me/orders 我的订单页（payments feature 门控；关闭时渲染占位提示，
+/// 路由保留以免旧链接 404）。
 #[component]
 pub fn MyOrders() -> Element {
-  rsx! { ModuleGate { id: "course".to_string(), MyOrdersPage {} } }
+  #[cfg(feature = "payments")]
+  {
+    rsx! { ModuleGate { id: "course".to_string(), MyOrdersPage {} } }
+  }
+  #[cfg(not(feature = "payments"))]
+  {
+    rsx! {
+        section { class: "py-20 bg-white dark:bg-slate-950 min-h-[60vh]",
+            div { class: "mx-auto max-w-4xl px-4 text-center text-slate-500",
+                "在线支付未开通，暂无订单可查。如需开通课程权益请联系管理员。"
+            }
+        }
+    }
+  }
 }
 
 #[component]

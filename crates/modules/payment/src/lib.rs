@@ -193,6 +193,9 @@ pub trait PaymentProvider {
 #[cfg(feature = "server")]
 pub mod crypto;
 
+#[cfg(feature = "server")]
+pub mod host;
+
 #[cfg(all(feature = "server", feature = "alipay"))]
 pub mod alipay;
 

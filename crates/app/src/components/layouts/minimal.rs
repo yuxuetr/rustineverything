@@ -110,10 +110,13 @@ pub fn MinimalShell() -> Element {
                                               class: "block px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
                                               "{t(lang(), \"user.my_annotations\")}"
                                           }
-                                          Link {
-                                              to: Route::MyOrders {},
-                                              class: "block px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                                              "{t(lang(), \"user.my_orders\")}"
+                                          // PM4：在线支付关闭时隐藏「我的订单」入口（路由保留）。
+                                          if cfg!(feature = "payments") {
+                                              Link {
+                                                  to: Route::MyOrders {},
+                                                  class: "block px-3 py-1.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
+                                                  "{t(lang(), \"user.my_orders\")}"
+                                              }
                                           }
                                           if u.is_admin() {
                                               Link {

@@ -48,10 +48,13 @@ tracing-subscriber = { workspace = true, optional = true }
 migration = { path = "../migration", optional = true }
 
 [features]
-default = ["web"]
+default = ["web", "payments"]
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
+# 在线支付（PM4，默认开）：级联 module-course/payments。关闭（--no-default-features）
+# 时 /api/pay/* 不注册、购买 UI / 我的订单退化，权益仍可由 admin 手动授予。
+payments = ["module-course/payments"]
 # 仅在 server 特性开启时，激活后端依赖和 core 的 server 特性
 server = [
     "dioxus/server",

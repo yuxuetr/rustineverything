@@ -1,4 +1,5 @@
 pub mod course;
+#[cfg(feature = "payments")]
 pub mod pay_ui;
 pub mod server;
 
