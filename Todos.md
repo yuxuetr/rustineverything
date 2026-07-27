@@ -275,3 +275,45 @@
 - **密钥（S5）**：本地 `.env` 已注入 `DATA_ENCRYPTION_KEY`（openssl 生成，未入库）；重启后触发 PKCE 加密，日志无回退 warn = 独立密钥生效。
 - **配置收尾**（本次提交）：docker-compose.yml app 环境新增 DATA_ENCRYPTION_KEY / STRICT_MIGRATION（compose 默认 1）/ RATE_LIMIT_* / CSP_POLICY 透传；`.env.example` 补运维开关文档。
 - 待办（需公网环境）：浏览器 Console 确认无 CSP violation；gateway 反代环境下确认 /healthz 放行与 XFF 链。
+
+---
+
+# 新阶段 — 支付模块抽取为可选 crate（2026-07-27 评审结论）
+
+> 背景：支付代码目前内嵌在 `module-course`（alipay.rs / wechat.rs / notify 两处 ~90% 重复）。
+> 形态评审结论：**可选 crate（feature 门控）优于 WASM 插件**——支付是第一方代码，
+> 沙箱收益用不上；trait 边界提供编译期安全，且与 `module-moderation` 可选基设模式同构
+> （MODULE_SPEC §11.3 已合规）。trait 边界 = 未来 WASM ABI 边界，两路线不冲突。
+> 原则：每任务一提交（无共同作者行）；提交后同步本文档；行为不变（纯结构重构，
+> 不改支付语义）；S6 加固成果（原子认领/金额核验/pay_audit）必须完整保留并收敛进公共流水线。
+> 校验命令沿用「持续约定」；额外要求：启用/禁用 payments feature 两种组合均须编译通过。
+
+## 任务清单
+
+### PM1 — 新建 `crates/modules/payment`（module-payment）骨架
+- [ ] `PaymentProvider` trait：`build_order` / `parse_order_response` / `parse_notify` / `build_query` / `parse_query`；签名、验签、解密不入 trait（宿主 crypto 工具注入）
+- [ ] 中立类型：`OrderRequest` / `PayRequest`（url/method/headers/body/sign_payload）/ `PayAction`（pay_url | qr_code）/ `PaymentEvent`（out_trade_no/amount_cents/status/txn_id）/ `PayError`
+- [ ] features：`alipay`、`wechat`（默认全开）；`[lints] workspace = true` 接入 unwrap/expect lint；登记进根 Cargo.toml workspace members
+
+### PM2 — 迁移网关实现
+- [ ] `course/src/alipay.rs` → `payment/src/alipay.rs`，`course/src/wechat.rs` → `payment/src/wechat.rs`，适配为两个 `PaymentProvider` impl（纯搬移 + 适配，不改协议逻辑）
+- [ ] RSA2 签名/验签、AES-256-GCM 解密等 crypto 工具随迁（`payment/src/crypto.rs` 或保留在 provider 内部）；现有签名/验签/解密单测全部随迁且通过
+- [ ] 配置加载（env 读取 + 缺项降级 None）随迁；密钥仍经 .env，不回显
+
+### PM3 — 统一 notify 流水线 `payment/src/pipeline.rs`
+- [ ] 合并两处 ~90% 重复的 notify 处理：验签/解密（宿主侧）→ `parse_notify` → 金额核验（以 DB 订单为准）→ 原子认领（条件 UPDATE，rows_affected=0 幂等）→ 发货回调 → pay_audit 日志（S6 成果完整收敛）
+- [ ] 发货用注入回调（`on_paid: …(user_id, course_slug)`），payment crate 不反向依赖 course 的 entitlement（符合 §11 依赖方向：db 句柄 + 订单实体由调用方提供或下沉 core）
+- [ ] 流水线单测：幂等/金额不匹配拒绝/并发认领语义（纯逻辑部分 mock 发货回调）
+
+### PM4 — course/app 接线（feature 门控）
+- [ ] `module-course` 以 `optional = true` 依赖 module-payment；新增 `payments` feature；`orders`/`create_order`/`query_order`/notify 入口改走 provider + pipeline；PurchaseModal / 我的订单 / 购买入口 feature 门控（关闭时 Paywall 退化为「联系管理员开通」）
+- [ ] app 新增 `payments` feature（默认开）级联 `module-course/payments`；`server/pay_routes.rs` 的 mount 按 feature 条件编译（关闭时 /api/pay/* 不注册）
+- [ ] 行为基线：默认 feature 组合下与重构前完全等价（路由/响应/日志 target 不变）
+
+### PM5 — 验证与文档
+- [ ] 双 feature 组合验证：默认（含 payments）+ 禁用 payments 均通过 server/web 双目标编译；全量测试 + clippy -D warnings 零警告；CI（ci.yml）补 no-payments 编译检查
+- [ ] 文档：PAYMENT_SPEC.md 补「架构：PaymentProvider trait + 可选 crate」章节（含未来 WASM 化的安全红线清单：密钥不进沙箱/验签在宿主/收款方字段宿主注入/强制 SHA256 lock）；MODULE_SPEC.md §11.3 合规例外补 module-payment
+
+### 依赖与排序
+- PM1 → PM2 → PM3 → PM4 → PM5 严格串行（同一批文件连续改动，不并行）。
+- 风险提示：M5e 余项（对账/退款）尚未实现，实现时应直接写在 PaymentProvider trait 上（build_query/parse_query 已预留）；WASM 化（Step 2）仅在出现第三网关/社区贡献需求时启动。
