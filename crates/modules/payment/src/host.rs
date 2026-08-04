@@ -4,7 +4,10 @@
 
 use std::collections::HashMap;
 
-use crate::{OrderCall, OrderRequest, PayAction, PayError, PayRequest, PaymentProvider};
+use crate::{
+  OrderCall, OrderRequest, PayAction, PayError, PayRequest, PaymentProvider, RefundRequest,
+  RefundResult,
+};
 
 /// 网关中文展示名（错误提示用），与旧 course 内嵌实现的文案一致。
 fn gateway_label(name: &str) -> &str {
@@ -59,4 +62,14 @@ pub async fn execute_query<P: PaymentProvider + Sync>(
   let pr = provider.build_query(out_trade_no)?;
   let body = send(&pr, gateway_label(provider.name())).await?;
   provider.parse_query(&body)
+}
+
+/// 退款（M5e）：`build_refund` → 发送 → `parse_refund`。
+pub async fn execute_refund<P: PaymentProvider + Sync>(
+  provider: &P,
+  req: &RefundRequest,
+) -> Result<RefundResult, PayError> {
+  let pr = provider.build_refund(req)?;
+  let body = send(&pr, gateway_label(provider.name())).await?;
+  provider.parse_refund(&body)
 }

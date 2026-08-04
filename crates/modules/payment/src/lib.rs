@@ -125,6 +125,38 @@ pub enum NotifyPayload {
 /// `PaymentEvent::status` 中「支付成功」的规范值；其余保留网关原始状态串。
 pub const EVENT_STATUS_SUCCESS: &str = "success";
 
+/// 退款入参（M5e；金额一律用「分」）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RefundRequest {
+  /// 原订单我方单号。
+  pub out_trade_no: String,
+  /// 我方退款单号（网关侧幂等键；全额退款用固定后缀即可重试安全）。
+  pub refund_no: String,
+  /// 本次退款金额（分）。
+  pub amount_cents: i64,
+  /// 原订单总金额（分；微信 v3 必填）。
+  pub total_cents: i64,
+  /// 退款原因（网关侧展示 / 对账备注）。
+  pub reason: String,
+}
+
+/// 退款结果（中立形态）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RefundResult {
+  /// 规范化状态：`success`（已退，含重复退款幂等命中）|
+  /// `processing`（已受理，异步到账，微信常态）| 其余保留原始串。
+  pub status: String,
+  /// 网关退款流水号（微信 refund_id；支付宝无独立退款流水，回填 trade_no）。
+  pub refund_id: Option<String>,
+}
+
+impl RefundResult {
+  /// 网关是否已受理（可将订单置为 refunded）。
+  pub fn is_accepted(&self) -> bool {
+    self.status == "success" || self.status == "processing"
+  }
+}
+
 /// 中立支付事件（回调 / 查询响应统一形态）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PaymentEvent {
@@ -183,6 +215,21 @@ pub trait PaymentProvider {
   fn parse_query(&self, body: &str) -> Result<PaymentEvent, PayError> {
     let _ = body;
     Err(PayError::Unsupported(format!("{}: 订单查询未实现", self.name())))
+  }
+
+  /// 构造退款请求（M5e；默认未实现）。
+  fn build_refund(&self, req: &RefundRequest) -> Result<PayRequest, PayError> {
+    Err(PayError::Unsupported(format!(
+      "{}: 退款未实现（out_trade_no={}）",
+      self.name(),
+      req.out_trade_no
+    )))
+  }
+
+  /// 解析退款响应（M5e；默认未实现）。
+  fn parse_refund(&self, body: &str) -> Result<RefundResult, PayError> {
+    let _ = body;
+    Err(PayError::Unsupported(format!("{}: 退款未实现", self.name())))
   }
 }
 
@@ -247,6 +294,24 @@ mod tests {
     let p = DummyProvider;
     assert!(matches!(p.build_query("RIE1"), Err(PayError::Unsupported(_))));
     assert!(matches!(p.parse_query("{}"), Err(PayError::Unsupported(_))));
+  }
+
+  #[test]
+  fn refund_defaults_to_unsupported() {
+    let p = DummyProvider;
+    let req = RefundRequest {
+      out_trade_no: "RIE1".into(),
+      refund_no: "RIE1R1".into(),
+      amount_cents: 100,
+      total_cents: 100,
+      reason: "test".into(),
+    };
+    assert!(matches!(p.build_refund(&req), Err(PayError::Unsupported(_))));
+    assert!(matches!(p.parse_refund("{}"), Err(PayError::Unsupported(_))));
+    // 受理语义：success / processing 受理，其余不受理。
+    assert!(RefundResult { status: "success".into(), refund_id: None }.is_accepted());
+    assert!(RefundResult { status: "processing".into(), refund_id: None }.is_accepted());
+    assert!(!RefundResult { status: "ABNORMAL".into(), refund_id: None }.is_accepted());
   }
 
   #[test]

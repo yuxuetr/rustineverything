@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, HashMap};
 use crate::crypto::{decode_key, env_nonempty, rsa2_sign, rsa2_verify};
 use crate::{
   NotifyPayload, OrderCall, OrderRequest, PayAction, PayError, PayRequest, PaymentEvent,
-  PaymentProvider, EVENT_STATUS_SUCCESS,
+  PaymentProvider, RefundRequest, RefundResult, EVENT_STATUS_SUCCESS,
 };
 
 /// 支付宝配置（从环境变量加载；缺任一关键项即视为未配置）。
@@ -335,6 +335,51 @@ impl PaymentProvider for AlipayProvider {
     build_query_request(&self.cfg, out_trade_no).map_err(PayError::Sign)
   }
 
+  /// 构造退款请求（`alipay.trade.refund`，同步接口；M5e）。
+  /// `out_request_no` = 我方退款单号，网关侧幂等键。
+  fn build_refund(&self, req: &RefundRequest) -> Result<PayRequest, PayError> {
+    let biz = serde_json::json!({
+      "out_trade_no": req.out_trade_no,
+      "refund_amount": yuan(req.amount_cents),
+      "out_request_no": req.refund_no,
+      "refund_reason": req.reason,
+    })
+    .to_string();
+    let mut params = common_params(&self.cfg, "alipay.trade.refund", biz);
+    // 退款接口无回调语义；置空后被 canonical 过滤，不参与签名。
+    params.insert("notify_url".into(), String::new());
+    let sign_payload = canonical(&params);
+    let sign = rsa2_sign(&self.cfg.app_private_key_der, &sign_payload).map_err(PayError::Sign)?;
+    params.insert("sign".into(), sign);
+    Ok(PayRequest {
+      url: self.cfg.gateway.clone(),
+      method: "POST".into(),
+      headers: vec![],
+      body: String::new(),
+      body_is_form: true,
+      form: params.into_iter().filter(|(_, v)| !v.is_empty()).collect(),
+      sign_payload: Some(sign_payload),
+    })
+  }
+
+  /// 退款响应 → 中立结果。支付宝退款同步到账：`fund_change=Y` 本次发生
+  /// 资金变动；`N` 为重复退款（幂等命中）——两者均视为已退。
+  fn parse_refund(&self, body: &str) -> Result<RefundResult, PayError> {
+    let json: serde_json::Value = serde_json::from_str(body)
+      .map_err(|e| PayError::Parse(format!("解析支付宝响应失败: {e}")))?;
+    let node = &json["alipay_trade_refund_response"];
+    if node["code"].as_str() != Some("10000") {
+      return Err(PayError::Gateway(format!(
+        "支付宝退款失败: {}",
+        node["sub_msg"].as_str().unwrap_or("未知")
+      )));
+    }
+    Ok(RefundResult {
+      status: "success".to_string(),
+      refund_id: node["trade_no"].as_str().map(|s| s.to_string()),
+    })
+  }
+
   /// 已验签的回调参数 → 中立事件。`TRADE_SUCCESS` / `TRADE_FINISHED` 规范化
   /// 为 success；金额非规范格式时 `amount_cents = -1`（流水线金额核验必拒，
   /// 与旧字符串比对拒绝语义等价）。
@@ -534,6 +579,39 @@ mod tests {
     // 其余业务错误 → Gateway（对账跳过，不误关）。
     let err = r#"{"alipay_trade_query_response":{"code":"20000","sub_msg":"系统繁忙"}}"#;
     assert!(matches!(p.parse_query(err), Err(PayError::Gateway(_))));
+  }
+
+  #[test]
+  fn provider_build_and_parse_refund() {
+    use crate::RefundRequest;
+    let p = AlipayProvider::new(test_cfg());
+    let req = RefundRequest {
+      out_trade_no: "RIE1".into(),
+      refund_no: "RIE1R1".into(),
+      amount_cents: 9900,
+      total_cents: 9900,
+      reason: "管理员退款".into(),
+    };
+    let pr = p.build_refund(&req).unwrap();
+    assert!(pr.body_is_form);
+    assert!(pr.form.iter().any(|(k, v)| k == "method" && v == "alipay.trade.refund"));
+    let biz = pr.form.iter().find(|(k, _)| k == "biz_content").map(|(_, v)| v.clone()).unwrap();
+    assert!(biz.contains("\"refund_amount\":\"99.00\""));
+    assert!(biz.contains("\"out_request_no\":\"RIE1R1\""));
+    assert!(pr.form.iter().any(|(k, _)| k == "sign"));
+
+    // 退款成功（fund_change=Y）与重复退款（N，幂等）均视为已退。
+    let ok =
+      r#"{"alipay_trade_refund_response":{"code":"10000","fund_change":"Y","trade_no":"T1"}}"#;
+    let r = p.parse_refund(ok).unwrap();
+    assert!(r.is_accepted());
+    assert_eq!(r.refund_id.as_deref(), Some("T1"));
+    let repeat = r#"{"alipay_trade_refund_response":{"code":"10000","fund_change":"N"}}"#;
+    assert!(p.parse_refund(repeat).unwrap().is_accepted());
+
+    // 业务错误 → Gateway。
+    let bad = r#"{"alipay_trade_refund_response":{"code":"40004","sub_msg":"余额不足"}}"#;
+    assert!(matches!(p.parse_refund(bad), Err(PayError::Gateway(_))));
   }
 
   #[test]

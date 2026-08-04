@@ -139,7 +139,104 @@ pub fn AdminEntitlementsPage() -> Element {
           }
 
           MembershipSection {}
+
+          OrdersSection {}
       }
+  }
+}
+
+/// 订单管理区块（M5e：最近订单 + 已支付订单全额退款）。
+/// `payments` feature 关闭时不渲染（订单 server fns 不存在）。
+#[component]
+fn OrdersSection() -> Element {
+  #[cfg(not(feature = "payments"))]
+  {
+    rsx! {}
+  }
+  #[cfg(feature = "payments")]
+  {
+    use module_course::server::{admin_list_orders, admin_refund_order, AdminOrderInfo};
+
+    let mut rows_res =
+      use_resource(|| async move { admin_list_orders().await.unwrap_or_default() });
+    let rows: Vec<AdminOrderInfo> = rows_res.read().clone().unwrap_or_default();
+    let loaded = rows_res.read().is_some();
+    let mut msg = use_signal(String::new);
+
+    rsx! {
+        div { class: "mt-12",
+            h2 { class: "text-lg font-bold text-slate-900 dark:text-white mb-2", "订单 / 退款" }
+            p { class: "text-sm text-slate-500 dark:text-slate-400 mb-4",
+                "最近 100 笔订单。已支付订单可全额退款：网关受理后订单置为已退款并撤销购买来源的课程权益（微信为异步到账）。"
+            }
+            if !msg().is_empty() {
+                p { class: "mb-3 text-sm text-slate-600 dark:text-slate-300", "{msg}" }
+            }
+            if !loaded {
+                div { class: "flex items-center justify-center py-8",
+                    div { class: "animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" }
+                }
+            } else if rows.is_empty() {
+                p { class: "text-center text-slate-400 py-6", "暂无订单。" }
+            } else {
+                div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
+                    table { class: "w-full text-sm",
+                        thead { class: "bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400",
+                            tr {
+                                th { class: "text-left font-medium px-4 py-2", "订单号" }
+                                th { class: "text-left font-medium px-4 py-2", "用户" }
+                                th { class: "text-left font-medium px-4 py-2", "课程" }
+                                th { class: "text-left font-medium px-4 py-2", "金额" }
+                                th { class: "text-left font-medium px-4 py-2", "渠道" }
+                                th { class: "text-left font-medium px-4 py-2", "状态" }
+                                th { class: "px-4 py-2" }
+                            }
+                        }
+                        tbody { class: "divide-y divide-slate-100 dark:divide-slate-800",
+                            for o in rows.into_iter() {
+                                {
+                                    let otn = o.out_trade_no.clone();
+                                    let yuan = o.amount / 100;
+                                    let chan = if o.provider == "alipay" { "支付宝" } else { "微信" };
+                                    let paid = o.status == "paid";
+                                    rsx! {
+                                        tr { key: "{o.out_trade_no}", class: "text-slate-700 dark:text-slate-200",
+                                            td { class: "px-4 py-2 font-mono text-xs", "{o.out_trade_no}" }
+                                            td { class: "px-4 py-2", "{o.nickname} #{o.user_id}" }
+                                            td { class: "px-4 py-2 font-mono text-xs", "{o.course_slug}" }
+                                            td { class: "px-4 py-2 font-medium", "¥{yuan}" }
+                                            td { class: "px-4 py-2 text-slate-400", "{chan}" }
+                                            td { class: "px-4 py-2 text-xs", "{o.status}" }
+                                            td { class: "px-4 py-2 text-right",
+                                                if paid {
+                                                    button {
+                                                        class: "text-xs font-medium text-rose-600 hover:text-rose-700",
+                                                        onclick: move |_| {
+                                                            let otn = otn.clone();
+                                                            spawn(async move {
+                                                                match admin_refund_order(otn.clone()).await {
+                                                                    Ok(_) => {
+                                                                        msg.set(format!("订单 {otn} 已退款"));
+                                                                        rows_res.restart();
+                                                                    }
+                                                                    Err(e) => msg.set(format!("退款失败：{e}")),
+                                                                }
+                                                            });
+                                                        },
+                                                        "全额退款"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
   }
 }
 

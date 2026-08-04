@@ -1914,6 +1914,162 @@ pub async fn reconcile_pending_orders_once() -> (u32, u32) {
   (delivered, closed)
 }
 
+// =============================================================
+// M5e 退款：Admin 订单列表 + 全额退款
+// =============================================================
+
+/// Admin 订单列表项（订单管理 / 退款）。
+#[cfg(feature = "payments")]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AdminOrderInfo {
+  pub out_trade_no: String,
+  pub user_id: i32,
+  pub nickname: String,
+  pub course_slug: String,
+  pub provider: String,
+  pub amount: i64,
+  pub status: String,
+  pub created_at: String,
+  pub paid_at: Option<String>,
+}
+
+/// Admin：最近订单（最多 100 条，按创建时间倒序，含用户昵称）。
+#[cfg(feature = "payments")]
+#[post("/api/orders/admin/list")]
+pub async fn admin_list_orders() -> Result<Vec<AdminOrderInfo>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::{order, user as user_entity};
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+    require_admin_user()?;
+    let db = open_db().await?;
+    let rows = order::Entity::find()
+      .order_by_desc(order::Column::CreatedAt)
+      .limit(100)
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut ids: Vec<i32> = rows.iter().map(|r| r.user_id).collect();
+    ids.sort();
+    ids.dedup();
+    let users = user_entity::Entity::find()
+      .filter(user_entity::Column::Id.is_in(ids))
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let name_of =
+      |id: i32| users.iter().find(|u| u.id == id).map(|u| u.nickname.clone()).unwrap_or_default();
+    Ok(
+      rows
+        .into_iter()
+        .map(|o| AdminOrderInfo {
+          nickname: name_of(o.user_id),
+          out_trade_no: o.out_trade_no,
+          user_id: o.user_id,
+          course_slug: o.course_slug,
+          provider: o.provider,
+          amount: o.amount,
+          status: o.status,
+          created_at: o.created_at.to_rfc3339(),
+          paid_at: o.paid_at.map(|t| t.to_rfc3339()),
+        })
+        .collect(),
+    )
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
+}
+
+/// Admin：全额退款（仅 `paid` 订单；M5e）。
+///
+/// 流程：网关 refund（我方退款单号 = `{out_trade_no}R1`，网关侧幂等，
+/// 重试安全）→ 受理后条件 UPDATE `paid → refunded` → 撤销
+/// `source=purchase` 的课程权益（admin 手动授予的不动）→ pay_audit 留痕。
+/// 微信退款为异步到账（processing 即受理）；到账异常需在网关后台处理。
+#[cfg(feature = "payments")]
+#[post("/api/orders/admin/refund")]
+pub async fn admin_refund_order(out_trade_no: String) -> Result<(), ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::{entitlement, order};
+    use module_payment::{host, RefundRequest};
+    use sea_orm::sea_query::Expr;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let admin = require_admin_user()?;
+    let db = open_db().await?;
+    let row = order::Entity::find()
+      .filter(order::Column::OutTradeNo.eq(&out_trade_no))
+      .one(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?
+      .ok_or_else(|| ServerFnError::new("订单不存在".to_string()))?;
+    if row.status != "paid" {
+      return Err(ServerFnError::new("仅已支付订单可退款".to_string()));
+    }
+    let refund_req = RefundRequest {
+      out_trade_no: out_trade_no.clone(),
+      refund_no: format!("{out_trade_no}R1"),
+      amount_cents: row.amount,
+      total_cents: row.amount,
+      reason: "管理员退款".to_string(),
+    };
+    let result = match row.provider.as_str() {
+      "alipay" => {
+        let p = module_payment::alipay::AlipayProvider::from_env()
+          .map_err(|_| ServerFnError::new("支付宝未配置（缺 ALIPAY_* 环境变量）".to_string()))?;
+        host::execute_refund(&p, &refund_req).await.map_err(pay_err)?
+      }
+      "wechat" => {
+        let p = module_payment::wechat::WechatProvider::from_env()
+          .map_err(|_| ServerFnError::new("微信支付未配置（缺 WECHAT_* 环境变量）".to_string()))?;
+        host::execute_refund(&p, &refund_req).await.map_err(pay_err)?
+      }
+      _ => return Err(ServerFnError::new("该支付方式不支持退款".to_string())),
+    };
+    if !result.is_accepted() {
+      tracing::warn!(
+        target: "pay_audit",
+        "refund: order {} rejected by gateway (status {})",
+        out_trade_no,
+        result.status
+      );
+      return Err(ServerFnError::new(format!("网关退款未受理（状态 {}）", result.status)));
+    }
+    // 条件 UPDATE：paid → refunded（并发防护；rows=0 表示已被处理，幂等）。
+    order::Entity::update_many()
+      .col_expr(order::Column::Status, Expr::value("refunded"))
+      .filter(order::Column::OutTradeNo.eq(&out_trade_no))
+      .filter(order::Column::Status.eq("paid"))
+      .exec(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    // 撤销购买来源的权益（不动 admin_grant 等其它来源）。
+    entitlement::Entity::delete_many()
+      .filter(entitlement::Column::UserId.eq(row.user_id))
+      .filter(entitlement::Column::CourseSlug.eq(row.course_slug.clone()))
+      .filter(entitlement::Column::Source.eq("purchase"))
+      .exec(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    tracing::info!(
+      target: "pay_audit",
+      "refund: order {} refunded (gateway status {}, by admin {}) + purchase entitlement revoked",
+      out_trade_no,
+      result.status,
+      admin.id
+    );
+    Ok(())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = out_trade_no;
+    Err(ServerFnError::new("server only".to_string()))
+  }
+}
+
 #[post("/api/courses/progress/list")]
 pub async fn get_progress(slug: String) -> Result<Vec<LessonProgress>, ServerFnError> {
   #[cfg(feature = "server")]

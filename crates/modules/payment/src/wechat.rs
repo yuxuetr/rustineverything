@@ -16,7 +16,7 @@
 use crate::crypto::{aes256_gcm_decrypt, decode_key, env_nonempty, rsa2_sign, rsa2_verify};
 use crate::{
   NotifyPayload, OrderCall, OrderRequest, PayAction, PayError, PayRequest, PaymentEvent,
-  PaymentProvider, EVENT_STATUS_SUCCESS,
+  PaymentProvider, RefundRequest, RefundResult, EVENT_STATUS_SUCCESS,
 };
 
 const API_BASE: &str = "https://api.mch.weixin.qq.com";
@@ -311,6 +311,37 @@ impl PaymentProvider for WechatProvider {
     self.parse_notify(&NotifyPayload::Json(json))
   }
 
+  /// 构造退款请求（`POST /v3/refund/domestic/refunds`；M5e）。
+  /// `out_refund_no` = 我方退款单号，网关侧幂等键；amount 需同时携
+  /// refund/total（分）。
+  fn build_refund(&self, req: &RefundRequest) -> Result<PayRequest, PayError> {
+    let body = serde_json::json!({
+      "out_trade_no": req.out_trade_no,
+      "out_refund_no": req.refund_no,
+      "reason": req.reason,
+      "amount": { "refund": req.amount_cents, "total": req.total_cents, "currency": "CNY" },
+    })
+    .to_string();
+    build_post_v3(&self.cfg, "/v3/refund/domestic/refunds", body).map_err(PayError::Sign)
+  }
+
+  /// 退款响应 → 中立结果。`SUCCESS` → success；`PROCESSING`（异步到账，
+  /// 微信常态）→ processing；其余（如 `ABNORMAL`）保留原串（不受理）；
+  /// 业务错误（code+message）→ Gateway。
+  fn parse_refund(&self, body: &str) -> Result<RefundResult, PayError> {
+    let json: serde_json::Value =
+      serde_json::from_str(body).map_err(|e| PayError::Parse(format!("解析微信响应失败: {e}")))?;
+    if let (Some(msg), true) = (json["message"].as_str(), json["code"].is_string()) {
+      return Err(PayError::Gateway(format!("微信支付退款失败: {msg}")));
+    }
+    let status = match json["status"].as_str().unwrap_or("") {
+      "SUCCESS" => "success".to_string(),
+      "PROCESSING" => "processing".to_string(),
+      other => other.to_string(),
+    };
+    Ok(RefundResult { status, refund_id: json["refund_id"].as_str().map(|s| s.to_string()) })
+  }
+
   /// 已验签 + 解密的回调明文（JSON）→ 中立事件。`SUCCESS` 规范化为
   /// success；金额缺失时 `amount_cents = -1`（流水线金额核验必拒）。
   fn parse_notify(&self, payload: &NotifyPayload) -> Result<PaymentEvent, PayError> {
@@ -486,6 +517,38 @@ mod tests {
     // 其余业务错误 → Gateway。
     let err = r#"{"code":"SYSTEM_ERROR","message":"系统错误"}"#;
     assert!(matches!(p.parse_query(err), Err(PayError::Gateway(_))));
+  }
+
+  #[test]
+  fn provider_build_and_parse_refund() {
+    use crate::RefundRequest;
+    let p = WechatProvider::new(test_cfg(vec![0u8; 32]));
+    let req = RefundRequest {
+      out_trade_no: "RIE1".into(),
+      refund_no: "RIE1R1".into(),
+      amount_cents: 9900,
+      total_cents: 9900,
+      reason: "管理员退款".into(),
+    };
+    let pr = p.build_refund(&req).unwrap();
+    assert!(pr.url.ends_with("/v3/refund/domestic/refunds"));
+    assert!(pr.body.contains("\"out_refund_no\":\"RIE1R1\""));
+    assert!(pr.body.contains("\"refund\":9900"));
+    assert!(pr.body.contains("\"total\":9900"));
+    assert!(pr
+      .headers
+      .iter()
+      .any(|(k, v)| k == "Authorization" && v.starts_with("WECHATPAY2-SHA256-RSA2048")));
+
+    // SUCCESS / PROCESSING 均受理；ABNORMAL 不受理；业务错误 → Gateway。
+    let ok = r#"{"status":"SUCCESS","refund_id":"WXR1"}"#;
+    let r = p.parse_refund(ok).unwrap();
+    assert!(r.is_accepted());
+    assert_eq!(r.refund_id.as_deref(), Some("WXR1"));
+    assert!(p.parse_refund(r#"{"status":"PROCESSING"}"#).unwrap().is_accepted());
+    assert!(!p.parse_refund(r#"{"status":"ABNORMAL"}"#).unwrap().is_accepted());
+    let bad = r#"{"code":"NOT_ENOUGH","message":"余额不足"}"#;
+    assert!(matches!(p.parse_refund(bad), Err(PayError::Gateway(_))));
   }
 
   #[test]
