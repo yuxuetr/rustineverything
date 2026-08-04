@@ -160,3 +160,70 @@ PAY_NOTIFY_BASE=https://<公网域名>   # 拼 notify/return URL；必须 HTTPS
 - **微信 v3 复杂度**：平台证书轮换 + 回调 AES-GCM 解密是最易错处，务必单测覆盖。
 - **回调可达性**：notify URL 必须公网可达且 HTTPS；反代（Pingora/nginx）需放行 `/api/pay/*`。
 - **退款/客诉**：本期仅手动（admin + 网关后台）；自动退款留 M5e。
+
+## 14. 架构：PaymentProvider trait + 可选 crate（PM1–PM5，2026-07-27）
+
+> 2026-07-27 评审结论落地：支付代码从 `module-course` 抽出为**可选 crate**
+> `crates/modules/payment`（feature 门控）。形态上优于 WASM 插件：支付是第一方
+> 代码，沙箱收益用不上；trait 边界提供编译期安全，与 `module-moderation`
+> 可选基设模式同构（[MODULE_SPEC](./MODULE_SPEC.md) §11.3）。
+
+### 14.1 分层与职责
+
+```text
+module-payment（依赖 core；不反向依赖任何业务模块）
+├── lib.rs      中立类型 + PaymentProvider trait（client/server 双目标可编译）
+│               OrderRequest / PayRequest / PayAction / OrderCall /
+│               NotifyPayload / PaymentEvent / PayError
+├── crypto.rs   (server) 宿主 crypto 工具：decode_key / rsa2_sign / rsa2_verify /
+│               aes256_gcm_decrypt —— 签名、验签、解密**不入 trait**
+├── alipay.rs   (server + feature "alipay") AlipayProvider：page/wap 签名直跳 =
+│               OrderCall::Direct；qr precreate = OrderCall::Http；回调验签工具
+├── wechat.rs   (server + feature "wechat") WechatProvider：native/h5 = Http +
+│               Authorization 头；回调验签 + resource 解密工具
+├── host.rs     (server) 宿主执行器：发送 PayRequest（HTTP IO 不进 Provider）
+└── pipeline.rs (server) 统一 notify 流水线：查单 → 金额核验（DB 快照为准）→
+                幂等快路径 → 原子认领（条件 UPDATE）→ 注入发货回调 on_paid →
+                pay_audit 审计（S6 成果收敛）；存储经 OrderStore trait 抽象
+
+module-course（payments feature，optional 依赖 module-payment）
+├── create_order：建单后 Provider::build_order + host::execute_order
+├── notify handler：宿主侧验签 / app_id / 时间戳 / 解密 / appid+mchid 校验 →
+│                   parse_notify 中立化 → pipeline::process_event（发货回调 =
+│                   grant_entitlement_internal，写 entitlements）
+└── pay_ui / PurchaseEntry：payments 关闭时退化「联系管理员开通」
+
+app（payments feature 默认开，级联 module-course/payments）
+└── pay_routes::mount：payments 关闭时恒等，/api/pay/* 不注册
+```
+
+`PaymentProvider` trait（纯构造 / 解析，无 IO）：`build_order` /
+`parse_order_response` / `parse_notify` + `build_query` / `parse_query`
+（默认 `Unsupported`，为 M5e 对账/关单/退款预留——实现时直接写在 trait 上）。
+
+### 14.2 feature 矩阵
+
+- `module-payment`：`alipay` / `wechat`（默认全开，可单独裁剪）+ `server`
+  （重依赖门控；web/wasm 目标只编译中立类型与 trait）。
+- `module-course`：`payments = ["dep:module-payment", "dep:fast_qr"]`；
+  `server` 经弱依赖 `module-payment?/server` 级联。
+- `app`：`default = ["web", "payments"]`，`payments = ["module-course/payments"]`。
+  禁用：`--no-default-features --features server|web`（CI 已覆盖双目标）。
+- 关闭 payments 后：`/api/pay/*` 不注册、订单 server fns 不存在、购买 UI /
+  我的订单退化占位；Paywall 鉴权不变，权益仍可由 `/admin/entitlements` 手动授予。
+
+### 14.3 未来 WASM 化的安全红线（Step 2，仅当出现第三网关/社区贡献需求时启动）
+
+trait 边界 = 未来 WASM ABI 边界，两路线不冲突。若把 Provider 下沉为沙箱插件，
+以下约束**不可妥协**：
+
+1. **密钥不进沙箱**：商户私钥 / APIv3Key 只存在于宿主 `crypto` 工具；插件只产出
+   待签名原文（`PayRequest.sign_payload`），签名结果由宿主回填。
+2. **验签 / 解密在宿主**：回调先经宿主验签（+解密）再进插件 `parse_notify`；
+   插件无法伪造“验签通过”。
+3. **收款方字段宿主注入**：`app_id` / `mchid` / 收款账号等由宿主配置强制覆盖，
+   插件构造的请求不得自行指定（防“改收款方”供应链攻击）。
+4. **金额核验 / 原子认领 / 发货永远在宿主流水线**（pipeline 不下沉）；插件只做
+   协议字段中立化，无 DB / 无发货能力。
+5. **强制 SHA256 lock**：支付插件必须进 `plugins_lock`（Phase 9.2）且不允许
+   warn-only 降级——hash 不匹配直接拒载。

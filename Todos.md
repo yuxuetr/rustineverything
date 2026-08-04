@@ -310,10 +310,17 @@
 - [x] app 新增 `payments` feature（default = ["web", "payments"]）级联 `module-course/payments`；`pay_routes::mount` 条件编译（关闭时恒等，/api/pay/* 不注册）；/me/orders 路由保留但页面退化占位；classic/minimal 用户菜单「我的订单」`cfg!` 隐藏
 - [x] 行为基线：默认组合路由/响应/日志 target（pay_audit）不变；双组合验证：默认（payments 开）clippy -D warnings 零告警 + course 40 测/payment 24 测 + app server 构建 + web check；禁用 payments（course server-only / app --no-default-features 的 server 与 web）均编译通过
 
-### PM5 — 验证与文档
-- [ ] 双 feature 组合验证：默认（含 payments）+ 禁用 payments 均通过 server/web 双目标编译；全量测试 + clippy -D warnings 零警告；CI（ci.yml）补 no-payments 编译检查
-- [ ] 文档：PAYMENT_SPEC.md 补「架构：PaymentProvider trait + 可选 crate」章节（含未来 WASM 化的安全红线清单：密钥不进沙箱/验签在宿主/收款方字段宿主注入/强制 SHA256 lock）；MODULE_SPEC.md §11.3 合规例外补 module-payment
+### PM5 — 验证与文档 ✅
+- [x] 双 feature 组合验证：默认（含 payments）app server 构建 + web check；禁用 payments（app --no-default-features 的 server / web + course server-only）均编译通过；全量 `cargo test --features server --workspace`（含 payment 24 / course 40）**0 失败**；`cargo clippy --workspace --features server --all-targets -- -D warnings` 零警告；ci.yml build-server 补 no-payments 双目标 check（server + web）
+- [x] 文档：PAYMENT_SPEC.md 新增 §14「架构：PaymentProvider trait + 可选 crate」（分层职责 / feature 矩阵 / WASM 化 5 条安全红线：密钥不进沙箱、验签解密在宿主、收款方字段宿主注入、金额核验/认领/发货不下沉、强制 SHA256 lock）；MODULE_SPEC.md §11.1/§11.3 补 module-payment 可选基设例外
 
 ### 依赖与排序
 - PM1 → PM2 → PM3 → PM4 → PM5 严格串行（同一批文件连续改动，不并行）。
 - 风险提示：M5e 余项（对账/退款）尚未实现，实现时应直接写在 PaymentProvider trait 上（build_query/parse_query 已预留）；WASM 化（Step 2）仅在出现第三网关/社区贡献需求时启动。
+
+## 阶段验收（2026-08-04）
+全部任务 PM1–PM5 已完成并逐个提交（无共同作者行）。
+- 结构：支付从 module-course 抽为可选 crate module-payment（trait + 中立类型 + crypto/host 宿主工具 + 统一 notify 流水线）；两处 ~90% 重复的 notify 处理收敛为 `pipeline::process_event`，S6 成果（验签前提/金额核验/原子认领/pay_audit）完整保留。
+- 门控：course `payments` feature + app 默认开；关闭时 /api/pay/* 不注册、购买 UI 退化「联系管理员开通」，admin 手动授权链路不受影响。
+- 验证：全工作区测试 0 失败；clippy -D warnings 零警告；启用/禁用 payments × server/web 四组合编译通过；CI 新增 no-payments 门禁。
+- 行为基线：路由/响应文案/日志 target 与重构前一致（纯结构重构）。⚠️ 网关端到端（沙箱/真实商户号）验证仍待 M5b/M5c 标注的前置条件具备后进行。

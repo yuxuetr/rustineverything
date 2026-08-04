@@ -254,6 +254,10 @@ modules/* → app                          （单向：业务模块 → 组合�
 - **`module-moderation`** 是可选的审核基础设施（依赖 `core`+`llm`+`sdk`），可被其他
   内容模块以 `optional = true` 引入（如 forum / comments / admin）——这属于“业务模块 →
   审核基设”的单向依赖，不违反本规则。
+- **`module-payment`**（PM1–PM5，2026-07-27）是可选的支付基础设施（依赖 `core`），
+  被 `module-course` 以 `optional = true` + `payments` feature 引入——同属“业务模块 →
+  基设”单向依赖（payment 不反向依赖任何业务模块；发货经注入回调完成，订单实体
+  下沉 `core::entities::order`）。架构见 [PAYMENT_SPEC](./PAYMENT_SPEC.md) §14。
 
 ### 11.2 实现手法与现状
 
@@ -268,10 +272,14 @@ modules/* → app                          （单向：业务模块 → 组合�
 
 ### 11.3 当前合规边与例外
 
-- ✅ 所有内容模块仅依赖 `core` / `sdk` / `widgets`（及可选 `module-moderation`）。
+- ✅ 所有内容模块仅依赖 `core` / `sdk` / `widgets`（及可选基设 `module-moderation` /
+  `module-payment`）。
 - ✅ `app` 依赖全部模块，是唯一的跨模块组合点。
 - ⚠️ 例外：`module-moderation` 被 `forum` / `comments` / `admin` 以 `optional` 引入。
   这是可接受的“业务模块 → 审核基设”单向依赖（moderation 不反向依赖任何业务模块）。
+- ⚠️ 例外：`module-payment` 被 `course` 以 `optional`（`payments` feature）引入。
+  同上属“业务模块 → 支付基设”单向依赖；payment 只依赖 `core`（订单实体 /
+  DB 句柄），发货动作（写 entitlement）由 course 侧注入回调提供。
 
 ### 11.4 新增跨模块交互时的决策
 
