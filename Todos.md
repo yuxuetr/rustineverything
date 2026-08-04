@@ -176,7 +176,9 @@
 - [x] **M5c** 微信支付 v3 接入（native/h5 + `/api/pay/wechat/notify` 验签+AES-256-GCM 解密；回调用公钥模式）— 提交 `feat(pay): WeChat Pay v3`。⚠️ 待真实商户号端到端验证；平台证书轮换模式可后续扩展
 - [x] **M5d** PurchaseModal（选网关 + 跳转/二维码 + 手动刷新解锁）接到 Paywall — 提交 `feat(pay): PurchaseModal`。happy path 待登录+网关凭据
 - [x] **M5e** 我的订单页（/me/orders）+ 课程详情购买入口（含已拥有判断）+ 用户菜单入口 — 提交 `feat(pay): my-orders page + course-detail buy entry`
-- [ ] **M5e 余项（需真实网关）** 对账定时任务（gateway query 回填/关单）+ 退款（gateway refund + admin）
+- [x] **M5e-对账（payment 侧，2026-08-04）** 查单能力：alipay `alipay.trade.query`（ACQ.TRADE_NOT_EXIST → 非成功事件供安全关单）+ wechat `GET /v3/pay/transactions/out-trade-no`（GET 空体签名）落在 trait 预留的 `build_query/parse_query` 上；`host::execute_query`；`OrderStore` 扩 `list_stale_pending`/`close_order`；`reconcile.rs`（成功→统一流水线回填；未支付超窗→条件关单，竞态让位回调；查单错误绝不误关）；payment 33 测（+9：查单解析×2 + 对账决策/回填/关单/竞态/金额拒/otn 防御）
+- [ ] **M5e-对账（接线）** course `reconcile_pending_orders_once` + app 定时任务（env 开关）
+- [ ] **M5e-退款** trait `build_refund/parse_refund` + 双网关实现 + admin 退款入口；⚠️ 真实网关端到端验证仍待商户凭据
 - 约定：验签是发货前提；金额核验；以 out_trade_no 幂等；回调可重入；密钥经 .env 校验不回显。
 - M5 核心完成（M5a–M5d）：双网关下单 + 回调发货 + 购买 UI 全链路打通（服务端单测覆盖签名/验签/解密）。⚠️ 上线需真实商户号 + 公网 HTTPS 回调端到端验证。
 

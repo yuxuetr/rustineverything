@@ -31,7 +31,16 @@ pub struct OrderSnapshot {
   pub status: String,
 }
 
-/// 流水线的最小存储边界：查单 + 原子认领。
+/// 待对账的滞留订单（`pending` 且超过最小等待时长；M5e）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct StaleOrder {
+  pub out_trade_no: String,
+  /// `alipay` | `wechat`（对账时据此选 Provider）。
+  pub provider: String,
+  pub created_at: chrono::DateTime<chrono::FixedOffset>,
+}
+
+/// 流水线的最小存储边界：查单 + 原子认领 +（M5e 对账）滞留单列表/关单。
 ///
 /// [`sea_orm::DatabaseConnection`] 有默认实现；单测注入纯 mock。
 pub trait OrderStore {
@@ -48,6 +57,18 @@ pub trait OrderStore {
     out_trade_no: &str,
     txn_id: Option<String>,
   ) -> impl Future<Output = Result<u64, String>> + Send;
+
+  /// M5e 对账：列出 `pending` 且创建时间早于 `cutoff` 的订单
+  /// （按创建时间升序，最多 `limit` 条，界定单次对账工作量）。
+  fn list_stale_pending(
+    &self,
+    cutoff: chrono::DateTime<chrono::FixedOffset>,
+    limit: u64,
+  ) -> impl Future<Output = Result<Vec<StaleOrder>, String>> + Send;
+
+  /// M5e 对账：条件关单 `status: pending → closed`。返回受影响行数
+  /// （0 = 已被回调/并发对账处理，不得覆盖）。
+  fn close_order(&self, out_trade_no: &str) -> impl Future<Output = Result<u64, String>> + Send;
 }
 
 impl OrderStore for sea_orm::DatabaseConnection {
@@ -79,6 +100,47 @@ impl OrderStore for sea_orm::DatabaseConnection {
       .col_expr(order::Column::PaidAt, Expr::value(Some(chrono::Utc::now().fixed_offset())))
       .filter(order::Column::OutTradeNo.eq(out_trade_no))
       .filter(order::Column::Status.ne("paid"))
+      .exec(self)
+      .await
+      .map(|res| res.rows_affected)
+      .map_err(|e| e.to_string())
+  }
+
+  async fn list_stale_pending(
+    &self,
+    cutoff: chrono::DateTime<chrono::FixedOffset>,
+    limit: u64,
+  ) -> Result<Vec<StaleOrder>, String> {
+    use app_core::entities::order;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+    order::Entity::find()
+      .filter(order::Column::Status.eq("pending"))
+      .filter(order::Column::CreatedAt.lt(cutoff))
+      .order_by_asc(order::Column::CreatedAt)
+      .limit(limit)
+      .all(self)
+      .await
+      .map(|rows| {
+        rows
+          .into_iter()
+          .map(|m| StaleOrder {
+            out_trade_no: m.out_trade_no,
+            provider: m.provider,
+            created_at: m.created_at,
+          })
+          .collect()
+      })
+      .map_err(|e| e.to_string())
+  }
+
+  async fn close_order(&self, out_trade_no: &str) -> Result<u64, String> {
+    use app_core::entities::order;
+    use sea_orm::sea_query::Expr;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    order::Entity::update_many()
+      .col_expr(order::Column::Status, Expr::value("closed"))
+      .filter(order::Column::OutTradeNo.eq(out_trade_no))
+      .filter(order::Column::Status.eq("pending"))
       .exec(self)
       .await
       .map(|res| res.rows_affected)
@@ -233,6 +295,16 @@ mod tests {
       assert_eq!(txn_id.as_deref(), Some("txn-1"));
       self.claims.fetch_add(1, Ordering::SeqCst);
       self.claim_rows.clone()
+    }
+    async fn list_stale_pending(
+      &self,
+      _cutoff: chrono::DateTime<chrono::FixedOffset>,
+      _limit: u64,
+    ) -> Result<Vec<StaleOrder>, String> {
+      Ok(vec![])
+    }
+    async fn close_order(&self, _out_trade_no: &str) -> Result<u64, String> {
+      Ok(0)
     }
   }
 

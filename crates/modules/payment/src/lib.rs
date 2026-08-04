@@ -205,6 +205,9 @@ pub mod wechat;
 #[cfg(feature = "server")]
 pub mod pipeline;
 
+#[cfg(feature = "server")]
+pub mod reconcile;
+
 // =============================================================
 // Tests
 // =============================================================

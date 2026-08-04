@@ -50,3 +50,13 @@ pub async fn execute_order<P: PaymentProvider + Sync>(
     }
   }
 }
+
+/// 查单（M5e 对账）：`build_query` → 发送 → `parse_query`。
+pub async fn execute_query<P: PaymentProvider + Sync>(
+  provider: &P,
+  out_trade_no: &str,
+) -> Result<crate::PaymentEvent, PayError> {
+  let pr = provider.build_query(out_trade_no)?;
+  let body = send(&pr, gateway_label(provider.name())).await?;
+  provider.parse_query(&body)
+}

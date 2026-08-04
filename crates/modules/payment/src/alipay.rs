@@ -198,6 +198,27 @@ pub async fn precreate(
   parse_precreate_response(&text)
 }
 
+/// 构造订单查询（`alipay.trade.query`）请求：需宿主 POST 到支付宝网关
+/// （M5e 对账用）。
+pub fn build_query_request(cfg: &AlipayConfig, out_trade_no: &str) -> Result<PayRequest, String> {
+  let biz = serde_json::json!({ "out_trade_no": out_trade_no }).to_string();
+  let mut params = common_params(cfg, "alipay.trade.query", biz);
+  // 查询接口无回调语义；置空后被 canonical 过滤，不参与签名。
+  params.insert("notify_url".into(), String::new());
+  let sign_payload = canonical(&params);
+  let sign = rsa2_sign(&cfg.app_private_key_der, &sign_payload)?;
+  params.insert("sign".into(), sign);
+  Ok(PayRequest {
+    url: cfg.gateway.clone(),
+    method: "POST".into(),
+    headers: vec![],
+    body: String::new(),
+    body_is_form: true,
+    form: params.into_iter().filter(|(_, v)| !v.is_empty()).collect(),
+    sign_payload: Some(sign_payload),
+  })
+}
+
 /// 验证异步回调签名：用支付宝公钥校验除 `sign` / `sign_type` 外的全部非空参数。
 pub fn verify_notify(cfg: &AlipayConfig, params: &HashMap<String, String>) -> bool {
   let Some(sign) = params.get("sign") else {
@@ -266,6 +287,52 @@ impl PaymentProvider for AlipayProvider {
 
   fn parse_order_response(&self, _req: &OrderRequest, body: &str) -> Result<PayAction, PayError> {
     parse_precreate_response(body).map(PayAction::QrCode).map_err(PayError::Gateway)
+  }
+
+  /// 查单响应 → 中立事件（M5e 对账）。
+  ///
+  /// - `TRADE_SUCCESS` / `TRADE_FINISHED` 规范化为 success（金额/流水号随行）；
+  /// - `ACQ.TRADE_NOT_EXIST`（用户从未提交支付）→ 非成功事件
+  ///   `TRADE_NOT_EXIST`，供对账安全关单；
+  /// - 其余业务错误 → `PayError::Gateway`（对账跳过，不误关）。
+  fn parse_query(&self, body: &str) -> Result<PaymentEvent, PayError> {
+    let json: serde_json::Value = serde_json::from_str(body)
+      .map_err(|e| PayError::Parse(format!("解析支付宝响应失败: {e}")))?;
+    let node = &json["alipay_trade_query_response"];
+    let out_trade_no = node["out_trade_no"].as_str().unwrap_or("").to_string();
+    if node["code"].as_str() != Some("10000") {
+      let sub_code = node["sub_code"].as_str().unwrap_or("");
+      if sub_code.contains("TRADE_NOT_EXIST") {
+        return Ok(PaymentEvent {
+          provider: "alipay".to_string(),
+          out_trade_no,
+          amount_cents: -1,
+          status: "TRADE_NOT_EXIST".to_string(),
+          txn_id: None,
+        });
+      }
+      return Err(PayError::Gateway(format!(
+        "支付宝查询失败: {}",
+        node["sub_msg"].as_str().unwrap_or("未知")
+      )));
+    }
+    let raw_status = node["trade_status"].as_str().unwrap_or("");
+    let status = if raw_status == "TRADE_SUCCESS" || raw_status == "TRADE_FINISHED" {
+      EVENT_STATUS_SUCCESS.to_string()
+    } else {
+      raw_status.to_string()
+    };
+    Ok(PaymentEvent {
+      provider: "alipay".to_string(),
+      out_trade_no,
+      amount_cents: node["total_amount"].as_str().and_then(yuan_to_cents).unwrap_or(-1),
+      status,
+      txn_id: node["trade_no"].as_str().map(|s| s.to_string()),
+    })
+  }
+
+  fn build_query(&self, out_trade_no: &str) -> Result<PayRequest, PayError> {
+    build_query_request(&self.cfg, out_trade_no).map_err(PayError::Sign)
   }
 
   /// 已验签的回调参数 → 中立事件。`TRADE_SUCCESS` / `TRADE_FINISHED` 规范化
@@ -432,6 +499,41 @@ mod tests {
     );
     let bad = r#"{"alipay_trade_precreate_response":{"code":"40004","sub_msg":"余额不足"}}"#;
     assert!(matches!(p.parse_order_response(&req, bad), Err(PayError::Gateway(_))));
+  }
+
+  #[test]
+  fn provider_build_and_parse_query() {
+    let p = AlipayProvider::new(test_cfg());
+    // build_query：form 含签名与方法名，无空值参数。
+    let pr = p.build_query("RIE1").unwrap();
+    assert!(pr.body_is_form);
+    assert!(pr.form.iter().any(|(k, v)| k == "method" && v == "alipay.trade.query"));
+    assert!(pr.form.iter().any(|(k, _)| k == "sign"));
+    assert!(pr.form.iter().all(|(_, v)| !v.is_empty()), "空值（notify_url）应被过滤");
+    assert!(pr.sign_payload.is_some());
+
+    // 成功支付 → success 事件（金额/流水号随行）。
+    let paid = r#"{"alipay_trade_query_response":{"code":"10000","out_trade_no":"RIE1","trade_status":"TRADE_SUCCESS","total_amount":"99.00","trade_no":"2026080422001"}}"#;
+    let ev = p.parse_query(paid).unwrap();
+    assert!(ev.is_success());
+    assert_eq!(ev.amount_cents, 9900);
+    assert_eq!(ev.txn_id.as_deref(), Some("2026080422001"));
+
+    // 待支付 → 非成功事件（保留原始状态串）。
+    let waiting = r#"{"alipay_trade_query_response":{"code":"10000","out_trade_no":"RIE1","trade_status":"WAIT_BUYER_PAY","total_amount":"99.00"}}"#;
+    let ev = p.parse_query(waiting).unwrap();
+    assert!(!ev.is_success());
+    assert_eq!(ev.status, "WAIT_BUYER_PAY");
+
+    // 交易不存在（用户从未提交支付）→ 非成功事件，供安全关单。
+    let not_exist = r#"{"alipay_trade_query_response":{"code":"40004","sub_code":"ACQ.TRADE_NOT_EXIST","sub_msg":"交易不存在"}}"#;
+    let ev = p.parse_query(not_exist).unwrap();
+    assert!(!ev.is_success());
+    assert_eq!(ev.status, "TRADE_NOT_EXIST");
+
+    // 其余业务错误 → Gateway（对账跳过，不误关）。
+    let err = r#"{"alipay_trade_query_response":{"code":"20000","sub_msg":"系统繁忙"}}"#;
+    assert!(matches!(p.parse_query(err), Err(PayError::Gateway(_))));
   }
 
   #[test]

@@ -267,6 +267,50 @@ impl PaymentProvider for WechatProvider {
     }
   }
 
+  /// 构造查单请求（M5e 对账）：
+  /// `GET /v3/pay/transactions/out-trade-no/{out_trade_no}?mchid=...`，
+  /// GET 签名体为空（`{method}\n{url}\n{ts}\n{nonce}\n\n`）。
+  fn build_query(&self, out_trade_no: &str) -> Result<PayRequest, PayError> {
+    let path =
+      format!("/v3/pay/transactions/out-trade-no/{}?mchid={}", out_trade_no, self.cfg.mchid);
+    let (auth, sign_payload) = build_auth(&self.cfg, "GET", &path, "").map_err(PayError::Sign)?;
+    Ok(PayRequest {
+      url: format!("{API_BASE}{path}"),
+      method: "GET".into(),
+      headers: vec![
+        ("Authorization".into(), auth),
+        ("Accept".into(), "application/json".into()),
+        ("User-Agent".into(), "rustineverything/1.0".into()),
+      ],
+      body: String::new(),
+      body_is_form: false,
+      form: vec![],
+      sign_payload: Some(sign_payload),
+    })
+  }
+
+  /// 查单响应 → 中立事件（M5e 对账）。成功响应字段与回调明文一致，
+  /// 复用 [`Self::parse_notify`] 中立化；业务错误（code+message）中的
+  /// “订单不存在”映射为非成功事件（供对账安全关单），其余 → Gateway。
+  fn parse_query(&self, body: &str) -> Result<PaymentEvent, PayError> {
+    let json: serde_json::Value =
+      serde_json::from_str(body).map_err(|e| PayError::Parse(format!("解析微信响应失败: {e}")))?;
+    if let (Some(msg), Some(code)) = (json["message"].as_str(), json["code"].as_str()) {
+      let normalized = code.replace('_', "");
+      if normalized.contains("NOTEXIST") {
+        return Ok(PaymentEvent {
+          provider: "wechat".to_string(),
+          out_trade_no: String::new(),
+          amount_cents: -1,
+          status: code.to_string(),
+          txn_id: None,
+        });
+      }
+      return Err(PayError::Gateway(format!("微信支付查询失败: {msg}")));
+    }
+    self.parse_notify(&NotifyPayload::Json(json))
+  }
+
   /// 已验签 + 解密的回调明文（JSON）→ 中立事件。`SUCCESS` 规范化为
   /// success；金额缺失时 `amount_cents = -1`（流水线金额核验必拒）。
   fn parse_notify(&self, payload: &NotifyPayload) -> Result<PaymentEvent, PayError> {
@@ -404,6 +448,44 @@ mod tests {
       PayAction::PayUrl("https://wx.gd/h5".into())
     );
     assert!(matches!(p.parse_order_response(&req, "{}"), Err(PayError::Gateway(_))));
+  }
+
+  #[test]
+  fn provider_build_and_parse_query() {
+    let p = WechatProvider::new(test_cfg(vec![0u8; 32]));
+    // build_query：GET + mchid 查询串 + 签名头；签名体为空（末尾双换行）。
+    let pr = p.build_query("RIE1").unwrap();
+    assert_eq!(pr.method, "GET");
+    assert!(pr.url.ends_with("/v3/pay/transactions/out-trade-no/RIE1?mchid=1900000000"));
+    assert!(pr
+      .headers
+      .iter()
+      .any(|(k, v)| k == "Authorization" && v.starts_with("WECHATPAY2-SHA256-RSA2048")));
+    let payload = pr.sign_payload.unwrap();
+    assert!(payload.starts_with("GET\n/v3/pay/transactions/out-trade-no/RIE1?mchid=1900000000\n"));
+    assert!(payload.ends_with("\n\n"), "GET 签名体为空");
+
+    // 成功支付 → success 事件（复用 parse_notify 中立化）。
+    let paid = r#"{"out_trade_no":"RIE1","trade_state":"SUCCESS","amount":{"total":9900},"transaction_id":"wx001"}"#;
+    let ev = p.parse_query(paid).unwrap();
+    assert!(ev.is_success());
+    assert_eq!(ev.amount_cents, 9900);
+
+    // 未支付 → 非成功事件。
+    let notpay = r#"{"out_trade_no":"RIE1","trade_state":"NOTPAY","amount":{"total":9900}}"#;
+    let ev = p.parse_query(notpay).unwrap();
+    assert!(!ev.is_success());
+    assert_eq!(ev.status, "NOTPAY");
+
+    // 订单不存在 → 非成功事件（供安全关单）。
+    let not_exist = r#"{"code":"ORDER_NOT_EXIST","message":"订单不存在"}"#;
+    let ev = p.parse_query(not_exist).unwrap();
+    assert!(!ev.is_success());
+    assert_eq!(ev.status, "ORDER_NOT_EXIST");
+
+    // 其余业务错误 → Gateway。
+    let err = r#"{"code":"SYSTEM_ERROR","message":"系统错误"}"#;
+    assert!(matches!(p.parse_query(err), Err(PayError::Gateway(_))));
   }
 
   #[test]
