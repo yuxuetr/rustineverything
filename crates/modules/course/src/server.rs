@@ -1828,6 +1828,92 @@ pub async fn handle_wechat_notify(
   }
 }
 
+// =============================================================
+// M5e 对账：滞留 pending 单定时核对（gateway query 回填 / 关单）
+// =============================================================
+
+/// server-only：执行一轮对账（由 app 启动的定时任务调用）。
+///
+/// 扫描 `pending` 且创建超过 `PAY_RECONCILE_MIN_AGE_SECS`（默认 300s）的
+/// 订单（单轮最多 50 单），逐单向网关查单：
+/// - 已支付 → 统一流水线回填发货（与回调同一路径：金额核验/原子认领）；
+/// - 未支付且超过 `PAY_RECONCILE_CLOSE_AFTER_SECS`（默认 7200s）→ 关单；
+/// - 网关未配置 / 查询失败 → 跳过（fail-safe，绝不误关）。
+///
+/// 返回 (回填发货数, 关单数)。
+#[cfg(all(feature = "server", feature = "payments"))]
+pub async fn reconcile_pending_orders_once() -> (u32, u32) {
+  use module_payment::pipeline::OrderStore;
+  use module_payment::reconcile::{reconcile_order, ReconcileAction, ReconcilePolicy};
+  use module_payment::{host, PayError};
+
+  fn env_secs(key: &str, default: i64) -> i64 {
+    std::env::var(key)
+      .ok()
+      .and_then(|v| v.trim().parse::<i64>().ok())
+      .filter(|v| *v > 0)
+      .unwrap_or(default)
+  }
+  let min_age = chrono::Duration::seconds(env_secs("PAY_RECONCILE_MIN_AGE_SECS", 300));
+  let policy = ReconcilePolicy {
+    close_after: chrono::Duration::seconds(env_secs("PAY_RECONCILE_CLOSE_AFTER_SECS", 7200)),
+  };
+
+  let Ok(db) = open_db().await else {
+    return (0, 0);
+  };
+  let now = chrono::Utc::now().fixed_offset();
+  let stale = match db.list_stale_pending(now - min_age, 50).await {
+    Ok(v) => v,
+    Err(e) => {
+      tracing::warn!(target: "pay_audit", error = %e, "reconcile: list stale pending failed");
+      return (0, 0);
+    }
+  };
+  let (mut delivered, mut closed) = (0u32, 0u32);
+  for order in stale {
+    let event = match order.provider.as_str() {
+      "alipay" => match module_payment::alipay::AlipayProvider::from_env() {
+        Ok(p) => host::execute_query(&p, &order.out_trade_no).await,
+        Err(e) => Err(e),
+      },
+      "wechat" => match module_payment::wechat::WechatProvider::from_env() {
+        Ok(p) => host::execute_query(&p, &order.out_trade_no).await,
+        Err(e) => Err(e),
+      },
+      _ => continue,
+    };
+    let event = match event {
+      Ok(ev) => ev,
+      // 网关未配置：静默跳过（本地 / 未接网关部署的常态）。
+      Err(PayError::Unconfigured(_)) => continue,
+      Err(e) => {
+        tracing::warn!(target: "pay_audit", "reconcile: query {} failed: {e}", order.out_trade_no);
+        continue;
+      }
+    };
+    let action = reconcile_order(&db, &order, &event, now, &policy, |user_id, slug| {
+      let db = db.clone();
+      async move {
+        grant_entitlement_internal(&db, user_id, slug, "purchase").await.map_err(|e| e.to_string())
+      }
+    })
+    .await;
+    match action {
+      ReconcileAction::Delivered => delivered += 1,
+      ReconcileAction::Closed => closed += 1,
+      ReconcileAction::Failed(m) => {
+        tracing::warn!(target: "pay_audit", "reconcile: {} failed: {m}", order.out_trade_no);
+      }
+      ReconcileAction::Pending | ReconcileAction::Raced => {}
+    }
+  }
+  if delivered + closed > 0 {
+    tracing::info!(target: "pay_audit", delivered, closed, "reconcile: round done");
+  }
+  (delivered, closed)
+}
+
 #[post("/api/courses/progress/list")]
 pub async fn get_progress(slug: String) -> Result<Vec<LessonProgress>, ServerFnError> {
   #[cfg(feature = "server")]

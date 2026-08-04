@@ -231,6 +231,30 @@ fn main() {
       });
     }
 
+    // M5e：支付对账定时任务（payments feature）。周期扫描滞留 pending 单，
+    // 向网关查单回填发货（回调丢失兜底）/ 超窗关单；网关未配置时每轮
+    // 空跑（零成本）。PAY_RECONCILE_DISABLED=1 关闭。
+    #[cfg(feature = "payments")]
+    if std::env::var("PAY_RECONCILE_DISABLED").ok().as_deref() != Some("1") {
+      let interval_secs = std::env::var("PAY_RECONCILE_INTERVAL_SECS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(300)
+        .max(60); // 下限 60s，防误配频繁打网关
+      tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(interval_secs));
+        // interval 的首个 tick 立即就绪：先吃掉，避免启动即打网关。
+        ticker.tick().await;
+        loop {
+          ticker.tick().await;
+          // 回填/关单明细已在 target=pay_audit 日志留痕。
+          let _ = module_course::server::reconcile_pending_orders_once().await;
+        }
+      });
+      tracing::info!(interval_secs, "startup: payment reconcile task scheduled");
+    }
+
     // Phase 8.8：用 OnceLock 取代 Box::leak，避免 `dx serve` 反复重启的开发态泄漏
     // 累积。`OnceLock<&'static str>` 在首次写入时把 String leak 成 &'static，
     // 后续运行直接读 cell（无重复 leak、无可观察的语义差异）。
