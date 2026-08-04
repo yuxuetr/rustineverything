@@ -318,10 +318,17 @@
 
 ### 依赖与排序
 - PM1 → PM2 → PM3 → PM4 → PM5 严格串行（同一批文件连续改动，不并行）。
-- 风险提示：M5e 余项（对账/退款）尚未实现，实现时应直接写在 PaymentProvider trait 上（build_query/parse_query 已预留）；WASM 化（Step 2）仅在出现第三网关/社区贡献需求时启动。
+- 风险提示（已落地 2026-08-04）：M5e 余项（对账/退款）已按计划直接写在 PaymentProvider trait 上（build_query/parse_query + build_refund/parse_refund），见下方阶段验收；WASM 化（Step 2）仅在出现第三网关/社区贡献需求时启动。
 
 ## 阶段验收（2026-08-04）
 全部任务 PM1–PM5 已完成并逐个提交（无共同作者行）。
+
+### M5e 余项补完（2026-08-04，同日三提交）
+对账 + 退款代码落地（均写在 PaymentProvider trait 预留方法上，验证 trait 边界可扩展性）：
+- 对账：双网关 build_query/parse_query + host::execute_query + reconcile 决策（回填走同一 notify 流水线，S6 语义在对账路径同样生效；关单只覆盖 pending，误关也可被迟到合法回调原子认领救回）+ app 启动期定时器（PAY_RECONCILE_* 可调）。
+- 退款：双网关 build_refund/parse_refund + admin_refund_order（网关幂等退款单号 / 条件 UPDATE / 仅撤销 purchase 权益）+ /admin/entitlements 订单区块。
+- 验证：payment 36 测；全工作区测试 0 失败；workspace clippy -D warnings 零警告；启用/禁用 payments 组合编译通过；PAYMENT_SPEC §9/§12/§13/§14 同步。
+- ⚠️ 仍待商户凭据：对账/退款/下单/回调的真实网关端到端验证。
 - 结构：支付从 module-course 抽为可选 crate module-payment（trait + 中立类型 + crypto/host 宿主工具 + 统一 notify 流水线）；两处 ~90% 重复的 notify 处理收敛为 `pipeline::process_event`，S6 成果（验签前提/金额核验/原子认领/pay_audit）完整保留。
 - 门控：course `payments` feature + app 默认开；关闭时 /api/pay/* 不注册、购买 UI 退化「联系管理员开通」，admin 手动授权链路不受影响。
 - 验证：全工作区测试 0 失败；clippy -D warnings 零警告；启用/禁用 payments × server/web 四组合编译通过；CI 新增 no-payments 门禁。

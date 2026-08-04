@@ -130,7 +130,12 @@ PAY_NOTIFY_BASE=https://<公网域名>   # 拼 notify/return URL；必须 HTTPS
 - **幂等**：以 `out_trade_no` 为键；`order.status==paid` 直接成功返回；entitlement 用
   `ON CONFLICT DO NOTHING/UPDATE`（M4 已是幂等）。
 - **回调可重复**：网关会重试直到收到成功响应 → 处理器必须可重入。
-- **对账（M5e，可选）**：定时任务扫 `pending` 超 N 分钟的单，主动查网关回填/关单。
+- **对账（M5e，已实现）**：启动期定时任务（默认 300s 一轮，`PAY_RECONCILE_*`
+  可调，见 `.env.example`）扫 `pending` 超龄单→网关查单：已支付走统一流水线
+  回填发货；未支付超支付窗口（默认 2h）关单；查单失败绝不误关（fail-safe）。
+- **退款（M5e，已实现）**：admin 全额退款（/admin/entitlements 订单区块）；
+  我方退款单号 `{out_trade_no}R1` 作网关幂等键；受理后条件 UPDATE
+  `paid → refunded` + 仅撤销 `source=purchase` 权益。
 - **不记密钥日志**；HTTPS-only notify；out_trade_no 不可猜（含随机段）。
 
 ## 10. Rust 依赖选型（生态优先，见 [[feedback_rust_ecosystem_first]]）
@@ -153,13 +158,14 @@ PAY_NOTIFY_BASE=https://<公网域名>   # 拼 notify/return URL；必须 HTTPS
 - **M5b**：支付宝接入（page/wap/precreate + `/api/pay/alipay/notify` 验签发货）。
 - **M5c**：微信支付 v3 接入（native/h5 + `/api/pay/wechat/notify` 验签+解密发货 + 平台证书）。
 - **M5d**：PurchaseModal（选网关 + 二维码/跳转 + 轮询解锁）；接到 Paywall / 课程详情。
-- **M5e（可选）**：我的订单页、对账定时任务、退款。
+- **M5e（已完成）**：我的订单页、对账定时任务（查单回填/关单）、admin 全额退款。
+  ⚠️ 对账/退款的真实网关端到端验证仍待商户凭据。
 
 ## 13. 风险与前置条件
 - **资质**：两网关均需企业商户号 + 备案 HTTPS 域名；个人主体无法开通 → 业务前置。
 - **微信 v3 复杂度**：平台证书轮换 + 回调 AES-GCM 解密是最易错处，务必单测覆盖。
 - **回调可达性**：notify URL 必须公网可达且 HTTPS；反代（Pingora/nginx）需放行 `/api/pay/*`。
-- **退款/客诉**：本期仅手动（admin + 网关后台）；自动退款留 M5e。
+- **退款/客诉**：admin 全额退款已实现（M5e）；部分退款与客诉介入仍走网关后台。
 
 ## 14. 架构：PaymentProvider trait + 可选 crate（PM1–PM5，2026-07-27）
 
@@ -181,10 +187,14 @@ module-payment（依赖 core；不反向依赖任何业务模块）
 │               OrderCall::Direct；qr precreate = OrderCall::Http；回调验签工具
 ├── wechat.rs   (server + feature "wechat") WechatProvider：native/h5 = Http +
 │               Authorization 头；回调验签 + resource 解密工具
-├── host.rs     (server) 宿主执行器：发送 PayRequest（HTTP IO 不进 Provider）
-└── pipeline.rs (server) 统一 notify 流水线：查单 → 金额核验（DB 快照为准）→
-                幂等快路径 → 原子认领（条件 UPDATE）→ 注入发货回调 on_paid →
-                pay_audit 审计（S6 成果收敛）；存储经 OrderStore trait 抽象
+├── host.rs     (server) 宿主执行器：发送 PayRequest（HTTP IO 不进 Provider）；
+│               execute_order / execute_query / execute_refund
+├── pipeline.rs (server) 统一 notify 流水线：查单 → 金额核验（DB 快照为准）→
+│               幂等快路径 → 原子认领（条件 UPDATE）→ 注入发货回调 on_paid →
+│               pay_audit 审计（S6 成果收敛）；存储经 OrderStore trait 抽象
+└── reconcile.rs (server, M5e) 对账决策：网关已成功 → 同一流水线回填；
+                未支付超支付窗口 → 条件关单（竞态让位回调）；驱动器在
+                course + app 启动期定时任务（PAY_RECONCILE_*）
 
 module-course（payments feature，optional 依赖 module-payment）
 ├── create_order：建单后 Provider::build_order + host::execute_order
@@ -198,8 +208,9 @@ app（payments feature 默认开，级联 module-course/payments）
 ```
 
 `PaymentProvider` trait（纯构造 / 解析，无 IO）：`build_order` /
-`parse_order_response` / `parse_notify` + `build_query` / `parse_query`
-（默认 `Unsupported`，为 M5e 对账/关单/退款预留——实现时直接写在 trait 上）。
+`parse_order_response` / `parse_notify` + `build_query` / `parse_query`（M5e
+对账，双网关已实现）+ `build_refund` / `parse_refund`（M5e 退款，双网关已
+实现；新 Provider 未实现时默认 `Unsupported`）。
 
 ### 14.2 feature 矩阵
 
