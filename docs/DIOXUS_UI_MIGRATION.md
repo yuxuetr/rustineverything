@@ -57,13 +57,13 @@
 3. 三个主题插件（ocean / sunset / catppuccin）改为输出 shadcn token（至少 `--background --foreground --card --primary --primary-foreground --muted --muted-foreground --accent --border --input --ring`，亮暗两套），重编 wasm。`plugin_security` 是黑名单过滤，新变量名不受影响。
 4. slate→stone、blue→orange 的色阶映射暂时保留，服务尚未迁移的手写类名；收尾阶段（U10）再评估能否删除。
 
-**待实验确认**（U1 内完成，结论回写本节）：`@theme`（站点原有）与 `@theme inline`（组件库）定义同一个 `--color-*` 时，Tailwind v4 采用哪一个、`:root` 是否仍输出该变量。
+**实验结论（U1）**：`@theme inline` 下 `bg-primary` 直接编译成 `background-color: var(--primary)`；`--color-primary: var(--primary)` 仍会输出，但位于 `@layer theme` 的 `:root` 中。分层规则输给未分层的 `main.css` 与插件 `<style>`，所以 U1 里 49 处 `var(--color-primary)` 继续取插件值（ocean 蓝），外观不变。U1 因此**只加 token、不改别名**；别名切换随 U2 插件改造一起做。站点原 `@theme` 里的 `--color-primary` / `--color-border` 默认值已删除（与组件库映射重名），其余旧变量的默认值仍在 `main.css`。
 
 ### D3 Tailwind 扫描组件库源码：构建时生成，不写死路径
 
 `dxui init` 生成的 `@source "/Users/…/.cargo/registry/src/…/dioxus-shadcn-0.6.0/src"` 是本机绝对路径；本项目的 Tailwind 在 Docker 构建阶段和 CI 里编译，写死路径会让组件类名**静默丢失**（不报错，只是没样式）。
 
-做法：新增 `scripts/tw_sources.sh`，用 `cargo metadata` 查出 `dioxus-shadcn` 的 `manifest_path`，生成 `crates/app/tailwind-sources.css`（gitignore）写入 `@source` 行；`tailwind-input.css` 引入该文件；`package.json` 的 `build` / `dev` 先跑脚本；Dockerfile 的 Tailwind 步骤与 CI 同步。验收要有一条反向检查：删掉生成的文件后构建应当失败，而不是产出缺类的 CSS。
+做法：新增 `scripts/tw-sources.mjs`（Node 脚本：Docker builder 里已有 node，不必再装 jq），用 `cargo metadata` 查出 `dioxus-shadcn` 的 `manifest_path`，生成 `crates/app/tailwind-sources.css`（gitignore）写入 `@source` 行；`tailwind-input.css` 引入该文件；`package.json` 的 `build` / `dev` 先跑脚本。Dockerfile 在 `npm run build` 之前已 COPY `scripts/` 和全部 manifest，无需改动；CI 不编译 Tailwind。反向检查（U1 已验证）：依赖图里找不到 crate 时脚本退出 1；生成文件缺失时 Tailwind CLI 退出 1。
 
 （这是 dioxus-ui 的第一条反馈，见 FB-01。）
 

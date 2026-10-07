@@ -37,3 +37,14 @@
 - 本项目的临时处理：`scripts/tw_sources.sh` 在构建时用 `cargo metadata` 生成 `@source` 行（见迁移计划 D3）。
 - 建议的上游修复：提供 `dxui css-sources`（只打印或写出当前解析到的 `@source` 行，供构建脚本调用），并在 README 的「Depend on the crate」一节说明 CI / Docker 场景；或者随 crate 附带一份预生成的类名清单（safelist）。
 - 状态：open
+
+### FB-02 交互组件依赖 `document::eval`，在不允许 `'unsafe-eval'` 的 CSP 下失效并触发 panic
+
+- 组件 / 版本：`dioxus-shadcn` 0.6.0（`modal_focus`、`anchored_overlay`、`listbox`、`roving_group`、`navigation_menu`、`menubar`、`hover_open`、`dismiss_timer`、`media_query`、`checkbox`、`slider`、`resizable`、`sidebar`、`input_otp`、`theme_controller`，共 15 个文件）
+- 发现于：U1 — 基线检查
+- 现象：Dioxus web 端的 `document::eval` 用 `new Function` 执行 JS。站点 CSP 是 `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'`（不含 `'unsafe-eval'`），`new Function` 被拒绝，wasm-bindgen 报「imported JS function that was not marked as `catch` threw an error」，随后在 `js-sys …/futures/task/singlethread.rs:142` **panic**。
+- 复现：任意 Dioxus 0.7 web 应用，响应头加 `Content-Security-Policy: script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'`，触发一次 `document::eval`（本站的暗色模式切换按钮即可复现；组件库中 Dialog 打开时的焦点管理、Popover/Dropdown 定位、Tabs 的方向键导航都会走这条路径）。
+- 影响：不允许 `'unsafe-eval'` 是常见的安全基线，在这种站点上弹层、菜单、键盘导航都不可用，且 panic 后 wasm 运行时状态不可预期。组件库的浏览器测试（含 axe 审计）没有带 CSP 运行，所以没发现。
+- 本项目的临时处理：待定（需要决定：CSP 放开 `'unsafe-eval'`，或等上游改造）。本站自身的 `document::eval`（暗色切换、搜索模态 Escape 等）同样受影响，自 S1（2026-07-21）起在生产环境失效，这是本项目自己的问题，另行处理。
+- 建议的上游修复：web 端把这些 JS 交互改为 `web-sys` / `wasm-bindgen` 直接调用（焦点、`getBoundingClientRect`、事件监听都有对应 API），`document::eval` 只留给 desktop / mobile；浏览器测试矩阵加一组「带严格 CSP」的运行；README 写明 CSP 要求。
+- 状态：open

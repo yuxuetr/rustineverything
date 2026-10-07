@@ -343,8 +343,16 @@
 > 每任务一提交；验收含亮/暗截图对比、无 hydration 警告、SSR 首屏烟测。
 
 - [x] U0 — 迁移计划 + 反馈记录 + 本清单
-- [ ] U1 — 接入 `dioxus-shadcn` 0.6 依赖、shadcn token（默认值 = 站点现有 stone/orange 配色，旧 `--color-*` 变别名）、构建时生成 `@source`（`scripts/tw_sources.sh`，Dockerfile/CI 同步）；外观不变
-- [ ] U2 — 三个主题插件改输出 shadcn token，重编 wasm，THEME_SPEC 更新
+- [x] U1 — 接入 `dioxus-shadcn` 0.6 依赖、shadcn token（默认值 = 站点现有 stone/orange 配色）、构建时生成 `@source`；外观不变
+  - 落点：`Cargo.toml` workspace dep（dioxus 仍 0.7.9）；`crates/app/tailwind-input.css` token + `@theme inline`；`scripts/tw-sources.mjs` → `crates/app/tailwind-sources.css`（gitignore）；`package.json` build/dev 先跑脚本，build 加 `--minify`（与已提交产物格式一致）
+  - 验证：9 个页面 × 亮/暗 像素对比，差异全部是动画帧（流光按钮、spinner、渐变字）；生成脚本反向检查两条均退出 1；clippy 除既有 `llm` lint 外零警告
+  - 旧变量别名未在 U1 切换（实验结论见计划 D2），随 U2 做
+  - 顺带发现的既有问题（不在本任务范围）：
+    - CSP 无 `'unsafe-eval'` → 全站 `document::eval` 失效且 panic，暗色切换在生产不可用（自 S1 起）；组件库同样受影响，见 FB-02，**阻塞 U4/U8**
+    - Dockerfile 未 COPY `crates/sdk-macros`、`crates/gateway`（2026-06-01 后新增），镜像构建应已失败
+    - `crates/app/build.rs` 先把 root `assets/` 正向同步到 `crates/app/assets/`，任何 cargo 构建都会用旧的 `assets/tailwind.css` 覆盖刚编译的产物；`npm run build` 后需手动 `cp crates/app/assets/tailwind.css assets/`
+    - rustc 1.99 的 clippy 对 `crates/llm/src/lib.rs:184`（`async_trait` 展开）报 `double_must_use`
+- [ ] U2 — 三个主题插件改输出 shadcn token，旧 `--color-*` 改为 token 别名，重编 wasm，THEME_SPEC 更新
 - [ ] U3 — admin（`admin.rs` + `admin_entitlements.rs`）：Button / Input / Textarea / NativeSelect / Tabs / Table / Spinner / Badge
 - [ ] U4 — course + 支付（`course.rs` + `pay_ui.rs`）：Card / Button / Badge / Table / Dialog
 - [ ] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert

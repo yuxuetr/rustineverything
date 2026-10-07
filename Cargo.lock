@@ -173,6 +173,7 @@ dependencies = [
  "base64",
  "chrono",
  "dioxus",
+ "dioxus-shadcn",
  "dotenvy",
  "migration",
  "module-admin",
@@ -2098,6 +2099,36 @@ dependencies = [
  "tracing-futures",
  "url",
  "walkdir",
+]
+
+[[package]]
+name = "dioxus-shadcn"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "406c5a5bd0449bbd2ce1a96f013c290c42c5cf84ad0778a6c9eec23080587c3a"
+dependencies = [
+ "dioxus",
+ "dioxus-shadcn-core",
+ "dioxus-shadcn-primitives",
+]
+
+[[package]]
+name = "dioxus-shadcn-core"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75a00711ec573162b04cdccdaa32a7993110ba2547b6ef19e435f2afa2e438bd"
+dependencies = [
+ "serde",
+ "tracing",
+]
+
+[[package]]
+name = "dioxus-shadcn-primitives"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04bb4ee8912c0351ec307941816b2d862c0ade6f57fa1b08719bef2b3c7edc63"
+dependencies = [
+ "dioxus-shadcn-core",
 ]
 
 [[package]]
