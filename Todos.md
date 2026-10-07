@@ -333,3 +333,23 @@
 - 门控：course `payments` feature + app 默认开；关闭时 /api/pay/* 不注册、购买 UI 退化「联系管理员开通」，admin 手动授权链路不受影响。
 - 验证：全工作区测试 0 失败；clippy -D warnings 零警告；启用/禁用 payments × server/web 四组合编译通过；CI 新增 no-payments 门禁。
 - 行为基线：路由/响应文案/日志 target 与重构前一致（纯结构重构）。⚠️ 网关端到端（沙箱/真实商户号）验证仍待 M5b/M5c 标注的前置条件具备后进行。
+
+---
+
+# 新阶段 — 迁移到自研组件库 dioxus-ui（2026-10-08）
+
+> 分支 `feat/dioxus-ui-migration`。详细计划与决策（D1–D6）见 [`docs/DIOXUS_UI_MIGRATION.md`](docs/DIOXUS_UI_MIGRATION.md)；
+> 组件库问题记入 [`docs/DIOXUS_UI_FEEDBACK.md`](docs/DIOXUS_UI_FEEDBACK.md)（FB-NN 编号，临时处理在代码注释里标注编号）。
+> 每任务一提交；验收含亮/暗截图对比、无 hydration 警告、SSR 首屏烟测。
+
+- [x] U0 — 迁移计划 + 反馈记录 + 本清单
+- [ ] U1 — 接入 `dioxus-shadcn` 0.6 依赖、shadcn token（默认值 = 站点现有 stone/orange 配色，旧 `--color-*` 变别名）、构建时生成 `@source`（`scripts/tw_sources.sh`，Dockerfile/CI 同步）；外观不变
+- [ ] U2 — 三个主题插件改输出 shadcn token，重编 wasm，THEME_SPEC 更新
+- [ ] U3 — admin（`admin.rs` + `admin_entitlements.rs`）：Button / Input / Textarea / NativeSelect / Tabs / Table / Spinner / Badge
+- [ ] U4 — course + 支付（`course.rs` + `pay_ui.rs`）：Card / Button / Badge / Table / Dialog
+- [ ] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert
+- [ ] U6 — cases / docs / podcast / search 列表部分
+- [ ] U7 — 5 个内容板块（先 ai，再套用其余 4 个）
+- [ ] U8 — 全局弹层：auth_modal / search 模态 → Dialog(+Command)；主题/语言/用户菜单 → Dropdown；移动端菜单 → Sheet
+- [ ] U9 — 生态 mega 菜单：评估 NavigationMenu 与现有纯 CSS 方案（D5），不劣于现状才替换
+- [ ] U10 — 收尾：清理无用类名与 CSS、评估移除色阶映射、更新 TAILWIND_GUIDE、反馈汇总
