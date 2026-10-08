@@ -36,7 +36,7 @@
 - 影响：所有依赖 crate 而非复制源码的用户，只要 CSS 不是在本机编译，都会踩到；错误是静默的。
 - 本项目的临时处理：`scripts/tw-sources.mjs` 在构建时用 `cargo metadata` 生成 `@source` 行（见迁移计划 D3）。
 - 建议的上游修复：提供 `dxui css-sources`（只打印或写出当前解析到的 `@source` 行，供构建脚本调用），并在 README 的「Depend on the crate」一节说明 CI / Docker 场景；或者随 crate 附带一份预生成的类名清单（safelist）。
-- 状态：open
+- 状态：fixed in 0.6.2（`dxui init` 对 path / vendored 依赖写相对路径；registry crate 仍是绝对路径，README 要求在构建步骤里运行 `dxui init`。本站用 `scripts/tw-sources.mjs` 生成，不受影响）
 
 ### FB-02 交互组件依赖 `document::eval`，在不允许 `'unsafe-eval'` 的 CSP 下失效并触发 panic
 
@@ -47,7 +47,7 @@
 - 影响：不允许 `'unsafe-eval'` 是常见的安全基线，在这种站点上弹层、菜单、键盘导航都不可用，且 panic 后 wasm 运行时状态不可预期。dioxus-ui 仓库里没有任何 CSP 配置或测试（`grep -ri content-security-policy` 无结果），浏览器测试（含 axe 审计）都在无 CSP 环境下跑，所以没发现。
 - 本项目的临时处理：无。决定（2026-10-08）：CSP 保持不含 `'unsafe-eval'`，等上游修复；依赖 eval 的组件推迟迁移。本站自身的 `document::eval`（暗色切换、搜索模态 Escape 等）同样受影响，自 S1（2026-07-21）起即已失效（站点尚未上线，未影响用户），这是本项目自己的问题，见 SECURITY_REMEDIATION.md B1。
 - 建议的上游修复：web 端把这些 JS 交互改为 `web-sys` / `wasm-bindgen` 直接调用（焦点、`getBoundingClientRect`、事件监听都有对应 API），`document::eval` 只留给 desktop / mobile；浏览器测试矩阵加一组「带严格 CSP」的运行；README 写明 CSP 要求。
-- 状态：open
+- 状态：fixed in 0.6.1（页面脚本在 web 端改为 wasm-bindgen snippet，RFC 0080；发布门禁加了 `npm run verify:csp`）。本站已升级到 0.6.2
 
 ---
 
@@ -62,7 +62,7 @@
 - 影响：中。应用把用户资料里的链接、头像传给组件是常见用法，组件本身成为 XSS 入口。
 - 本项目的临时处理：迁移时不把用户提交的 URL 传给这些组件，直到上游修复。
 - 建议的上游修复：提供 `SafeUrl` 校验（trim + 小写后拒绝 `javascript:` / `vbscript:` / `data:`，`src` 允许 `data:image/*`），组件默认使用；不安全时不输出 `href`。文档说明。
-- 状态：open
+- 状态：fixed in 0.6.2（只保留 http / https / mailto / tel 与相对地址；以原始属性透传的 `href` 不检查）
 
 ### FB-04 `theme_init_script` 用 Rust `{:?}` 把值拼进内联脚本
 
@@ -70,7 +70,7 @@
 - 现象：`storage_key` 用 Debug 格式拼进 JS，这不是 JS / HTML 转义，`</script>` 可原样通过。
 - 影响：低（`storage_key` 通常是常量），但 API 没有约束它必须是常量；另外内联脚本需要 CSP `'unsafe-inline'` 或 nonce / hash，文档未说明。
 - 建议的上游修复：用 `serde_json::to_string` 并把 `<` 转成 `\u003c`，或限制 key 为 `[A-Za-z0-9_-]`；文档给出 CSP hash 用法。
-- 状态：open
+- 状态：fixed in 0.6.2（存储键按 JS 字符串转义写入）
 
 ### FB-05 主题控制器把 localStorage 中任意值当作主题名
 
@@ -78,7 +78,7 @@
 - 现象：存储的任意字符串变成 `data-theme`，并以 `Theme::Preset(任意字符串)` 传给 `on_theme_change`。
 - 影响：低。若应用用主题名拼样式表路径或 URL，就成了注入点。
 - 建议的上游修复：按已知主题列表校验，或在文档中标明该值是不可信输入。
-- 状态：open
+- 状态：fixed in 0.6.2（只接受字母、数字、`-`、`_` 组成的主题名）
 
 ### FB-06 禁用的 `NavigationMenuLink` 仍保留 `href`
 
@@ -86,7 +86,7 @@
 - 现象：禁用只靠 CSS `pointer-events:none` 与 `aria-disabled`；键盘回车、鼠标中键仍可跳转。Menu / Sidebar / Pagination 禁用时会去掉 `href`，行为不一致。
 - 影响：低。应用若用禁用状态挡住未付费功能或无权访问的路由，会被绕过。
 - 建议的上游修复：`href: (!disabled).then_some(href)`，与其他组件一致。
-- 状态：open
+- 状态：fixed in 0.6.2
 
 ### FB-07 Escape / 外部点击监听挂在 document 上，没有层级判断
 
@@ -94,7 +94,7 @@
 - 现象：没有「最上层才处理」的判断，也不阻止冒泡。
 - 影响：低（未运行验证）。一次 Escape 可能同时关闭弹层和外层对话框，确认类对话框可能被意外关闭。
 - 建议的上游修复：维护弹层栈，只有最上层响应关闭。
-- 状态：open
+- 状态：fixed in 0.6.2（一次 Escape 只关一层）
 
 ### FB-08 Sidebar 快捷键在输入框里也会拦截
 
@@ -102,14 +102,14 @@
 - 现象：`window` 上的 keydown 对 Ctrl/Cmd+键 调用 `preventDefault()`，焦点在输入框 / contenteditable 时也会。
 - 影响：低。编辑器里 Ctrl+B（加粗）被抢走；多个 Sidebar 会同时切换。
 - 建议的上游修复：目标是可编辑元素时跳过；文档写明快捷键。
-- 状态：open
+- 状态：fixed in 0.6.2
 
 ### FB-09 `Button` 默认没有 `type`，在表单里会提交
 
 - 组件 / 版本：0.6.0 — `button.rs:96-120`（文档已说明）
 - 影响：信息。表单里的「取消」按钮会提交表单，例如删除确认表单。
 - 建议的上游修复：考虑默认 `type="button"`（破坏性变更，需版本说明）。
-- 状态：open
+- 状态：wontfix（上游决定保留原生 `submit` 语义，已写入 `button.rs` 文档与 README Security 节）。本站在表单外的按钮按需写 `r#type: "button"`
 
 ### FB-10 文档没有安全说明
 
@@ -122,7 +122,7 @@
   5. 主题存储值是不可信输入，`storage_key` 必须是常量。
   6. 全局行为：document / window 监听器、`data-dxui-*` 属性、`<html>` 上的滚动锁属性（`modal_focus.rs:14-36`）、Sidebar 快捷键。
   7. 防点击劫持（`frame-ancestors` / `X-Frame-Options`）由应用负责。
-- 状态：open
+- 状态：fixed in 0.6.2（README Security 节与 `docs/component-api.md` Security Rules）
 
 ### FB-11 `dxui` CLI 写文件时跟随符号链接
 
@@ -130,7 +130,7 @@
 - 现象：组件名必须在内置清单中、目标路径来自内置 JSON，无路径穿越；不加 `--overwrite` 不覆盖。但 `fs::write` 跟随符号链接。
 - 影响：信息。仓库里被放置的符号链接可以把写入重定向到别处。
 - 建议的上游修复：目标是符号链接时拒绝写入。
-- 状态：open
+- 状态：fixed in 0.6.2
 
 ### FB-12 crate 与 CLI 模板靠手工保持同步
 
@@ -138,7 +138,7 @@
 - 现象：`dioxus-shadcn` 源码与 CLI 模板副本手工同步；已经用 `dxui add` 复制了模板的应用拿不到安全修复。
 - 影响：信息。安全修复的传播依赖使用者自己 `dxui diff`。
 - 建议的上游修复：CI 加漂移检查；安全修复在 changelog 单独标注，提示复制源码的用户更新。
-- 状态：open
+- 状态：wontfix（上游已有模板与 crate 模块逐一比对的 parity 测试）
 
 ### FB-13 示例与文档站用 `document::Title`，在严格 CSP 下会崩溃
 
@@ -146,7 +146,7 @@
 - 现象：`document::Title` 在客户端调用 `set_title`，后者内部是 `eval("document.title = …")`，即 `new Function`。CSP 不含 `'unsafe-eval'` 时抛 EvalError，wasm-bindgen 未标 `catch`，运行时崩溃。站点在做 B1 时读源码发现（2026-10-08，见 `SECURITY_REMEDIATION.md` B1）。
 - 影响：中。按 FB-02 改完组件后，照着示例写 `document::Title` 的使用者仍然过不了 CSP L1，而且看起来像是组件库的问题。
 - 建议的上游修复：FB-10 的 CSP 说明里写明这一条；示例与文档站改用 web-sys 设置标题（服务端仍用 `document::Title` 输出 `<title>`）；向 Dioxus 报告 `set_title` 应直接用 `web_sys::Document::set_title`。
-- 状态：open
+- 状态：部分修复：web-demo 改为 `Dioxus.toml` 的 `[web.app] title`，README CSP 节写明 `document::Title` 需要 `unsafe-eval`；文档站 `site/src/main.rs:47` 与 desktop 预览仍用 `document::Title`（desktop 不受 CSP 影响）
 
 ### FB-14 `Tabs` 挂载即 eval，点击切换也只能经 eval 生效
 
@@ -155,7 +155,7 @@
 - 影响：高（在 FB-02 范围内，单独列出是因为影响面被低估）。迁移计划 D7「先验证点击路径不触发 eval」的设想不成立。
 - 站点临时处理：admin 审核页签只用 `tabs_list_class` / `tabs_trigger_class` 配普通按钮（`aria-pressed`），不用 `Tabs` 组件。
 - 建议的上游修复：`TabsTrigger` 自带 `onclick` 调 `context.select`，点击不依赖脚本；roving 脚本只负责方向键，按 FB-02 改为 web-sys。ToggleGroup / Accordion 同样检查。
-- 状态：open
+- 状态：fixed in 0.6.1（随 FB-02，Tabs 脚本不再走 eval）
 
 ### FB-15 `Table` 的边框不带颜色，依赖未说明的全局 base 规则
 
@@ -164,7 +164,7 @@
 - 影响：低。外观问题，但只在没有 shadcn base 层的应用里出现，README 和 `dxui init` 都没有提这个前提。
 - 站点临时处理：每个 `TableRow` 传 `class: "border-border"`（`admin_entitlements.rs`）。
 - 建议的上游修复：行与表头加 `border-border`；或在 README 的接入步骤里写明需要的 base 规则。
-- 状态：open
+- 状态：fixed in 0.6.2（Table / Data Table 行线用 `border-border`）。本站已删除逐行 `border-border` 的绕行写法
 
 ### FB-16 debug 构建对每次有意的类名覆盖都打日志
 
@@ -172,4 +172,4 @@
 - 现象：debug 构建里，使用者传入的类名每替换一个组件类名，就在控制台输出一条 `dioxus-shadcn class merge (RFC 0076): ... replaces the component class ...`。覆盖本来就是 `class` 参数的用途（例如 `px-5` 换掉按钮默认的 `px-4`），论坛一个页面就有十几条。U5 浏览器验收时看到（2026-10-08）。
 - 影响：低。真正需要注意的日志（无法分类的类名）被淹没。
 - 建议的上游修复：只对「无法分类、不会生效」的类名报告；替换成功的情况默认不打，或加开关。
-- 状态：open
+- 状态：wontfix（上游说明：只在 debug 构建、`debug` 级别、每条不同信息只打一次）

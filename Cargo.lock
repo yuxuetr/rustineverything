@@ -972,7 +972,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -2103,20 +2103,23 @@ dependencies = [
 
 [[package]]
 name = "dioxus-shadcn"
-version = "0.6.0"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "406c5a5bd0449bbd2ce1a96f013c290c42c5cf84ad0778a6c9eec23080587c3a"
+checksum = "ea89eb140b208a015db272b1113916c74d98a8faea90c0887a136a2729939d51"
 dependencies = [
  "dioxus",
  "dioxus-shadcn-core",
  "dioxus-shadcn-primitives",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
 ]
 
 [[package]]
 name = "dioxus-shadcn-core"
-version = "0.6.0"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75a00711ec573162b04cdccdaa32a7993110ba2547b6ef19e435f2afa2e438bd"
+checksum = "c91d4333bacac573d4e2b638e74d95707fe3ea6c9422b53c586c52bd87350ad2"
 dependencies = [
  "serde",
  "tracing",
@@ -2124,9 +2127,9 @@ dependencies = [
 
 [[package]]
 name = "dioxus-shadcn-primitives"
-version = "0.6.0"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04bb4ee8912c0351ec307941816b2d862c0ade6f57fa1b08719bef2b3c7edc63"
+checksum = "a085a16b2ca4ec6ba55fbcf32a442d92a2884a732e26c9c6d285a7719e5d4223"
 dependencies = [
  "dioxus-shadcn-core",
 ]
@@ -9104,7 +9107,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

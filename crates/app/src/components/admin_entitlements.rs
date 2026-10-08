@@ -5,8 +5,6 @@
 //! 支付网关接入前（M5），运营可在此手动为用户开通课程（线下售卖后开通）。
 
 use dioxus::prelude::*;
-// TableRow 的 `border-b` 不带颜色，依赖 shadcn 的全局 base 规则，站点没有该规则
-// 时边框是 currentColor，所以每行显式给 `border-border`（FB-15）。
 use dioxus_shadcn::{
   Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Input, Spinner, SpinnerSize, Table,
   TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -101,7 +99,7 @@ pub fn AdminEntitlementsPage() -> Element {
               div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
                   Table {
                       TableHeader { class: "bg-muted/50",
-                          TableRow { class: "border-border",
+                          TableRow {
                               TableHead { class: "h-10 px-4", "用户" }
                               TableHead { class: "h-10 px-4", "课程" }
                               TableHead { class: "h-10 px-4", "来源" }
@@ -115,7 +113,7 @@ pub fn AdminEntitlementsPage() -> Element {
                                   let uid = r.user_id;
                                   let slug = r.course_slug.clone();
                                   rsx! {
-                                      TableRow { key: "{r.user_id}-{r.course_slug}", class: "border-border",
+                                      TableRow { key: "{r.user_id}-{r.course_slug}",
                                           TableCell { class: "px-4 py-2", "{r.nickname} #{r.user_id}" }
                                           TableCell { class: "px-4 py-2 font-mono text-xs", "{r.course_slug}" }
                                           TableCell { class: "px-4 py-2 text-slate-400", "{r.source}" }
@@ -188,7 +186,7 @@ fn OrdersSection() -> Element {
                 div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
                     Table {
                         TableHeader { class: "bg-muted/50",
-                            TableRow { class: "border-border",
+                            TableRow {
                                 TableHead { class: "h-10 px-4", "订单号" }
                                 TableHead { class: "h-10 px-4", "用户" }
                                 TableHead { class: "h-10 px-4", "课程" }
@@ -206,7 +204,7 @@ fn OrdersSection() -> Element {
                                     let chan = if o.provider == "alipay" { "支付宝" } else { "微信" };
                                     let paid = o.status == "paid";
                                     rsx! {
-                                        TableRow { key: "{o.out_trade_no}", class: "border-border",
+                                        TableRow { key: "{o.out_trade_no}",
                                             TableCell { class: "px-4 py-2 font-mono text-xs", "{o.out_trade_no}" }
                                             TableCell { class: "px-4 py-2", "{o.nickname} #{o.user_id}" }
                                             TableCell { class: "px-4 py-2 font-mono text-xs", "{o.course_slug}" }
@@ -322,7 +320,7 @@ fn MembershipSection() -> Element {
               div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
                   Table {
                       TableHeader { class: "bg-muted/50",
-                          TableRow { class: "border-border",
+                          TableRow {
                               TableHead { class: "h-10 px-4", "用户" }
                               TableHead { class: "h-10 px-4", "层级" }
                               TableHead { class: "h-10 px-4", "到期" }
@@ -336,7 +334,7 @@ fn MembershipSection() -> Element {
                                   let uid = m.user_id;
                                   let date = m.expires_at.split('T').next().unwrap_or(&m.expires_at).to_string();
                                   rsx! {
-                                      TableRow { key: "{m.user_id}", class: "border-border",
+                                      TableRow { key: "{m.user_id}",
                                           TableCell { class: "px-4 py-2", "{m.nickname} #{m.user_id}" }
                                           TableCell { class: "px-4 py-2 uppercase text-xs font-semibold", "{m.tier}" }
                                           TableCell { class: "px-4 py-2 text-slate-400 text-xs", "{date}" }

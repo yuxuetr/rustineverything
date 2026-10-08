@@ -365,7 +365,8 @@
   - 落点：课程卡片 / 付费墙 / 下载列表 / 标注分组用 `card_class`；按钮、徽章、加载圈、进度条（`Progress`，轨道用 `bg-border`，ocean 的 `--muted` 近白）、订单表换组件；支付方式二选一用 Outline 按钮 + `aria-pressed`（ToggleGroup 走 eval）；章节折叠、代码页签保持手写（Accordion / Tabs 走 eval）
   - 验证：严格 CSP 下课程列表、详情、付费墙、试看课节、我的订单无 pageerror；购买弹窗打开、切换渠道、关闭按钮可用；亮 / 暗截图；SSR 首屏含正文；`--no-default-features` 编译通过
   - 未做：支付模态改 Dialog（Escape 关闭、焦点管理）——待上游 FB-02 发版，记为 U4b
-- [ ] U4b — 支付模态 → Dialog（依赖 dioxus-shadcn 修复 FB-02 后发版）
+- [x] U-0.6.2 — dioxus-shadcn 升级到 0.6.2（FB-02 已修，解除 U4b/U8/U9 阻塞；删除 FB-15 的逐行 `border-border`；严格 CSP 下 /admin/entitlements 无新报错）
+- [ ] U4b — 支付模态 → Dialog，支付方式选择 → ToggleGroup
 - [x] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert
   - 落点：话题卡片 / 引用卡片 / 回复框 / 评论框用 `card_class`；标签与标签云用 `badge_class`（链接）；输入框、文本域、登录按钮、加载圈、空状态、错误提示（`Alert` Destructive）换组件；`btn-flow` 特效按钮保留；编辑 / 预览切换保留下划线样式，颜色改 token
   - 验证：严格 CSP 下发帖（含标签与预览）、回复、博客评论（预览 + 发布）均可用，失败时 Alert 显示错误；亮 / 暗截图；测试话题、回复、评论已删除
@@ -420,4 +421,4 @@
 - [ ] D1 — 新增 `docs/PLUGIN_SECURITY.md`；修正 `PLUGIN_DEV.md` §10 / §12.1 中与实现不符的描述（以 C 阶段完成后的实现为准）
 
 ### 阶段 E — dioxus-ui（在 dioxus-ui 仓库修复）
-- [ ] E-1 — 把 FB-02 ~ FB-12 同步到 dioxus-ui 的待办 / RFC，按其流程修复发版
+- [x] E-1 — 把 FB-02 ~ FB-12 同步到 dioxus-ui 的待办 / RFC，按其流程修复发版（上游 0.6.1 去除 eval、0.6.2 安全加固；FB-09/12/16 上游 wontfix 并给出理由；本站升级到 0.6.2，各条状态见 DIOXUS_UI_FEEDBACK.md）

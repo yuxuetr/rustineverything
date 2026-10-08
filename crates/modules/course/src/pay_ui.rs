@@ -245,7 +245,7 @@ pub fn MyOrdersPage() -> Element {
                   div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
                       Table {
                           TableHeader { class: "bg-muted/50",
-                              TableRow { class: "border-border",
+                              TableRow {
                                   TableHead { class: "h-10 px-4", "课程" }
                                   TableHead { class: "h-10 px-4", "金额" }
                                   TableHead { class: "h-10 px-4", "渠道" }
@@ -261,7 +261,7 @@ pub fn MyOrdersPage() -> Element {
                                       let chan = if o.provider == "alipay" { "支付宝" } else { "微信" };
                                       let date = o.created_at.split('T').next().unwrap_or(&o.created_at).to_string();
                                       rsx! {
-                                          TableRow { key: "{o.out_trade_no}", class: "border-border",
+                                          TableRow { key: "{o.out_trade_no}",
                                               TableCell { class: "px-4 py-2",
                                                   Link { to: format!("/course/{}", o.course_slug), class: "hover:text-primary", "{o.course_slug}" }
                                               }
