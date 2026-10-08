@@ -67,7 +67,22 @@ assets/tailwind.css                ← git 跟踪的 SoT
 
 ## 2. 主题系统
 
-### 2.1 颜色映射
+### 2.1 颜色来源：shadcn token 优先
+
+颜色的唯一来源是 dioxus-shadcn 的语义 token（`--background`、`--foreground`、`--primary`、`--muted`、`--muted-foreground`、`--card`、`--popover`、`--border`、`--input`、`--ring`、`--accent`、`--secondary`、`--destructive`、`--success`、`--warning` 等）。默认值在 `tailwind-input.css`，主题插件运行时覆盖（亮色写在 `:root`，暗色写在 `.dark`）。新代码用 token 类名：
+
+```rust
+rsx! {
+    div { class: "rounded-xl border border-border bg-card text-card-foreground",
+        p { class: "text-sm text-muted-foreground", "说明文字" }
+        a { class: "text-primary hover:underline", href: "/docs", "链接" }
+    }
+}
+```
+
+token 类名自动跟随主题与暗色模式，不需要写 `dark:` 变体。
+
+### 2.2 旧色阶映射（存量代码）
 
 在 `tailwind-input.css` 的 `@theme` 块中，项目做了两组颜色重映射：
 
@@ -84,11 +99,13 @@ assets/tailwind.css                ← git 跟踪的 SoT
 - 代码中写 `text-slate-900` 实际渲染为 **石灰色**（stone-900）
 - 如果需要真正的蓝色，使用 `sky-*`、`indigo-*` 或 `cyan-*`
 
-### 2.2 WASM 主题插件
+存量代码里还有约 1100 处 `slate-*`。映射只改色阶，**不跟随主题插件**：主题把 token 设成冷色（如 ocean 的暗色 `--card: #0f172a`）时，组件是冷色，旁边手写的 `dark:bg-slate-900` 却是暖色 stone。新代码不要再写 `slate-*` / `blue-*`，改用 2.1 的 token。
 
-主题色由 WASM 插件在运行时通过 CSS 变量覆盖（`--color-primary`、`--color-bg` 等）。`tailwind-input.css` 中的 `@theme` 块定义了默认值。
+### 2.3 WASM 主题插件
 
-### 2.3 深色模式
+主题插件输出 2.1 的 token（规范见 `docs/THEME_SPEC.md`）。旧变量 `--color-primary` / `--color-bg` / `--color-surface` / `--color-text` / `--color-text-muted` / `--color-border` 在 `assets/css/main.css` 中是 token 的别名，保留给只输出旧变量的第三方插件和 `var(--color-*)` 写法。
+
+### 2.4 深色模式
 
 使用 class 策略（非 media query）：
 
@@ -118,19 +135,19 @@ rsx! {
 }
 ```
 
-### 3.2 动态类名与 @source
+### 3.2 扫描范围（@source）
 
-Tailwind v4 通过扫描源文件提取类名。当类名在 Rust 的 `match` 或函数返回值中动态拼接时，Tailwind 默认扫描路径可能找不到它们。
-
-**解决方案：** 在 `tailwind-input.css` 中添加 `@source` 指令：
+Tailwind v4 只生成它在源文件里扫描到的类名。`tailwind-input.css` 扫描三处：
 
 ```css
-@source "../../crates/modules/cases/src/";
+@import "./tailwind-sources.css";      /* dioxus-shadcn 组件源码，scripts/tw-sources.mjs 构建时生成 */
+@source "../../crates/modules/";       /* 所有 module crate */
+@source "../../crates/app/src/";
 ```
 
-这告诉 Tailwind CLI 额外扫描 cases 模块的 `.rs` 文件。
-
-**规则：** 如果你新增了一个模块并在其中使用了项目其他地方没出现过的 Tailwind 类名（如新的颜色 `rose-100`），必须在 `tailwind-input.css` 中添加对应的 `@source` 行，然后重新 `npm run build`。
+- 新增 module crate 放在 `crates/modules/` 下即可，**不用**再加 `@source` 行。此前只列了 6 个 crate，docs、search 与 5 个内容板块独有的类名一直没有生成（2026-10-08 修复）。
+- 升级 dioxus-shadcn 后要重新 `npm run build`：`tailwind-sources.css` 里是 registry 中带版本号的源码路径。
+- 在 `crates/` 之外（例如 `widgets`、`core`）写类名时，要在 `tailwind-input.css` 加对应的 `@source`。
 
 ### 3.3 动态类拼接的正确写法
 
@@ -180,6 +197,22 @@ Dioxus 的 `rsx!` 支持 `{variable}` 直接插入到 class 字符串中。确�
 
 ---
 
+### 3.6 使用 dioxus-shadcn 组件
+
+站点依赖 crates.io 上的 `dioxus-shadcn`（各 crate 在 `Cargo.toml` 按需开 feature）。迁移记录见 `docs/DIOXUS_UI_MIGRATION.md`，组件库问题见 `docs/DIOXUS_UI_FEEDBACK.md`（FB-NN）。
+
+- **`class` 是合并，不是追加**：同一类 utility（如 `px-*`、`bg-*`）用户值替换组件默认值，其余保留。
+- **链接做成按钮的样子**：用导出的类名函数，例如 `a { class: button_class(ButtonVariant::Outline, ButtonSize::Sm, UiDensity::Comfortable, "") }`；还有 `badge_class`、`card_class`、`tabs_*_class` 等。
+- **密度**：默认 Comfortable 会给控件加最小高度；后台页包在 `DensityProvider { density: UiDensity::Compact }` 里。
+- **边框颜色要显式写**：Tailwind v4 默认边框色是 `currentColor`，手写边框加 `border-border`。
+- **严格 CSP**：站点不允许 `'unsafe-eval'`。不要用 `document::eval` 与 `document::Title`（`crates/app/tests/csp_no_eval.rs` 会拦下），浏览器操作走 `widgets::browser`，页面标题用 `PageTitle`。
+- **弹层放在哪里**：带 `backdrop-filter` / `transform` / `filter` 的祖先会成为 `fixed` 子元素的定位容器。全屏弹层（Dialog、Sheet）不要渲染在导航栏 header 里，放在它之外。
+- **已知的组件库问题与站点绕法**：
+  - Dropdown 内容加 `fixed`（FB-19：在 flex 行里定位偏移）。
+  - Dialog 里的 Command 只在打开时挂载：`if open() { Command { … } }`（FB-17）。
+  - ToggleGroup 单选再点已选项会报空值，需要「总有一项选中」时受控并忽略空值。
+  - 导航下拉用纯 CSS 的 `group-hover` / `group-focus-within`，不用 NavigationMenu（FB-20：hydration 前打不开）。
+
 ## 4. Tailwind v4 速查
 
 本项目使用 **Tailwind CSS v4.1**，以下是最常踩的 v3 → v4 变更：
@@ -227,14 +260,14 @@ Dioxus 的 `rsx!` 支持 `{variable}` 直接插入到 class 字符串中。确�
 
 ### 5.1 颜色使用约定
 
-| 场景 | 推荐色系 | 说明 |
-|------|---------|------|
-| 品牌主色 / CTA 按钮 | `blue-*`（映射为 orange） | Rust 品牌橙色 |
-| 成功 / 开源标签 | `emerald-*` | |
-| 警告 | `amber-*` | |
-| 错误 / 精选标记 | `rose-*` | |
-| 中性文字 / 背景 | `slate-*`（映射为 stone） | 暖灰色调 |
-| 真正的蓝色（非橙色） | `sky-*` / `indigo-*` / `cyan-*` | 绕过 blue→orange 映射 |
+| 场景 | 新代码 | 存量写法 |
+|------|-------|---------|
+| 品牌主色 / CTA | `bg-primary` / `text-primary`，或 `Button` | `blue-*`（映射为 orange） |
+| 成功 / 开源标签 | `text-success`、`Badge { variant: Success }` | `emerald-*` |
+| 警告 | `text-warning`、`Badge { variant: Warning }` | `amber-*` |
+| 错误 / 危险操作 | `text-destructive`、`ButtonVariant::Destructive` | `rose-*` / `red-*` |
+| 中性文字 / 背景 / 边框 | `text-foreground`、`text-muted-foreground`、`bg-background`、`bg-card`、`bg-muted`、`border-border` | `slate-*`（映射为 stone） |
+| 分类配色（真正的蓝等） | `sky-*` / `indigo-*` / `cyan-*` | 同左，绕过 blue→orange 映射 |
 
 ### 5.2 间距与布局
 
@@ -271,13 +304,13 @@ Dioxus 的 `rsx!` 支持 `{variable}` 直接插入到 class 字符串中。确�
 
 **解决：**
 1. 确认类名拼写正确（注意 v4 重命名，如 `bg-linear-*` 非 `bg-gradient-*`）
-2. 如果是新模块，在 `crates/app/tailwind-input.css` 中添加 `@source` 指令
+2. 类名所在文件是否在扫描范围内（见 [3.2](#32-扫描范围source)）；`crates/modules/` 与 `crates/app/src/` 已覆盖
 3. 重新运行 `cd crates/app && npm run build`
 4. 确认输出的 `assets/tailwind.css` 中包含该类名：`grep 'your-class' assets/tailwind.css`
 
 ### Q2: `blue-600` 为什么渲染成橙色？
 
-这是主题映射，见 [2.1 颜色映射](#21-颜色映射)。如果需要真正的蓝色，使用 `sky-*`、`indigo-*` 或 `cyan-*`。
+这是主题映射，见 [2.2 旧色阶映射](#22-旧色阶映射存量代码)。如果需要真正的蓝色，使用 `sky-*`、`indigo-*` 或 `cyan-*`。
 
 ### Q3: 深色模式切换不生效？
 
@@ -302,10 +335,7 @@ npm run build  # 使用 npx 调用本地安装的 CLI
 
 ### Q6: 如何给新模块的动态类名添加 Tailwind 支持？
 
-1. 在 `crates/app/tailwind-input.css` 中添加：
-   ```css
-   @source "../../crates/modules/your-module/src/";
-   ```
+1. 模块放在 `crates/modules/` 下即已被扫描；放在别处时在 `crates/app/tailwind-input.css` 加 `@source`
 2. 确保 `.rs` 文件中的类名是**完整的字符串字面量**（不要用 `format!` 拼接类名片段）
 3. 运行 `cd crates/app && npm run build`
 4. 验证：`grep 'your-new-class' crates/app/assets/tailwind.css`
@@ -314,7 +344,7 @@ npm run build  # 使用 npx 调用本地安装的 CLI
 
 `npm run dev` 会 watch `tailwind-input.css` 中 `@source` 指定的路径。如果你修改了被 `@source` 涵盖的 `.rs` 文件中的类名，Tailwind CLI 会自动重编译。
 
-但如果修改的模块不在 `@source` 列表中，需要先添加 `@source` 指令。
+但如果修改的文件不在扫描范围内（见 [3.2](#32-扫描范围source)），需要先添加 `@source` 指令。
 
 ### Q8: 为什么不把 Tailwind 配置放在项目根目录？
 
