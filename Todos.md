@@ -366,7 +366,11 @@
   - 验证：严格 CSP 下课程列表、详情、付费墙、试看课节、我的订单无 pageerror；购买弹窗打开、切换渠道、关闭按钮可用；亮 / 暗截图；SSR 首屏含正文；`--no-default-features` 编译通过
   - 未做：支付模态改 Dialog（Escape 关闭、焦点管理）——待上游 FB-02 发版，记为 U4b
 - [ ] U4b — 支付模态 → Dialog（依赖 dioxus-shadcn 修复 FB-02 后发版）
-- [ ] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert
+- [x] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert
+  - 落点：话题卡片 / 引用卡片 / 回复框 / 评论框用 `card_class`；标签与标签云用 `badge_class`（链接）；输入框、文本域、登录按钮、加载圈、空状态、错误提示（`Alert` Destructive）换组件；`btn-flow` 特效按钮保留；编辑 / 预览切换保留下划线样式，颜色改 token
+  - 验证：严格 CSP 下发帖（含标签与预览）、回复、博客评论（预览 + 发布）均可用，失败时 Alert 显示错误；亮 / 暗截图；测试话题、回复、评论已删除
+  - 发现：ocean 暗色的 `--card`（slate-900 藏青）与页面 stone 底色不协调——插件 token 与 slate→stone 色阶映射混用，留给 U10 评估；debug 构建类名覆盖日志过多（FB-16）
+  - 副作用：U3 测试改角色使本地 user 2 的 `token_version` 变为 2，该账号本地已有会话需重新登录
 - [ ] U6 — cases / docs / podcast / search 列表部分
 - [ ] U7 — 5 个内容板块（先 ai，再套用其余 4 个）
 - [ ] U8 — 全局弹层：auth_modal / search 模态 → Dialog(+Command)；主题/语言/用户菜单 → Dropdown；移动端菜单 → Sheet
