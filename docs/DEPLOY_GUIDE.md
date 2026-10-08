@@ -293,16 +293,19 @@ app 已在 server fn 内强制 5 MB 限制（Phase 1A.4）。Pingora 默认对 b
 
 #### 安全响应头 + 限流（Phase 8.3）
 
-`crates/gateway/src/main.rs` 默认在每个响应注入 OWASP-style 安全头；浏览器 devtools 可见：
+`crates/gateway/src/main.rs` 在每个响应上处理安全头；浏览器 devtools 可见：
 
-| Header | 默认值 | env 覆盖 |
+| Header | gateway 行为 | 值 |
 | --- | --- | --- |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | — |
-| `X-Content-Type-Options` | `nosniff` | — |
-| `X-Frame-Options` | `DENY` | — |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | — |
-| `Content-Security-Policy` | `default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'` | `CSP_POLICY` |
-| `Server` | `rie-gateway` | — |
+| `Strict-Transport-Security` | 总是设置（TLS 在 gateway 终止） | `max-age=31536000; includeSubDomains` |
+| `X-Content-Type-Options` | 应用未下发时补 | `nosniff` |
+| `X-Frame-Options` | 应用未下发时补 | `DENY` |
+| `Referrer-Policy` | 应用未下发时补 | `strict-origin-when-cross-origin` |
+| `Content-Security-Policy` | **不碰**，原样转发应用的值 | 见 `crates/app/src/server/security.rs`；在 **app** 进程设 `CSP_POLICY` 覆盖 |
+| `Server` | 总是设置 | `rie-gateway` |
+
+CSP 只有应用这一份定义（SEC-10）：gateway 若另设一份，会覆盖掉应用 CSP 里 hydration 必需的
+`'wasm-unsafe-eval'` 与内联启动脚本许可，页面整体失去交互。
 
 per-IP token-bucket 限流（基于 [`governor`](https://docs.rs/governor)）：
 

@@ -12,7 +12,8 @@
 //! signal — see Pingora docs for the full upgrade ritual).
 //!
 //! ## Phase 8.3 安全 / 性能强化
-//! - 注入 OWASP-style 安全响应头（HSTS / CSP / X-Content-Type-Options / X-Frame-Options）
+//! - 注入 HSTS；应用未下发时补 X-Content-Type-Options / X-Frame-Options / Referrer-Policy。
+//!   CSP 只由应用设置，gateway 原样转发（SEC-10）
 //! - `X-Forwarded-For` 改 `insert`（覆盖客户端伪造），同时 strip RFC 7239 `Forwarded`
 //! - 引入 `governor` 做 per-IP token-bucket 限流：写端点 10 req/min，
 //!   其余 60 req/min；触发返回 429 + `Retry-After: 60`
@@ -39,12 +40,6 @@ const UPSTREAM_SNI: &str = ""; // 上游 plain HTTP，不需要 SNI
 
 const HTTPS_BIND: &str = "0.0.0.0:443";
 const HTTP_BIND: &str = "0.0.0.0:80";
-
-/// 默认 CSP：来源仅限同源；图片允许 data:/https:（兼容博客内联 base64 与跨站封面图）；
-/// 样式允许 inline（Dioxus 的 hydration 标记需要），脚本严格同源。可通过 `CSP_POLICY` 覆盖。
-const DEFAULT_CSP: &str =
-  "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; \
-   script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
 
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
 
@@ -81,10 +76,6 @@ static READ_LIMITER: Lazy<Arc<KeyedLimiter>> = Lazy::new(|| {
     .unwrap_or(NonZeroU32::new(READ_QUOTA_PER_MIN).expect("compile-time non-zero"));
   Arc::new(RateLimiter::keyed(Quota::per_minute(n)))
 });
-
-/// CSP header value：启动时计算一次，避免每次响应再读 env。
-static CSP_HEADER: Lazy<String> =
-  Lazy::new(|| std::env::var("CSP_POLICY").unwrap_or_else(|_| DEFAULT_CSP.to_string()));
 
 fn env_u32(key: &str, default: u32) -> u32 {
   std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
@@ -181,22 +172,36 @@ impl ProxyHttp for AppGateway {
     Ok(())
   }
 
-  /// 响应改写：注入 OWASP-style 安全头。任意可被替换的头都设为 `insert`，
-  /// 避免上游 dioxus_fullstack 默认值与此处冲突造成重复头。
+  /// 响应改写：补安全头，见 [`apply_security_headers`]。
   async fn response_filter(
     &self,
     _session: &mut Session,
     upstream_response: &mut ResponseHeader,
     _ctx: &mut (),
   ) -> Result<()> {
-    upstream_response.insert_header("Strict-Transport-Security", HSTS_VALUE).ok();
-    upstream_response.insert_header("X-Content-Type-Options", "nosniff").ok();
-    upstream_response.insert_header("X-Frame-Options", "DENY").ok();
-    upstream_response.insert_header("Referrer-Policy", "strict-origin-when-cross-origin").ok();
-    upstream_response.insert_header("Content-Security-Policy", CSP_HEADER.as_str()).ok();
-    // Server header 减少版本指纹
-    upstream_response.insert_header("Server", "rie-gateway").ok();
+    apply_security_headers(upstream_response);
     Ok(())
+  }
+}
+
+/// 安全响应头：
+/// - HSTS 与 `Server` 由 gateway 负责（TLS 在这里终止），总是覆盖。
+/// - 通用头（nosniff / X-Frame-Options / Referrer-Policy）应用也会下发；
+///   只在缺失时补，保留应用按路由给出的值。
+/// - **CSP 不碰**（SEC-10）：唯一定义在 `crates/app/src/server/security.rs`，
+///   gateway 覆盖会丢掉 `'wasm-unsafe-eval'` 与内联启动脚本许可，hydration 全挂。
+fn apply_security_headers(resp: &mut ResponseHeader) {
+  resp.insert_header("Strict-Transport-Security", HSTS_VALUE).ok();
+  // Server header 减少版本指纹
+  resp.insert_header("Server", "rie-gateway").ok();
+  for (name, value) in [
+    ("X-Content-Type-Options", "nosniff"),
+    ("X-Frame-Options", "DENY"),
+    ("Referrer-Policy", "strict-origin-when-cross-origin"),
+  ] {
+    if !resp.headers.contains_key(name) {
+      resp.insert_header(name, value).ok();
+    }
   }
 }
 
@@ -295,6 +300,37 @@ mod tests {
     assert!(!rate_limit_disabled());
     unsafe { std::env::remove_var("RATE_LIMIT_DISABLE") };
     assert!(!rate_limit_disabled());
+  }
+
+  fn header<'a>(resp: &'a ResponseHeader, name: &str) -> Option<&'a str> {
+    resp.headers.get(name).and_then(|v| v.to_str().ok())
+  }
+
+  /// SEC-10：CSP 只由应用决定，gateway 原样转发（不覆盖、不补）。
+  #[test]
+  fn csp_from_app_passes_through_untouched() {
+    let app_csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'";
+    let mut resp = ResponseHeader::build(200, None).unwrap();
+    resp.insert_header("Content-Security-Policy", app_csp).unwrap();
+    apply_security_headers(&mut resp);
+    assert_eq!(header(&resp, "content-security-policy"), Some(app_csp));
+    assert_eq!(resp.headers.get_all("content-security-policy").iter().count(), 1);
+
+    let mut bare = ResponseHeader::build(200, None).unwrap();
+    apply_security_headers(&mut bare);
+    assert_eq!(header(&bare, "content-security-policy"), None);
+  }
+
+  /// 应用已下发的通用安全头保留应用的值；缺失时 gateway 补默认值。HSTS 由 gateway 负责。
+  #[test]
+  fn generic_headers_fill_only_when_missing() {
+    let mut resp = ResponseHeader::build(200, None).unwrap();
+    resp.insert_header("X-Frame-Options", "SAMEORIGIN").unwrap();
+    apply_security_headers(&mut resp);
+    assert_eq!(header(&resp, "x-frame-options"), Some("SAMEORIGIN"));
+    assert_eq!(header(&resp, "x-content-type-options"), Some("nosniff"));
+    assert_eq!(header(&resp, "referrer-policy"), Some("strict-origin-when-cross-origin"));
+    assert_eq!(header(&resp, "strict-transport-security"), Some(HSTS_VALUE));
   }
 
   /// 真实跑限流器：4 req 用同一 IP（quota 3/min）— 前 3 个 Ok，第 4 个 Err。
