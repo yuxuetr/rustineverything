@@ -361,7 +361,11 @@
 - [x] U3 — admin（`admin.rs` + `admin_entitlements.rs`）：Button / Input / Textarea / NativeSelect / Tabs / Table / Spinner / Badge
   - 落点：admin 内容区包 `DensityProvider(Compact)`（否则 `Sm` 按钮被 `min-h-10` 撑高）；页签只用 `tabs_list_class` / `tabs_trigger_class`（Tabs 组件挂载即 eval，FB-14）；复选框保留原生（Checkbox 走 eval，FB-02）；状态标签改 Badge 语义色；表格行显式 `border-border`（FB-15）
   - 验证：8 个 admin 页面在严格 CSP 下无 pageerror（仅既有 SEC-23 字体报错）；审核页签切换、全选启用批量按钮、单条「通过」、角色修改并刷新后保持、阈值输入均可用；亮 / 暗截图检查。测试数据（2 条审核记录、临时 admin 角色）已清理
-- [ ] U4 — course + 支付（`course.rs` + `pay_ui.rs`）：Card / Button / Badge / Table / Dialog
+- [x] U4 — course + 支付（`course.rs` + `pay_ui.rs`）：Card / Button / Badge / Table / Dialog
+  - 落点：课程卡片 / 付费墙 / 下载列表 / 标注分组用 `card_class`；按钮、徽章、加载圈、进度条（`Progress`，轨道用 `bg-border`，ocean 的 `--muted` 近白）、订单表换组件；支付方式二选一用 Outline 按钮 + `aria-pressed`（ToggleGroup 走 eval）；章节折叠、代码页签保持手写（Accordion / Tabs 走 eval）
+  - 验证：严格 CSP 下课程列表、详情、付费墙、试看课节、我的订单无 pageerror；购买弹窗打开、切换渠道、关闭按钮可用；亮 / 暗截图；SSR 首屏含正文；`--no-default-features` 编译通过
+  - 未做：支付模态改 Dialog（Escape 关闭、焦点管理）——待上游 FB-02 发版，记为 U4b
+- [ ] U4b — 支付模态 → Dialog（依赖 dioxus-shadcn 修复 FB-02 后发版）
 - [ ] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert
 - [ ] U6 — cases / docs / podcast / search 列表部分
 - [ ] U7 — 5 个内容板块（先 ai，再套用其余 4 个）
