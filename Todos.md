@@ -376,7 +376,7 @@
 
 ### 阶段 A — 可被直接利用的漏洞（最先做）
 - [x] A1 — SEC-01 LaTeX `\text{}` 存储型 XSS：MathML 白名单过滤后再输出（829ffa3：改为渲染前转义文本类事件与错误信息，6 条单测）
-- [ ] A2 — SEC-02 `/courses` 静态目录绕过付费墙
+- [x] A2 — SEC-02 `/courses` 静态目录绕过付费墙（课时目录文件按 get_lesson 规则鉴权，无权 404；另修课程测试改 cwd 的竞争）
 - [ ] A3 — SEC-03 `get_doc_content` 路径穿越
 - [ ] A4 — SEC-04 OAuth profile 不查状态 / `external_id` 回退 `"0"`
 
