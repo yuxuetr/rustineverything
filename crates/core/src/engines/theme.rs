@@ -74,12 +74,22 @@ impl ThemeEngine {
   }
 }
 
+/// 主题 cookie 只能是 `assets/plugins/` 下的一个普通文件名：`[A-Za-z0-9_-]+\.wasm`。
+///
+/// 设置（`/api/theme/set`）和读取（[`theme_with_override`]）共用这条规则（SEC-11）：
+/// cookie 由浏览器提交，可被任意改写，读取侧不能假定它经过了设置侧校验。
+pub fn is_theme_filename(name: &str) -> bool {
+  name.strip_suffix(".wasm").is_some_and(|stem| {
+    !stem.is_empty() && stem.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+  })
+}
+
 /// 纯函数：从主题栈 + 可选 cookie 覆盖计算实际生效的插件路径列表。
 ///
 /// 语义：`override_filename` 为用户 cookie 中的主题文件名（如 `theme_sunset_plugin.wasm`）：
 /// - `None` / 空串 → 保留原栈（仅过滤不存在的文件）
 /// - `Some(name)` 且 `plugin_dir/name` 存在 → 覆盖栈最后一项（若栈为空则追加一项）
-/// - `Some(name)` 但文件不存在 → 记录 stderr，保留原栈
+/// - `Some(name)` 但文件不存在或不符合 [`is_theme_filename`] → 记 warn，保留原栈
 ///
 /// 提供为 `pub` 以便在 server fn、单测、未来 admin 预览中复用。
 pub fn theme_with_override(
@@ -91,24 +101,22 @@ pub fn theme_with_override(
   let mut result: Vec<PathBuf> = stack.iter().filter(|p| p.exists()).cloned().collect();
 
   // 2. 覆盖最后一项
-  let candidate =
-    override_filename.map(str::trim).filter(|s| !s.is_empty()).map(|name| plugin_dir.join(name));
-  if let Some(path) = candidate {
-    if path.exists() {
-      if result.is_empty() {
-        result.push(path);
-      } else {
-        let last = result.len() - 1;
-        result[last] = path;
-      }
-    } else {
-      tracing::warn!(
-          theme = %path.display(),
-          "theme: cookie override file not found, ignoring"
-      );
-    }
+  let Some(name) = override_filename.map(str::trim).filter(|s| !s.is_empty()) else {
+    return result;
+  };
+  if !is_theme_filename(name) {
+    tracing::warn!(cookie = %name.escape_debug(), "theme: invalid cookie override, ignoring");
+    return result;
   }
-
+  let path = plugin_dir.join(name);
+  if !path.exists() {
+    tracing::warn!(theme = %path.display(), "theme: cookie override file not found, ignoring");
+    return result;
+  }
+  match result.last_mut() {
+    Some(last) => *last = path,
+    None => result.push(path),
+  }
   result
 }
 
@@ -223,6 +231,46 @@ mod tests {
     let stack = vec![exists.clone(), missing];
     let result = theme_with_override(&stack, plugin_dir, None);
     assert_eq!(result, vec![exists]);
+  }
+
+  #[test]
+  fn override_rejects_names_that_are_not_plain_wasm_files() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let plugin_dir = tmp.path().join("plugins");
+    fs::create_dir(&plugin_dir).expect("mkdir");
+    let base = touch_plugin(&plugin_dir, "theme_base.wasm");
+    // 这些文件都真实存在，只靠「存在」判断会放行。
+    let outside = touch_plugin(tmp.path(), "evil.wasm");
+    touch_plugin(&plugin_dir, "theme_base.wasm.bak");
+    touch_plugin(&plugin_dir, "theme base.wasm");
+    let stack = vec![base.clone()];
+    let absolute = outside.display().to_string();
+    for name in
+      ["../evil.wasm", absolute.as_str(), "theme_base.wasm.bak", "theme base.wasm", ".wasm"]
+    {
+      let r = theme_with_override(&stack, &plugin_dir, Some(name));
+      assert_eq!(r, vec![base.clone()], "should ignore cookie {name:?}");
+    }
+  }
+
+  #[test]
+  fn theme_filename_accepts_only_plain_wasm_names() {
+    for ok in ["theme_ocean_plugin.wasm", "a-b_C9.wasm"] {
+      assert!(is_theme_filename(ok), "{ok}");
+    }
+    for bad in [
+      "",
+      ".wasm",
+      "x.wasm.bak",
+      "../x.wasm",
+      "a/x.wasm",
+      "a\\x.wasm",
+      "x .wasm",
+      "x.WASM",
+      "x.wasm\0",
+    ] {
+      assert!(!is_theme_filename(bad), "{bad:?}");
+    }
   }
 
   #[test]

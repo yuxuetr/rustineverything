@@ -294,10 +294,9 @@ pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
 /// Phase 3.1：设置用户主题 cookie（覆盖主题栈最后一项）。
 ///
 /// 传入空字符串表示“重置”（删除 cookie）。其他值会被严格校验：
-/// 1. 不允许路径分隔符 / `..`
-/// 2. 必须以 `.wasm` 结尾
-/// 3. 必须在 `assets/plugins/` 中实际存在
-/// 写 `Set-Cookie: site_theme=...; HttpOnly; Path=/; Max-Age=31536000; SameSite=Lax`。
+/// 1. 符合 [`app_core::engines::theme::is_theme_filename`]（`[A-Za-z0-9_-]+\.wasm`）
+/// 2. 必须在 `assets/plugins/` 中实际存在
+/// 写 `Set-Cookie: site_theme=...; Path=/; Max-Age=31536000; SameSite=Lax`。
 /// 生产环境（`BASE_URL` 以 https 开头）额外附加 `Secure`。
 #[post("/api/theme/set")]
 pub async fn set_user_theme(filename: String) -> Result<(), ServerFnError> {
@@ -310,12 +309,9 @@ pub async fn set_user_theme(filename: String) -> Result<(), ServerFnError> {
       // 清除 cookie
       String::new()
     } else {
-      // 校验输入
-      if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
-        return Err(ServerFnError::new("主题名包含非法字符".to_string()));
-      }
-      if !trimmed.ends_with(".wasm") {
-        return Err(ServerFnError::new("主题名必须以 .wasm 结尾".to_string()));
+      // 与读取侧（theme_with_override）同一条规则（SEC-11）。
+      if !app_core::engines::theme::is_theme_filename(trimmed) {
+        return Err(ServerFnError::new("主题名必须形如 name.wasm（字母、数字、_、-）".to_string()));
       }
       let path = get_asset_root().join("plugins").join(trimmed);
       if !path.exists() {
