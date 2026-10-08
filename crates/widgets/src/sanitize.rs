@@ -210,6 +210,21 @@ pub fn is_safe_image_url(url: &str) -> bool {
   scheme_is_in(&normalized, &["http", "https"])
 }
 
+/// 不可信内容（评论 / 话题等）里的图片只允许本站上传的文件（SEC-09）。
+///
+/// 形状必须与 uploads 模块生成的文件名一致：`/uploads/` + 单个
+/// `[A-Za-z0-9_-]+` 段 + 图片扩展名。不放行 `/`、`.`（扩展名分隔除外）、`%`、`\`，
+/// 所以 `..` / `%2e%2e` / `\..\` 这类会被浏览器规范化到别处的写法都过不去。
+pub fn is_upload_image_url(url: &str) -> bool {
+  let Some((stem, ext)) = url.strip_prefix("/uploads/").and_then(|name| name.rsplit_once('.'))
+  else {
+    return false;
+  };
+  !stem.is_empty()
+    && stem.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+    && matches!(ext, "png" | "jpg" | "jpeg" | "gif" | "webp")
+}
+
 /// 解码 HTML 实体 + 剥除内嵌的空白 / 控制字符后，再做 scheme 比对。
 fn scheme_is_in(url: &str, allowed: &[&str]) -> bool {
   let normalized = normalize_url_for_scheme_check(url);
@@ -455,6 +470,35 @@ mod tests {
     assert!(is_safe_image_url("data:image/svg+xml;base64,PHN2Zw=="));
     assert!(!is_safe_image_url("data:text/html,<script>alert(1)</script>"));
     assert!(!is_safe_image_url("javascript:alert(1)"));
+  }
+
+  #[test]
+  fn upload_image_url_only_accepts_uploaded_file_names() {
+    assert!(is_upload_image_url("/uploads/1700000000_cat_Ab12Cd.png"));
+    assert!(is_upload_image_url("/uploads/a-b_c.jpg"));
+    assert!(is_upload_image_url("/uploads/x.jpeg"));
+    assert!(is_upload_image_url("/uploads/x.gif"));
+    assert!(is_upload_image_url("/uploads/x.webp"));
+    for bad in [
+      "/api/auth/logout",
+      "/uploads/../api/auth/logout",
+      "/uploads/..%2fapi/auth/logout",
+      "/uploads/%2e%2e/api/x.png",
+      "/uploads\\..\\api\\x.png",
+      "/uploads/a/b.png",
+      "/uploads/.png",
+      "/uploads/x.svg",
+      "/uploads/x.png?x=1",
+      "/uploads/x.png#a",
+      "/uploads/",
+      "uploads/x.png",
+      "//evil.example/uploads/x.png",
+      "https://evil.example/x.png",
+      "data:image/png;base64,iVBORw0KGgo=",
+      "welcome/hero.jpg",
+    ] {
+      assert!(!is_upload_image_url(bad), "{bad}");
+    }
   }
 
   /// HTML 实体解码：覆盖三种形式。

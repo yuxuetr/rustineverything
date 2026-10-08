@@ -96,7 +96,7 @@ pub fn Markdown(props: MarkdownProps) -> Element {
 
   // 渲染流，传入 blog_id；同时按顶层块编号注入 data-block-id 供标注定位
   let mut block_idx: usize = 1;
-  let elements = render_stream(&mut it, &props.blog_id, &mut block_idx, true);
+  let elements = render_stream(&mut it, &props.blog_id, props.untrusted, &mut block_idx, true);
 
   rsx! {
       // 没有 frontmatter 标题时不设置，免得把页面自己的标题（如文档页）覆盖成空串
@@ -120,6 +120,7 @@ pub fn Markdown(props: MarkdownProps) -> Element {
 fn render_stream<'a>(
   it: &mut std::iter::Peekable<Parser<'a>>,
   blog_id: &str,
+  untrusted: bool,
   block_idx: &mut usize,
   top: bool,
 ) -> Vec<Element> {
@@ -155,7 +156,7 @@ fn render_stream<'a>(
                 while let Some(event) = it.next() {
                     match event {
                         Event::Start(Tag::TableCell) => {
-                            let cell_children = render_stream(it, blog_id, block_idx, false);
+                            let cell_children = render_stream(it, blog_id, untrusted, block_idx, false);
                             header_cells.push(rsx! {
                                 th { class: "px-4 py-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-300",
                                     {cell_children.into_iter()}
@@ -174,8 +175,8 @@ fn render_stream<'a>(
             }
             Event::Start(tag) => {
                 let id = mint_block_id(top, block_idx);
-                let children = render_stream(it, blog_id, block_idx, false);
-                nodes.push(render_tag(tag, children, blog_id, id));
+                let children = render_stream(it, blog_id, untrusted, block_idx, false);
+                nodes.push(render_tag(tag, children, blog_id, untrusted, id));
             }
             Event::End(_) => break,
             Event::Text(text) => nodes.push(rsx! { "{text}" }),
@@ -227,6 +228,7 @@ fn render_tag(
   tag: Tag,
   children: Vec<Element>,
   blog_id: &str,
+  untrusted: bool,
   block_id: Option<String>,
 ) -> Element {
   let bid = block_id.unwrap_or_default();
@@ -295,18 +297,8 @@ fn render_tag(
 
     // --- 核心：处理图片相对路径 ---
     Tag::Image { dest_url, title, .. } => {
-      let url = dest_url.to_string();
-      // Phase 8.6：图片 src 也做 scheme allowlist；相对路径 / `/` 仍允许
-      // （图片走相对路径解析到博客资产目录是常用场景，不能误伤）。
-      if !crate::sanitize::is_safe_image_url(&url) {
+      let Some(src) = image_src(&dest_url, blog_id, untrusted) else {
         return rsx! { span { class: "text-red-500", "[image rejected: unsafe URL]" } };
-      }
-      let src = if url.starts_with("http") || url.starts_with('/') {
-        url
-      } else {
-        // 处理 ID 为 "1" 的特殊情况，映射到 welcome 目录
-        let folder = if blog_id == "1" { "welcome" } else { blog_id };
-        format!("/posts/{}/{}", folder, url)
       };
       rsx! {
           figure { class: "my-8",
@@ -347,6 +339,27 @@ fn render_tag(
 /// 在启动期预注册；podcast 等业务模块走自己的 `register_components`。
 /// 未注册的标签返回 None，调用方（`render_stream`）会降级为
 /// 占位 span，保证整篇文章仍可渲染。
+/// 图片最终的 `src`；`None` 表示拒绝渲染。
+///
+/// 站点作者内容：scheme 白名单（[`crate::sanitize::is_safe_image_url`]），
+/// 相对路径解析到文章资产目录。不可信内容只允许本站上传的图片
+/// （[`crate::sanitize::is_upload_image_url`]，SEC-09）：其余站内路径会被浏览者
+/// 的浏览器带 cookie 请求（如 `/api/auth/logout`），外部图片会泄露浏览者 IP。
+fn image_src(url: &str, blog_id: &str, untrusted: bool) -> Option<String> {
+  if untrusted {
+    return crate::sanitize::is_upload_image_url(url).then(|| url.to_string());
+  }
+  if !crate::sanitize::is_safe_image_url(url) {
+    return None;
+  }
+  if url.starts_with("http") || url.starts_with('/') {
+    return Some(url.to_string());
+  }
+  // 处理 ID 为 "1" 的特殊情况，映射到 welcome 目录
+  let folder = if blog_id == "1" { "welcome" } else { blog_id };
+  Some(format!("/posts/{}/{}", folder, url))
+}
+
 fn render_mdx_registry(html: &str) -> Option<Element> {
   let clean_html = html.trim();
   let name = detect_registered_tag(clean_html)?;
@@ -680,6 +693,30 @@ fn extract_attr(html: &str, attr: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn trusted_images_keep_relative_and_external_sources() {
+    assert_eq!(image_src("hero.jpg", "1", false).as_deref(), Some("/posts/welcome/hero.jpg"));
+    assert_eq!(image_src("a.png", "rust-intro", false).as_deref(), Some("/posts/rust-intro/a.png"));
+    assert_eq!(
+      image_src("https://cdn.example.com/x.png", "1", false).as_deref(),
+      Some("https://cdn.example.com/x.png")
+    );
+    assert_eq!(image_src("javascript:alert(1)", "1", false), None);
+  }
+
+  #[test]
+  fn untrusted_images_only_load_uploads() {
+    assert_eq!(
+      image_src("/uploads/1700_cat_Ab12Cd.png", "comment", true).as_deref(),
+      Some("/uploads/1700_cat_Ab12Cd.png")
+    );
+    // 站内接口、外部图片（泄露 IP）、相对路径（会落到 /posts/... 下）都拒绝
+    for bad in ["/api/auth/logout", "https://evil.example/x.png", "x.png", "/uploads/../api/x.png"]
+    {
+      assert_eq!(image_src(bad, "comment", true), None, "{bad}");
+    }
+  }
 
   #[test]
   fn parse_mdx_without_frontmatter() {
