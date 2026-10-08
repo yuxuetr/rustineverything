@@ -366,7 +366,10 @@
   - 验证：严格 CSP 下课程列表、详情、付费墙、试看课节、我的订单无 pageerror；购买弹窗打开、切换渠道、关闭按钮可用；亮 / 暗截图；SSR 首屏含正文；`--no-default-features` 编译通过
   - 未做：支付模态改 Dialog（Escape 关闭、焦点管理）——待上游 FB-02 发版，记为 U4b
 - [x] U-0.6.2 — dioxus-shadcn 升级到 0.6.2（FB-02 已修，解除 U4b/U8/U9 阻塞；删除 FB-15 的逐行 `border-border`；严格 CSP 下 /admin/entitlements 无新报错）
-- [ ] U4b — 支付模态 → Dialog，支付方式选择 → ToggleGroup
+- [x] U4b — 支付模态 → Dialog，支付方式选择 → ToggleGroup
+  - 落点：`pay_ui.rs`；表单只在打开时挂载（重开即重置）；ToggleGroup 受控、忽略空值，保证总有一个网关
+  - 验证：严格 CSP 下 Escape 关闭、焦点回到购买按钮、Tab 限制在弹窗内、方向键切换焦点；亮 / 暗截图
+  - 行为变化：点遮罩不再关闭（Dialog 默认，避免扫码时误关）
 - [x] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert
   - 落点：话题卡片 / 引用卡片 / 回复框 / 评论框用 `card_class`；标签与标签云用 `badge_class`（链接）；输入框、文本域、登录按钮、加载圈、空状态、错误提示（`Alert` Destructive）换组件；`btn-flow` 特效按钮保留；编辑 / 预览切换保留下划线样式，颜色改 token
   - 验证：严格 CSP 下发帖（含标签与预览）、回复、博客评论（预览 + 发布）均可用，失败时 Alert 显示错误；亮 / 暗截图；测试话题、回复、评论已删除
