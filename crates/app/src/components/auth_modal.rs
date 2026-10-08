@@ -105,13 +105,34 @@ fn render_provider_button(provider: &AuthProviderDisplay, lang: Language) -> Ele
 
 /// Simple heuristic to determine if a hex color is "light"
 fn is_light_color(hex: &str) -> bool {
-  let hex = hex.trim_start_matches('#');
-  if hex.len() < 6 {
+  // brand_color 来自插件 manifest：先确认是 ASCII 十六进制，再按字节切片。
+  let Some(hex) =
+    hex.trim_start_matches('#').get(..6).filter(|h| h.bytes().all(|b| b.is_ascii_hexdigit()))
+  else {
     return false;
-  }
-  let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f32;
-  let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f32;
-  let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f32;
+  };
+  let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0) as f32;
+  let (r, g, b) = (channel(0), channel(2), channel(4));
   // Relative luminance
   (0.299 * r + 0.587 * g + 0.114 * b) > 186.0
+}
+
+#[cfg(test)]
+mod tests {
+  use super::is_light_color;
+
+  #[test]
+  fn reads_hex_brightness() {
+    assert!(is_light_color("#ffffff"));
+    assert!(!is_light_color("#24292f"));
+    assert!(!is_light_color("#fff"));
+  }
+
+  #[test]
+  fn non_hex_brand_color_is_not_light_and_does_not_panic() {
+    // 插件 manifest 里的 brand_color 不受站点控制；多字节字符曾让字节切片 panic。
+    assert!(!is_light_color("#aé1234"));
+    assert!(!is_light_color("#ééééé"));
+    assert!(!is_light_color("red"));
+  }
 }
