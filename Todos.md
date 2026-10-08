@@ -417,7 +417,7 @@
 - [x] B4 — SEC-11 `site_theme` cookie 读取侧校验（99deeb3：`engines::theme::is_theme_filename`（`[A-Za-z0-9_-]+\.wasm`）同时用于 `theme_with_override` 与 `/api/theme/set`，非法 cookie 忽略并 warn；单测先红后绿，curl 验收 `../`、`.wasm.bak` 回落默认主题。未做「在主题列表内」：指向非主题插件只会让该用户自己的主题 CSS 为空，缓存键数量受 plugins 目录文件数约束）
 - [x] B5 — SEC-10 gateway 不覆盖应用 CSP（1fef74c：删除 gateway 的 CSP 定义与 `CSP_POLICY` 读取，CSP 原样转发；通用安全头仅在应用未下发时补，HSTS 仍由 gateway 设；`apply_security_headers` 两条单测先红后绿；DEPLOY_GUIDE 表格更新。未起真实 Pingora + TLS 做端到端）
 - [x] B6 — SEC-13 `require_writer` 回查数据库（dbc9a2b：`require_writer` 改走 `require_session_verified`；同文件的 `require_admin_user`（授予 / 撤销权益、订单管理）同样只信 JWT，换成 `session::require_admin`（回查 role + token_version）；`create_order` 写路径也改为 verified。无现成请求上下文 + DB 的测试设施，红绿用真实服务 + Postgres 验证：u2 旧 tv token 写入、u1 自称 admin 读权益列表，修前均通过，修后分别被拒；有效 token 仍可写）
-- [ ] B7 — SEC-17 不可信内容的 mermaid 按代码显示
+- [x] B7 — SEC-17 不可信内容的 mermaid 按代码显示（cd81f5f：`renders_as_diagram(lang, untrusted)`，用户内容的 mermaid 走 `CodeBlock`（`language-mermaid`，引导脚本只扫 `.mermaid`）；单测先红后绿；浏览器验收：论坛帖显示为代码、无 SVG，welcome 文章两张图照常渲染；用户内容的原始 HTML 本就按文本输出，无法注入 `class="mermaid"`）
 - [ ] B8 — SEC-19 / SEC-20 HSTS、Permissions-Policy、`ws:` 仅开发；删 `/api/echo`；裁剪公开配置
 
 ### 待评估 — 插件改为编译期依赖（2026-10-08 提出，迁移完成后再定）
