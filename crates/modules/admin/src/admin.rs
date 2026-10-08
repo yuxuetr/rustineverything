@@ -10,9 +10,9 @@ use app_core::session::{SessionUser, ALL_ROLES};
 use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  button_class, tabs_list_class, tabs_trigger_class, Badge, BadgeVariant, Button, ButtonSize,
+  button_class, Badge, BadgeVariant, Button, ButtonSize,
   ButtonVariant, DensityProvider, Input, NativeSelect, NativeSelectOption, Spinner, SpinnerSize,
-  Textarea, UiDensity,
+  Tabs, TabsContent, TabsList, TabsTrigger, Textarea, UiDensity,
 };
 
 // =============================================================
@@ -753,7 +753,7 @@ pub fn AdminModerationPage() -> Element {
     return rsx! { ForbiddenPanel {} };
   }
 
-  let mut filter = use_signal(|| "pending".to_string()); // pending / approved / rejected / ""
+  let mut filter = use_signal(|| "pending".to_string()); // pending / approved / rejected / all
   let mut error = use_signal::<Option<String>>(|| None);
   let mut bump = use_signal(|| 0u32);
   // 批量选择：保存被勾选的队列行 id。
@@ -764,7 +764,7 @@ pub fn AdminModerationPage() -> Element {
     let f = filter();
     let _ = bump();
     async move {
-      let arg = if f.is_empty() { None } else { Some(f) };
+      let arg = if f == "all" { None } else { Some(f) };
       admin_list_moderation_queue(arg, Some(200)).await.ok()
     }
   });
@@ -787,20 +787,6 @@ pub fn AdminModerationPage() -> Element {
     }
   };
 
-  let tab_btn = move |key: &str, label: &str| {
-    let active = filter() == key;
-    let key_owned = key.to_string();
-    rsx! {
-        button {
-            r#type: "button",
-            "aria-pressed": active.to_string(),
-            class: tabs_trigger_class(active, ""),
-            onclick: move |_| filter.set(key_owned.clone()),
-            "{label}"
-        }
-    }
-  };
-
   rsx! {
       AdminShell { active: "moderation".to_string(),
           div { class: "flex items-center justify-between mb-6",
@@ -808,117 +794,121 @@ pub fn AdminModerationPage() -> Element {
               span { class: "text-sm text-slate-500", "共 {rows.len()} 条" }
           }
 
-          // 只借用 Tabs 的外观：Tabs 组件依赖 document::eval（FB-14）。
-          div { class: tabs_list_class("mb-4"),
-              {tab_btn("pending", "待复核")}
-              {tab_btn("approved", "已通过")}
-              {tab_btn("rejected", "已拒绝")}
-              {tab_btn("", "全部")}
-          }
-
-          if let Some(err) = error() {
-              div { class: "mb-4 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400 rounded-lg",
-                  "{err}"
+          Tabs { value: filter(), on_value_change: move |v: String| filter.set(v),
+              TabsList { class: "mb-4",
+                  TabsTrigger { value: "pending", "待复核" }
+                  TabsTrigger { value: "approved", "已通过" }
+                  TabsTrigger { value: "rejected", "已拒绝" }
+                  TabsTrigger { value: "all", "全部" }
               }
-          }
+              // 四个页签共用一张表，按当前页签取数，所以只挂当前页签的面板。
+              TabsContent { value: filter(),
 
-          // 批量操作栏：仅在有待复核行时显示。
-          if !pending_ids.is_empty() {
-              div { class: "flex items-center gap-3 mb-4 px-4 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 text-sm flex-wrap",
-                  label { class: "flex items-center gap-2 cursor-pointer",
-                      input {
-                          r#type: "checkbox",
-                          checked: all_pending_selected,
-                          class: "h-4 w-4 accent-primary",
-                          onclick: {
-                              let pending_ids = pending_ids.clone();
-                              move |_| {
-                                  let all = !pending_ids.is_empty()
-                                      && pending_ids.iter().all(|id| selected().contains(id));
-                                  let ids = pending_ids.clone();
-                                  selected.with_mut(|s| {
-                                      if all {
-                                          for id in &ids { s.remove(id); }
-                                      } else {
-                                          for id in &ids { s.insert(*id); }
+                  if let Some(err) = error() {
+                      div { class: "mb-4 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400 rounded-lg",
+                          "{err}"
+                      }
+                  }
+
+                  // 批量操作栏：仅在有待复核行时显示。
+                  if !pending_ids.is_empty() {
+                      div { class: "flex items-center gap-3 mb-4 px-4 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 text-sm flex-wrap",
+                          label { class: "flex items-center gap-2 cursor-pointer",
+                              input {
+                                  r#type: "checkbox",
+                                  checked: all_pending_selected,
+                                  class: "h-4 w-4 accent-primary",
+                                  onclick: {
+                                      let pending_ids = pending_ids.clone();
+                                      move |_| {
+                                          let all = !pending_ids.is_empty()
+                                              && pending_ids.iter().all(|id| selected().contains(id));
+                                          let ids = pending_ids.clone();
+                                          selected.with_mut(|s| {
+                                              if all {
+                                                  for id in &ids { s.remove(id); }
+                                              } else {
+                                                  for id in &ids { s.insert(*id); }
+                                              }
+                                          });
+                                      }
+                                  },
+                              }
+                              span { class: "text-slate-600 dark:text-slate-300", "全选待复核" }
+                          }
+                          span { class: "text-slate-500", "已选 {selected_count} 条" }
+                          div { class: "flex-1" }
+                          Button {
+                              size: ButtonSize::Sm,
+                              class: "bg-success text-success-foreground hover:bg-success/90",
+                              disabled: selected_count == 0 || bulk_busy(),
+                              onclick: move |_| {
+                                  let ids: Vec<i64> = selected().iter().copied().collect();
+                                  spawn(async move {
+                                      bulk_busy.set(true);
+                                      match admin_bulk_approve_moderation(ids).await {
+                                          Ok(n) => finish_bulk(Ok(n)),
+                                          Err(e) => finish_bulk(Err(format!("批量通过失败: {}", e))),
                                       }
                                   });
-                              }
-                          },
+                              },
+                              "批量通过"
+                          }
+                          Button {
+                              variant: ButtonVariant::Destructive,
+                              size: ButtonSize::Sm,
+                              disabled: selected_count == 0 || bulk_busy(),
+                              onclick: move |_| {
+                                  let ids: Vec<i64> = selected().iter().copied().collect();
+                                  spawn(async move {
+                                      bulk_busy.set(true);
+                                      match admin_bulk_reject_moderation(ids).await {
+                                          Ok(n) => finish_bulk(Ok(n)),
+                                          Err(e) => finish_bulk(Err(format!("批量拒绝失败: {}", e))),
+                                      }
+                                  });
+                              },
+                              "批量拒绝（删除内容）"
+                          }
                       }
-                      span { class: "text-slate-600 dark:text-slate-300", "全选待复核" }
                   }
-                  span { class: "text-slate-500", "已选 {selected_count} 条" }
-                  div { class: "flex-1" }
-                  Button {
-                      size: ButtonSize::Sm,
-                      class: "bg-success text-success-foreground hover:bg-success/90",
-                      disabled: selected_count == 0 || bulk_busy(),
-                      onclick: move |_| {
-                          let ids: Vec<i64> = selected().iter().copied().collect();
-                          spawn(async move {
-                              bulk_busy.set(true);
-                              match admin_bulk_approve_moderation(ids).await {
-                                  Ok(n) => finish_bulk(Ok(n)),
-                                  Err(e) => finish_bulk(Err(format!("批量通过失败: {}", e))),
-                              }
-                          });
-                      },
-                      "批量通过"
-                  }
-                  Button {
-                      variant: ButtonVariant::Destructive,
-                      size: ButtonSize::Sm,
-                      disabled: selected_count == 0 || bulk_busy(),
-                      onclick: move |_| {
-                          let ids: Vec<i64> = selected().iter().copied().collect();
-                          spawn(async move {
-                              bulk_busy.set(true);
-                              match admin_bulk_reject_moderation(ids).await {
-                                  Ok(n) => finish_bulk(Ok(n)),
-                                  Err(e) => finish_bulk(Err(format!("批量拒绝失败: {}", e))),
-                              }
-                          });
-                      },
-                      "批量拒绝（删除内容）"
-                  }
-              }
-          }
 
-          match res.read().as_ref() {
-              None => rsx! { Loading {} },
-              Some(_) if rows.is_empty() => rsx! {
-                  div { class: "py-16 text-center text-slate-500", "暂无记录" }
-              },
-              Some(_) => rsx! {
-                  div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden",
-                      div { class: "divide-y divide-slate-100 dark:divide-slate-800",
-                          for r in rows.iter() {
-                              ModerationQueueRowView {
-                                  key: "{r.id}",
-                                  row: r.clone(),
-                                  selected: selected().contains(&r.id),
-                                  on_toggle: move |id: i64| {
-                                      selected.with_mut(|s| {
-                                          if !s.insert(id) {
-                                              s.remove(&id);
+                  match res.read().as_ref() {
+                      None => rsx! { Loading {} },
+                      Some(_) if rows.is_empty() => rsx! {
+                          div { class: "py-16 text-center text-slate-500", "暂无记录" }
+                      },
+                      Some(_) => rsx! {
+                          div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden",
+                              div { class: "divide-y divide-slate-100 dark:divide-slate-800",
+                                  for r in rows.iter() {
+                                      ModerationQueueRowView {
+                                          key: "{r.id}",
+                                          row: r.clone(),
+                                          selected: selected().contains(&r.id),
+                                          on_toggle: move |id: i64| {
+                                              selected.with_mut(|s| {
+                                                  if !s.insert(id) {
+                                                      s.remove(&id);
+                                                  }
+                                              });
+                                          },
+                                          on_done: move |msg: Result<(), String>| {
+                                              match msg {
+                                                  Ok(()) => {
+                                                      error.set(None);
+                                                      bump.with_mut(|n| *n = n.wrapping_add(1));
+                                                  }
+                                                  Err(e) => error.set(Some(e)),
+                                              }
                                           }
-                                      });
-                                  },
-                                  on_done: move |msg: Result<(), String>| {
-                                      match msg {
-                                          Ok(()) => {
-                                              error.set(None);
-                                              bump.with_mut(|n| *n = n.wrapping_add(1));
-                                          }
-                                          Err(e) => error.set(Some(e)),
                                       }
                                   }
                               }
                           }
-                      }
+                      },
                   }
-              },
+              }
           }
       }
   }
