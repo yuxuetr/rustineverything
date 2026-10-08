@@ -5,6 +5,10 @@
 //! 触发上层 `theme_css` `use_resource` 重新请求合并 CSS。
 
 use dioxus::prelude::*;
+use dioxus_shadcn::{
+  Dropdown, DropdownContent, DropdownItem, DropdownLabel, DropdownRadioGroup, DropdownRadioItem,
+  DropdownSeparator, DropdownTrigger,
+};
 
 use crate::i18n::{t, use_i18n};
 use crate::server::{list_available_themes, set_user_theme, ThemeInfo};
@@ -38,7 +42,6 @@ pub fn use_theme_version() -> Signal<u32> {
 /// 主题下拉。展示当前激活主题，点击展开列表，点击列表项写 cookie + bump version。
 #[component]
 pub fn ThemePicker() -> Element {
-  let mut open = use_signal(|| false);
   let mut version = use_theme_version();
   let lang = use_i18n();
 
@@ -50,6 +53,7 @@ pub fn ThemePicker() -> Element {
   let themes: Vec<ThemeInfo> = themes_res.read().as_ref().cloned().unwrap_or_default();
 
   // 找到当前激活主题用于按钮 label（只取去前缀后的短名）
+  let active_file = themes.iter().find(|t| t.is_active).map(|t| t.filename.clone()).unwrap_or_default();
   let active_label = themes
     .iter()
     .find(|t| t.is_active)
@@ -71,7 +75,6 @@ pub fn ThemePicker() -> Element {
   //    bump version，确保紧接着的聚合 CSS 重新请求一定携带新 cookie；刷新后 SSR
   //    也能读到，主题保持不变。
   let switch = use_callback(move |filename: String| {
-    open.set(false);
     spawn(async move {
       // 1) 服务端校验 + Set-Cookie（best-effort，失败仅记日志，不阻断切换）。
       if let Err(e) = set_user_theme(filename.clone()).await {
@@ -89,16 +92,16 @@ pub fn ThemePicker() -> Element {
   });
 
   rsx! {
-      div { class: "relative",
-          button {
-              onclick: move |_| open.set(!open()),
-              class: "flex items-center gap-1 px-2 py-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors text-xs font-semibold",
+      Dropdown {
+          DropdownTrigger {
+              class: "flex items-center gap-1 px-2 py-1 rounded-md hover:bg-accent text-muted-foreground transition-colors text-xs font-semibold",
               title: "{t(lang(), \"theme.toggle\")}",
               svg {
                   class: "w-4 h-4",
                   fill: "none",
                   stroke: "currentColor",
                   view_box: "0 0 24 24",
+                  "aria-hidden": "true",
                   path {
                       stroke_linecap: "round",
                       stroke_linejoin: "round",
@@ -108,42 +111,17 @@ pub fn ThemePicker() -> Element {
               }
               span { class: "hidden sm:inline whitespace-nowrap", "{active_label}" }
           }
-          if open() {
-              div { class: "absolute right-0 top-full mt-1 w-48 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg py-1 z-50",
-                  div { class: "px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-400",
-                      "{t(lang(), \"theme.heading\")}"
-                  }
+          // `fixed`：菜单显示的第一帧不进文档流，否则会把同一行的触发按钮挤开、定位偏移（FB-19）。
+          DropdownContent { class: "fixed w-48",
+              DropdownLabel { class: "text-[10px] uppercase tracking-wider", "{t(lang(), \"theme.heading\")}" }
+              DropdownRadioGroup { value: active_file, on_value_change: move |f: String| switch.call(f),
                   for t in themes.iter() {
-                      {
-                          let is_active = t.is_active;
-                          let filename = t.filename.clone();
-                          let label = short_theme_label(&t.label);
-                          rsx! {
-                              button {
-                                  key: "{filename}",
-                                  onclick: move |_| switch.call(filename.clone()),
-                                  class: format_args!(
-                                      "w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center justify-between {}",
-                                      if is_active {
-                                          "text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-900/30"
-                                      } else {
-                                          "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                      }
-                                  ),
-                                  span { "{label}" }
-                                  if is_active {
-                                      span { class: "text-xs", "✓" }
-                                  }
-                              }
-                          }
-                      }
+                      DropdownRadioItem { key: "{t.filename}", value: t.filename.clone(), "{short_theme_label(&t.label)}" }
                   }
-                  div { class: "my-1 border-t border-slate-100 dark:border-slate-800" }
-                  button {
-                      onclick: move |_| switch.call(String::new()),
-                      class: "w-full text-left px-3 py-1.5 text-xs text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                      "{t(lang(), \"theme.reset\")}"
-                  }
+              }
+              DropdownSeparator {}
+              DropdownItem { class: "text-xs text-muted-foreground", onclick: move |_| switch.call(String::new()),
+                  "{t(lang(), \"theme.reset\")}"
               }
           }
       }

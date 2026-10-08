@@ -10,4 +10,5 @@ pub mod layouts;
 pub mod module_gate;
 pub mod nav;
 pub mod theme_picker;
+pub mod user_menu;
 pub mod view;

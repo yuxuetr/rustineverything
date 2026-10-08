@@ -8,6 +8,9 @@
 //! 无需改动渲染逻辑。
 
 use dioxus::prelude::*;
+use dioxus_shadcn::{
+  Dropdown, DropdownContent, DropdownLabel, DropdownRadioGroup, DropdownRadioItem, DropdownTrigger,
+};
 
 use crate::i18n::{t, use_i18n, Language};
 
@@ -16,33 +19,35 @@ use crate::i18n::{t, use_i18n, Language};
 /// 写入 cookie 后可在下次加载时恢复，避免回退到中文。
 const LANG_COOKIE_NAME: &str = "site_lang";
 
-/// 可选语言表：`(枚举, 顶部按钮短标签, 下拉项完整名称)`。
+/// 可选语言表：`(枚举, cookie 值, 顶部按钮短标签, 下拉项完整名称)`。
 ///
 /// 顺序即下拉展示顺序。新增语言只需在此追加一行（并扩展 `Language`）。
-const LANGUAGES: &[(Language, &str, &str)] =
-  &[(Language::Zh, "中", "中文"), (Language::En, "EN", "English")];
+const LANGUAGES: &[(Language, &str, &str, &str)] =
+  &[(Language::Zh, "zh", "中", "中文"), (Language::En, "en", "EN", "English")];
 
 /// 语言下拉。按钮展示当前语言短标签，点击展开列表选择。
 #[component]
 pub fn LangPicker() -> Element {
-  let mut open = use_signal(|| false);
   let mut lang = use_i18n();
 
   let current = lang();
-  let current_label =
-    LANGUAGES.iter().find(|(l, _, _)| *l == current).map(|(_, short, _)| *short).unwrap_or("中");
+  let (current_code, current_label) = LANGUAGES
+    .iter()
+    .find(|(l, ..)| *l == current)
+    .map(|(_, code, short, _)| (*code, *short))
+    .unwrap_or(("zh", "中"));
 
   rsx! {
-      div { class: "relative",
-          button {
-              onclick: move |_| open.set(!open()),
-              class: "flex items-center gap-1 px-2 py-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors text-xs font-semibold",
+      Dropdown {
+          DropdownTrigger {
+              class: "flex items-center gap-1 px-2 py-1 rounded-md hover:bg-accent text-muted-foreground transition-colors text-xs font-semibold",
               title: "{t(current, \"lang.toggle\")}",
               svg {
                   class: "w-4 h-4",
                   fill: "none",
                   stroke: "currentColor",
                   view_box: "0 0 24 24",
+                  "aria-hidden": "true",
                   path {
                       stroke_linecap: "round",
                       stroke_linejoin: "round",
@@ -52,41 +57,20 @@ pub fn LangPicker() -> Element {
               }
               span { "{current_label}" }
           }
-          if open() {
-              div { class: "absolute right-0 top-full mt-1 w-40 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg py-1 z-50",
-                  div { class: "px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-400",
-                      "{t(current, \"lang.heading\")}"
-                  }
-                  for (l, _short, full) in LANGUAGES.iter() {
-                      {
-                          let lang_val = *l;
-                          let is_active = current == lang_val;
-                          let full_label = *full;
-                          rsx! {
-                              button {
-                                  key: "{full_label}",
-                                  onclick: move |_| {
-                                      lang.set(lang_val);
-                                      open.set(false);
-                                      // 持久化语言选择：写 cookie，让整页跳转 / 刷新后仍保持。
-                                      let code = if lang_val == Language::En { "en" } else { "zh" };
-                                      widgets::browser::set_cookie(LANG_COOKIE_NAME, code, 31_536_000);
-                                  },
-                                  class: format_args!(
-                                      "w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center justify-between {}",
-                                      if is_active {
-                                          "text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-900/30"
-                                      } else {
-                                          "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                                      }
-                                  ),
-                                  span { "{full_label}" }
-                                  if is_active {
-                                      span { class: "text-xs", "✓" }
-                                  }
-                              }
-                          }
+          // `fixed` 见 theme_picker.rs（FB-19）。
+          DropdownContent { class: "fixed w-40",
+              DropdownLabel { class: "text-[10px] uppercase tracking-wider", "{t(current, \"lang.heading\")}" }
+              DropdownRadioGroup {
+                  value: current_code.to_string(),
+                  on_value_change: move |code: String| {
+                      if let Some((l, code, ..)) = LANGUAGES.iter().find(|(_, c, ..)| *c == code) {
+                          lang.set(*l);
+                          // 持久化语言选择：写 cookie，让整页跳转 / 刷新后仍保持。
+                          widgets::browser::set_cookie(LANG_COOKIE_NAME, code, 31_536_000);
                       }
+                  },
+                  for (_, code, _, full) in LANGUAGES.iter() {
+                      DropdownRadioItem { key: "{code}", value: *code, "{full}" }
                   }
               }
           }

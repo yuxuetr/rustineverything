@@ -13,6 +13,7 @@ use dioxus::router::{Link, Outlet};
 use crate::components::ecosystem_menu::EcosystemMenu;
 use crate::components::lang_picker::LangPicker;
 use crate::components::theme_picker::ThemePicker;
+use crate::components::user_menu::UserMenu;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
@@ -28,7 +29,6 @@ pub fn ClassicShell() -> Element {
   let mut is_dark = use_signal(|| false);
   let mut show_auth_modal = crate::use_auth_modal();
   let session_user = crate::use_session_user();
-  let mut show_user_menu = use_signal(|| false);
   // Phase 9.4：mobile 抽屉开关。md:hidden 显示一个 hamburger button，
   // 点击展开 header 下方的纵向 nav，让窄屏用户也能跳到板块。
   let mut show_mobile_menu = use_signal(|| false);
@@ -174,67 +174,7 @@ pub fn ClassicShell() -> Element {
 
                           // User avatar / Sign In
                           if let Some(ref u) = session_user() {
-                              div { class: "relative",
-                                  button {
-                                      onclick: move |_| show_user_menu.set(!show_user_menu()),
-                                      class: "flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                                      if let Some(ref avatar) = u.avatar_url {
-                                          img {
-                                              src: "{avatar}",
-                                              class: "w-7 h-7 shrink-0 rounded-full object-cover",
-                                              width: "28",
-                                              height: "28",
-                                              alt: "{u.nickname}"
-                                          }
-                                      } else {
-                                          div { class: "w-7 h-7 shrink-0 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold",
-                                              "{u.nickname.chars().next().unwrap_or('U')}"
-                                          }
-                                      }
-                                      span { class: "hidden sm:inline text-sm font-medium text-slate-700 dark:text-slate-200", "{u.nickname}" }
-                                  }
-                                  if show_user_menu() {
-                                      div { class: "absolute right-0 top-full mt-1 w-44 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-lg py-1 z-50",
-                                          div { class: "px-3 py-2 text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800",
-                                              "{u.nickname}"
-                                          }
-                                          if on_forum {
-                                              Link {
-                                                  to: Route::MyTopics {},
-                                                  class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                                                  "{t(lang(), \"user.my_topics\")}"
-                                              }
-                                          }
-                                          Link {
-                                              to: Route::MyAnnotations {},
-                                              class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                                              "{t(lang(), \"user.my_annotations\")}"
-                                          }
-                                          // PM4：在线支付关闭时隐藏「我的订单」入口（路由保留）。
-                                          if cfg!(feature = "payments") {
-                                              Link {
-                                                  to: Route::MyOrders {},
-                                                  class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                                                  "{t(lang(), \"user.my_orders\")}"
-                                              }
-                                          }
-                                          if u.is_admin() {
-                                              div { class: "my-1 border-t border-slate-100 dark:border-slate-800" }
-                                              Link {
-                                                  to: Route::AdminDashboard {},
-                                                  class: "block px-3 py-2 text-sm font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors",
-                                                  "{t(lang(), \"nav.admin\")}"
-                                              }
-                                          }
-                                          div { class: "my-1 border-t border-slate-100 dark:border-slate-800" }
-                                          a {
-                                              href: "/api/auth/logout",
-                                              class: "block px-3 py-2 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                                              "{t(lang(), \"auth.logout\")}"
-                                          }
-                                      }
-                                  }
-                              }
+                              UserMenu { user: u.clone(), compact: false, show_my_topics: on_forum }
                           } else {
                               button {
                                   onclick: move |_| show_auth_modal.set(true),

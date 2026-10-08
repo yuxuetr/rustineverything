@@ -192,3 +192,13 @@
 - 站点临时处理：无。
 - 建议的上游修复：观察器在 `highlighted` 为空且出现可用选项时高亮 `initial()`（Command 模式下）。
 - 状态：open
+
+### FB-19 浮层定位先量锚点、后脱离文档流，flex 行里的菜单会偏移
+
+- 组件 / 版本：0.6.2 — `anchored_overlay.rs`（`place()`）；Dropdown、Popover、Select 等用 anchored overlay 的组件
+- 现象：`place()` 先 `anchor.getBoundingClientRect()`，再给内容设 `position: fixed`。内容刚去掉 `hidden` 的那一帧仍在文档流里；触发器和内容是 flex 行里的兄弟（导航栏的常见结构）时，内容的宽度把同一行的触发器挤向左边，量到的是挤偏后的位置。本站导航栏的主题菜单（`w-48`）在 1200px 宽度下右边缘落在 700，触发器实际在 896，偏差约等于菜单宽度加间距；关闭时 `position` 被清掉，所以每次打开都复现。U8c 验收时发现（2026-10-08）。
+- 复现：`div { class: "flex gap-1", Dropdown { DropdownTrigger { "A" } DropdownContent { class: "w-48", DropdownItem { "x" } } } button { "B" } }` 放在页面右侧，打开菜单，比较触发器与菜单的 `right`。
+- 影响：中。菜单离开触发器，看起来像错位的组件；不在 flex 行里、或内容外层有定位容器时不出现，所以示例站可能看不到。
+- 站点临时处理：`DropdownContent { class: "fixed …" }`，让内容第一帧就脱离文档流（`theme_picker.rs`、`lang_picker.rs`、`user_menu.rs`）。
+- 建议的上游修复：`place()` 里先设 `position: fixed`（以及 `--dxui-anchor-width`），再量锚点；或在基础类里带 `fixed`。浏览器测试加「flex 行内的触发器」布局。
+- 状态：open
