@@ -384,6 +384,11 @@
   - 验证：严格 CSP 下 5 个板块的筛选、搜索、空状态、文章详情、未找到文章的错误提示均可用，无 pageerror；SSR 首屏含卡片
   - 发现（既有，未修）：`/wasm` 整页请求返回 404——路由与 Dioxus 静态目录 `/wasm/`（wasm 产物）冲突，只能经客户端路由进入；生产环境未验证。板块 crate 单独 `cargo test --features server` 编译失败（其 server feature 未开 `app-core/server`），不带 feature 时 13 测通过
 - [ ] U8 — 全局弹层：auth_modal / search 模态 → Dialog(+Command)；主题/语言/用户菜单 → Dropdown；移动端菜单 → Sheet
+  - [x] U8a — auth_modal → Dialog（新增 `auth.close` 文案；Escape、焦点限制与回位验证通过）
+  - [x] U8b — search 模态 → Dialog + Command + ToggleGroup（回车只跳站内路径，`is_site_path` 带测试；发现 FB-17 Command 在关闭的 Dialog 里键盘失效 → 只在打开时挂载；FB-18 异步结果不自动高亮）
+  - 顺带修复：`tailwind-input.css` 只扫了 6 个 module crate，docs/search/5 个板块独有的 16 个类此前没有生成（ffaaf91）
+  - [ ] U8c — theme_picker / lang_picker / 用户菜单 → Dropdown
+  - [ ] U8d — 移动端菜单 → Sheet
 - [ ] U9 — 生态 mega 菜单：评估 NavigationMenu 与现有纯 CSS 方案（D5），不劣于现状才替换
 - [ ] U10 — 收尾：清理无用类名与 CSS、评估移除色阶映射、更新 TAILWIND_GUIDE、反馈汇总
 
