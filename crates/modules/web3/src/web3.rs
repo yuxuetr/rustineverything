@@ -5,6 +5,10 @@
 //! 列表的子主题筛选 / 搜索仍是客户端 signal 交互，置于 `SuspenseBoundary` 内的子组件。
 
 use dioxus::prelude::*;
+use dioxus_shadcn::{
+  badge_class, card_class, Alert, AlertDescription, AlertVariant, BadgeVariant, Empty,
+  EmptyDescription, Input, Spinner, SpinnerSize,
+};
 use widgets::{parse_mdx, Markdown};
 
 use app_core::i18n::{t, Language};
@@ -17,6 +21,18 @@ use crate::text::{
 /// 读取全局语言信号（缺省回退 Zh）。方案 A：板块文案随该信号切换。
 fn current_lang() -> Language {
   try_consume_context::<Signal<Language>>().map(|s| s()).unwrap_or_default()
+}
+
+/// 子主题筛选 chip：选中为主色实心，否则为次要底色。
+fn chip_class(active: bool) -> String {
+  if active {
+    badge_class(BadgeVariant::Default, "rounded-full px-3 py-1.5 text-sm")
+  } else {
+    badge_class(
+      BadgeVariant::Secondary,
+      "rounded-full px-3 py-1.5 text-sm font-medium hover:bg-accent",
+    )
+  }
 }
 
 #[component]
@@ -35,7 +51,7 @@ pub fn Web3IndexPage() -> Element {
               SuspenseBoundary {
                   fallback: |_| rsx! {
                       div { class: "flex items-center justify-center py-20",
-                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                       }
                   },
                   Web3IndexList {}
@@ -68,22 +84,21 @@ fn Web3IndexList() -> Element {
 
   rsx! {
       div { class: "mb-6",
-          input {
+          Input {
               r#type: "search",
-              class: "w-full max-w-md px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white",
-              placeholder: "{t(lang, \"board.search\")}",
-              value: "{query}",
-              oninput: move |e| query.set(e.value()),
+              class: "max-w-md",
+              placeholder: t(lang, "board.search"),
+              "aria-label": t(lang, "board.search"),
+              value: query(),
+              on_value_change: move |v: String| query.set(v),
           }
       }
 
       div { class: "flex flex-wrap gap-2 mb-8",
           button {
-              class: if sub.is_empty() {
-                  "px-3 py-1.5 rounded-full text-sm font-semibold bg-blue-600 text-white"
-              } else {
-                  "px-3 py-1.5 rounded-full text-sm font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-              },
+              r#type: "button",
+              "aria-pressed": sub.is_empty().to_string(),
+              class: chip_class(sub.is_empty()),
               onclick: move |_| active_subtopic.set(String::new()),
               "{t(lang, \"board.all\")}"
           }
@@ -95,11 +110,9 @@ fn Web3IndexList() -> Element {
                   let blurb = t(lang, &format!("{}.sub.{}.blurb", BOARD_ID, s.slug));
                   rsx! {
                       button {
-                          class: if is_active {
-                              "px-3 py-1.5 rounded-full text-sm font-semibold bg-blue-600 text-white"
-                          } else {
-                              "px-3 py-1.5 rounded-full text-sm font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-                          },
+                          r#type: "button",
+                          "aria-pressed": is_active.to_string(),
+                          class: chip_class(is_active),
                           title: "{blurb}",
                           onclick: move |_| active_subtopic.set(slug.clone()),
                           "{chip}"
@@ -112,8 +125,8 @@ fn Web3IndexList() -> Element {
       div { class: "grid grid-cols-1 lg:grid-cols-3 gap-8",
           div { class: "lg:col-span-2",
               if filtered.is_empty() {
-                  div { class: "py-16 text-center text-slate-400",
-                      "{t(lang, \"board.empty\")}"
+                  Empty { class: "py-16",
+                      EmptyDescription { "{t(lang, \"board.empty\")}" }
                   }
               } else {
                   div { class: "space-y-4",
@@ -135,7 +148,7 @@ fn Web3IndexList() -> Element {
                                   href: "{c.url}",
                                   target: "_blank",
                                   rel: "noopener noreferrer",
-                                  class: "block p-3 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 transition-colors",
+                                  class: "block p-3 rounded-lg border border-border hover:border-primary/50 transition-colors",
                                   div { class: "font-mono text-sm font-bold text-slate-900 dark:text-white", "{c.name}" }
                                   div { class: "text-xs text-slate-500 dark:text-slate-400 mt-0.5", "{blurb}" }
                               }
@@ -161,10 +174,10 @@ fn ArticleCard(article: ArticleSummary) -> Element {
   rsx! {
       a {
           href: "{href}",
-          class: "block p-5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all",
+          class: card_class("block p-5 rounded-xl shadow-none hover:shadow-md hover:border-primary/50 transition-all"),
           div { class: "flex items-center gap-2 mb-2 text-xs",
               if !sub.is_empty() {
-                  span { class: "px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium", "{sub}" }
+                  span { class: badge_class(BadgeVariant::Secondary, "font-medium text-primary"), "{sub}" }
               }
               span { class: "text-slate-400", "{article.date}" }
           }
@@ -173,7 +186,7 @@ fn ArticleCard(article: ArticleSummary) -> Element {
           if !article.tags.is_empty() {
               div { class: "mt-3 flex flex-wrap gap-1.5",
                   for tag in article.tags.iter() {
-                      span { class: "text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400", "#{tag}" }
+                      span { class: badge_class(BadgeVariant::Secondary, "font-normal text-muted-foreground"), "#{tag}" }
                   }
               }
           }
@@ -190,7 +203,7 @@ pub fn Web3ArticlePage(slug: String) -> Element {
           div { class: "max-w-4xl mx-auto px-4 sm:px-6",
               a {
                   href: "{BOARD_ROUTE}",
-                  class: "inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 mb-8",
+                  class: "inline-flex items-center gap-1 text-sm text-primary hover:underline mb-8",
                   "{back}"
               }
               div { class: "text-slate-700 dark:text-slate-200",
@@ -198,7 +211,7 @@ pub fn Web3ArticlePage(slug: String) -> Element {
                   SuspenseBoundary {
                       fallback: |_| rsx! {
                           div { class: "flex items-center justify-center py-20",
-                              div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                              Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                           }
                       },
                       Web3ArticleContent { slug: slug.clone() }
@@ -226,12 +239,14 @@ fn Web3ArticleContent(slug: String) -> Element {
     Some(Err(e)) => {
       let msg = format!("{}{}", t(lang, "board.load_error_prefix"), e);
       rsx! {
-          div { class: "p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg", "{msg}" }
+          Alert { variant: AlertVariant::Destructive,
+              AlertDescription { variant: AlertVariant::Destructive, "{msg}" }
+          }
       }
     }
     None => rsx! {
         div { class: "flex items-center justify-center py-20",
-            div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+            Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
         }
     },
   }
