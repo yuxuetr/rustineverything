@@ -5,6 +5,7 @@
 
 use dioxus::prelude::*;
 use dioxus::router::{Link, Outlet};
+use dioxus_shadcn::{Button, ButtonSize, ButtonVariant};
 
 use crate::components::lang_picker::LangPicker;
 use crate::components::theme_picker::ThemePicker;
@@ -49,9 +50,15 @@ pub fn MinimalShell() -> Element {
                           SearchButton {}
                           ThemePicker {}
                           LangPicker {}
-                          button {
+                          // 紧凑条保持原 28px（FB-21：默认 min-h-10）
+                          Button {
+                              r#type: "button",
+                              variant: ButtonVariant::Ghost,
+                              size: ButtonSize::Icon,
+                              class: "h-7 w-7 min-h-7 text-muted-foreground",
                               onclick: toggle_dark,
-                              class: "p-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors",
+                              "aria-label": "{t(lang(), \"nav.toggle_dark\")}",
+                              "aria-pressed": is_dark().to_string(),
                               if is_dark() {
                                   svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                                       path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" }
@@ -66,9 +73,12 @@ pub fn MinimalShell() -> Element {
                           if let Some(ref u) = session_user() {
                               UserMenu { user: u.clone(), compact: true, show_my_topics: false }
                           } else {
-                              button {
+                              Button {
+                                  r#type: "button",
+                                  variant: ButtonVariant::Ghost,
+                                  size: ButtonSize::Sm,
+                                  class: "h-7 min-h-7 px-2 text-xs",
                                   onclick: move |_| show_auth_modal.set(true),
-                                  class: "px-2 py-1 rounded-md text-xs font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800 transition-colors",
                                   "{t(lang(), \"auth.sign_in\")}"
                               }
                           }

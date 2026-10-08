@@ -9,7 +9,10 @@
 
 use dioxus::prelude::*;
 use dioxus::router::{Link, Outlet};
-use dioxus_shadcn::{Sheet, SheetClose, SheetContent, SheetOverlay, SheetSide, SheetTitle};
+use dioxus_shadcn::{
+  Button, ButtonSize, ButtonVariant, Sheet, SheetClose, SheetContent, SheetOverlay, SheetSide,
+  SheetTitle,
+};
 
 use crate::components::ecosystem_menu::EcosystemMenu;
 use crate::components::lang_picker::LangPicker;
@@ -134,8 +137,12 @@ pub fn ClassicShell() -> Element {
                       div { class: "flex items-center gap-2 sm:gap-3",
                           // Phase 9.4: mobile hamburger（lg:hidden）。点击展开 header
                           // 下方的板块抽屉，让窄屏用户能直接跳到 8 个板块。
-                          button {
-                              class: "lg:hidden p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors",
+                          // 保持原 36px：Icon 默认 h-10 w-10 + min-h-10（FB-21）
+                          Button {
+                              r#type: "button",
+                              variant: ButtonVariant::Ghost,
+                              size: ButtonSize::Icon,
+                              class: "lg:hidden h-9 w-9 min-h-9 text-muted-foreground",
                               onclick: move |_| show_mobile_menu.set(true),
                               "aria-label": "{t(lang(), \"nav.menu\")}",
                               "aria-expanded": show_mobile_menu().to_string(),
@@ -154,9 +161,14 @@ pub fn ClassicShell() -> Element {
                           LangPicker {}
 
                           // Dark Mode Toggle
-                          button {
+                          Button {
+                              r#type: "button",
+                              variant: ButtonVariant::Ghost,
+                              size: ButtonSize::Icon,
+                              class: "h-9 w-9 min-h-9 text-muted-foreground",
                               onclick: toggle_dark,
-                              class: "p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors",
+                              "aria-label": "{t(lang(), \"nav.toggle_dark\")}",
+                              "aria-pressed": is_dark().to_string(),
                               if is_dark() {
                                   svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                                       path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" }
@@ -172,9 +184,12 @@ pub fn ClassicShell() -> Element {
                           if let Some(ref u) = session_user() {
                               UserMenu { user: u.clone(), compact: false, show_my_topics: on_forum }
                           } else {
-                              button {
+                              Button {
+                                  r#type: "button",
+                                  variant: ButtonVariant::Ghost,
+                                  size: ButtonSize::Sm,
+                                  class: "min-h-8 gap-1.5 whitespace-nowrap",
                                   onclick: move |_| show_auth_modal.set(true),
-                                  class: "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-300 dark:hover:text-white dark:hover:bg-slate-800 transition-colors whitespace-nowrap",
                                   svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                                       path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" }
                                   }
