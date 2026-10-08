@@ -109,6 +109,37 @@ CSP 保持不含 `'unsafe-eval'`。组件库在 web 端改用 web-sys（FB-02，
 | **U8** | 全局弹层：`auth_modal` → Dialog；search 模态 → Dialog + Command；`theme_picker` / `lang_picker` / 用户菜单 → Dropdown；移动端菜单 → Sheet | Dialog、Command、Dropdown、Sheet | 删除手写 Escape JS（`search.rs:77`）；键盘全程可操作；移动宽度（375px）抽屉正常 |
 | **U9** | 生态 mega 菜单（D5 评估） | NavigationMenu（视评估） | 评估结论入 FB；不劣于现状才替换 |
 | **U10** | 收尾：删除无用类名与 CSS、评估移除色阶映射、更新 TAILWIND_GUIDE、反馈汇总 | — | 全量校验命令通过；FB 汇总可直接转成 dioxus-ui 的 issue |
+| **U11** | 剩余原生控件（2026-10-08 复查，见下表）：迁移 U11a–U11f，其余写明保留理由 | Checkbox、Switch、Button、Tabs、Collapsible | 同上；每个子任务一次提交 |
+
+### U11 剩余原生控件的去留（2026-10-08 复查）
+
+U1–U10 之后仍有 44 个 `button`、5 个 `input`、1 个 `table` 是原生元素。逐个判断如下。判据：组件库有对应组件，且换上后能**去掉手写状态类名或补上缺失的语义 / 暗色**，就迁移；只是一层同样效果的包装，就保留。
+
+**迁移（24 个 button、4 个 input）**
+
+| 子任务 | 位置 | 换成 | 换掉之后得到什么 |
+| --- | --- | --- | --- |
+| U11a | `admin.rs` 审核页全选 / 单选复选框（2）、审核设置两个开关（2） | Checkbox / Switch | 设置开关现在靠 `evt.value() == "true" \|\| "on"` 猜值，组件直接给 `bool` |
+| U11b | forum 发帖 / 回复提交（2）、博客列表翻页（2）、搜索入口（1） | Button | 提交按钮的禁用样式是手写的 `bg-slate-200`；翻页按钮手写禁用色 |
+| U11c | classic 布局：移动菜单、暗色切换、登录（3）；minimal 布局：暗色切换、登录（2） | Button（ghost / icon） | 导航栏仍是 slate 手写类名，焦点环缺失 |
+| U11d | 博客标签筛选（2，仍是 `bg-blue-600`）、podcast 标签（2）、cases 分类与标签（3） | 与 U7 板块相同：`badge_class` + `aria-pressed` | 5 个板块已是这种写法，这 7 个是漏网的，选中态也没有 `aria-pressed` |
+| U11e | 评论与论坛的「编辑 / 预览」切换（4）、课程代码组的文件页签（1） | Tabs | 现在只是视觉上像页签，没有 `role=tab` / 方向键 |
+| U11f | 课程目录的章节折叠（2） | Collapsible | 去掉手写 `open` 状态与 `aria-expanded` 缺失；附带：课程标注开关（1）用内联 `style` 写死白底，暗色下刺眼，改为 Button（outline / icon） |
+
+U11f 合计 3 个 button。
+
+**保留（20 个 button、1 个 input、1 个 table）**
+
+| 位置 | 理由 |
+| --- | --- |
+| `auth_modal.rs` 登录方式按钮（1） | 底色来自登录方式的品牌色（内联 `style`），Button 的变体覆盖不了 |
+| `ecosystem_menu.rs` 生态菜单触发（1） | U9 决定保留纯 CSS 菜单（D5、FB-20） |
+| 5 个板块的子主题 chip（10） | U7 已改为 `badge_class` + `aria-pressed`，原生 `button` 是有意的 |
+| 课程代码块复制（1）、`mdx.rs` 代码块复制（1） | 叠在深色代码块上的绝对定位小按钮，样式随代码块而不是随主题 |
+| podcast 节目列表行（1） | 整行可点的列表项，不是按钮外观 |
+| docs 侧栏目录树的展开 / 标题（4） | 组件库没有树组件；Collapsible 只解决单层折叠，换上反而要拆开现有的递归结构 |
+| `comment.rs` 隐藏的文件选择框（1） | 由图标 label 触发的隐藏 `input[type=file]`，没有可见外观 |
+| `mdx.rs` 正文表格（1） | 正文渲染不迁移（§1 非目标），由 `prose` 负责 |
 
 ### 每个任务的校验
 

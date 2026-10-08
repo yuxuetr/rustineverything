@@ -397,6 +397,14 @@
   - TAILWIND_GUIDE：token 优先、扫描范围、组件用法与 FB 绕法
   - FB 汇总表：DIOXUS_UI_FEEDBACK.md 开头；待上游 FB-17/18/19/20、FB-13 部分修复
   - 全量校验：fmt、workspace clippy（`-A clippy::double_must_use`，llm 既有）、workspace 测试 738 通过（修复了 U2 遗留的示例插件测试）、wasm / 无 payments 构建；严格 CSP 下 14 个页面无新报错
+- [x] U10+ — 复查遗漏（2026-10-08）：4 处手写加载圈改为 `Spinner`（3917978）；`/wasm` 404 确认只在 debug（66280e7）；TAILWIND_GUIDE / THEME_SPEC 去掉「主题插件」说法
+- U11 — 剩余原生控件（去留表见 DIOXUS_UI_MIGRATION.md §4 U11）
+  - [ ] U11a — admin 复选框 / 设置开关 → Checkbox / Switch
+  - [ ] U11b — forum 提交、博客翻页、搜索入口 → Button
+  - [ ] U11c — classic / minimal 导航栏按钮 → Button（ghost / icon）
+  - [ ] U11d — 博客 / podcast / cases 标签筛选 → `badge_class` + `aria-pressed`（与 U7 一致）
+  - [ ] U11e — 编辑 / 预览切换、课程代码页签 → Tabs
+  - [ ] U11f — 课程章节折叠 → Collapsible；课程标注开关 → Button（修暗色）
 
 ---
 
