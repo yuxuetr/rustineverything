@@ -1233,7 +1233,7 @@ pub async fn admin_get_moderation_settings(
 /// 3. read site.json 为 `serde_json::Value`，只替换 `moderation` 子树（保留所有
 ///    其他字段，包括 SiteConfig struct 未声明的人工自定义字段）
 /// 4. 原子 tmp + rename 写回
-/// 5. `shared_plugin_manager().invalidate_all()` + `reload_pipeline()` 立即生效
+/// 5. `reload_pipeline()` 立即生效
 #[post("/api/admin/moderation/settings/set")]
 pub async fn admin_set_moderation_settings(
   settings: app_core::settings::ModerationSettings,
@@ -1247,14 +1247,13 @@ pub async fn admin_set_moderation_settings(
     let path = get_asset_root().join("site.json");
     write_moderation_settings_to_site_json(&path, &settings).map_err(ServerFnError::new)?;
 
-    // 立即生效：插件缓存清空 + 审核 pipeline 重建（重读 site.json + 插件目录）
+    // 立即生效：审核 pipeline 重建（重读 site.json + LLM env）
     // Phase 8.7：site.json 变了 → default_module_engine 的 OnceLock cache 也得清
-    app_core::shared_plugin_manager().invalidate_all();
     app_core::engines::module::invalidate_default_module_engine();
     module_moderation::reload_pipeline();
     tracing::info!(
       enabled = settings.enabled,
-      plugins = settings.plugins.len(),
+      llm_review = settings.llm_review,
       blocklist = settings.url_blocklist.len(),
       "admin: moderation settings updated + pipeline reloaded"
     );
@@ -1512,7 +1511,7 @@ mod tests {
 
     let new_settings = ModerationSettings {
       enabled: true,
-      plugins: vec!["mod.wasm".to_string()],
+      llm_review: true,
       thresholds: Some(ModerationThresholdsConfig {
         flag_above: Some(0.4),
         block_above: Some(0.85),
@@ -1531,7 +1530,7 @@ mod tests {
     assert_eq!(after["custom_x"]["unknown"], "field");
     // moderation 已替换
     assert_eq!(after["moderation"]["enabled"], true);
-    assert_eq!(after["moderation"]["plugins"], serde_json::json!(["mod.wasm"]));
+    assert_eq!(after["moderation"]["llm_review"], true);
     assert_eq!(after["moderation"]["url_blocklist"], serde_json::json!(["scam.com"]));
     // f32 → JSON 经 f64 序列化会引入精度尾噪（0.4 ≠ 0.4000000059604645），按近似比较
     let flag = after["moderation"]["thresholds"]["flag_above"].as_f64().unwrap();

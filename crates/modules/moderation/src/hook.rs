@@ -6,7 +6,7 @@
 //!
 //! ## 默认零开销
 //! `site.json::moderation.enabled = false` 时全局 pipeline 内部 stages 为
-//! 空，evaluate 直接返回 Allow，不进 wasm / 不调 LLM。
+//! 空，evaluate 直接返回 Allow，不调 LLM。
 //!
 //! ## 调用模板
 //! ```ignore
@@ -29,7 +29,6 @@
 //! }
 //! ```
 
-use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, RwLock};
 
 use app_core::engines::moderation::{ModerationLabel, Verdict};
@@ -50,10 +49,9 @@ fn build_pipeline() -> ModerationPipeline {
   )
   .unwrap_or_default();
 
-  let plugin_dir: PathBuf = app_core::utils::get_asset_root().join("plugins");
   let llm: Option<Arc<dyn LlmClient>> = default_client_from_env().map(Arc::from);
 
-  let pipeline = ModerationPipeline::from_site_config(&site, &plugin_dir, llm);
+  let pipeline = ModerationPipeline::from_site_config(&site, llm);
   if pipeline.is_empty() {
     tracing::info!("moderation: shared pipeline empty (disabled or unconfigured)");
   } else {
@@ -80,11 +78,8 @@ pub fn shared_pipeline() -> Arc<ModerationPipeline> {
   }
 }
 
-/// Phase 5.1 hot reload：重读 `site.json` + 插件目录，原子替换全局 pipeline。
-/// admin 上传 / 切换审核插件或改阈值后调用即可生效，无需重启进程。
-///
-/// 旧 pipeline（连同其 `PluginManager` 缓存的 wasmi `Module`）在替换后引用计
-/// 数归零即被 Drop，不会泄漏。
+/// Phase 5.1 hot reload：重读 `site.json` + LLM env，原子替换全局 pipeline。
+/// admin 改审核设置后调用即可生效，无需重启进程。
 pub fn reload_pipeline() {
   let fresh = Arc::new(build_pipeline());
   match cell().write() {

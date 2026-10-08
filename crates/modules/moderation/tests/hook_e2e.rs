@@ -31,10 +31,6 @@ fn workspace_root() -> std::path::PathBuf {
     .unwrap_or_else(|| std::path::PathBuf::from("."))
 }
 
-fn plugin_dir() -> std::path::PathBuf {
-  workspace_root().join("assets/plugins")
-}
-
 fn load_env() {
   let _ = dotenvy::from_path(workspace_root().join(".env"));
 }
@@ -62,10 +58,10 @@ async fn evaluate_comment(
 #[tokio::test]
 async fn disabled_pipeline_allows_anything_including_abusive() {
   let site = SiteConfig::default(); // moderation.enabled = false
-  let pipeline = ModerationPipeline::from_site_config(&site, &plugin_dir(), None);
+  let pipeline = ModerationPipeline::from_site_config(&site, None);
   assert!(pipeline.is_empty());
 
-  // 不调 LLM、不读插件 wasm
+  // 不调 LLM
   assert_eq!(evaluate_comment(&pipeline, "welcome", "你这个 sb").await, ModerationLabel::Allow);
   assert_eq!(
     evaluate_comment(&pipeline, "welcome", "https://scam.example/x").await,
@@ -80,11 +76,10 @@ async fn url_blocklist_only_blocks_known_bad_domains() {
   let mut site = SiteConfig::default();
   site.moderation = ModerationSettings {
     enabled: true,
-    plugins: vec![],
     url_blocklist: vec!["scam.example".into(), "*.phishing.example".into()],
     ..Default::default()
   };
-  let pipeline = ModerationPipeline::from_site_config(&site, &plugin_dir(), None);
+  let pipeline = ModerationPipeline::from_site_config(&site, None);
 
   assert_eq!(
     evaluate_comment(&pipeline, "welcome", "点 https://scam.example/x 领奖").await,
@@ -111,7 +106,7 @@ fn live_llm() -> Option<Arc<dyn LlmClient>> {
 }
 
 #[tokio::test]
-#[ignore = "Live LLM + wasm."]
+#[ignore = "Live LLM."]
 async fn full_pipeline_blocks_abusive_comment() {
   let Some(llm) = live_llm() else {
     eprintln!("跳过：未配置 LLM env");
@@ -120,11 +115,11 @@ async fn full_pipeline_blocks_abusive_comment() {
   let mut site = SiteConfig::default();
   site.moderation = ModerationSettings {
     enabled: true,
-    plugins: vec!["plugin_moderation_deepseek.wasm".into()],
+    llm_review: true,
     url_blocklist: vec![],
     ..Default::default()
   };
-  let pipeline = ModerationPipeline::from_site_config(&site, &plugin_dir(), Some(llm));
+  let pipeline = ModerationPipeline::from_site_config(&site, Some(llm));
 
   let label = evaluate_comment(&pipeline, "welcome", "你这个 sb，写的什么垃圾").await;
   println!("[abusive-comment] label={:?}", label);
@@ -132,7 +127,7 @@ async fn full_pipeline_blocks_abusive_comment() {
 }
 
 #[tokio::test]
-#[ignore = "Live LLM + wasm."]
+#[ignore = "Live LLM."]
 async fn full_pipeline_with_image_evaluates_vision() {
   let Some(llm) = live_llm() else {
     return;
@@ -140,11 +135,11 @@ async fn full_pipeline_with_image_evaluates_vision() {
   let mut site = SiteConfig::default();
   site.moderation = ModerationSettings {
     enabled: true,
-    plugins: vec!["plugin_moderation_deepseek.wasm".into()],
+    llm_review: true,
     url_blocklist: vec![],
     ..Default::default()
   };
-  let pipeline = ModerationPipeline::from_site_config(&site, &plugin_dir(), Some(llm));
+  let pipeline = ModerationPipeline::from_site_config(&site, Some(llm));
 
   // 评论里夹带 Rust 公开 logo —— 中立内容
   let body = "看这张 logo：![rust](https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Rust_programming_language_black_logo.svg/240px-Rust_programming_language_black_logo.svg.png) 很简洁";

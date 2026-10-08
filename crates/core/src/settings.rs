@@ -61,10 +61,10 @@ pub struct ModerationSettings {
   /// 总开关。默认 `false`。
   #[serde(default)]
   pub enabled: bool,
-  /// 要装载的审核插件文件名列表（相对 `assets/plugins/`）。
-  /// 即使 `enabled = true`，这里为空也等于没有 stage → 全部 Allow。
+  /// 是否让 LLM 审核（内置 stage，见 `module_moderation::LlmModerationStage`）。
+  /// 还需配置 LLM 环境变量（`OPENAI_LLM_*` / `ANTHROPIC_LLM_*`），未配置时跳过。
   #[serde(default)]
-  pub plugins: Vec<String>,
+  pub llm_review: bool,
   /// 可选：覆盖默认阈值（block_above = 0.9 / flag_above = 0.5）。
   /// 留空表示用默认。
   #[serde(default)]
@@ -276,7 +276,7 @@ mod tests {
   fn moderation_defaults_to_disabled_empty() {
     let cfg = SiteConfig::default();
     assert!(!cfg.moderation.enabled);
-    assert!(cfg.moderation.plugins.is_empty());
+    assert!(!cfg.moderation.llm_review);
     assert!(cfg.moderation.thresholds.is_none());
     assert!(cfg.moderation.url_blocklist.is_empty());
   }
@@ -357,15 +357,25 @@ mod tests {
             "navigation": [],
             "moderation": {
                 "enabled": true,
-                "plugins": ["moderation_llm_default.wasm"],
+                "llm_review": true,
                 "thresholds": { "block_above": 0.95, "flag_above": 0.6 }
             }
         }"#;
     let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
     assert!(cfg.moderation.enabled);
-    assert_eq!(cfg.moderation.plugins, vec!["moderation_llm_default.wasm"]);
+    assert!(cfg.moderation.llm_review);
     let t = cfg.moderation.thresholds.unwrap();
     assert_eq!(t.block_above, Some(0.95));
     assert_eq!(t.flag_above, Some(0.6));
+  }
+
+  /// R4 之前的配置用 `plugins` 列 wasm 文件；插件已内置，旧字段被忽略，
+  /// LLM 审核需显式 `llm_review: true` 才开启。
+  #[test]
+  fn legacy_moderation_plugins_list_does_not_enable_llm_review() {
+    let json = r#"{"enabled": true, "plugins": ["plugin_moderation_deepseek.wasm"]}"#;
+    let m: ModerationSettings = serde_json::from_str(json).expect("parse");
+    assert!(m.enabled);
+    assert!(!m.llm_review);
   }
 }

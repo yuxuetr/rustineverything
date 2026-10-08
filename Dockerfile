@@ -84,7 +84,6 @@ COPY crates/app/package-lock.json crates/app/package-lock.json
 COPY crates/app/tailwind-input.css crates/app/tailwind-input.css
 COPY crates/migration/Cargo.toml crates/migration/Cargo.toml
 COPY crates/modules ./crates/modules
-COPY examples ./examples
 # build.rs 引用 ../../assets，提供占位避免预热阶段 panic
 RUN mkdir -p assets crates/app/assets
 

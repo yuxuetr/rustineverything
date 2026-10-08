@@ -176,8 +176,9 @@ mod tests {
   use super::*;
   use sdk::{capabilities, PluginManifest};
 
-  /// 运行时测试用的真实插件：仓库里唯一保留的 wasm（R5 随运行时一起删）。
-  const FIXTURE_WASM: &str = "../../assets/plugins/plugin_moderation_deepseek.wasm";
+  /// 运行时测试用的真实插件：原 deepseek 审核插件的构建产物，源码已删
+  /// （R4 审核内置）。R5 随运行时一起删。
+  const FIXTURE_WASM: &str = "tests/fixtures/sandbox_plugin.wasm";
   /// `moderation_parse_verdict` 的入参：一段模型输出文本。
   const VERDICT_INPUT: &str = r#"{"score":0.9,"label":"block","reason":"spam"}"#;
 

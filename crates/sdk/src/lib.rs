@@ -143,42 +143,19 @@ pub fn pack_json<T: Serialize>(value: &T) -> u64 {
   }
 }
 
-// ────────────────────────────────────────────────────────────
-// Moderation Provider ABI (Phase 4.3)
-//
-// 用 capability `moderation-provider` 标识的插件，必须导出：
-//   - `get_manifest` （所有插件都需要）
-//   - `moderation_build_prompt(submission_json) -> Vec<LlmMessage> JSON`
-//   - `moderation_parse_verdict(llm_text) -> Verdict JSON`
-//
-// 宿主做的事：
-//   1. 用插件 `moderation_build_prompt(content)` 拿 messages
-//   2. 调宿主侧 LlmClient（crates/llm）真正请求 LLM
-//   3. 用插件 `moderation_parse_verdict(text)` 把 LLM 输出解释为 Verdict
-//   4. 应用 ModerationThresholds 升级 label
-//
-// 插件不直接发 HTTP；让宿主统一管 LLM 端点 / 超时 / 重试 / 鉴权。
-// ────────────────────────────────────────────────────────────
-
-pub mod moderation {
-  pub const FN_BUILD_PROMPT: &str = "moderation_build_prompt";
-  pub const FN_PARSE_VERDICT: &str = "moderation_parse_verdict";
-}
-
-/// 提交给审核的内容。宿主把该结构序列化为 JSON 喂给插件
-/// [`moderation::FN_BUILD_PROMPT`]。
+/// 提交给审核的内容（评论 / 话题 / 标注等业务模块 → `module-moderation`）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ModerationSubmission {
   /// 待审正文（评论 / 话题 body / 回复 / 标注 ...）
   pub content: String,
   /// 业务类型：`comment` / `topic` / `reply` / `annotation` / 自定义
-  /// 插件可据此调整 prompt 措辞。
+  /// 审核提示词会带上它作为场景。
   #[serde(default)]
   pub kind: String,
   /// 业务侧引用路径（如 `blog/welcome` / `topic:42`），可选。
   #[serde(default)]
   pub ref_path: String,
-  /// 评论 / 话题中夹带的图片。插件可据此让 LLM 走 vision 多模态。
+  /// 评论 / 话题中夹带的图片，LLM 审核时随消息发给 vision 模型。
   /// 老 site / 老 hook 不传该字段时默认空，不影响行为。
   #[serde(default)]
   pub images: Vec<ImageRef>,
@@ -234,32 +211,6 @@ impl ModerationSubmission {
   pub fn push_image(mut self, image: ImageRef) -> Self {
     self.images.push(image);
     self
-  }
-}
-
-/// 插件 [`moderation::FN_PARSE_VERDICT`] 的返回结构。SDK 用纯字符串
-/// label 以避免跨 crate 枚举耦合；宿主侧再映射到
-/// `app_core::engines::moderation::ModerationLabel`。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct ModerationVerdict {
-  /// 0.0 ~ 1.0；插件越确信越大。宿主会 clamp。
-  pub score: f32,
-  /// `"allow"` / `"flag"` / `"block"`，大小写不敏感；其它值视作 `allow`。
-  pub label: String,
-  /// 给用户 / 管理员看到的简短理由。
-  #[serde(default)]
-  pub reason: String,
-}
-
-impl ModerationVerdict {
-  pub fn allow() -> Self {
-    Self { score: 0.0, label: "allow".to_string(), reason: String::new() }
-  }
-  pub fn flag(score: f32, reason: impl Into<String>) -> Self {
-    Self { score: score.clamp(0.0, 1.0), label: "flag".to_string(), reason: reason.into() }
-  }
-  pub fn block(score: f32, reason: impl Into<String>) -> Self {
-    Self { score: score.clamp(0.0, 1.0), label: "block".to_string(), reason: reason.into() }
   }
 }
 
@@ -408,27 +359,6 @@ mod tests {
   fn image_ref_default_media_type_empty() {
     let r = ImageRef::url("https://x");
     assert!(r.media_type.is_empty());
-  }
-
-  #[test]
-  fn moderation_verdict_constructors_clamp_score() {
-    let block = ModerationVerdict::block(2.5, "spam");
-    assert_eq!(block.label, "block");
-    assert!((block.score - 1.0).abs() < f32::EPSILON);
-
-    let flag = ModerationVerdict::flag(-0.3, "uncertain");
-    assert_eq!(flag.label, "flag");
-    assert!((flag.score - 0.0).abs() < f32::EPSILON);
-
-    let allow = ModerationVerdict::allow();
-    assert_eq!(allow.label, "allow");
-    assert!(allow.reason.is_empty());
-  }
-
-  #[test]
-  fn moderation_fn_constants_are_stable_strings() {
-    assert_eq!(moderation::FN_BUILD_PROMPT, "moderation_build_prompt");
-    assert_eq!(moderation::FN_PARSE_VERDICT, "moderation_parse_verdict");
   }
 
   #[test]

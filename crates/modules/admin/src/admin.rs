@@ -1106,7 +1106,7 @@ pub fn AdminModerationSettingsPage() -> Element {
   let mut enabled = use_signal(|| false);
   let mut flag_text = use_signal(String::new);
   let mut block_text = use_signal(String::new);
-  let mut plugins_text = use_signal(String::new);
+  let mut llm_review = use_signal(|| false);
   let mut blocklist_text = use_signal(String::new);
   // 一次性把 server 值灌进表单（仅当本地表单 untouched / current 刚到达）
   let mut form_inited = use_signal(|| false);
@@ -1116,7 +1116,7 @@ pub fn AdminModerationSettingsPage() -> Element {
       let th = s.thresholds.as_ref();
       flag_text.set(opt_f32_to_input(th.and_then(|t| t.flag_above)));
       block_text.set(opt_f32_to_input(th.and_then(|t| t.block_above)));
-      plugins_text.set(vec_to_lines(&s.plugins));
+      llm_review.set(s.llm_review);
       blocklist_text.set(vec_to_lines(&s.url_blocklist));
       form_inited.set(true);
     }
@@ -1150,7 +1150,7 @@ pub fn AdminModerationSettingsPage() -> Element {
     };
     let settings = ModerationSettings {
       enabled: enabled(),
-      plugins: lines_to_vec(&plugins_text()),
+      llm_review: llm_review(),
       thresholds,
       url_blocklist: lines_to_vec(&blocklist_text()),
     };
@@ -1246,19 +1246,22 @@ pub fn AdminModerationSettingsPage() -> Element {
                       }
                   }
 
-                  // plugins
-                  div {
-                      label { r#for: "plugins", class: "{label_cls}", "审核插件文件名（一行一个）" }
-                      Textarea {
-                          id: "plugins",
-                          rows: "4",
-                          class: "font-mono",
-                          placeholder: "例如：plugin_moderation_deepseek.wasm",
-                          value: plugins_text(),
-                          on_value_change: move |v: String| plugins_text.set(v),
+                  // LLM 审核开关
+                  div { class: "flex items-center gap-3 p-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40",
+                      input {
+                          r#type: "checkbox",
+                          id: "moderation-llm-review",
+                          checked: llm_review(),
+                          class: "w-4 h-4",
+                          onchange: move |evt| {
+                              llm_review.set(evt.value() == "true" || evt.value() == "on");
+                          },
                       }
-                      p { class: "{help_cls}",
-                          "相对 assets/plugins/ 的 wasm 文件名。启用但列表为空 = 没有 stage，全部 Allow。"
+                      label { r#for: "moderation-llm-review", class: "text-sm font-semibold text-slate-800 dark:text-slate-200",
+                          "LLM 审核"
+                      }
+                      span { class: "text-xs text-slate-500 dark:text-slate-400 ml-auto",
+                          "需配置 OPENAI_LLM_* 或 ANTHROPIC_LLM_* 环境变量，未配置时跳过。"
                       }
                   }
 

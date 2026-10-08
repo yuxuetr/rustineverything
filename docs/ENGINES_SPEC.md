@@ -220,7 +220,7 @@ pub trait SearchSource: Send + Sync {
 ```
 ## 5. 依赖关系
 ```text
-PluginEngine ──► （审核插件，R4 内置、R5 移除）
+PluginEngine ──► （已无内置功能使用，R5 移除）
 ModuleEngine ──┐
                ├─► SearchEngine（按 enabled_ids 过滤源）
                └─► （未来）LayoutEngine 决定哪些 nav 项显示

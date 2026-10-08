@@ -31,7 +31,7 @@
 | SEC-09 | 中 | `crates/app/src/server/auth_routes.rs:103-115`；`crates/widgets/src/sanitize.rs:202` | 登出是 GET；不可信 Markdown 图片允许任意站内相对路径与外部 https。评论里放 `![](/api/auth/logout)` 即登出所有浏览者；外部图片泄露浏览者 IP | 静态审计 |
 | SEC-10 | 中 | `crates/gateway/src/main.rs:45-47,196` | gateway 用 `insert_header` **覆盖**应用 CSP，且其 CSP 无 `'wasm-unsafe-eval'`、不允许内联启动脚本：部署在 gateway 后时 hydration 整体失效 | 静态审计 |
 | SEC-11 | 中 | `crates/app/src/server/mod.rs:41-57`；`crates/core/src/engines/theme.rs:95` | `site_theme` cookie 读取时不校验（只有设置时校验）：`../`、绝对路径、`.wasm.bak` 均被接受；路径变体各成缓存键，可无鉴权撑大模块缓存 | 静态审计 |
-| SEC-12 | 中 | `crates/modules/moderation/src/plugin_stage.rs:63,89-140`；`crates/sdk-macros`（输入解码失败返回空） | 审核插件任何错误 / 空输出 / 无法解析 → 放行（fail open） | 静态审计 |
+| SEC-12 | 中 | `crates/modules/moderation/src/llm_stage.rs`（R4 前为 `plugin_stage.rs:63,89-140`）；`crates/sdk-macros`（输入解码失败返回空） | 审核插件任何错误 / 空输出 / 无法解析 → 放行（fail open） | 静态审计 |
 | SEC-13 | 低 | `crates/modules/course/src/server.rs:1043` | `require_writer` 只信 JWT 里的角色，不回查数据库；降级用户在 JWT 过期前（7 天）仍可写 | 静态审计 |
 | SEC-14 | 低-中 | `crates/core/src/lib.rs:78-80` | wasmi `StoreLimits` 未限制 table 元素 / 实例 / 表 / 内存数量，超大 table 可越过 8 MiB 内存上限 | 静态审计 |
 | SEC-15 | 低-中 | `crates/modules/admin/src/server.rs:799-815`；`crates/core/src/lib.rs:422` | 管理端上传插件不跑 `verify_manifest_consistency`、不查锁（`scan_uploaded_plugin` 无调用方）；文档声称已拦截「capability 伪装」 | 静态审计 |
@@ -79,7 +79,7 @@
 | R1 ✅ | SEC-05 | `Provider` 枚举内置四个 OAuth provider 的固定 https 端点与字段映射；`client_secret` 只发往枚举给出的 token 端点；缺 uid 报错 |
 | R2 ✅ | SEC-08、SEC-11 的剩余部分 | 主题 CSS 内置，cookie / 设置只接受内置主题 id（B4 未做的「在主题列表内」由此得到） |
 | R3 ✅ | SEC-16、SEC-21 | 删除无调用方的 `/api/i18n/translate` 与未启用的 content-transformer |
-| R4 | — | 审核 stage 内置，经 `crates/llm` 调用 |
+| R4 ✅ | — | 审核 stage 内置，经 `crates/llm` 调用 |
 | C3 | SEC-12 | 审核失败可配置为「送人工复核」，默认 fail closed；失败计数入日志 |
 | R5 | SEC-06、SEC-14、SEC-15、SEC-22 | 移除插件运行时、上传 / 重载入口、锁机制与插件文档 |
 

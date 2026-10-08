@@ -347,9 +347,7 @@ mod tests {
 
   #[test]
   fn scan_imports_passes_for_real_plugin() {
-    let Some(module) =
-      load_module(Path::new("../../assets/plugins/plugin_moderation_deepseek.wasm"))
-    else {
+    let Some(module) = load_module(Path::new("tests/fixtures/sandbox_plugin.wasm")) else {
       return;
     };
     let result = scan_imports(&module);
@@ -489,9 +487,7 @@ mod tests {
 
   #[test]
   fn manifest_consistency_passes_for_real_moderation_plugin() {
-    let Some(module) =
-      load_module(Path::new("../../assets/plugins/plugin_moderation_deepseek.wasm"))
-    else {
+    let Some(module) = load_module(Path::new("tests/fixtures/sandbox_plugin.wasm")) else {
       return;
     };
     let manifest = PluginManifest::new("moderation-deepseek", "Moderation", "0.1.0")
@@ -503,9 +499,7 @@ mod tests {
   #[test]
   fn manifest_consistency_rejects_missing_export() {
     // 用审核插件假装它声明 auth-provider capability —— 必然缺 exchange_code
-    let Some(module) =
-      load_module(Path::new("../../assets/plugins/plugin_moderation_deepseek.wasm"))
-    else {
+    let Some(module) = load_module(Path::new("tests/fixtures/sandbox_plugin.wasm")) else {
       return;
     };
     let bad_manifest = PluginManifest::new("fake-auth", "Fake", "0.1.0")
