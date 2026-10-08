@@ -402,7 +402,7 @@
   - [x] U11a — admin 复选框 / 设置开关 → Checkbox / Switch（e2b264a：全选在部分选中时显示半选；设置开关拿 `bool`，去掉字符串猜值；workspace 639 测通过、clippy 无告警、CSS 含组件类名。⚠️ admin 页浏览器验证待做——需本地管理员会话）
   - [x] U11b — forum 提交、博客翻页、搜索入口 → Button（53a57c0：提交保留 `btn-flow`；翻页加 aria-label + i18n；搜索入口 32px 不撑高导航栏，点击打开搜索框、焦点进入输入框。发现 FB-21：默认密度下 `Sm` 实际 40px。论坛提交按钮需登录，浏览器未验）
   - [x] U11c — classic / minimal 导航栏按钮 → Button（ghost / icon）（4569177：尺寸保持原 36/32px（classic）与 28px（minimal），用 `min-h-*` 覆盖密度最小高度（FB-21）；暗色开关补 aria-label + aria-pressed（新 key `nav.toggle_dark`）。浏览器验证两种布局：导航栏高度不变，暗色切换、移动端菜单、登录弹窗均正常）
-  - [ ] U11d — 博客 / podcast / cases 标签筛选 → `badge_class` + `aria-pressed`（与 U7 一致）
+  - [x] U11d — 博客 / podcast / cases 标签筛选 → `badge_class` + `aria-pressed`（与 U7 一致）（6551fb7：博客去掉硬编码 `bg-blue-600`，改用与 podcast 相同的 chip 样式；cases 分类选中保留 `btn-flow`，标签未选中保留各自配色；三处均补 `type=button` + `aria-pressed`。浏览器验证三页点击后 aria-pressed 正确切换、cases 标签再点取消。附带发现：`dx serve` 下 podcast 音频 404——build.rs 不同步 `audio/` 到 crates/app/assets，只影响开发态，Docker 用完整 assets 不受影响）
   - [ ] U11e — 编辑 / 预览切换、课程代码页签 → Tabs
   - [ ] U11f — 课程章节折叠 → Collapsible；课程标注开关 → Button（修暗色）
 
