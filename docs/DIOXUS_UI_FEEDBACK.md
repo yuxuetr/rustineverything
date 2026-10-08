@@ -165,3 +165,11 @@
 - 站点临时处理：每个 `TableRow` 传 `class: "border-border"`（`admin_entitlements.rs`）。
 - 建议的上游修复：行与表头加 `border-border`；或在 README 的接入步骤里写明需要的 base 规则。
 - 状态：open
+
+### FB-16 debug 构建对每次有意的类名覆盖都打日志
+
+- 组件 / 版本：dioxus-shadcn-core 0.6.0 — `class_merge.rs:86`
+- 现象：debug 构建里，使用者传入的类名每替换一个组件类名，就在控制台输出一条 `dioxus-shadcn class merge (RFC 0076): ... replaces the component class ...`。覆盖本来就是 `class` 参数的用途（例如 `px-5` 换掉按钮默认的 `px-4`），论坛一个页面就有十几条。U5 浏览器验收时看到（2026-10-08）。
+- 影响：低。真正需要注意的日志（无法分类的类名）被淹没。
+- 建议的上游修复：只对「无法分类、不会生效」的类名报告；替换成功的情况默认不打，或加开关。
+- 状态：open

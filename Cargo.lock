@@ -4700,6 +4700,7 @@ dependencies = [
  "app-core",
  "chrono",
  "dioxus",
+ "dioxus-shadcn",
  "module-moderation",
  "sdk",
  "sea-orm",

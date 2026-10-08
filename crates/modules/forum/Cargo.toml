@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 dioxus = { workspace = true, features = ["fullstack", "router"] }
+dioxus-shadcn = { workspace = true, features = ["alert", "badge", "button", "card", "empty", "input", "spinner", "textarea"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 chrono = { workspace = true, features = ["serde"] }
