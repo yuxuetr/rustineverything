@@ -68,7 +68,7 @@
 | B5 ✅ | SEC-10 | CSP 只由应用设置；gateway 不覆盖（或与应用共用同一份定义）。实际做法：gateway 不再定义 / 设置 CSP（`CSP_POLICY` 只对 app 进程生效）；nosniff / X-Frame-Options / Referrer-Policy 改为缺失才补，HSTS 与 `Server` 仍总是设置 |
 | B6 ✅ | SEC-13 | `require_writer` 改用回查数据库的会话校验。实际做法：另发现同文件 `require_admin_user` 也只信 JWT，替换为 `session::require_admin`；`create_order` 同步改为 verified 会话 |
 | B7 ✅ | SEC-17 | 不可信内容中的 mermaid 作为普通代码块显示 |
-| B8 | SEC-19、SEC-20 | 应用侧补 HSTS / Permissions-Policy；`ws:` 仅开发构建允许；删除 `/api/echo`；裁剪公开配置 DTO |
+| B8 ✅ | SEC-19、SEC-20 | 应用侧补 HSTS / Permissions-Policy；`ws:` 仅 debug 构建允许；删除 `/api/echo`；`/api/site/config` 无调用方，整个删除 |
 
 ### 阶段 C：插件宿主加固
 

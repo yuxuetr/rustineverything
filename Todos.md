@@ -418,7 +418,7 @@
 - [x] B5 — SEC-10 gateway 不覆盖应用 CSP（1fef74c：删除 gateway 的 CSP 定义与 `CSP_POLICY` 读取，CSP 原样转发；通用安全头仅在应用未下发时补，HSTS 仍由 gateway 设；`apply_security_headers` 两条单测先红后绿；DEPLOY_GUIDE 表格更新。未起真实 Pingora + TLS 做端到端）
 - [x] B6 — SEC-13 `require_writer` 回查数据库（dbc9a2b：`require_writer` 改走 `require_session_verified`；同文件的 `require_admin_user`（授予 / 撤销权益、订单管理）同样只信 JWT，换成 `session::require_admin`（回查 role + token_version）；`create_order` 写路径也改为 verified。无现成请求上下文 + DB 的测试设施，红绿用真实服务 + Postgres 验证：u2 旧 tv token 写入、u1 自称 admin 读权益列表，修前均通过，修后分别被拒；有效 token 仍可写）
 - [x] B7 — SEC-17 不可信内容的 mermaid 按代码显示（cd81f5f：`renders_as_diagram(lang, untrusted)`，用户内容的 mermaid 走 `CodeBlock`（`language-mermaid`，引导脚本只扫 `.mermaid`）；单测先红后绿；浏览器验收：论坛帖显示为代码、无 SVG，welcome 文章两张图照常渲染；用户内容的原始 HTML 本就按文本输出，无法注入 `class="mermaid"`）
-- [ ] B8 — SEC-19 / SEC-20 HSTS、Permissions-Policy、`ws:` 仅开发；删 `/api/echo`；裁剪公开配置
+- [x] B8 — SEC-19 / SEC-20 HSTS、Permissions-Policy、`ws:` 仅开发；删 `/api/echo`；裁剪公开配置（ca5307c：应用侧补 HSTS（与 gateway 同值）与 Permissions-Policy（关 camera / microphone / geolocation / payment / usb / browsing-topics，不动 fullscreen）；`connect-src` 仅 debug 构建放行 `ws: wss:`；删 `/api/echo` 与 Echo 组件；`/api/site/config` 无调用方且返回整份 site.json，直接删除而非裁剪 DTO；头部单测先红后绿，curl 验收两端点不再可用、新头已下发）
 
 ### 待评估 — 插件改为编译期依赖（2026-10-08 提出，迁移完成后再定）
 - [ ] P-EVAL — 评估把第一方 WASM 插件改为编译进宿主：认证 → `AuthProvider` trait + 4 个实现（按凭据配置启用）；主题 → token 数据文件由宿主按白名单生成 CSS；i18n-fluent / content-toc / 审核 → 普通 crate；cargo features 只用于可选重依赖。若采纳，C1 / C2 / C4 / C6 与 D1 大部分随之取消，B3 并入。重估条件：出现不在本仓库构建的插件，或站点要作为产品给他人部署。**决定前不动 C 阶段**
