@@ -371,7 +371,9 @@
   - 验证：严格 CSP 下发帖（含标签与预览）、回复、博客评论（预览 + 发布）均可用，失败时 Alert 显示错误；亮 / 暗截图；测试话题、回复、评论已删除
   - 发现：ocean 暗色的 `--card`（slate-900 藏青）与页面 stone 底色不协调——插件 token 与 slate→stone 色阶映射混用，留给 U10 评估；debug 构建类名覆盖日志过多（FB-16）
   - 副作用：U3 测试改角色使本地 user 2 的 `token_version` 变为 2，该账号本地已有会话需重新登录
-- [ ] U6 — cases / docs / podcast / search 列表部分
+- [x] U6 — cases / docs / podcast / search 列表部分
+  - 落点：案例 / 文档 / 播客卡片用 `card_class`；计数与标签 chip 用 `badge_class`；加载圈、空状态（`Empty`）、错误（`Alert`）、案例搜索框（`Input`）、播客翻页（Ghost `Button`）、搜索 kind 过滤（`aria-pressed`）换组件；蓝色强调改 `primary`；案例分类配色、播客播放器深色卡片保留
+  - 验证：严格 CSP 下案例搜索 / 空状态 / 标签筛选、文档首页与详情、播客标签筛选、搜索过滤与结果均可用，无 pageerror；SSR 首屏含案例与文档卡片
 - [ ] U7 — 5 个内容板块（先 ai，再套用其余 4 个）
 - [ ] U8 — 全局弹层：auth_modal / search 模态 → Dialog(+Command)；主题/语言/用户菜单 → Dropdown；移动端菜单 → Sheet
 - [ ] U9 — 生态 mega 菜单：评估 NavigationMenu 与现有纯 CSS 方案（D5），不劣于现状才替换
