@@ -5,6 +5,7 @@
 nav.blog = 博客
 nav.podcast = 播客
 nav.forum = 论坛
+nav.menu = 导航菜单
 nav.cases = 案例
 nav.start = 开始学习
 nav.embedded = 嵌入式

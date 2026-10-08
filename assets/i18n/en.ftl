@@ -5,6 +5,7 @@
 nav.blog = Blog
 nav.podcast = Podcast
 nav.forum = Forum
+nav.menu = Navigation menu
 nav.cases = Cases
 nav.start = Get Started
 nav.embedded = Embedded

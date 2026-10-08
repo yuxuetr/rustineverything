@@ -9,6 +9,7 @@
 
 use dioxus::prelude::*;
 use dioxus::router::{Link, Outlet};
+use dioxus_shadcn::{Sheet, SheetClose, SheetContent, SheetOverlay, SheetSide, SheetTitle};
 
 use crate::components::ecosystem_menu::EcosystemMenu;
 use crate::components::lang_picker::LangPicker;
@@ -135,16 +136,11 @@ pub fn ClassicShell() -> Element {
                           // 下方的板块抽屉，让窄屏用户能直接跳到 8 个板块。
                           button {
                               class: "lg:hidden p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors",
-                              onclick: move |_| show_mobile_menu.set(!show_mobile_menu()),
-                              aria_label: "Toggle navigation menu",
-                              if show_mobile_menu() {
-                                  svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
-                                      path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M6 18L18 6M6 6l12 12" }
-                                  }
-                              } else {
-                                  svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
-                                      path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M4 6h16M4 12h16M4 18h16" }
-                                  }
+                              onclick: move |_| show_mobile_menu.set(true),
+                              "aria-label": "{t(lang(), \"nav.menu\")}",
+                              "aria-expanded": show_mobile_menu().to_string(),
+                              svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", "aria-hidden": "true",
+                                  path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M4 6h16M4 12h16M4 18h16" }
                               }
                           }
 
@@ -198,42 +194,55 @@ pub fn ClassicShell() -> Element {
 
                   // Mobile 抽屉（<lg）：双生态分组（标题 + 该生态领域）在前，
                   // 内容类型入口（案例/课程/博客/播客/论坛）在后；点链接后自动收起。
-                  if show_mobile_menu() {
-                      nav { class: "lg:hidden border-t border-slate-200/70 dark:border-slate-800 py-2 flex flex-col text-sm font-medium",
-                          // 两个生态：标题 + 已启用领域链接
-                          for eco in ecosystems() {
-                              {
-                                  let domains: Vec<_> = eco.domains.iter().filter(|d| enabled.iter().any(|e| e == d.module_id)).cloned().collect();
-                                  rsx! {
-                                      if !domains.is_empty() {
-                                          p { key: "{eco.id}-h", class: "px-2 pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500", "{t(lang(), eco.label_key)}" }
-                                          for d in domains.iter() {
-                                              Link { key: "{d.id}", to: d.route.clone(), class: "px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), d.label_key)}" }
-                                          }
+              }
+          }
+
+          // 移动端板块抽屉：放在 header 之外——header 的 backdrop-filter 会成为
+          // fixed 子元素的定位容器，全屏遮罩会被限制在 header 里。
+          Sheet { open: show_mobile_menu(), on_open_change: move |v| show_mobile_menu.set(v),
+              SheetOverlay { class: "lg:hidden" }
+              SheetContent { side: SheetSide::Right, class: "lg:hidden w-72 max-w-[85vw] overflow-y-auto p-4", "aria-label": "{t(lang(), \"nav.menu\")}",
+                  SheetTitle { class: "sr-only", "{t(lang(), \"nav.menu\")}" }
+                  SheetClose { class: "p-1",
+                      svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", "aria-hidden": "true",
+                          path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M6 18L18 6M6 6l12 12" }
+                      }
+                      span { class: "sr-only", "{t(lang(), \"auth.close\")}" }
+                  }
+                  nav { class: "flex flex-col text-sm font-medium",
+                      // 两个生态：标题 + 已启用领域链接
+                      for eco in ecosystems() {
+                          {
+                              let domains: Vec<_> = eco.domains.iter().filter(|d| enabled.iter().any(|e| e == d.module_id)).cloned().collect();
+                              rsx! {
+                                  if !domains.is_empty() {
+                                      p { key: "{eco.id}-h", class: "px-2 pt-2 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500", "{t(lang(), eco.label_key)}" }
+                                      for d in domains.iter() {
+                                          Link { key: "{d.id}", to: d.route.clone(), class: "px-3 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), d.label_key)}" }
                                       }
                                   }
                               }
                           }
-                          div { class: "my-2 border-t border-slate-200/70 dark:border-slate-800" }
-                          // 内容类型入口
-                          if on_cases {
-                              Link { to: Route::Cases {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), \"nav.cases\")}" }
-                          }
-                          if on_course {
-                              Link { to: Route::Courses {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), \"nav.course\")}" }
-                          }
-                          if on_blog {
-                              Link { to: Route::BlogIndex {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_blog}" }
-                          }
-                          if on_podcast {
-                              Link { to: Route::Podcast {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_podcast}" }
-                          }
-                          if on_forum {
-                              Link { to: Route::TopicsIndex {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_forum}" }
-                          }
-                          if on_docs {
-                              Link { to: Route::Docs {}, class: "px-2 py-2 mt-1 rounded-md btn-flow text-center font-semibold transition-all", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), \"nav.start\")}" }
-                          }
+                      }
+                      div { class: "my-2 border-t border-slate-200/70 dark:border-slate-800" }
+                      // 内容类型入口
+                      if on_cases {
+                          Link { to: Route::Cases {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), \"nav.cases\")}" }
+                      }
+                      if on_course {
+                          Link { to: Route::Courses {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), \"nav.course\")}" }
+                      }
+                      if on_blog {
+                          Link { to: Route::BlogIndex {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_blog}" }
+                      }
+                      if on_podcast {
+                          Link { to: Route::Podcast {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_podcast}" }
+                      }
+                      if on_forum {
+                          Link { to: Route::TopicsIndex {}, class: "px-2 py-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors", onclick: move |_| show_mobile_menu.set(false), "{t_forum}" }
+                      }
+                      if on_docs {
+                          Link { to: Route::Docs {}, class: "px-2 py-2 mt-1 rounded-md btn-flow text-center font-semibold transition-all", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), \"nav.start\")}" }
                       }
                   }
               }
