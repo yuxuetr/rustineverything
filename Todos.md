@@ -392,7 +392,7 @@
 - [x] U9 — 生态 mega 菜单：评估 NavigationMenu 与现有纯 CSS 方案（D5），不劣于现状才替换（结论：保留 CSS 方案——关闭 JS 时 CSS 菜单可悬停 / 聚焦展开，NavigationMenu hydration 前打不开；重估条件写入 D5；上游建议 FB-20）
 - [x] U10 — 收尾：清理无用类名与 CSS、评估移除色阶映射、更新 TAILWIND_GUIDE、反馈汇总
   - 无用 CSS：`main.css` 的 `btn-flow` / `text-flow*` 仍在用；`--color-*` 别名是 THEME_SPEC 写明的第三方插件兼容接口，保留
-  - 色阶映射：保留。存量 `slate-*` 约 1100 处 / 25 个文件，删除即全量改写；新代码改用 token（写入 TAILWIND_GUIDE 2.1/2.2）。副作用：主题 token 为冷色时（ocean 暗色 `--card: #0f172a`）组件与手写 stone 区域冷暖不一——**待定：暗色中性色统一为冷（改映射或 token）还是暖（改 ocean 的暗色 token）**
+  - 色阶映射：保留。存量 `slate-*` 约 1100 处 / 25 个文件，删除即全量改写；新代码改用 token（写入 TAILWIND_GUIDE 2.1/2.2）。副作用：主题 token 为冷色时组件与手写 stone 区域冷暖不一——2026-10-08 决定统一为暖色：ocean 的亮 / 暗中性色 token 改为 stone 色阶（主色不变），带测试
   - TAILWIND_GUIDE：token 优先、扫描范围、组件用法与 FB 绕法
   - FB 汇总表：DIOXUS_UI_FEEDBACK.md 开头；待上游 FB-17/18/19/20、FB-13 部分修复
   - 全量校验：fmt、workspace clippy（`-A clippy::double_must_use`，llm 既有）、workspace 测试 738 通过（修复了 U2 遗留的示例插件测试）、wasm / 无 payments 构建；严格 CSP 下 14 个页面无新报错
