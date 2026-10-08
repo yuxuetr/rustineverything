@@ -366,6 +366,7 @@
   - 验证：严格 CSP 下课程列表、详情、付费墙、试看课节、我的订单无 pageerror；购买弹窗打开、切换渠道、关闭按钮可用；亮 / 暗截图；SSR 首屏含正文；`--no-default-features` 编译通过
   - 未做：支付模态改 Dialog（Escape 关闭、焦点管理）——待上游 FB-02 发版，记为 U4b
 - [x] U-0.6.2 — dioxus-shadcn 升级到 0.6.2（FB-02 已修，解除 U4b/U8/U9 阻塞；删除 FB-15 的逐行 `border-border`；严格 CSP 下 /admin/entitlements 无新报错）
+- [x] U3b — admin 审核页签 → Tabs（FB-14 已修；「全部」的值改为 `all`；严格 CSP 下点击与方向键切换、请求参数验证通过）
 - [x] U4b — 支付模态 → Dialog，支付方式选择 → ToggleGroup
   - 落点：`pay_ui.rs`；表单只在打开时挂载（重开即重置）；ToggleGroup 受控、忽略空值，保证总有一个网关
   - 验证：严格 CSP 下 Escape 关闭、焦点回到购买按钮、Tab 限制在弹窗内、方向键切换焦点；亮 / 暗截图
