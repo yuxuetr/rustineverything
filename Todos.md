@@ -412,7 +412,7 @@
 
 ### 阶段 B — 站点加固
 - [x] B1 — SEC-07 / SEC-18 站点 `document::eval` → web-sys（即 E1）（另替换 `document::Title`；`widgets::browser` + 源码扫描测试 `csp_no_eval`；严格 CSP 下浏览器验收）
-- [ ] B2 — SEC-09 登出改 POST；不可信内容图片只允许 `/uploads/`
+- [x] B2 — SEC-09 登出改 POST；不可信内容图片只允许 `/uploads/`（3ccb475：只收 POST，303 回首页，GET 405、`Sec-Fetch-Site: cross-site` 403，菜单经 `browser::post_navigate` 提交表单；ee19c46：不可信图片必须是 uploads 生成的文件名形状，外部 / data / 其他站内路径一律拒绝；路由与 URL 单测先红后绿，浏览器验收登出）
 - [ ] B3 — SEC-08 主题 CSS 白名单化；收紧 `img-src`
 - [ ] B4 — SEC-11 `site_theme` cookie 读取侧校验
 - [ ] B5 — SEC-10 gateway 不覆盖应用 CSP

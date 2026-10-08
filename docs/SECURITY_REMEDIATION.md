@@ -62,7 +62,7 @@
 | 任务 | 覆盖 | 做法 |
 | --- | --- | --- |
 | B1（即迁移计划 E1） | SEC-07、SEC-18 | 站点所有 `document::eval` 改为 web-sys 直接调用；CSP 保持不含 `'unsafe-eval'`。**另须替换 `document::Title`**（2026-10-08 读源码发现）：Dioxus 0.7.9 `WebDocument::set_title` 内部就是 `eval("document.title = …")`，`Title` 组件在客户端 hydration 时调用它——只改站点自己的 eval，页面仍会在严格 CSP 下崩溃。做法：`widgets::browser` 收拢 web-sys 实现，站点用自己的 `PageTitle`（服务端走 `document::Title` 出 `<title>`，客户端 `use_effect` 里 `document.set_title`）；源码扫描测试禁止 `document::eval` / `document::Title` 再出现。上游（Dioxus）应改为 web-sys，待报告。验收时另见与 eval 无关的既有问题（未处理）：mermaid 读到 Dioxus hydration 注释 `<!--node-id…-->` 而解析失败；`/blog/welcome` 引用的 `/audio/…m4a` 404；文章内 bilibili iframe 用 `http://`，被 `frame-src https://…` 拦截。未能在浏览器验证的路径（本地 Postgres 未运行）：标注数据注入、Prism 高亮、课时代码复制、OAuth 跳转、支付跳转 / 刷新、论坛引用参数与发帖跳转。验收：严格 CSP 下首页、课程、论坛控制台无 EvalError、无 panic，主题插件生效，暗色切换可用 |
-| B2 | SEC-09 | 登出改为 POST；不可信内容图片只允许 `/uploads/`（外部图片如需支持，改走代理） |
+| B2 ✅ | SEC-09 | 登出改为 POST；不可信内容图片只允许 `/uploads/`（外部图片如需支持，改走代理）。实际做法：路由只收 POST（GET 405），`Sec-Fetch-Site: cross-site` 返回 403（无该头的旧浏览器放行）；客户端用 `widgets::browser::post_navigate` 提交隐藏表单。不可信图片必须形如 `/uploads/<[A-Za-z0-9_-]+>.<png\|jpg\|jpeg\|gif\|webp>`（与 uploads 生成的文件名一致），不含 `/` `%` `\\` `.`，故 `..` 及其编码形式无从构造；站点作者内容规则不变 |
 | B3 | SEC-08 | 主题 CSS 改为基于 tokenizer 的白名单：拒绝 `<`、`@import`、`image-set`；`url()` 仅允许 `data:image/` 与 `/assets/`；收紧 CSP `img-src`。测试覆盖审计列出的每种绕过形式 |
 | B4 | SEC-11 | cookie 读取侧复用设置侧的校验（`[A-Za-z0-9_-]+\.wasm` 且在主题列表内） |
 | B5 | SEC-10 | CSP 只由应用设置；gateway 不覆盖（或与应用共用同一份定义） |
