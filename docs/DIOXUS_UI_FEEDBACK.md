@@ -139,3 +139,11 @@
 - 影响：信息。安全修复的传播依赖使用者自己 `dxui diff`。
 - 建议的上游修复：CI 加漂移检查；安全修复在 changelog 单独标注，提示复制源码的用户更新。
 - 状态：open
+
+### FB-13 示例与文档站用 `document::Title`，在严格 CSP 下会崩溃
+
+- 组件 / 版本：0.6.0 — `examples/web-demo/src/bin/preview.rs`、`site/src/main.rs`（组件库本身不用）；根因在 Dioxus 0.7.9 `dioxus-web` `WebDocument::set_title`
+- 现象：`document::Title` 在客户端调用 `set_title`，后者内部是 `eval("document.title = …")`，即 `new Function`。CSP 不含 `'unsafe-eval'` 时抛 EvalError，wasm-bindgen 未标 `catch`，运行时崩溃。站点在做 B1 时读源码发现（2026-10-08，见 `SECURITY_REMEDIATION.md` B1）。
+- 影响：中。按 FB-02 改完组件后，照着示例写 `document::Title` 的使用者仍然过不了 CSP L1，而且看起来像是组件库的问题。
+- 建议的上游修复：FB-10 的 CSP 说明里写明这一条；示例与文档站改用 web-sys 设置标题（服务端仍用 `document::Title` 输出 `<title>`）；向 Dioxus 报告 `set_title` 应直接用 `web_sys::Document::set_title`。
+- 状态：open

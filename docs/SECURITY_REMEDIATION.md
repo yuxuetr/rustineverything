@@ -60,7 +60,7 @@
 
 | 任务 | 覆盖 | 做法 |
 | --- | --- | --- |
-| B1（即迁移计划 E1） | SEC-07、SEC-18 | 站点所有 `document::eval` 改为 web-sys 直接调用；CSP 保持不含 `'unsafe-eval'`。验收：严格 CSP 下首页、课程、论坛控制台无 EvalError、无 panic，主题插件生效，暗色切换可用 |
+| B1（即迁移计划 E1） | SEC-07、SEC-18 | 站点所有 `document::eval` 改为 web-sys 直接调用；CSP 保持不含 `'unsafe-eval'`。**另须替换 `document::Title`**（2026-10-08 读源码发现）：Dioxus 0.7.9 `WebDocument::set_title` 内部就是 `eval("document.title = …")`，`Title` 组件在客户端 hydration 时调用它——只改站点自己的 eval，页面仍会在严格 CSP 下崩溃。做法：`widgets::browser` 收拢 web-sys 实现，站点用自己的 `PageTitle`（服务端走 `document::Title` 出 `<title>`，客户端 `use_effect` 里 `document.set_title`）；源码扫描测试禁止 `document::eval` / `document::Title` 再出现。上游（Dioxus）应改为 web-sys，待报告。验收：严格 CSP 下首页、课程、论坛控制台无 EvalError、无 panic，主题插件生效，暗色切换可用 |
 | B2 | SEC-09 | 登出改为 POST；不可信内容图片只允许 `/uploads/`（外部图片如需支持，改走代理） |
 | B3 | SEC-08 | 主题 CSS 改为基于 tokenizer 的白名单：拒绝 `<`、`@import`、`image-set`；`url()` 仅允许 `data:image/` 与 `/assets/`；收紧 CSP `img-src`。测试覆盖审计列出的每种绕过形式 |
 | B4 | SEC-11 | cookie 读取侧复用设置侧的校验（`[A-Za-z0-9_-]+\.wasm` 且在主题列表内） |
@@ -101,7 +101,7 @@
 
 | 级别 | 内容 | 状态 |
 | --- | --- | --- |
-| L1 | 不含 `'unsafe-eval'` | 当前 CSP 已是 L1；B1（站点）与 FB-02（dioxus-ui）完成后，站点在 L1 下可正常运行 |
+| L1 | 不含 `'unsafe-eval'` | 当前 CSP 已是 L1；B1（站点，含替换 `document::Title`）与 FB-02（dioxus-ui）完成后，站点在 L1 下可正常运行。Dioxus 自身的 `set_title` 走 eval，凡用 `document::Title` 的 Dioxus web 应用都达不到 L1，dioxus-ui 文档应提示（FB-13） |
 | L2 | 脚本不含 `'unsafe-inline'`（nonce / hash） | **上线后下一阶段**。收益最大：内联事件处理器（SEC-01 一类载荷）被浏览器直接拒绝。站点侧：Prism 初始化脚本外置为文件；Dioxus hydration 启动脚本可用 hash；`window.initial_dioxus_hydration_data` 每请求不同，需要 nonce——Dioxus 0.7 不支持给 SSR 脚本加 nonce，需上游支持或 Axum 中间件改写 HTML。dioxus-ui 组件不输出 `<script>`，已满足 |
 | L3 | 样式不含 `'unsafe-inline'` | 暂不做：收益小（样式注入危害有限），成本高（主题 `<style>` 注入、组件 `style` 属性、`document::Style` 均需改造）。重新评估条件：L2 完成且出现需要防 CSS 注入的场景 |
 
