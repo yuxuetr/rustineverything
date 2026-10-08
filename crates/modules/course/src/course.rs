@@ -1084,7 +1084,7 @@ fn format_size(bytes: u64) -> String {
 // ============================================================
 
 /// 个人标注列表页：拉取当前用户全部标注，按 (resource_kind, resource_path) 分组。
-/// 点击可跳回原文位置（附带 #b{block_id}，由 annotations.js 负责闪烁高亮）。
+/// 点击可跳回原文位置（附带 #anno-{id}，由 annotations.js 负责闪烁该标注）。
 #[component]
 pub fn MyAnnotationsPage() -> Element {
   let res = use_resource(|| async move { list_my_annotations().await.unwrap_or_default() });
@@ -1143,9 +1143,11 @@ fn group_annotations(list: Vec<Annotation>) -> Vec<AnnoGroup> {
   groups
 }
 
-/// 根据 (kind, path, block_id) 拼接原文跳转链接
-fn build_jump_url(kind: &str, path: &str, block_id: &str) -> String {
-  let hash = if block_id.is_empty() { String::new() } else { format!("#{}", block_id) };
+/// 根据 (kind, path) 拼接原文跳转链接；带标注 id 时附 `#anno-{id}`。
+/// 不用 block_id：它是顶层块序号，正文一改就指向别的块，而 annotations.js
+/// 会按原文重新定位标注，闪烁该标注本身才准。
+fn build_jump_url(kind: &str, path: &str, annotation_id: Option<i64>) -> String {
+  let hash = annotation_id.map(|id| format!("#anno-{id}")).unwrap_or_default();
   match kind {
     "course" => format!("/course/{}{}", path, hash),
     "doc" => format!("/docs/{}{}", path, hash),
@@ -1234,22 +1236,25 @@ mod course_helpers_tests {
   #[test]
   fn test_build_jump_url_per_kind() {
     assert_eq!(
-      build_jump_url("course", "rust-basics/01-foo/02-bar", "b3"),
-      "/course/rust-basics/01-foo/02-bar#b3"
+      build_jump_url("course", "rust-basics/01-foo/02-bar", Some(3)),
+      "/course/rust-basics/01-foo/02-bar#anno-3"
     );
-    assert_eq!(build_jump_url("doc", "axum/basic/router", "b1"), "/docs/axum/basic/router#b1");
-    assert_eq!(build_jump_url("blog", "welcome", "b2"), "/blog/welcome#b2");
+    assert_eq!(
+      build_jump_url("doc", "axum/basic/router", Some(1)),
+      "/docs/axum/basic/router#anno-1"
+    );
+    assert_eq!(build_jump_url("blog", "welcome", Some(2)), "/blog/welcome#anno-2");
   }
 
   #[test]
-  fn test_build_jump_url_empty_block_id_no_hash() {
-    assert_eq!(build_jump_url("course", "a/b/c", ""), "/course/a/b/c");
-    assert_eq!(build_jump_url("doc", "foo", ""), "/docs/foo");
+  fn test_build_jump_url_without_annotation_no_hash() {
+    assert_eq!(build_jump_url("course", "a/b/c", None), "/course/a/b/c");
+    assert_eq!(build_jump_url("doc", "foo", None), "/docs/foo");
   }
 
   #[test]
   fn test_build_jump_url_unknown_kind_falls_back() {
-    assert_eq!(build_jump_url("weird", "x/y", "b9"), "/x/y#b9");
+    assert_eq!(build_jump_url("weird", "x/y", Some(9)), "/x/y#anno-9");
   }
 
   #[test]
@@ -1356,7 +1361,7 @@ mod course_helpers_tests {
 #[component]
 fn AnnotationGroupCard(group: AnnoGroup) -> Element {
   let (icon, label) = kind_badge(&group.kind);
-  let header_url = build_jump_url(&group.kind, &group.path, "");
+  let header_url = build_jump_url(&group.kind, &group.path, None);
   rsx! {
       div { class: card_class("rounded-2xl overflow-hidden"),
           // 资源头
@@ -1391,7 +1396,7 @@ fn AnnotationGroupCard(group: AnnoGroup) -> Element {
 
 #[component]
 fn AnnotationListItem(kind: String, path: String, anno: Annotation) -> Element {
-  let url = build_jump_url(&kind, &path, &anno.block_id);
+  let url = build_jump_url(&kind, &path, Some(anno.id));
   let swatch = style_swatch_class(&anno.style);
   rsx! {
       li { class: "border-b last:border-b-0 border-slate-100 dark:border-slate-800/60",

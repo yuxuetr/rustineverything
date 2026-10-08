@@ -423,7 +423,12 @@ body.no-anno .rie-anno {
   function flashTargetFromHash() {
     const raw = (location.hash || '').replace(/^#/, '');
     if (!raw) return;
-    const el = findBlock(raw) || document.getElementById(raw);
+    // #anno-{id}：闪烁该标注本身（已按原文重新定位）。还没画出来时等 apply 后再试；
+    // 原文已删、不会画出来的，就不闪，免得闪到无关的块。
+    const annoId = /^anno-(\d+)$/.exec(raw);
+    const el = annoId
+      ? document.querySelector(`span.rie-anno[data-anno-id="${annoId[1]}"]`)
+      : findBlock(raw) || document.getElementById(raw);
     if (!el) return;
     try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
     el.classList.remove('rie-anno-flash');
