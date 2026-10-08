@@ -5,6 +5,10 @@ use crate::server::{
   MediaRef,
 };
 use dioxus::prelude::*;
+use dioxus_shadcn::{
+  button_class, card_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Progress,
+  Spinner, SpinnerSize, UiDensity,
+};
 use widgets::Markdown;
 
 // ============================================================
@@ -48,7 +52,7 @@ pub fn CoursesIndexPage() -> Element {
               SuspenseBoundary {
                   fallback: |_| rsx! {
                       div { class: "flex items-center justify-center py-20",
-                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                       }
                   },
                   CoursesList {}
@@ -97,7 +101,7 @@ fn CourseCard(course: CourseSummary) -> Element {
   rsx! {
       a {
           href: "{href}",
-          class: "group block rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-lg transition-all overflow-hidden",
+          class: card_class("group block rounded-2xl hover:border-primary/50 hover:shadow-lg transition-all overflow-hidden"),
           // 封面
           div { class: "aspect-video w-full bg-slate-200 dark:bg-slate-800 overflow-hidden",
               if let Some(ref c) = cover {
@@ -115,11 +119,11 @@ fn CourseCard(course: CourseSummary) -> Element {
           // 内容
           div { class: "p-6",
               if let Some(ref lv) = level {
-                  span { class: "inline-block text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-2",
+                  span { class: "inline-block text-[10px] font-bold uppercase tracking-widest text-primary mb-2",
                       "{lv}"
                   }
               }
-              h3 { class: "text-lg font-bold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors mb-2 line-clamp-2",
+              h3 { class: "text-lg font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors mb-2 line-clamp-2",
                   "{title}"
               }
               if !description.is_empty() {
@@ -135,9 +139,7 @@ fn CourseCard(course: CourseSummary) -> Element {
               if !tags.is_empty() {
                   div { class: "mt-3 flex flex-wrap gap-1.5",
                       for tag in tags.iter() {
-                          span { class: "text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400",
-                              "#{tag}"
-                          }
+                          Badge { variant: BadgeVariant::Secondary, class: "rounded-full font-normal", "#{tag}" }
                       }
                   }
               }
@@ -161,7 +163,7 @@ pub fn CourseDetailPage(slug: String) -> Element {
               SuspenseBoundary {
                   fallback: |_| rsx! {
                       div { class: "flex items-center justify-center py-20",
-                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                       }
                   },
                   CourseDetailLoaded { slug: slug.clone() }
@@ -203,7 +205,7 @@ fn CourseDetailLoaded(slug: String) -> Element {
             }
             p { class: "text-slate-500", "课程 \"{slug}\" 不存在或尚未发布。" }
             a { href: "/course",
-                class: "inline-block mt-6 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors",
+                class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-6"),
                 "返回课程列表"
             }
         }
@@ -259,7 +261,7 @@ fn CourseDetailBody(
           // 信息
           div { class: "lg:col-span-2 flex flex-col justify-center",
               if let Some(ref lv) = course.level {
-                  span { class: "inline-block text-[10px] font-bold uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-3",
+                  span { class: "inline-block text-[10px] font-bold uppercase tracking-widest text-primary mb-3",
                       "{lv}"
                   }
               }
@@ -283,21 +285,19 @@ fn CourseDetailBody(
               if !course.tags.is_empty() {
                   div { class: "mt-4 flex flex-wrap gap-2",
                       for tag in course.tags.iter() {
-                          span { class: "text-xs px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400",
-                              "#{tag}"
-                          }
+                          Badge { variant: BadgeVariant::Secondary, class: "rounded-full px-2.5 py-1 font-normal", "#{tag}" }
                       }
                   }
               }
               // 付费课程购买入口
               if course.is_paid() {
                   if owned {
-                      div { class: "mt-6 inline-flex w-fit items-center gap-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 px-4 py-2 text-sm font-medium text-emerald-600 dark:text-emerald-400",
+                      Badge { variant: BadgeVariant::Success, class: "mt-6 w-fit gap-2 rounded-lg px-4 py-2 text-sm font-medium",
                           "✓ 已拥有本课程"
                       }
                   } else {
                       div { class: "mt-6 flex items-center gap-4",
-                          span { class: "text-2xl font-extrabold text-[var(--color-primary)]", "¥{yuan}" }
+                          span { class: "text-2xl font-extrabold text-primary", "¥{yuan}" }
                           PurchaseEntry { course_slug: course.slug.clone(), price: course.price }
                       }
                   }
@@ -309,15 +309,13 @@ fn CourseDetailBody(
                           span { "学习进度" }
                           span { "{completed_lessons}/{total_lessons} · {percent}%" }
                       }
-                      div { class: "w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden",
-                          div { class: "bg-blue-600 h-full transition-all", style: "width: {percent}%" }
-                      }
+                      Progress { value: percent as f32, class: "h-2 bg-border", "aria-label": "学习进度" }
                   }
               }
               // 继续学习按钮
               if let Some(href) = continue_link {
                   a { href: "{href}",
-                      class: "inline-flex items-center gap-2 mt-8 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors w-fit",
+                      class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-8 w-fit gap-2 px-5"),
                       "{continue_label}"
                       span { "→" }
                   }
@@ -426,11 +424,11 @@ fn LessonRow(
               } else {
                   span { class: "text-base flex-shrink-0", "{icon}" }
               }
-              span { class: "flex-1 text-sm text-slate-700 dark:text-slate-300 group-hover:text-blue-600 dark:group-hover:text-blue-400",
+              span { class: "flex-1 text-sm text-slate-700 dark:text-slate-300 group-hover:text-primary",
                   "{lesson.title}"
               }
               if lesson.preview && course_paid {
-                  span { class: "text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400", "试看" }
+                  Badge { variant: BadgeVariant::Success, class: "px-1.5 text-[10px]", "试看" }
               }
               if locked {
                   span { class: "text-xs flex-shrink-0 text-slate-400", "🔒" }
@@ -459,13 +457,13 @@ pub fn LessonPage(slug: String, chapter: String, lesson: String) -> Element {
       section { class: "py-8 min-h-screen bg-[var(--color-bg)]",
           LocalContainer {
               a { href: "/course/{slug}",
-                  class: "inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline mb-6",
+                  class: "inline-flex items-center gap-1 text-sm text-primary hover:underline mb-6",
                   "← 返回课程目录"
               }
               SuspenseBoundary {
                   fallback: |_| rsx! {
                       div { class: "flex items-center justify-center py-20",
-                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                       }
                   },
                   LessonLoaded {
@@ -580,8 +578,8 @@ fn LessonContent(
 fn LessonPaywall(course_slug: String, price: i64) -> Element {
   let yuan = price / 100;
   rsx! {
-      div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-10 text-center max-w-xl mx-auto",
-          div { class: "w-14 h-14 mx-auto rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center text-3xl mb-5",
+      div { class: card_class("rounded-2xl p-10 text-center max-w-xl mx-auto"),
+          div { class: "w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center text-3xl mb-5",
               "🔒"
           }
           h2 { class: "text-xl font-bold text-slate-900 dark:text-white", "本课节为付费内容" }
@@ -589,7 +587,7 @@ fn LessonPaywall(course_slug: String, price: i64) -> Element {
               "开通本课程后即可解锁全部课节，含文档、视频、音频与代码资源。"
           }
           if price > 0 {
-              div { class: "mt-5 text-3xl font-extrabold text-[var(--color-primary)]", "¥{yuan}" }
+              div { class: "mt-5 text-3xl font-extrabold text-primary", "¥{yuan}" }
           }
           div { class: "mt-6",
               PurchaseEntry { course_slug, price }
@@ -652,18 +650,10 @@ fn CompleteLessonButton(course_slug: String, chapter_slug: String, lesson_slug: 
 
   rsx! {
       div { class: "mt-12 pt-8 border-t border-slate-200 dark:border-slate-800 flex items-center gap-4",
-          button {
+          Button {
+              variant: if completed() { ButtonVariant::Secondary } else { ButtonVariant::Primary },
               disabled: pending(),
-              class: format_args!(
-                  "px-5 py-2.5 rounded-lg text-sm font-medium transition-colors {}",
-                  if completed() {
-                      "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 cursor-default"
-                  } else if pending() {
-                      "bg-slate-300 text-slate-500 cursor-wait"
-                  } else {
-                      "bg-blue-600 text-white hover:bg-blue-700"
-                  }
-              ),
+              class: if completed() { "px-5 cursor-default bg-success/15 text-success hover:bg-success/15" } else { "px-5" },
               onclick: move |_| {
                   if completed() || pending() { return; }
                   let cs = cs.clone();
@@ -964,7 +954,7 @@ fn AudioCard(audio: MediaRef, title: String) -> Element {
   rsx! {
       div { class: "relative overflow-hidden rounded-2xl bg-slate-900 shadow-xl border border-slate-200 dark:border-slate-800",
           div { class: "p-8 md:p-10 flex flex-col items-center text-center",
-              div { class: "w-24 h-24 rounded-full bg-blue-600/20 flex items-center justify-center mb-6",
+              div { class: "w-24 h-24 rounded-full bg-primary/20 flex items-center justify-center mb-6",
                   span { class: "text-5xl", "🎧" }
               }
               h3 { class: "text-2xl font-bold text-white mb-2", "{title}" }
@@ -1070,8 +1060,8 @@ fn CodePanel(file: CodeFile, large: bool) -> Element {
 #[component]
 fn DownloadList(items: Vec<DownloadFile>) -> Element {
   rsx! {
-      div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden",
-          div { class: "px-4 py-3 border-b border-slate-200 dark:border-slate-800",
+      div { class: card_class("rounded-xl overflow-hidden"),
+          div { class: "px-4 py-3 border-b border-border",
               h3 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200", "下载附件" }
           }
           ul {
@@ -1128,7 +1118,7 @@ pub fn MyAnnotationsPage() -> Element {
               match state {
                   None => rsx! {
                       div { class: "flex items-center justify-center py-20",
-                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                       }
                   },
                   Some(list) if list.is_empty() => rsx! {
@@ -1387,7 +1377,7 @@ fn AnnotationGroupCard(group: AnnoGroup) -> Element {
   let (icon, label) = kind_badge(&group.kind);
   let header_url = build_jump_url(&group.kind, &group.path, "");
   rsx! {
-      div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden",
+      div { class: card_class("rounded-2xl overflow-hidden"),
           // 资源头
           a { href: "{header_url}",
               class: "flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors",
@@ -1450,9 +1440,7 @@ fn AnnotationListItem(kind: String, path: String, anno: Annotation) -> Element {
                           let (icon, label) = visibility_label(&anno.visibility);
                           rsx! {
                               span { "·" }
-                              span { class: "px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
-                                  "{icon} {label}"
-                              }
+                              Badge { variant: BadgeVariant::Secondary, class: "px-1.5 text-[11px] font-normal", "{icon} {label}" }
                           }
                       }
                       if let Some(name) = anno.author_nickname.as_ref() {
@@ -1463,7 +1451,7 @@ fn AnnotationListItem(kind: String, path: String, anno: Annotation) -> Element {
                       }
                   }
               }
-              span { class: "flex-shrink-0 self-center text-blue-600 dark:text-blue-400 text-sm",
+              span { class: "flex-shrink-0 self-center text-primary text-sm",
                   "跳转 →"
               }
           }

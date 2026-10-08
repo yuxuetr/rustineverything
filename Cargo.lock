@@ -4644,6 +4644,7 @@ dependencies = [
  "app-core",
  "chrono",
  "dioxus",
+ "dioxus-shadcn",
  "fast_qr",
  "module-blog",
  "module-moderation",

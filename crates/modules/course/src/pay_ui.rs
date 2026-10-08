@@ -9,6 +9,10 @@
 
 use dioxus::prelude::*;
 use dioxus::router::Link;
+use dioxus_shadcn::{
+  button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Spinner, SpinnerSize,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow, UiDensity,
+};
 
 use crate::server::{create_order, list_my_orders, my_membership, query_order, OrderInfo};
 
@@ -35,8 +39,8 @@ pub fn PurchaseButton(course_slug: String, price: i64) -> Element {
   let mut open = use_signal(|| false);
   let yuan = price / 100;
   rsx! {
-      button {
-          class: "inline-flex items-center justify-center rounded-md bg-[var(--color-primary)] px-6 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition",
+      Button {
+          class: "px-6 font-semibold",
           onclick: move |_| open.set(true),
           "购买 ¥{yuan}"
       }
@@ -106,17 +110,15 @@ fn PurchaseModal(course_slug: String, price: i64, open: Signal<bool>) -> Element
   };
 
   let provider_label = if provider() == "alipay" { "支付宝" } else { "微信" };
+  // 二选一用 Outline 按钮 + aria-pressed：ToggleGroup 的键盘导航依赖 document::eval（FB-02）。
   let radio = |val: &str, label: &str, cur: &str| {
     let active = val == cur;
-    let class = if active {
-      "flex-1 rounded-lg border-2 border-[var(--color-primary)] bg-[var(--color-primary)]/5 px-4 py-2 text-sm font-medium text-[var(--color-primary)]"
-    } else {
-      "flex-1 rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300"
-    };
-    (class.to_string(), label.to_string(), val.to_string())
+    let extra = if active { "flex-1 border-primary bg-primary/5 text-primary" } else { "flex-1" };
+    let class = button_class(ButtonVariant::Outline, ButtonSize::Md, UiDensity::Comfortable, extra);
+    (class, active, label.to_string(), val.to_string())
   };
-  let (ali_c, ali_l, ali_v) = radio("alipay", "支付宝", &provider());
-  let (wx_c, wx_l, wx_v) = radio("wechat", "微信支付", &provider());
+  let (ali_c, ali_on, ali_l, ali_v) = radio("alipay", "支付宝", &provider());
+  let (wx_c, wx_on, wx_l, wx_v) = radio("wechat", "微信支付", &provider());
 
   rsx! {
       div {
@@ -127,8 +129,11 @@ fn PurchaseModal(course_slug: String, price: i64, open: Signal<bool>) -> Element
               onclick: move |e| e.stop_propagation(),
               div { class: "flex items-center justify-between mb-4",
                   h3 { class: "text-lg font-bold text-slate-900 dark:text-white", "购买课程" }
-                  button {
-                      class: "text-slate-400 hover:text-slate-600 text-xl leading-none",
+                  Button {
+                      variant: ButtonVariant::Ghost,
+                      size: ButtonSize::Icon,
+                      class: "text-xl leading-none text-muted-foreground",
+                      "aria-label": "关闭",
                       onclick: move |_| open.set(false),
                       "×"
                   }
@@ -141,8 +146,8 @@ fn PurchaseModal(course_slug: String, price: i64, open: Signal<bool>) -> Element
                           class: "mx-auto w-48 [&>svg]:w-48 [&>svg]:h-48",
                           dangerous_inner_html: "{qr}"
                       }
-                      button {
-                          class: "mt-4 w-full rounded-md bg-[var(--color-primary)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90",
+                      Button {
+                          class: "mt-4 w-full font-semibold",
                           onclick: check_status,
                           "我已支付，刷新状态"
                       }
@@ -159,11 +164,11 @@ fn PurchaseModal(course_slug: String, price: i64, open: Signal<bool>) -> Element
                   _ => rsx! {
                       p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "选择支付方式，金额 ¥{yuan}" }
                       div { class: "flex gap-3 mb-4",
-                          button { class: "{ali_c}", onclick: move |_| provider.set(ali_v.clone()), "{ali_l}" }
-                          button { class: "{wx_c}", onclick: move |_| provider.set(wx_v.clone()), "{wx_l}" }
+                          button { r#type: "button", class: ali_c, "aria-pressed": ali_on.to_string(), onclick: move |_| provider.set(ali_v.clone()), "{ali_l}" }
+                          button { r#type: "button", class: wx_c, "aria-pressed": wx_on.to_string(), onclick: move |_| provider.set(wx_v.clone()), "{wx_l}" }
                       }
-                      button {
-                          class: "w-full rounded-md bg-[var(--color-primary)] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60",
+                      Button {
+                          class: "w-full font-semibold",
                           disabled: status() == "loading",
                           onclick: start_pay,
                           if status() == "loading" { "处理中…" } else { "立即支付 ¥{yuan}" }
@@ -178,16 +183,14 @@ fn PurchaseModal(course_slug: String, price: i64, open: Signal<bool>) -> Element
   }
 }
 
-/// 订单状态 → (中文, 样式 class)。
-fn status_badge(status: &str) -> (&'static str, &'static str) {
+/// 订单状态 → (中文, 徽章样式)。
+fn status_badge(status: &str) -> (&'static str, BadgeVariant) {
   match status {
-    "paid" => {
-      ("已支付", "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400")
-    }
-    "pending" => ("待支付", "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400"),
-    "closed" => ("已关闭", "bg-slate-100 dark:bg-slate-800 text-slate-500"),
-    "refunded" => ("已退款", "bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400"),
-    _ => ("失败", "bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400"),
+    "paid" => ("已支付", BadgeVariant::Success),
+    "pending" => ("待支付", BadgeVariant::Warning),
+    "closed" => ("已关闭", BadgeVariant::Secondary),
+    "refunded" => ("已退款", BadgeVariant::Info),
+    _ => ("失败", BadgeVariant::Destructive),
   }
 }
 
@@ -212,12 +215,12 @@ pub fn MyOrdersPage() -> Element {
                       let date = m.expires_at.split('T').next().unwrap_or(&m.expires_at).to_string();
                       if m.active {
                           rsx! {
-                              div { class: "mb-6 flex items-center justify-between gap-4 rounded-xl border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/5 px-5 py-4",
+                              div { class: "mb-6 flex items-center justify-between gap-4 rounded-xl border border-primary/30 bg-primary/5 px-5 py-4",
                                   div {
-                                      span { class: "font-bold text-[var(--color-primary)]", "Pro 会员" }
+                                      span { class: "font-bold text-primary", "Pro 会员" }
                                       span { class: "ml-2 text-sm text-slate-500 dark:text-slate-400", "有效期至 {date}" }
                                   }
-                                  span { class: "text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400", "有效" }
+                                  Badge { variant: BadgeVariant::Success, "有效" }
                               }
                           }
                       } else {
@@ -231,26 +234,26 @@ pub fn MyOrdersPage() -> Element {
               }
               if !loaded {
                   div { class: "flex items-center justify-center py-16",
-                      div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-primary)]" }
+                      Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                   }
               } else if orders.is_empty() {
                   div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-12 text-center",
                       p { class: "text-slate-400", "还没有订单。" }
-                      Link { to: "/course", class: "inline-block mt-4 text-sm font-medium text-[var(--color-primary)] hover:underline", "去看看课程 →" }
+                      Link { to: "/course", class: "inline-block mt-4 text-sm font-medium text-primary hover:underline", "去看看课程 →" }
                   }
               } else {
                   div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
-                      table { class: "w-full text-sm",
-                          thead { class: "bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400",
-                              tr {
-                                  th { class: "text-left font-medium px-4 py-2", "课程" }
-                                  th { class: "text-left font-medium px-4 py-2", "金额" }
-                                  th { class: "text-left font-medium px-4 py-2", "渠道" }
-                                  th { class: "text-left font-medium px-4 py-2", "状态" }
-                                  th { class: "text-left font-medium px-4 py-2", "下单时间" }
+                      Table {
+                          TableHeader { class: "bg-muted/50",
+                              TableRow { class: "border-border",
+                                  TableHead { class: "h-10 px-4", "课程" }
+                                  TableHead { class: "h-10 px-4", "金额" }
+                                  TableHead { class: "h-10 px-4", "渠道" }
+                                  TableHead { class: "h-10 px-4", "状态" }
+                                  TableHead { class: "h-10 px-4", "下单时间" }
                               }
                           }
-                          tbody { class: "divide-y divide-slate-100 dark:divide-slate-800",
+                          TableBody {
                               for o in orders.into_iter() {
                                   {
                                       let (label, badge) = status_badge(&o.status);
@@ -258,16 +261,16 @@ pub fn MyOrdersPage() -> Element {
                                       let chan = if o.provider == "alipay" { "支付宝" } else { "微信" };
                                       let date = o.created_at.split('T').next().unwrap_or(&o.created_at).to_string();
                                       rsx! {
-                                          tr { key: "{o.out_trade_no}", class: "text-slate-700 dark:text-slate-200",
-                                              td { class: "px-4 py-2",
-                                                  Link { to: format!("/course/{}", o.course_slug), class: "hover:text-[var(--color-primary)]", "{o.course_slug}" }
+                                          TableRow { key: "{o.out_trade_no}", class: "border-border",
+                                              TableCell { class: "px-4 py-2",
+                                                  Link { to: format!("/course/{}", o.course_slug), class: "hover:text-primary", "{o.course_slug}" }
                                               }
-                                              td { class: "px-4 py-2 font-medium", "¥{yuan}" }
-                                              td { class: "px-4 py-2 text-slate-400", "{chan}" }
-                                              td { class: "px-4 py-2",
-                                                  span { class: "text-xs px-2 py-0.5 rounded-full font-medium {badge}", "{label}" }
+                                              TableCell { class: "px-4 py-2 font-medium", "¥{yuan}" }
+                                              TableCell { class: "px-4 py-2 text-slate-400", "{chan}" }
+                                              TableCell { class: "px-4 py-2",
+                                                  Badge { variant: badge, "{label}" }
                                               }
-                                              td { class: "px-4 py-2 text-slate-400 text-xs", "{date}" }
+                                              TableCell { class: "px-4 py-2 text-slate-400 text-xs", "{date}" }
                                           }
                                       }
                                   }
