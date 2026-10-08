@@ -375,7 +375,7 @@
 > 每项一提交；每个修复附「修复前失败」的测试，先确认红再修到绿。
 
 ### 阶段 A — 可被直接利用的漏洞（最先做）
-- [ ] A1 — SEC-01 LaTeX `\text{}` 存储型 XSS：MathML 白名单过滤后再输出
+- [x] A1 — SEC-01 LaTeX `\text{}` 存储型 XSS：MathML 白名单过滤后再输出（829ffa3：改为渲染前转义文本类事件与错误信息，6 条单测）
 - [ ] A2 — SEC-02 `/courses` 静态目录绕过付费墙
 - [ ] A3 — SEC-03 `get_doc_content` 路径穿越
 - [ ] A4 — SEC-04 OAuth profile 不查状态 / `external_id` 回退 `"0"`
