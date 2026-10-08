@@ -23,28 +23,51 @@ pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
 // Latte: base #eff1f5, text #4c4f69, mantle #e6e9ef, surface0 #ccd0da, blue #1e66f5, overlay0 #9ca0b0
 // Macchiato: base #24273a, text #cad3f5, mantle #1e2030, surface0 #363a4f, blue #8aadf4, overlay0 #6e738d
 const THEME_CSS: &str = "
+/* shadcn 语义 token（docs/THEME_SPEC.md §12「Token 契约」）：组件与旧 --color-* 别名都读这些变量。 */
 :root {
-  --color-primary: #1e66f5;            /* Latte blue */
-  --color-bg: #eff1f5;                  /* Latte base */
-  --color-surface: #e6e9ef;             /* Latte mantle */
-  --color-text: #4c4f69;                /* Latte text */
-  --color-text-muted: #6c6f85;          /* Latte subtext0 */
-  --color-border: #ccd0da;              /* Latte surface0 */
+  --background: #eff1f5;
+  --foreground: #4c4f69;
+  --card: #eff1f5;
+  --card-foreground: #4c4f69;
+  --popover: #eff1f5;
+  --popover-foreground: #4c4f69;
+  --primary: #1e66f5;
+  --primary-foreground: #eff1f5;
+  --secondary: #e6e9ef;
+  --secondary-foreground: #4c4f69;
+  --muted: #e6e9ef;
+  --muted-foreground: #6c6f85;
+  --accent: #e6e9ef;
+  --accent-foreground: #4c4f69;
+  --border: #ccd0da;
+  --input: #ccd0da;
+  --ring: #1e66f5;
 }
 
 .dark {
-  --color-primary: #8aadf4;            /* Macchiato blue */
-  --color-bg: #24273a;                  /* Macchiato base */
-  --color-surface: #1e2030;             /* Macchiato mantle */
-  --color-text: #cad3f5;                /* Macchiato text */
-  --color-text-muted: #a5adcb;          /* Macchiato subtext0 */
-  --color-border: #363a4f;              /* Macchiato surface0 */
+  --background: #24273a;
+  --foreground: #cad3f5;
+  --card: #1e2030;
+  --card-foreground: #cad3f5;
+  --popover: #1e2030;
+  --popover-foreground: #cad3f5;
+  --primary: #8aadf4;
+  --primary-foreground: #24273a;
+  --secondary: #363a4f;
+  --secondary-foreground: #cad3f5;
+  --muted: #363a4f;
+  --muted-foreground: #a5adcb;
+  --accent: #363a4f;
+  --accent-foreground: #cad3f5;
+  --border: #363a4f;
+  --input: #363a4f;
+  --ring: #8aadf4;
 }
 
 /* 强制 body 背景跟随变量 */
 body {
-  background-color: var(--color-bg) !important;
-  color: var(--color-text) !important;
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
 }
 ";
 

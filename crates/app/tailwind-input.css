@@ -17,16 +17,6 @@
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-    /* === Theme Plugin Variable Defaults === */
-    /* These are overridden at runtime by the WASM theme plugin.
-       --color-primary / --color-border are mapped to shadcn tokens in the
-       @theme inline block below; the plugin's own values still win at
-       runtime because this file's variables live in @layer theme. */
-    --color-bg: #ffffff;
-    --color-surface: #f8fafc;
-    --color-text: #0f172a;
-    --color-text-muted: #475569;
-
     /* === Map Tailwind color scales to theme variables === */
     /* 'slate' maps to stone for warmer tones */
     --color-slate-50: var(--color-stone-50);

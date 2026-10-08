@@ -352,7 +352,12 @@
     - Dockerfile 未 COPY `crates/sdk-macros`、`crates/gateway`（2026-06-01 后新增），镜像构建应已失败
     - `crates/app/build.rs` 先把 root `assets/` 正向同步到 `crates/app/assets/`，任何 cargo 构建都会用旧的 `assets/tailwind.css` 覆盖刚编译的产物；`npm run build` 后需手动 `cp crates/app/assets/tailwind.css assets/`
     - rustc 1.99 的 clippy 对 `crates/llm/src/lib.rs:184`（`async_trait` 展开）报 `double_must_use`
-- [ ] U2 — 三个主题插件改输出 shadcn token，旧 `--color-*` 改为 token 别名，重编 wasm，THEME_SPEC 更新
+- [x] U2 — 三个主题插件改输出 shadcn token，旧 `--color-*` 改为 token 别名，重编 wasm，THEME_SPEC 更新
+  - 决定（2026-10-08）：ocean 主色保持品牌橙（不再用 hue 250 蓝），sunset / catppuccin 保留各自主色
+  - 落点：`crates/plugins/theme-{ocean,sunset,catppuccin}/src/lib.rs` 输出 17 个 token（亮/暗各一套）；`assets/css/main.css` 旧变量改为别名；`tailwind-input.css` 删旧 `@theme` 默认值；`examples/plugin-theme-purple`、`docs/PLUGIN_DEV.md`、`docs/THEME_SPEC.md` §12「Token 契约」同步；`app-core` 主题测试断言 `--primary:`
+  - 验证：3 主题 × 亮/暗，`--primary`、`--background`、别名 `--color-bg`、body 底色均取插件值（**需绕过 CSP 验证**，见下）；app-core plugin/theme 66 测通过；clippy 同 U1
+  - ⚠️ 发现：CSP 下 App 根组件的 `document::eval` 在页面加载时即 panic，wasm 运行时失效，主题 CSS 根本不注入、ThemePicker 不显示——**自 S1 起生产站点一直没有应用任何主题插件**（`bypassCSP` 对照实验确认）。见 E1
+- [ ] E1 — 站点自身的 `document::eval` 改为 web-sys 直接调用（App 语言检测、暗色切换、搜索模态 Escape 等），CSP 保持不含 `'unsafe-eval'`（2026-10-08 决定）
 - [ ] U3 — admin（`admin.rs` + `admin_entitlements.rs`）：Button / Input / Textarea / NativeSelect / Tabs / Table / Spinner / Badge
 - [ ] U4 — course + 支付（`course.rs` + `pay_ui.rs`）：Card / Button / Badge / Table / Dialog
 - [ ] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert

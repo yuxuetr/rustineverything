@@ -59,6 +59,12 @@
 
 **实验结论（U1）**：`@theme inline` 下 `bg-primary` 直接编译成 `background-color: var(--primary)`；`--color-primary: var(--primary)` 仍会输出，但位于 `@layer theme` 的 `:root` 中。分层规则输给未分层的 `main.css` 与插件 `<style>`，所以 U1 里 49 处 `var(--color-primary)` 继续取插件值（ocean 蓝），外观不变。U1 因此**只加 token、不改别名**；别名切换随 U2 插件改造一起做。站点原 `@theme` 里的 `--color-primary` / `--color-border` 默认值已删除（与组件库映射重名），其余旧变量的默认值仍在 `main.css`。
 
+**U2 落地**：插件输出 token；旧变量在 `main.css` 里变为别名。决定（2026-10-08）：ocean 主色保持品牌橙，全站一个主色；sunset / catppuccin 保留各自主色。
+
+### D7 CSP 与 `document::eval`（2026-10-08 决定）
+
+CSP 保持不含 `'unsafe-eval'`。组件库在 web 端改用 web-sys（FB-02，上游修复）；站点自身的 `document::eval` 同样改掉（E1）。依赖 eval 的组件（Dialog、Dropdown、Popover、Command、Sheet、NavigationMenu，以及 Tabs / ToggleGroup 的键盘导航）要等上游发版后再迁移：U4 的支付模态、U8、U9 排在上游修复之后；U3 若用 Tabs，先验证点击路径不触发 eval。
+
 ### D3 Tailwind 扫描组件库源码：构建时生成，不写死路径
 
 `dxui init` 生成的 `@source "/Users/…/.cargo/registry/src/…/dioxus-shadcn-0.6.0/src"` 是本机绝对路径；本项目的 Tailwind 在 Docker 构建阶段和 CI 里编译，写死路径会让组件类名**静默丢失**（不报错，只是没样式）。

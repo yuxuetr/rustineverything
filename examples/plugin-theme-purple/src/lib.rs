@@ -33,34 +33,55 @@ pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
   pack_json(&m)
 }
 
-/// 主题 CSS。语义：把核心变量映射到 Tailwind `violet-*` 调色板。
+/// 主题 CSS：把 shadcn 语义 token 映射到 Tailwind `violet-*` 调色板。
 ///
-/// 6 个变量是 site 主题协定的最小集（与 theme-ocean / theme-sunset 对齐）：
-/// `--color-primary` / `--color-bg` / `--color-surface` /
-/// `--color-text` / `--color-text-muted` / `--color-border`
+/// token 集合是站点主题协定（docs/THEME_SPEC.md §12「Token 契约」），与内置
+/// theme-ocean / theme-sunset / theme-catppuccin 对齐。
 const THEME_CSS: &str = r#"
 :root {
-  --color-primary: #7c3aed;      /* violet-600 */
-  --color-bg: #faf5ff;            /* violet-50 */
-  --color-surface: #f3e8ff;       /* violet-100 */
-  --color-text: #1e1b4b;          /* indigo-950 */
-  --color-text-muted: #4c1d95;    /* violet-900 */
-  --color-border: #ddd6fe;        /* violet-200 */
+  --background: #faf5ff;
+  --foreground: #1e1b4b;
+  --card: #faf5ff;
+  --card-foreground: #1e1b4b;
+  --popover: #faf5ff;
+  --popover-foreground: #1e1b4b;
+  --primary: #7c3aed;
+  --primary-foreground: #ffffff;
+  --secondary: #f3e8ff;
+  --secondary-foreground: #1e1b4b;
+  --muted: #f3e8ff;
+  --muted-foreground: #4c1d95;
+  --accent: #f3e8ff;
+  --accent-foreground: #1e1b4b;
+  --border: #ddd6fe;
+  --input: #ddd6fe;
+  --ring: #7c3aed;
 }
 
 .dark {
-  --color-primary: #a78bfa;       /* violet-400 */
-  --color-bg: #1e1b4b;            /* indigo-950 */
-  --color-surface: #312e81;       /* indigo-900 */
-  --color-text: #ede9fe;          /* violet-100 */
-  --color-text-muted: #c4b5fd;    /* violet-300 */
-  --color-border: #4338ca;        /* indigo-700 */
+  --background: #1e1b4b;
+  --foreground: #ede9fe;
+  --card: #312e81;
+  --card-foreground: #ede9fe;
+  --popover: #312e81;
+  --popover-foreground: #ede9fe;
+  --primary: #a78bfa;
+  --primary-foreground: #1e1b4b;
+  --secondary: #4338ca;
+  --secondary-foreground: #ede9fe;
+  --muted: #4338ca;
+  --muted-foreground: #c4b5fd;
+  --accent: #4338ca;
+  --accent-foreground: #ede9fe;
+  --border: #4338ca;
+  --input: #4338ca;
+  --ring: #a78bfa;
 }
 
 /* 强制 body 跟随变量；与既有内置主题保持一致行为。 */
 body {
-  background-color: var(--color-bg) !important;
-  color: var(--color-text) !important;
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
 }
 "#;
 

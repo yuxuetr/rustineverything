@@ -601,7 +601,7 @@ mod tests {
     let manager = PluginManager::new();
 
     let css = manager.aggregate_theme_css(&[wasm_bytes]).await;
-    assert!(css.contains("--color-primary"));
+    assert!(css.contains("--primary:"));
   }
 
   /// 实际调用插件验证 cache hit：同一路径调用 N 次仅产生 1 个缓存条目。

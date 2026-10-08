@@ -103,23 +103,27 @@ fn get_manifest() -> PluginManifest {
 }
 
 const THEME_CSS: &str = r#"
+/* 语义 token：完整清单见 docs/THEME_SPEC.md §12「Token 契约」 */
 :root {
-  --color-primary: #7c3aed;
-  --color-bg: #faf5ff;
-  --color-surface: #f3e8ff;
-  --color-text: #1e1b4b;
-  --color-text-muted: #4c1d95;
-  --color-border: #ddd6fe;
+  --background: #faf5ff;
+  --foreground: #1e1b4b;
+  --card: #faf5ff;
+  --primary: #7c3aed;
+  --primary-foreground: #ffffff;
+  --muted: #f3e8ff;
+  --muted-foreground: #4c1d95;
+  --border: #ddd6fe;
+  --ring: #7c3aed;
+  /* … 其余 token 同理 */
 }
 .dark {
-  --color-primary: #a78bfa;
-  --color-bg: #1e1b4b;
-  --color-surface: #312e81;
-  --color-text: #ede9fe;
-  --color-text-muted: #c4b5fd;
-  --color-border: #4338ca;
+  --background: #1e1b4b;
+  --foreground: #ede9fe;
+  --primary: #a78bfa;
+  --primary-foreground: #1e1b4b;
+  /* … */
 }
-body { background-color: var(--color-bg) !important; color: var(--color-text) !important; }
+body { background-color: var(--background) !important; color: var(--foreground) !important; }
 "#;
 
 #[plugin_export]

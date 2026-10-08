@@ -1,20 +1,14 @@
-/* === Theme Plugin Variable Defaults === */
-/* Overridden at runtime by WASM theme plugin injection */
+/* === 旧主题变量 → shadcn token 别名（docs/DIOXUS_UI_MIGRATION.md D2）===
+   token 是唯一来源：默认值在 tailwind-input.css，主题插件运行时覆盖。
+   这里只做转发，让现有 var(--color-*) 写法跟随 token；亮/暗由 token 的
+   :root / .dark 两套值决定，这里不再分别定义。 */
 :root {
-    --color-primary: oklch(65% 0.15 250);
-    --color-bg: #fafaf9;
-    --color-surface: #f8fafc;
-    --color-text: #1c1917;
-    --color-text-muted: #475569;
-    --color-border: #e2e8f0;
-}
-.dark {
-    --color-primary: oklch(75% 0.15 250);
-    --color-bg: #0c0a09;
-    --color-surface: #0f172a;
-    --color-text: #fafaf9;
-    --color-text-muted: #94a3b8;
-    --color-border: #1e293b;
+    --color-primary: var(--primary);
+    --color-bg: var(--background);
+    --color-surface: var(--muted);
+    --color-text: var(--foreground);
+    --color-text-muted: var(--muted-foreground);
+    --color-border: var(--border);
 }
 
 /* App-wide styling */

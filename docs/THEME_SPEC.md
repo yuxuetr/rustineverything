@@ -119,13 +119,14 @@ use sdk::{pack_output, capabilities, PluginManifest};
 pub extern "C" fn get_theme_css(_ptr: i32, _len: i32) -> u64 {
     let css = r#"
         :root {
-            --color-primary: #ff8a00;
-            --color-bg: #fff8f3;
-            --color-text: #1a1a1a;
+            --background: #fff8f3;
+            --foreground: #1a1a1a;
+            --primary: #ff8a00;
+            --primary-foreground: #1a1a1a;
         }
         .dark {
-            --color-bg: #1a0c00;
-            --color-text: #fff8f0;
+            --background: #1a0c00;
+            --foreground: #fff8f0;
         }
     "#;
     pack_output(css)
@@ -219,3 +220,22 @@ RSX 渲染对应壳，Outlet::<Route> 嵌入主内容
 - **Phase 3.4**：模块开关（[`MODULE_SPEC.md`](MODULE_SPEC.md)）已落地，与主题正交。
 - **Phase 5.2**：示例 `examples/plugin-theme-purple` 演示从零开发主题。
 - **Phase 5.1**：主题 Hot Reload（admin 上传 wasm，PluginEngine 失效缓存）。
+
+## 12. Token 契约
+
+主题插件输出 [shadcn/ui](https://ui.shadcn.com/docs/theming) 语义 token，站点组件（dioxus-shadcn）与手写类名都从这些变量取色。默认值定义在 `crates/app/tailwind-input.css`（站点品牌：stone 中性色 + orange 主色），插件的 `<style id="wasm-theme-style">` 在其后注入，同名变量覆盖默认值。
+
+| token | 用途 |
+| --- | --- |
+| `--background` / `--foreground` | 页面底色与正文 |
+| `--card` / `--card-foreground` | 卡片、面板 |
+| `--popover` / `--popover-foreground` | 弹层、下拉、对话框 |
+| `--primary` / `--primary-foreground` | 主按钮、强调、当前导航项 |
+| `--secondary` / `--secondary-foreground` | 次按钮 |
+| `--muted` / `--muted-foreground` | 弱化底色与次要文字 |
+| `--accent` / `--accent-foreground` | 悬停、选中项 |
+| `--border` / `--input` / `--ring` | 边框、输入框边框、焦点环 |
+
+插件应在 `:root` 与 `.dark` 各给一套完整的值（`.dark` 加在 `<html>` 上）。`--destructive` / `--success` / `--warning` / `--info`、`--chart-*`、`--sidebar-*` 可省略，沿用默认值。
+
+**旧变量（兼容）**：`--color-primary` / `--color-bg` / `--color-surface` / `--color-text` / `--color-text-muted` / `--color-border` 在 `assets/css/main.css` 中定义为上表 token 的别名（`--color-bg: var(--background)` 等）。仍只输出旧变量的第三方插件会覆盖这些别名，因此只影响使用 `var(--color-*)` 的手写类名，**组件不会跟随**；新插件请输出 token。

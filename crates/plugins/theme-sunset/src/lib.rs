@@ -19,28 +19,51 @@ pub unsafe extern "C" fn get_manifest(_ptr: *mut u8, _len: usize) -> u64 {
 }
 
 const THEME_CSS: &str = "
+/* shadcn 语义 token（docs/THEME_SPEC.md §12「Token 契约」）：组件与旧 --color-* 别名都读这些变量。 */
 :root {
-  --color-primary: oklch(70% 0.16 45);
-  --color-bg: #fffaf3;
-  --color-surface: #fff1e0;
-  --color-text: #3b1f10;
-  --color-text-muted: #8a5a3a;
-  --color-border: #f5d6b3;
+  --background: #fffaf3;
+  --foreground: #3b1f10;
+  --card: #fffaf3;
+  --card-foreground: #3b1f10;
+  --popover: #fffaf3;
+  --popover-foreground: #3b1f10;
+  --primary: oklch(70% 0.16 45);
+  --primary-foreground: #3b1f10;
+  --secondary: #fff1e0;
+  --secondary-foreground: #3b1f10;
+  --muted: #fff1e0;
+  --muted-foreground: #8a5a3a;
+  --accent: #fff1e0;
+  --accent-foreground: #3b1f10;
+  --border: #f5d6b3;
+  --input: #f5d6b3;
+  --ring: oklch(70% 0.16 45);
 }
 
 .dark {
-  --color-primary: oklch(78% 0.18 50);
-  --color-bg: #1c0d05;
-  --color-surface: #2a160a;
-  --color-text: #fff1e0;
-  --color-text-muted: #d8a780;
-  --color-border: #4a2a18;
+  --background: #1c0d05;
+  --foreground: #fff1e0;
+  --card: #2a160a;
+  --card-foreground: #fff1e0;
+  --popover: #2a160a;
+  --popover-foreground: #fff1e0;
+  --primary: oklch(78% 0.18 50);
+  --primary-foreground: #1c0d05;
+  --secondary: #4a2a18;
+  --secondary-foreground: #fff1e0;
+  --muted: #4a2a18;
+  --muted-foreground: #d8a780;
+  --accent: #4a2a18;
+  --accent-foreground: #fff1e0;
+  --border: #4a2a18;
+  --input: #4a2a18;
+  --ring: oklch(78% 0.18 50);
 }
 
 /* 强制 Body 背景跟随变量（与 ocean 主题保持一致的硬约束） */
 body {
-  background-color: var(--color-bg) !important;
-  color: var(--color-text) !important;
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
 }
 ";
 
