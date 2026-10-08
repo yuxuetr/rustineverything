@@ -7,7 +7,6 @@
 //! 只需在 `app_core::i18n::Language` 增加枚举值，并在此追加一行即可，
 //! 无需改动渲染逻辑。
 
-use dioxus::document::eval;
 use dioxus::prelude::*;
 
 use crate::i18n::{t, use_i18n, Language};
@@ -71,10 +70,7 @@ pub fn LangPicker() -> Element {
                                       open.set(false);
                                       // 持久化语言选择：写 cookie，让整页跳转 / 刷新后仍保持。
                                       let code = if lang_val == Language::En { "en" } else { "zh" };
-                                      let _ = eval(&format!(
-                                          "document.cookie = '{name}={code}; path=/; max-age=31536000; samesite=lax';",
-                                          name = LANG_COOKIE_NAME,
-                                      ));
+                                      widgets::browser::set_cookie(LANG_COOKIE_NAME, code, 31_536_000);
                                   },
                                   class: format_args!(
                                       "w-full text-left px-3 py-1.5 text-sm transition-colors flex items-center justify-between {}",

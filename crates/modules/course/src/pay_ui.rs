@@ -7,7 +7,6 @@
 //!
 //! 详见 docs/PAYMENT_SPEC.md 第 7 节。
 
-use dioxus::document::eval;
 use dioxus::prelude::*;
 use dioxus::router::Link;
 
@@ -68,11 +67,7 @@ fn PurchaseModal(course_slug: String, price: i64, open: Signal<bool>) -> Element
       match create_order(slug, prov, scene.to_string()).await {
         Ok(init) => match init.kind.as_str() {
           "redirect" | "h5" => {
-            let js = format!(
-              "window.location.href = {};",
-              serde_json::to_string(&init.payload).unwrap_or_default()
-            );
-            let _ = eval(&js);
+            widgets::browser::navigate(&init.payload);
           }
           "qrcode" => {
             out_trade_no.set(init.out_trade_no.clone());
@@ -101,7 +96,8 @@ fn PurchaseModal(course_slug: String, price: i64, open: Signal<bool>) -> Element
       match query_order(otn).await {
         Ok(s) if s.paid => {
           status.set("paid".to_string());
-          let _ = eval("setTimeout(function(){ window.location.reload(); }, 800);");
+          widgets::browser::sleep_ms(800).await;
+          widgets::browser::reload();
         }
         Ok(_) => message.set("尚未到账；完成支付后再点刷新".to_string()),
         Err(e) => message.set(clean_err(&e)),

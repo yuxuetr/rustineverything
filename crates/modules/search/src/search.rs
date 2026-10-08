@@ -65,42 +65,18 @@ pub fn SearchModal() -> Element {
   let mut elapsed = use_signal(|| 0u64);
   let mut error = use_signal::<Option<String>>(|| None);
 
-  // 全局快捷键:Cmd+K / Ctrl+K 切换;Esc 关闭。
-  use_effect(move || {
-    let script = r#"
-            window.__rie_search_listener = window.__rie_search_listener || (function() {
-                document.addEventListener('keydown', (e) => {
-                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-                        e.preventDefault();
-                        window.dispatchEvent(new CustomEvent('rie-search-toggle'));
-                    }
-                    if (e.key === 'Escape') {
-                        window.dispatchEvent(new CustomEvent('rie-search-close'));
-                    }
-                });
-                return true;
-            })();
-        "#;
-    let _ = dioxus::document::eval(script);
-  });
-
-  // 通过 dioxus.recv 拉取浏览器自定义事件
-  use_effect(move || {
-    spawn(async move {
-      let mut e = dioxus::document::eval(
-        r#"
-                window.addEventListener('rie-search-toggle', () => dioxus.send('toggle'));
-                window.addEventListener('rie-search-close', () => dioxus.send('close'));
-                "#,
-      );
-      while let Ok(msg) = e.recv::<String>().await {
-        match msg.as_str() {
-          "toggle" => open.set(!open()),
-          "close" => open.set(false),
-          _ => {}
-        }
+  // 全局快捷键:Cmd+K / Ctrl+K 切换;Esc 关闭。监听随组件卸载移除。
+  use_hook(|| {
+    std::rc::Rc::new(widgets::browser::on_document_keydown(move |key, ctrl_or_meta| {
+      if ctrl_or_meta && key.eq_ignore_ascii_case("k") {
+        open.set(!open());
+        return true;
       }
-    });
+      if key == "Escape" {
+        open.set(false);
+      }
+      false
+    }))
   });
 
   // 输入变化触发搜索(简单 debounce 由前端计数器实现)
@@ -122,7 +98,7 @@ pub fn SearchModal() -> Element {
     let token = debounce_token();
     spawn(async move {
       // 简单 debounce:延迟 200ms,期间若 token 改变则放弃。
-      sleep_ms(200).await;
+      widgets::browser::sleep_ms(200).await;
       if debounce_token() != token {
         return;
       }
@@ -276,11 +252,4 @@ fn HitRow(hit: SearchHit) -> Element {
           }
       }
   }
-}
-
-/// 简单 sleep helper for debouncing(基于 setTimeout)。
-async fn sleep_ms(ms: u32) {
-  let script = format!("setTimeout(() => dioxus.send(true), {});", ms);
-  let mut e = dioxus::document::eval(&script);
-  let _ = e.recv::<bool>().await;
 }

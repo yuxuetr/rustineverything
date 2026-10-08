@@ -11,7 +11,6 @@ use crate::components::theme_picker::ThemePicker;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
-use dioxus::document::eval;
 use module_search::search::SearchButton;
 
 /// Minimal shell：极简顶部条，`Outlet::<Route>` 主导内容；无 Footer。
@@ -25,32 +24,15 @@ pub fn MinimalShell() -> Element {
 
   // 与 Classic 共享 dark 模式初始化逻辑
   use_effect(move || {
-    spawn(async move {
-      let script = r#"
-                let isDark = localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
-                if (isDark) {
-                    document.documentElement.classList.add('dark');
-                } else {
-                    document.documentElement.classList.remove('dark');
-                }
-                dioxus.send(isDark);
-            "#;
-      let mut eval = eval(script);
-      if let Ok(val) = eval.recv::<bool>().await {
-        is_dark.set(val);
-      }
-    });
+    let dark = widgets::browser::dark_mode_preference();
+    widgets::browser::set_class(true, "dark", dark);
+    is_dark.set(dark);
   });
 
   let toggle_dark = move |_| {
     let new_val = !is_dark();
     is_dark.set(new_val);
-    let script = if new_val {
-      "document.documentElement.classList.add('dark'); localStorage.theme = 'dark'"
-    } else {
-      "document.documentElement.classList.remove('dark'); localStorage.theme = 'light'"
-    };
-    let _ = eval(script);
+    widgets::browser::set_dark_mode(new_val);
   };
 
   rsx! {

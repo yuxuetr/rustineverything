@@ -4780,6 +4780,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "widgets",
 ]
 
 [[package]]
@@ -9057,12 +9058,16 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dioxus",
+ "js-sys",
  "pulldown-cmark",
  "pulldown-latex",
  "serde",
  "serde_json",
  "serde_yaml",
  "tracing",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

@@ -99,7 +99,10 @@ pub fn Markdown(props: MarkdownProps) -> Element {
   let elements = render_stream(&mut it, &props.blog_id, &mut block_idx, true);
 
   rsx! {
-      document::Title { "{metadata.title}" }
+      // 没有 frontmatter 标题时不设置，免得把页面自己的标题（如文档页）覆盖成空串
+      if !metadata.title.is_empty() {
+          crate::browser::PageTitle { title: metadata.title.clone() }
+      }
 
       div { class: "prose prose-slate dark:prose-invert max-w-none",
           {elements.into_iter()}
@@ -558,9 +561,15 @@ fn render_mermaid_block(code_text: String, block_id: Option<String>) -> Element 
 }
 
 fn render_code_block(lang: String, code_text: String, block_id: Option<String>) -> Element {
-  let code_for_copy = code_text.clone();
+  rsx! { CodeBlock { lang, code_text, block_id } }
+}
+
+#[component]
+fn CodeBlock(lang: String, code_text: String, block_id: Option<String>) -> Element {
+  let mut copied = use_signal(|| false);
   let bid = block_id.unwrap_or_default();
   let has_bid = !bid.is_empty();
+  let code_for_copy = code_text.clone();
 
   rsx! {
       div {
@@ -572,11 +581,16 @@ fn render_code_block(lang: String, code_text: String, block_id: Option<String>) 
               class: "absolute z-10 px-2.5 py-1 text-xs font-medium text-slate-400 bg-slate-800/80 border border-slate-700 rounded-md hover:text-white hover:bg-slate-700 transition-all cursor-pointer",
               style: "position:absolute;right:0.75rem;top:0.75rem",
               onclick: move |_| {
-                  let json_str = serde_json::to_string(&code_for_copy).unwrap_or_default();
-                  let js = format!("navigator.clipboard.writeText({json}).then(()=>{{let b=document.activeElement;if(b){{b.textContent='Copied!';setTimeout(()=>b.textContent='Copy',1500)}}}})" , json = json_str);
-                  dioxus::document::eval(&js);
+                  let text = code_for_copy.clone();
+                  spawn(async move {
+                      if crate::browser::copy_text(&text).await {
+                          copied.set(true);
+                          crate::browser::sleep_ms(1500).await;
+                          copied.set(false);
+                      }
+                  });
               },
-              "Copy"
+              if copied() { "Copied!" } else { "Copy" }
           }
           pre { class: "rounded-xl p-4 bg-slate-900 overflow-x-auto shadow-inner",
               code { class: "language-{lang} text-sm text-slate-200", "{code_text}" }

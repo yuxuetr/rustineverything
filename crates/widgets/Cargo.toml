@@ -20,5 +20,29 @@ pulldown-cmark = { version = "0.13.0", features = ["html"] }
 pulldown-latex = "0.7.1"
 tracing = { workspace = true }
 
+# browser.rs：浏览器操作走 web-sys 直接调用，不经 document::eval（站点 CSP 无 unsafe-eval）
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+  "Clipboard",
+  "CssStyleDeclaration",
+  "Document",
+  "DomTokenList",
+  "Element",
+  "EventTarget",
+  "HtmlDocument",
+  "HtmlElement",
+  "KeyboardEvent",
+  "Location",
+  "MediaQueryList",
+  "Navigator",
+  "NodeList",
+  "Storage",
+  "UrlSearchParams",
+  "Window",
+] }
+
 [features]
 server = ["dioxus/server"]

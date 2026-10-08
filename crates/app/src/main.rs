@@ -419,17 +419,15 @@ fn App() -> Element {
   {
     let mut lang = crate::i18n::use_i18n();
     use_effect(move || {
-      spawn(async move {
-        let mut handle = dioxus::document::eval(
-          "const m = document.cookie.match(/(?:^|; )site_lang=([^;]+)/); dioxus.send(m ? decodeURIComponent(m[1]) : '');",
-        );
-        if let Ok(v) = handle.recv::<String>().await {
-          let want = if v == "en" { crate::i18n::Language::En } else { crate::i18n::Language::Zh };
-          if *lang.peek() != want {
-            lang.set(want);
-          }
-        }
-      });
+      let saved = widgets::browser::cookie("site_lang");
+      let want = if saved.as_deref() == Some("en") {
+        crate::i18n::Language::En
+      } else {
+        crate::i18n::Language::Zh
+      };
+      if *lang.peek() != want {
+        lang.set(want);
+      }
     });
   }
 
@@ -482,9 +480,8 @@ fn App() -> Element {
 
   // 原生渲染：读取当前 theme CSS，由下面的 RSX 直接输出为 <style> 节点。
   // Phase 8.8：项目当前是 web-first via dioxus_fullstack（SSR + WASM hydration）。
-  // 原措辞「保留 desktop / mobile 等跨平台能力」与现状不符；其他 16 处
-  // `dioxus::document::eval` 在 widgets crate 中保留是为了避免大规模重写
-  // （见 `docs/PLUGIN_DEV.md`）。
+  // 原措辞「保留 desktop / mobile 等跨平台能力」与现状不符；浏览器操作
+  // 统一走 `widgets::browser`（web-sys），不用 eval：站点 CSP 不含 'unsafe-eval'。
   let theme_css_value: String = theme_css.read().as_ref().cloned().unwrap_or_default();
 
   rsx! {

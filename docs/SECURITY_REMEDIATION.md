@@ -26,7 +26,7 @@
 | SEC-04 | 高 | `crates/core/src/auth/mod.rs` profile 请求处；`crates/plugins/*-auth`（如 `github-auth/src/lib.rs:66`） | profile 响应不检查 HTTP 状态；插件取不到 `id` 时回退为 `"0"`。限流 / 错误响应会把不同用户映射到同一个 `(provider, "0")` 账号 | **已修复（A4）**：单测确认 401 / 403 / 429 原先被当作 profile |
 | SEC-05 | 高 | `crates/core/src/auth/mod.rs:237`、profile/token 请求处 | `auth_url` / `token_url` / `profile_url` 由插件决定，宿主把 `client_secret` 发往插件给的 `token_url`；插件还决定 `external_id`。恶意插件可窃取 secret、SSRF、冒充任意用户 | 代码确认 |
 | SEC-06 | 高 | `crates/core/src/lib.rs`（`get_or_load_module`）；auth `mod.rs:168`、moderation `pipeline.rs:130` / `plugin_stage.rs:43` | SHA-256 锁只在共享管理器的加载路径生效，auth / moderation 各自 `PluginManager::new()` 绕过；`assets/site.json` 无 `plugins_lock` 条目；文档提到的锁生成工具不存在 | 静态审计 |
-| SEC-07 | 高（可用性） | `crates/app/src/server/security.rs:39`；全站约 20 处 `document::eval` | CSP 不含 `'unsafe-eval'`，`document::eval` 被拦截后 wasm panic，页面加载即失效：主题插件从不生效、暗色切换无效、交互不可靠 | 已复现（`bypassCSP` 对照实验） |
+| SEC-07 | 高（可用性） | `crates/app/src/server/security.rs:39`；全站约 20 处 `document::eval` | CSP 不含 `'unsafe-eval'`，`document::eval` 被拦截后 wasm panic，页面加载即失效：主题插件从不生效、暗色切换无效、交互不可靠 | **已修复（B1）**：严格 CSP（不 bypass）下首页 / 课程 / 课时 / 文档 / 论坛 / 博客无 EvalError、无 wasm panic；主题插件生效、暗色切换与持久化、Cmd+K、代码复制、语言恢复、标注开关可用 |
 | SEC-08 | 中 | `crates/core/src/plugin_security.rs:83-99`；CSP `img-src https:` | 主题 CSS 黑名单可绕过：`image-set("https://…")`、`url(http:evil.com)`、反斜杠形式等，可经属性选择器外泄页面数据；不拒绝 `<`。（`</style>` 跳出：主题 CSS 只在客户端注入 `<style>` 的 innerHTML，不被解析为 HTML，SSR 输出中无主题样式——**当前不成立**，但应作为不变量防住） | 静态审计（绕过形式未在浏览器实测）；`</style>` 部分代码 + SSR 输出确认 |
 | SEC-09 | 中 | `crates/app/src/server/auth_routes.rs:103-115`；`crates/widgets/src/sanitize.rs:202` | 登出是 GET；不可信 Markdown 图片允许任意站内相对路径与外部 https。评论里放 `![](/api/auth/logout)` 即登出所有浏览者；外部图片泄露浏览者 IP | 静态审计 |
 | SEC-10 | 中 | `crates/gateway/src/main.rs:45-47,196` | gateway 用 `insert_header` **覆盖**应用 CSP，且其 CSP 无 `'wasm-unsafe-eval'`、不允许内联启动脚本：部署在 gateway 后时 hydration 整体失效 | 静态审计 |
@@ -42,6 +42,7 @@
 | SEC-20 | 信息 | `crates/app/src/server/mod.rs:564` | 公开调试端点 `/api/echo`；`get_site_config` 公开审核配置 | 静态审计 |
 | SEC-21 | 信息 | `crates/core/src/engines/content_transformer.rs` | content-transformer 尚无生产调用方；接入时输出必须走 Markdown 安全渲染路径，不得作为原始 HTML | 静态审计 |
 | SEC-22 | 低 | `crates/sdk/src/lib.rs:111` | 插件输出为空时宿主调用 `dealloc(0, 0)`，SDK 里 `Vec::from_raw_parts(null…)` 属未定义行为（被沙箱隔离，但可能 trap）；宏在输入解码失败时静默返回空 | 静态审计 |
+| SEC-23 | 低（可用性） | `crates/app/src/server/security.rs` CSP 与 HeadAssets 的 Google Fonts 链接 | 每个页面都加载 `fonts.googleapis.com` 样式表，而 `style-src` 未放行，字体从未加载（B1 验收时在严格 CSP 下观察到）。二选一：自托管 Inter（与「不依赖外部资源」一致），或在 `style-src` / `font-src` 放行 Google Fonts 两个域 | 已观察（浏览器控制台） |
 
 **审计确认没问题的部分**（不需要改）：Markdown 原始 HTML 输出为转义文本，链接 / 图片协议白名单正确；上传仅允许 png/jpg/gif/webp（魔数校验，无 SVG），带 nosniff；session cookie 为 HttpOnly + SameSite=Lax（https 时 Secure）；所有 server function 为 POST、无 CORS 层；登录 / 回调 / 登出只跳转固定路径（无开放重定向）；admin 与权益相关接口都经 `require_admin` 回查数据库；客户端未编入任何密钥；插件沙箱无宿主导入、有 fuel（1 亿 / 次）、8 MiB 内存与输出上限、5 秒超时、trap 被隔离。
 
@@ -60,7 +61,7 @@
 
 | 任务 | 覆盖 | 做法 |
 | --- | --- | --- |
-| B1（即迁移计划 E1） | SEC-07、SEC-18 | 站点所有 `document::eval` 改为 web-sys 直接调用；CSP 保持不含 `'unsafe-eval'`。**另须替换 `document::Title`**（2026-10-08 读源码发现）：Dioxus 0.7.9 `WebDocument::set_title` 内部就是 `eval("document.title = …")`，`Title` 组件在客户端 hydration 时调用它——只改站点自己的 eval，页面仍会在严格 CSP 下崩溃。做法：`widgets::browser` 收拢 web-sys 实现，站点用自己的 `PageTitle`（服务端走 `document::Title` 出 `<title>`，客户端 `use_effect` 里 `document.set_title`）；源码扫描测试禁止 `document::eval` / `document::Title` 再出现。上游（Dioxus）应改为 web-sys，待报告。验收：严格 CSP 下首页、课程、论坛控制台无 EvalError、无 panic，主题插件生效，暗色切换可用 |
+| B1（即迁移计划 E1） | SEC-07、SEC-18 | 站点所有 `document::eval` 改为 web-sys 直接调用；CSP 保持不含 `'unsafe-eval'`。**另须替换 `document::Title`**（2026-10-08 读源码发现）：Dioxus 0.7.9 `WebDocument::set_title` 内部就是 `eval("document.title = …")`，`Title` 组件在客户端 hydration 时调用它——只改站点自己的 eval，页面仍会在严格 CSP 下崩溃。做法：`widgets::browser` 收拢 web-sys 实现，站点用自己的 `PageTitle`（服务端走 `document::Title` 出 `<title>`，客户端 `use_effect` 里 `document.set_title`）；源码扫描测试禁止 `document::eval` / `document::Title` 再出现。上游（Dioxus）应改为 web-sys，待报告。验收时另见与 eval 无关的既有问题（未处理）：mermaid 读到 Dioxus hydration 注释 `<!--node-id…-->` 而解析失败；`/blog/welcome` 引用的 `/audio/…m4a` 404；文章内 bilibili iframe 用 `http://`，被 `frame-src https://…` 拦截。未能在浏览器验证的路径（本地 Postgres 未运行）：标注数据注入、Prism 高亮、课时代码复制、OAuth 跳转、支付跳转 / 刷新、论坛引用参数与发帖跳转。验收：严格 CSP 下首页、课程、论坛控制台无 EvalError、无 panic，主题插件生效，暗色切换可用 |
 | B2 | SEC-09 | 登出改为 POST；不可信内容图片只允许 `/uploads/`（外部图片如需支持，改走代理） |
 | B3 | SEC-08 | 主题 CSS 改为基于 tokenizer 的白名单：拒绝 `<`、`@import`、`image-set`；`url()` 仅允许 `data:image/` 与 `/assets/`；收紧 CSP `img-src`。测试覆盖审计列出的每种绕过形式 |
 | B4 | SEC-11 | cookie 读取侧复用设置侧的校验（`[A-Za-z0-9_-]+\.wasm` 且在主题列表内） |

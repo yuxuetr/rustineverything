@@ -18,7 +18,6 @@ use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
 use crate::server::enabled_module_ids;
 use crate::taxonomy::ecosystems;
-use dioxus::document::eval;
 use module_search::search::SearchButton;
 
 /// Classic shell：完整 Navbar+Footer。`Outlet::<Route>` 嵌于 main 中。
@@ -83,32 +82,15 @@ pub fn ClassicShell() -> Element {
 
   // Initialize dark mode preference
   use_effect(move || {
-    spawn(async move {
-      let script = r#"
-                let isDark = localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches);
-                if (isDark) {
-                    document.documentElement.classList.add('dark');
-                } else {
-                    document.documentElement.classList.remove('dark');
-                }
-                dioxus.send(isDark);
-            "#;
-      let mut eval = eval(script);
-      if let Ok(val) = eval.recv::<bool>().await {
-        is_dark.set(val);
-      }
-    });
+    let dark = widgets::browser::dark_mode_preference();
+    widgets::browser::set_class(true, "dark", dark);
+    is_dark.set(dark);
   });
 
   let toggle_dark = move |_| {
     let new_val = !is_dark();
     is_dark.set(new_val);
-    let script = if new_val {
-      "document.documentElement.classList.add('dark'); localStorage.theme = 'dark'"
-    } else {
-      "document.documentElement.classList.remove('dark'); localStorage.theme = 'light'"
-    };
-    let _ = eval(script);
+    widgets::browser::set_dark_mode(new_val);
   };
 
   rsx! {

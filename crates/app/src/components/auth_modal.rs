@@ -1,5 +1,4 @@
 use app_core::AuthProviderDisplay;
-use dioxus::document::eval;
 use dioxus::prelude::*;
 
 use crate::i18n::{t, use_i18n, Language};
@@ -127,7 +126,7 @@ fn render_provider_button(provider: &AuthProviderDisplay, lang: Language) -> Ele
               // Phase 7.2：直接跳转到 server 路由，由服务端在重定向响应里下发
               // 加密的 oauth_pkce cookie（state + verifier）。不再走 server fn
               // 取 URL，避免 PKCE 状态丢失的 race。
-              let _ = eval(&format!("window.location.href = '/api/auth/login/{}'", provider_id));
+              widgets::browser::navigate(&format!("/api/auth/login/{}", provider_id));
           },
 
           svg {

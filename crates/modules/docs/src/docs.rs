@@ -216,7 +216,7 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
                           Some(Ok(resp)) => rsx! {
                               // SEO: 注入 title / description / keywords / og:image
                               if !resp.meta.title.is_empty() {
-                                  document::Title { "{resp.meta.title} - Rust in Everything" }
+                                  widgets::browser::PageTitle { title: format!("{} - Rust in Everything", resp.meta.title) }
                               }
                               if !resp.meta.description.is_empty() {
                                   document::Meta { name: "description", content: "{resp.meta.description}" }

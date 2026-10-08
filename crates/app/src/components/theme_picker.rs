@@ -4,7 +4,6 @@
 //! 点击后调用 `set_user_theme` 写入 cookie 并 bump `ThemeVersion` Signal，
 //! 触发上层 `theme_css` `use_resource` 重新请求合并 CSS。
 
-use dioxus::document::eval;
 use dioxus::prelude::*;
 
 use crate::i18n::{t, use_i18n};
@@ -68,7 +67,7 @@ pub fn ThemePicker() -> Element {
   // 持久化采用「双写」策略，修复「切不动 + 刷新回退」：
   // 1. `set_user_theme`：服务端校验文件名并下发 Set-Cookie（桌面端走 reqwest
   //    cookie jar，跨平台兜底）。
-  // 2. `document.cookie`：Web 端直接写入非 HttpOnly cookie，**等待写入完成**再
+  // 2. `document.cookie`：Web 端直接写入非 HttpOnly cookie，写入后再
   //    bump version，确保紧接着的聚合 CSS 重新请求一定携带新 cookie；刷新后 SSR
   //    也能读到，主题保持不变。
   let switch = use_callback(move |filename: String| {
@@ -79,22 +78,10 @@ pub fn ThemePicker() -> Element {
         tracing::error!(error = %e, "theme picker: set_user_theme failed");
       }
 
-      // 2) 客户端兜底写 cookie，并等待 JS 执行完成。
+      // 2) 客户端兜底写 cookie（同步完成）；空文件名即清除。
       let trimmed = filename.trim();
-      let js = if trimmed.is_empty() {
-        format!(
-          "document.cookie = '{name}=; path=/; max-age=0; samesite=lax'; dioxus.send(true);",
-          name = THEME_COOKIE_NAME
-        )
-      } else {
-        format!(
-          "document.cookie = '{name}={value}; path=/; max-age=31536000; samesite=lax'; dioxus.send(true);",
-          name = THEME_COOKIE_NAME,
-          value = trimmed
-        )
-      };
-      let mut handle = eval(&js);
-      let _ = handle.recv::<bool>().await;
+      let max_age = if trimmed.is_empty() { 0 } else { 31_536_000 };
+      widgets::browser::set_cookie(THEME_COOKIE_NAME, trimmed, max_age);
 
       // 3) cookie 就绪后再触发上层重新拉取聚合 CSS。
       version.with_mut(|v| *v += 1);

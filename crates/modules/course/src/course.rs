@@ -731,27 +731,15 @@ pub fn AnnotationLayer(resource_kind: String, resource_path: String) -> Element 
 }
 
 /// 浮动眼睛按钮：切换 body.no-anno 类以隐藏/显示标注样式（仅视图层，数据不动）。
-/// 状态本地管理，JS 仅接收 setVisible(v) 指令（不靠 recv 取返回值，
-/// 避免 Dioxus 0.7 下「脚本 return 不会路由到 recv」导致 await 挂住、点击似乎无响应。
+/// 状态本地管理，选择记在 `localStorage['rie-anno-visible']`。
 #[component]
 fn AnnotationToggle() -> Element {
   // 初始从 localStorage 同步一下状态，后续完全本地主导
   let mut visible = use_signal(|| true);
   use_effect(move || {
-    let js = "\
-            try { \
-              var v = localStorage.getItem('rie-anno-visible'); \
-              if (v === '0') document.body.classList.add('no-anno'); \
-              else document.body.classList.remove('no-anno'); \
-            } catch(_) {}";
-    dioxus::document::eval(js);
-    spawn(async move {
-      // 读一下初始状态以同步图标
-      let js = "dioxus.send(localStorage.getItem('rie-anno-visible') !== '0');";
-      if let Ok(v) = dioxus::document::eval(js).recv::<bool>().await {
-        visible.set(v);
-      }
-    });
+    let v = widgets::browser::storage_get("rie-anno-visible").as_deref() != Some("0");
+    widgets::browser::set_class(false, "no-anno", !v);
+    visible.set(v);
   });
 
   // 内联 style：避免 Tailwind / annotations.js 样式表的加载顺序依赖。
@@ -777,29 +765,13 @@ fn AnnotationToggle() -> Element {
               // 防御性：同时走 CSS 类（未来新创建的 span）+ 逐个 inline style。
               // 原因：!important 的 CSS 规则在某些热重载 / 幂等拦截场景下可能
               // 未被重新注入的样式表覆盖，直接写 inline style 最保险。
-              let js = format!(
-                  "(function(v){{\
-                      try {{ localStorage.setItem('rie-anno-visible', v ? '1' : '0'); }} catch(_) {{}}\
-                      var spans = document.querySelectorAll('span.rie-anno');\
-                      if (v) {{\
-                          document.body.classList.remove('no-anno');\
-                          spans.forEach(function(el){{\
-                              el.style.removeProperty('background');\
-                              el.style.removeProperty('text-decoration');\
-                              el.style.removeProperty('outline');\
-                          }});\
-                      }} else {{\
-                          document.body.classList.add('no-anno');\
-                          spans.forEach(function(el){{\
-                              el.style.setProperty('background', 'transparent', 'important');\
-                              el.style.setProperty('text-decoration', 'none', 'important');\
-                              el.style.setProperty('outline', 'none', 'important');\
-                          }});\
-                      }}\
-                  }})({});",
-                  if next { "true" } else { "false" }
+              widgets::browser::storage_set("rie-anno-visible", if next { "1" } else { "0" });
+              widgets::browser::set_class(false, "no-anno", !next);
+              widgets::browser::set_inline_styles(
+                  "span.rie-anno",
+                  &[("background", "transparent"), ("text-decoration", "none"), ("outline", "none")],
+                  !next,
               );
-              dioxus::document::eval(&js);
           },
           // 单一 SVG 眼睛图标，隐藏状态多一道斜线
           svg {
@@ -828,11 +800,11 @@ fn inject_annotations(kind: &str, path: &str, list: &[Annotation]) {
       "path": path,
       "items": list,
   });
-  let js = format!(
-        "(function(){{const data={data};if(window.RIE_ANNO&&window.RIE_ANNO.apply){{window.RIE_ANNO.apply(data)}} else {{window.__rieAnnoPending=data}}}})()",
-        data = serde_json::to_string(&payload).unwrap_or_else(|_| "null".to_string())
-    );
-  dioxus::document::eval(&js);
+  let data = serde_json::to_string(&payload).unwrap_or_else(|_| "null".to_string());
+  // annotations.js 未加载时先挂到全局，它加载后自取
+  if !widgets::browser::call_global("RIE_ANNO", "apply", Some(&data)) {
+    widgets::browser::set_global_json("__rieAnnoPending", &data);
+  }
 }
 
 /// 主区布局分派（按 kind）
@@ -1027,7 +999,7 @@ fn CodeTabs(files: Vec<CodeFile>, #[props(default = false)] large: bool) -> Elem
   // 加载后调用 PrismJS
   use_effect(move || {
     let _ = active(); // 让下面的 effect 随 tab 切换也重跑
-    dioxus::document::eval("(function(){if(window.Prism){Prism.highlightAll()}})()");
+    widgets::browser::call_global("Prism", "highlightAll", None);
   });
 
   rsx! {
@@ -1070,9 +1042,10 @@ fn CodePanel(file: CodeFile, large: bool) -> Element {
               button {
                   class: "px-2 py-0.5 rounded hover:bg-slate-700 transition-colors",
                   onclick: move |_| {
-                      let json = serde_json::to_string(&copy_payload).unwrap_or_default();
-                      let js = format!("navigator.clipboard.writeText({json}).then(()=>{{}})");
-                      dioxus::document::eval(&js);
+                      let text = copy_payload.clone();
+                      spawn(async move {
+                          widgets::browser::copy_text(&text).await;
+                      });
                   },
                   "复制"
               }

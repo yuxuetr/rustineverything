@@ -657,31 +657,16 @@ pub fn NewTopicPage() -> Element {
   let mut ref_path = use_signal::<Option<String>>(|| None);
 
   use_effect(move || {
-    spawn(async move {
-      let script = r#"
-                const p = new URLSearchParams(window.location.search);
-                const k = p.get('ref_kind');
-                const r = p.get('ref_path');
-                dioxus.send([k, r]);
-            "#;
-      let mut e = dioxus::document::eval(script);
-      if let Ok(arr) = e.recv::<(Option<String>, Option<String>)>().await {
-        let (k, p) = arr;
-        if let Some(ref kind) = k {
-          if !kind.is_empty() {
-            ref_kind.set(Some(kind.clone()));
-            if tag_value().is_empty() {
-              tag_value.set(format!("from-{}", kind));
-            }
-          }
-        }
-        if let Some(ref pp) = p {
-          if !pp.is_empty() {
-            ref_path.set(Some(pp.clone()));
-          }
-        }
+    let kind = widgets::browser::query_param("ref_kind").filter(|k| !k.is_empty());
+    if let Some(kind) = kind {
+      if tag_value.peek().is_empty() {
+        tag_value.set(format!("from-{}", kind));
       }
-    });
+      ref_kind.set(Some(kind));
+    }
+    if let Some(path) = widgets::browser::query_param("ref_path").filter(|p| !p.is_empty()) {
+      ref_path.set(Some(path));
+    }
   });
 
   // 已有 tag 自动补全
@@ -705,7 +690,7 @@ pub fn NewTopicPage() -> Element {
       match create_topic(payload).await {
         Ok(summary) => {
           let url = format!("/topics/{}", summary.id);
-          let _ = dioxus::document::eval(&format!("window.location.href = '{}';", url));
+          widgets::browser::navigate(&url);
         }
         Err(e) => {
           error.set(Some(format!("创建失败: {}", e)));
