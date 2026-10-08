@@ -10,8 +10,10 @@
 use dioxus::prelude::*;
 use dioxus::router::Link;
 use dioxus_shadcn::{
-  button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Spinner, SpinnerSize,
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow, UiDensity,
+  button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant,
+  Dialog, DialogClose, DialogContent, DialogOverlay, DialogTitle, DialogTrigger, Spinner,
+  SpinnerSize, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, ToggleGroup,
+  ToggleGroupItem, UiDensity,
 };
 
 use crate::server::{create_order, list_my_orders, my_membership, query_order, OrderInfo};
@@ -39,20 +41,29 @@ pub fn PurchaseButton(course_slug: String, price: i64) -> Element {
   let mut open = use_signal(|| false);
   let yuan = price / 100;
   rsx! {
-      Button {
-          class: "px-6 font-semibold",
-          onclick: move |_| open.set(true),
-          "购买 ¥{yuan}"
-      }
-      if open() {
-          PurchaseModal { course_slug: course_slug.clone(), price, open }
+      Dialog { open: open(), on_open_change: move |v| open.set(v),
+          DialogTrigger {
+              class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "px-6 font-semibold"),
+              "购买 ¥{yuan}"
+          }
+          DialogOverlay { class: "z-[60]" }
+          DialogContent { class: "z-[60] max-w-sm gap-0 rounded-2xl",
+              DialogTitle { class: "mb-4 pr-8", "购买课程" }
+              DialogClose { class: "text-xl leading-none text-muted-foreground",
+                  span { "aria-hidden": "true", "×" }
+                  span { class: "sr-only", "关闭" }
+              }
+              // 内容只在打开时挂载：每次重新打开都从选择支付方式开始。
+              if open() {
+                  PurchaseForm { course_slug: course_slug.clone(), price }
+              }
+          }
       }
   }
 }
 
 #[component]
-fn PurchaseModal(course_slug: String, price: i64, open: Signal<bool>) -> Element {
-  let mut open = open;
+fn PurchaseForm(course_slug: String, price: i64) -> Element {
   let mut provider = use_signal(|| "alipay".to_string());
   let mut status = use_signal(|| "idle".to_string()); // idle | loading | qr | paid | error
   let mut message = use_signal(String::new);
@@ -110,75 +121,58 @@ fn PurchaseModal(course_slug: String, price: i64, open: Signal<bool>) -> Element
   };
 
   let provider_label = if provider() == "alipay" { "支付宝" } else { "微信" };
-  // 二选一用 Outline 按钮 + aria-pressed：ToggleGroup 的键盘导航依赖 document::eval（FB-02）。
-  let radio = |val: &str, label: &str, cur: &str| {
-    let active = val == cur;
-    let extra = if active { "flex-1 border-primary bg-primary/5 text-primary" } else { "flex-1" };
-    let class = button_class(ButtonVariant::Outline, ButtonSize::Md, UiDensity::Comfortable, extra);
-    (class, active, label.to_string(), val.to_string())
+  let option_class = move |val: &str| {
+    if provider() == val {
+      "flex-1 border border-primary bg-primary/5 text-primary hover:bg-primary/10"
+    } else {
+      "flex-1 border border-input"
+    }
   };
-  let (ali_c, ali_on, ali_l, ali_v) = radio("alipay", "支付宝", &provider());
-  let (wx_c, wx_on, wx_l, wx_v) = radio("wechat", "微信支付", &provider());
 
   rsx! {
-      div {
-          class: "fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4",
-          onclick: move |_| open.set(false),
-          div {
-              class: "w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-xl",
-              onclick: move |e| e.stop_propagation(),
-              div { class: "flex items-center justify-between mb-4",
-                  h3 { class: "text-lg font-bold text-slate-900 dark:text-white", "购买课程" }
-                  Button {
-                      variant: ButtonVariant::Ghost,
-                      size: ButtonSize::Icon,
-                      class: "text-xl leading-none text-muted-foreground",
-                      "aria-label": "关闭",
-                      onclick: move |_| open.set(false),
-                      "×"
-                  }
+      match status().as_str() {
+          "qr" => rsx! {
+              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "请使用{provider_label}扫码支付 ¥{yuan}" }
+              div {
+                  class: "mx-auto w-48 [&>svg]:w-48 [&>svg]:h-48",
+                  dangerous_inner_html: "{qr}"
               }
-
-              match status().as_str() {
-                  "qr" => rsx! {
-                      p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "请使用{provider_label}扫码支付 ¥{yuan}" }
-                      div {
-                          class: "mx-auto w-48 [&>svg]:w-48 [&>svg]:h-48",
-                          dangerous_inner_html: "{qr}"
-                      }
-                      Button {
-                          class: "mt-4 w-full font-semibold",
-                          onclick: check_status,
-                          "我已支付，刷新状态"
-                      }
-                      if !message().is_empty() {
-                          p { class: "mt-2 text-xs text-amber-600", "{message}" }
-                      }
-                  },
-                  "paid" => rsx! {
-                      div { class: "py-8 text-center",
-                          div { class: "text-4xl mb-3", "✅" }
-                          p { class: "font-semibold text-slate-900 dark:text-white", "支付成功，正在解锁…" }
-                      }
-                  },
-                  _ => rsx! {
-                      p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "选择支付方式，金额 ¥{yuan}" }
-                      div { class: "flex gap-3 mb-4",
-                          button { r#type: "button", class: ali_c, "aria-pressed": ali_on.to_string(), onclick: move |_| provider.set(ali_v.clone()), "{ali_l}" }
-                          button { r#type: "button", class: wx_c, "aria-pressed": wx_on.to_string(), onclick: move |_| provider.set(wx_v.clone()), "{wx_l}" }
-                      }
-                      Button {
-                          class: "w-full font-semibold",
-                          disabled: status() == "loading",
-                          onclick: start_pay,
-                          if status() == "loading" { "处理中…" } else { "立即支付 ¥{yuan}" }
-                      }
-                      if status() == "error" && !message().is_empty() {
-                          p { class: "mt-3 text-sm text-rose-600", "{message}" }
-                      }
-                  },
+              Button {
+                  class: "mt-4 w-full font-semibold",
+                  onclick: check_status,
+                  "我已支付，刷新状态"
               }
-          }
+              if !message().is_empty() {
+                  p { class: "mt-2 text-xs text-amber-600", "{message}" }
+              }
+          },
+          "paid" => rsx! {
+              div { class: "py-8 text-center",
+                  div { class: "text-4xl mb-3", "✅" }
+                  p { class: "font-semibold text-slate-900 dark:text-white", "支付成功，正在解锁…" }
+              }
+          },
+          _ => rsx! {
+              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "选择支付方式，金额 ¥{yuan}" }
+              // 受控单选：再点已选项时 ToggleGroup 会报空值，忽略它，保证总有一个网关被选中。
+              ToggleGroup {
+                  class: "flex w-full gap-3 mb-4",
+                  "aria-label": "支付方式",
+                  value: provider(),
+                  on_value_change: move |v: String| if !v.is_empty() { provider.set(v) },
+                  ToggleGroupItem { value: "alipay", class: option_class("alipay"), "支付宝" }
+                  ToggleGroupItem { value: "wechat", class: option_class("wechat"), "微信支付" }
+              }
+              Button {
+                  class: "w-full font-semibold",
+                  disabled: status() == "loading",
+                  onclick: start_pay,
+                  if status() == "loading" { "处理中…" } else { "立即支付 ¥{yuan}" }
+              }
+              if status() == "error" && !message().is_empty() {
+                  p { class: "mt-3 text-sm text-rose-600", "{message}" }
+              }
+          },
       }
   }
 }
