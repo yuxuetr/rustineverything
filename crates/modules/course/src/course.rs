@@ -6,8 +6,9 @@ use crate::server::{
 };
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  button_class, card_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Progress,
-  Spinner, SpinnerSize, Tabs, TabsContent, TabsList, TabsTrigger, UiDensity,
+  button_class, card_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Collapsible,
+  CollapsibleContent, CollapsibleTrigger, Progress, Spinner, SpinnerSize, Tabs, TabsContent,
+  TabsList, TabsTrigger, UiDensity,
 };
 use widgets::Markdown;
 
@@ -351,14 +352,14 @@ fn ChapterAccordion(
   progress: Vec<LessonProgress>,
   course_paid: bool,
 ) -> Element {
-  let mut open = use_signal(|| true);
   let lesson_count = chapter.lessons.len();
 
   rsx! {
-      div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden",
-          button {
-              class: "w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors",
-              onclick: move |_| open.set(!open()),
+      Collapsible {
+          default_open: true,
+          class: "gap-0 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden",
+          CollapsibleTrigger {
+              class: "group w-full rounded-none px-5 py-4 text-left hover:bg-slate-50 hover:text-foreground dark:hover:bg-slate-900/60",
               div { class: "flex items-center gap-3",
                   span { class: "text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500",
                       "Ch.{chapter.order}"
@@ -366,21 +367,18 @@ fn ChapterAccordion(
                   h3 { class: "text-base font-semibold text-slate-900 dark:text-white",
                       "{chapter.title}"
                   }
-                  span { class: "text-xs text-slate-400 dark:text-slate-500",
+                  span { class: "text-xs font-normal text-slate-400 dark:text-slate-500",
                       "{lesson_count} 节"
                   }
               }
               svg {
-                  class: format_args!(
-                      "w-4 h-4 text-slate-400 transition-transform {}",
-                      if open() { "rotate-180" } else { "" }
-                  ),
+                  class: "w-4 h-4 shrink-0 text-slate-400 transition-transform group-data-[state=open]:rotate-180",
                   fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                   path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2",
                       d: "M19 9l-7 7-7-7" }
               }
           }
-          if open() {
+          CollapsibleContent { class: "text-base text-foreground",
               if !chapter.description.is_empty() {
                   p { class: "px-5 pb-2 text-sm text-slate-500 dark:text-slate-400",
                       "{chapter.description}"
@@ -732,23 +730,18 @@ fn AnnotationToggle() -> Element {
     visible.set(v);
   });
 
-  // 内联 style：避免 Tailwind / annotations.js 样式表的加载顺序依赖。
-  // 位置改为顶部右侧（navbar 正下方），与页面标题几乎同水平，更易被发现。
-  let icon_color = if visible() { "#0f172a" } else { "#94a3b8" };
-  let btn_style = format!(
-    "position:fixed;top:80px;right:24px;z-index:9999;\
-         width:40px;height:40px;padding:0;\
-         display:inline-flex;align-items:center;justify-content:center;\
-         border:1px solid rgba(15,23,42,0.18);border-radius:9999px;\
-         background:#ffffff;color:{icon_color};cursor:pointer;\
-         box-shadow:0 6px 16px rgba(15,23,42,0.14);"
-  );
+  // 固定在 navbar 正下方右侧，与页面标题几乎同水平，更易被发现。
+  // 颜色走主题变量（bg-background / text-foreground），暗色下不再是白底。
+  let label = if visible() { "隐藏标注" } else { "显示标注" };
+  let icon_tone = if visible() { "text-foreground" } else { "text-muted-foreground" };
   rsx! {
-      button {
+      Button {
           r#type: "button",
-          title: if visible() { "隐藏标注" } else { "显示标注" },
-          "aria-label": if visible() { "隐藏标注" } else { "显示标注" },
-          style: "{btn_style}",
+          variant: ButtonVariant::Outline,
+          size: ButtonSize::Icon,
+          class: "fixed top-20 right-6 z-[9999] rounded-full shadow-lg {icon_tone}",
+          title: label,
+          "aria-label": label,
           onclick: move |_| {
               let next = !visible();
               visible.set(next);
@@ -893,12 +886,14 @@ fn CompactAudioBar(audio: MediaRef) -> Element {
 /// 可折叠视频块（Doc Lesson 辅助位）
 #[component]
 fn CollapsibleVideo(video: MediaRef) -> Element {
-  let mut open = use_signal(|| true);
+  let poster = video.poster.clone().unwrap_or_default();
+  let url = video.url.clone();
   rsx! {
-      div { class: "my-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden",
-          button {
-              class: "w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors",
-              onclick: move |_| open.set(!open()),
+      Collapsible {
+          default_open: true,
+          class: "gap-0 my-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden",
+          CollapsibleTrigger {
+              class: "group w-full rounded-none px-4 py-2.5 text-left hover:bg-slate-50 hover:text-foreground dark:hover:bg-slate-900/60",
               span { class: "text-sm font-medium text-slate-700 dark:text-slate-200 flex items-center gap-2",
                   "🎬 课节视频"
                   if let Some(d) = video.duration.as_ref() {
@@ -906,25 +901,17 @@ fn CollapsibleVideo(video: MediaRef) -> Element {
                   }
               }
               svg {
-                  class: format_args!("w-4 h-4 text-slate-400 transition-transform {}", if open() { "rotate-180" } else { "" }),
+                  class: "w-4 h-4 shrink-0 text-slate-400 transition-transform group-data-[state=open]:rotate-180",
                   fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                   path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M19 9l-7 7-7-7" }
               }
           }
-          if open() {
-              div { class: "aspect-video w-full bg-black",
-                  {
-                      let poster = video.poster.clone().unwrap_or_default();
-                      let url = video.url.clone();
-                      rsx! {
-                          video {
-                              class: "w-full h-full",
-                              controls: true,
-                              src: "{url}",
-                              poster: if !poster.is_empty() { "{poster}" },
-                          }
-                      }
-                  }
+          CollapsibleContent { class: "aspect-video w-full bg-black",
+              video {
+                  class: "w-full h-full",
+                  controls: true,
+                  src: "{url}",
+                  poster: if !poster.is_empty() { "{poster}" },
               }
           }
       }
