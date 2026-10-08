@@ -425,7 +425,7 @@
 
 ### 阶段 R — 插件编译进宿主（P-EVAL 方案 A）
 - [x] R1 — 认证内置：`Provider` 枚举（github / google / discord / twitter）给出固定 https 端点、展示信息与 `map_profile`（缺 uid 报错，不再 `unwrap_or(0)`）；`AuthService` 改用枚举，按凭据配置启用；删 4 个 auth 插件 crate 与 wasm（SEC-05）（a18de30：`core::auth::provider` 内置四份 `ProviderSpec` 常量与字段映射，`map_profile` 取不到可用 uid 返回 `None`；登录 / 回调只接受 site.json 启用的 provider，`auth.providers` 改为 id 列表；顺带删掉无调用方的 `AuthEngine` 与 sdk 的 auth 插件类型；AUTH_GUIDE 重写。provider 映射与启用规则 6 条新单测；live 验收：四个按钮、github / twitter（含 S256 challenge）跳转到固定端点、未知 provider 与缺 PKCE cookie 的回调被拒。未做真实第三方账号的完整登录往返）
-- [ ] R2 — 主题内置：内置主题表（ocean / sunset / catppuccin），site.json、管理端设置与 `site_theme` cookie 改用主题 id，只接受表内 id；删 3 个主题插件 crate、`examples/plugin-theme-purple` 与 wasm
+- [x] R2 — 主题内置：内置主题表（ocean / sunset / catppuccin），site.json、管理端设置与 `site_theme` cookie 改用主题 id，只接受表内 id；删 3 个主题插件 crate、`examples/plugin-theme-purple` 与 wasm（d2a8ad7：CSS 移到 `engines/themes/*.css` 经 `include_str!` 嵌入 `THEMES` 表；`resolve_theme` 只认表内 id，cookie 为旧 wasm 文件名 / 路径 / 其他插件时 warn 并回退；site.json 的 `themes` / `active_theme` 合为单个 `theme`（每个主题都给全套 token，栈无意义）；删 PluginManager 的主题 CSS 函数与缓存、admin 主题行；构建脚本 / CI / Dockerfile 不再构建主题；THEME_SPEC 重写，顺带修正 ENGINES_SPEC 中 R1 漏改的 AuthEngine。新单测 5 条（含 cookie 表外值回退）；live 验收：三主题 CSS、旧文件名与路径 cookie 回退 ocean、`/api/theme/set` 拒绝表外值、浏览器 picker 切到 Sunset 后 `--primary` 与 cookie 生效）
 - [ ] R3 — 删除未使用的插件能力：i18n 插件与 `/api/i18n/translate`；content-transformer 引擎、`content_transformers` 配置、各模块 `apply_default_pre` 调用与 content-toc 插件
 - [ ] R4 — 审核内置：deepseek 的提示词构造 / 结论解析移入 moderation crate，经 `crates/llm` 调用，替换 `plugin_stage`；删 `examples/plugin-moderation-deepseek`
 - [ ] C3 — SEC-12 审核失败默认 fail closed（送人工复核）（在 R4 的内置 stage 上做）
