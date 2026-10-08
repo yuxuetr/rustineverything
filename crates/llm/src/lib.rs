@@ -190,7 +190,7 @@ pub trait LlmClient: Send + Sync {
 }
 
 /// 从 env 构造默认客户端。`None` 表示没有任一协议被配置 — 调用方应做
-/// 优雅降级（例如 LLM 审核流水线 fail-open）。
+/// 优雅降级（例如审核流水线不注册 LLM stage）。
 pub fn default_client_from_env() -> Option<Box<dyn LlmClient>> {
   let cfg = LlmConfig::from_env();
   cfg.build()

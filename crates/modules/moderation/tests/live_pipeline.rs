@@ -15,12 +15,16 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use app_core::settings::{ModerationSettings, SiteConfig};
+use app_core::settings::{LlmFailureAction, ModerationSettings, SiteConfig};
 use llm::{default_client_from_env, LlmConfig};
 use module_moderation::{
   AsyncModerationStage, LlmModerationStage, ModerationLabel, ModerationPipeline,
 };
 use sdk::{ImageRef, ModerationSubmission};
+
+/// 64×64 纯色 PNG（中立内容）。内联成 data URL：模型服务下载不了 Wikimedia 的图
+/// （`invalid_image_url`），以前 fail-open 把这个错误当成了 Allow。
+const NEUTRAL_PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAT0lEQVR42u3PQQkAAAgEsAtvFWuZxQi+hcEKLNP1WgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQELgutj3HhYLf1FgAAAABJRU5ErkJggg==";
 
 fn workspace_root() -> PathBuf {
   // crates/modules/moderation/ → 上溯 3 级
@@ -53,7 +57,7 @@ async fn benign_comment_returns_allow() {
   let Some(llm) = check_prereqs() else {
     return;
   };
-  let stage = LlmModerationStage::new(llm);
+  let stage = LlmModerationStage::new(llm, LlmFailureAction::Review);
   let v = stage
     .evaluate(
       &ModerationSubmission::new("感谢分享，这篇博客写得很清晰，期待下一篇。")
@@ -73,7 +77,7 @@ async fn abusive_comment_is_flagged_or_blocked() {
   let Some(llm) = check_prereqs() else {
     return;
   };
-  let stage = LlmModerationStage::new(llm);
+  let stage = LlmModerationStage::new(llm, LlmFailureAction::Review);
 
   // 明显的辱骂内容
   let v = stage
@@ -126,17 +130,15 @@ async fn comment_with_benign_image_returns_allow() {
   let Some(llm) = check_prereqs() else {
     return;
   };
-  let stage = LlmModerationStage::new(llm);
+  let stage = LlmModerationStage::new(llm, LlmFailureAction::Review);
 
-  // 用 Wikipedia 公开 logo（中立内容）。LLM provider 服务器侧 fetch。
-  // 若用 DeepSeek 之类不带视觉的端点，会返回错误 → stage fail-open 为 Allow。
-  let url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Rust_programming_language_black_logo.svg/240px-Rust_programming_language_black_logo.svg.png";
+  // 若用 DeepSeek 之类不带视觉的端点，会返回错误 → stage 记为 Flag（送人工复核），本测试会失败。
 
   let v = stage
     .evaluate(
-      &ModerationSubmission::new("分享一张 Rust 的 logo")
+      &ModerationSubmission::new("分享一张配色参考图")
         .with_kind("comment")
-        .push_image(ImageRef::url(url).with_media_type("image/png")),
+        .push_image(ImageRef::url(NEUTRAL_PNG).with_media_type("image/png")),
     )
     .await;
 
@@ -168,7 +170,7 @@ async fn phishing_link_context_flags_or_blocks_via_llm() {
   let Some(llm) = check_prereqs() else {
     return;
   };
-  let stage = LlmModerationStage::new(llm);
+  let stage = LlmModerationStage::new(llm, LlmFailureAction::Review);
 
   // 仿冒 PayPal：domain 拼写仿冒 + 诱导话术
   let v = stage

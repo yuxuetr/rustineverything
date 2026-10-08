@@ -20,7 +20,7 @@
 | 可扩展性 | 8/10 | 8/10 | 插件 ABI 版本治理完善；ABI v2 留待下个大版本 |
 | 安全性 | 7.5/10 | 9/10 | S1/S2/S4/S5/S6/S8 落地后短板补齐 |
 | 性能 | 7.5/10 | 8/10 | site.json mtime 缓存落地（S10）；i18n 热路径缓存为下一收益点 |
-| 工程质量 | 8.5/10 | 9/10 | unwrap/expect lint 接入（S9）；693 测试 0 失败 |
+| 工程质量 | 8.5/10 | 9/10 | unwrap/expect lint 接入（S9）；697 测试 0 失败 |
 
 ## 2. 架构概览
 
@@ -81,7 +81,7 @@ gateway（Pingora，独立 workspace）--反代--> app
 ## 5. 验证结果
 
 **静态验证（2026-07-21）**
-- 全工作区 `cargo test --features server`：**693 通过 / 0 失败**
+- 全工作区 `cargo test --features server`：**697 通过 / 0 失败**
 - `cargo clippy --workspace --features server --all-targets`：零警告
 - server + 默认 web 双编译目标通过
 

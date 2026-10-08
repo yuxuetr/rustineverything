@@ -191,6 +191,7 @@ R4 之前这两步（提示词、结论解析）在 wasm 插件 `plugin-moderati
   "moderation": {
     "enabled": false,                                     // 默认 disabled
     "llm_review": false,                                  // 是否调 LLM 审核，默认关
+    "on_llm_failure": "review",                           // LLM 审核失败时：review（默认）/ reject
     "url_blocklist": [                                    // 链接黑名单，可选
       "scam.com",                                         // 精确匹配
       "*.phishing.example",                               // 通配子域
@@ -226,13 +227,28 @@ URL 时才追加 prompt 上下文。
 - `llm_review = true` 但 LLM env 没配 → 跳过 LLM stage + warning 日志
 - 三重保险，**不会**因配置错误把用户提交吞掉
 
-### 3.3 Fail-open 策略
+### 3.3 审核失败：不放行（SEC-12）
 
-LLM stage 任一步骤失败 → 返回 Allow + 写 warning 日志：
-- LLM 调用失败（超时、网络、鉴权、配额）
+LLM stage 以下任一情况视为审核失败：
+- LLM 调用失败（超时、网络、鉴权、配额、模型服务拒绝图片等）
 - 模型回复里读不出结论 JSON
 
-Block 决定必须由完整成功的流水线产出。这保证了 LLM 故障期间站点仍可用。
+失败时按 `on_llm_failure` 处理，**没有放行选项**（放行等于把审核打挂就能绕过）：
+
+| 值 | 结论 | 用户看到 | 管理员 |
+| --- | --- | --- | --- |
+| `review`（默认） | Flag，分数 0，理由「LLM 审核失败，待人工复核」 | 照常发布 | 进 `moderation_queue`，在 `/admin/moderation` 复核 |
+| `reject` | Block，理由「审核服务暂不可用，请稍后再试」 | 提交被拒 | 无 |
+
+`review` 下内容在复核前已经可见，`reject` 下 LLM 故障期间无法提交。
+每次失败记一条 warning `moderation: LLM review failed`，带 `cause`（原因）、
+`failures`（进程启动以来累计失败次数）和 `action`；`failures` 持续增长即 LLM 持续故障。
+
+流水线选结论时先比 label 再比分数：Block 早停，Flag 优先于 Allow，所以分数为 0
+的失败 Flag 不会被前面 stage 的 Allow 盖掉。
+
+注意：`llm_review = true` 但 LLM env 未配置时 LLM stage 不注册（启动时 warning），
+这是配置问题而不是审核失败，提交不经 LLM 审核。
 
 ### 3.4 多模态（图像审核）
 

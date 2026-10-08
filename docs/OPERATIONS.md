@@ -257,12 +257,13 @@ docker compose logs app | grep -i theme
 ### 5.6 内容审核 LLM 不可用
 
 审核走托管 LLM API（`OPENAI_LLM_*` / `ANTHROPIC_LLM_*`，可指向 OpenAI / DeepSeek /
-… 或自托管 ollama 的 `/v1`）。若该 API 超时 / 限流 / 掉线，pipeline **fail-open**：
-当前 stage 记 warning 并放行，不阻塞用户提交（详 [`MODERATION_SPEC.md`](MODERATION_SPEC.md)）。
+… 或自托管 ollama 的 `/v1`）。若该 API 超时 / 限流 / 掉线，或回复读不出结论，
+按 `site.json::moderation.on_llm_failure` 处理：默认 `review` 照常发布并送 `/admin/moderation`
+人工复核，`reject` 拒绝提交（详 [`MODERATION_SPEC.md`](MODERATION_SPEC.md) §3.3）。
 
 排查：
 ```bash
-docker compose logs app | grep -i moderation   # 看 fail-open / 调用失败日志
+docker compose logs app | grep "LLM review failed"   # cause = 原因，failures = 累计失败次数
 # 直接探活所配置的 LLM 端点（示例）：
 curl -sS "$OPENAI_LLM_BASE_URL/v1/models" -H "Authorization: Bearer $OPENAI_LLM_API_KEY" | head
 ```

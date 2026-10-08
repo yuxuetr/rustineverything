@@ -4,14 +4,17 @@
 //! 2. `LlmClient::chat` 取模型回复（端点 / 协议由 `crates/llm` 按 env 选择）
 //! 3. [`parse_verdict`]：从回复里读出 `{score, label, reason}`
 //!
-//! LLM 调用失败或回复无法解析时返回 [`Verdict::allow`]（fail-open），并记 warning。
+//! LLM 调用失败或回复无法解析时不放行（SEC-12）：按 [`LlmFailureAction`] 记为
+//! Flag（默认，照常发布并进审核队列）或 Block，并在 warning 里带上进程内累计失败次数。
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::Deserialize;
 
 use app_core::engines::moderation::{ModerationLabel, Verdict};
+use app_core::settings::LlmFailureAction;
 use llm::{LlmClient, LlmContentBlock, LlmMessage, LlmRole};
 use sdk::ModerationSubmission;
 
@@ -39,13 +42,27 @@ const SYSTEM_PROMPT: &str = r#"你是一个评论审核员，负责判断用户�
 - 0.5 ~ 0.89 → label="flag"（可疑，需要复核）
 - 0.9 ~ 1.0  → label="block"（明显违规）"#;
 
+/// 进程启动以来 LLM 审核失败的次数，写进每条失败日志，便于看出持续故障。
+static LLM_FAILURES: AtomicU64 = AtomicU64::new(0);
+
 pub struct LlmModerationStage {
   llm: Arc<dyn LlmClient>,
+  on_failure: LlmFailureAction,
 }
 
 impl LlmModerationStage {
-  pub fn new(llm: Arc<dyn LlmClient>) -> Self {
-    Self { llm }
+  pub fn new(llm: Arc<dyn LlmClient>, on_failure: LlmFailureAction) -> Self {
+    Self { llm, on_failure }
+  }
+
+  /// 审核没能给出结论时的判定。分数记 0：模型没打分，label 决定去向。
+  fn failure_verdict(&self, cause: &str) -> Verdict {
+    let failures = LLM_FAILURES.fetch_add(1, Ordering::Relaxed) + 1;
+    tracing::warn!(cause, failures, action = ?self.on_failure, "moderation: LLM review failed");
+    match self.on_failure {
+      LlmFailureAction::Review => Verdict::flag(0.0, "LLM 审核失败，待人工复核"),
+      LlmFailureAction::Reject => Verdict::block(0.0, "审核服务暂不可用，请稍后再试"),
+    }
   }
 }
 
@@ -137,20 +154,14 @@ impl AsyncModerationStage for LlmModerationStage {
   async fn evaluate(&self, submission: &ModerationSubmission) -> Verdict {
     let reply = match self.llm.chat(build_messages(submission)).await {
       Ok(t) => t,
-      Err(e) => {
-        tracing::warn!(error = %e, "moderation: LLM call failed → allow");
-        return Verdict::allow();
-      }
+      Err(e) => return self.failure_verdict(&format!("call failed: {e}")),
     };
     match parse_verdict(&reply) {
       Some(v) => {
         tracing::debug!(score = v.score, label = ?v.label, "moderation: llm verdict");
         v
       }
-      None => {
-        tracing::warn!(reply = %reply, "moderation: LLM reply has no verdict JSON → allow");
-        Verdict::allow()
-      }
+      None => self.failure_verdict(&format!("reply has no verdict JSON: {reply}")),
     }
   }
 }
@@ -174,8 +185,8 @@ mod tests {
     }
   }
 
-  async fn evaluate_with(reply: Option<&'static str>) -> Verdict {
-    LlmModerationStage::new(Arc::new(StubLlm(reply)))
+  async fn evaluate_with(reply: Option<&'static str>, on_failure: LlmFailureAction) -> Verdict {
+    LlmModerationStage::new(Arc::new(StubLlm(reply)), on_failure)
       .evaluate(&ModerationSubmission::new("anything"))
       .await
   }
@@ -246,14 +257,31 @@ mod tests {
 
   #[tokio::test]
   async fn stage_returns_the_models_verdict() {
-    let v = evaluate_with(Some(r#"{"score":0.95,"label":"block","reason":"spam"}"#)).await;
+    let v = evaluate_with(
+      Some(r#"{"score":0.95,"label":"block","reason":"spam"}"#),
+      LlmFailureAction::Review,
+    )
+    .await;
     assert_eq!(v.label, ModerationLabel::Block);
     assert_eq!(v.reason, "spam");
   }
 
   #[tokio::test]
-  async fn llm_failure_and_unparsable_reply_fail_open() {
-    assert_eq!(evaluate_with(None).await, Verdict::allow());
-    assert_eq!(evaluate_with(Some("我觉得还行")).await, Verdict::allow());
+  async fn failures_go_to_review_by_default() {
+    let before = LLM_FAILURES.load(Ordering::Relaxed);
+    for reply in [None, Some("我觉得还行")] {
+      let v = evaluate_with(reply, LlmFailureAction::default()).await;
+      assert_eq!(v.label, ModerationLabel::Flag, "{reply:?}");
+      assert!(!v.reason.is_empty());
+    }
+    assert!(LLM_FAILURES.load(Ordering::Relaxed) >= before + 2);
+  }
+
+  #[tokio::test]
+  async fn failures_can_reject() {
+    for reply in [None, Some("我觉得还行")] {
+      let v = evaluate_with(reply, LlmFailureAction::Reject).await;
+      assert_eq!(v.label, ModerationLabel::Block, "{reply:?}");
+    }
   }
 }

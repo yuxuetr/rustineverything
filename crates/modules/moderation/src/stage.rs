@@ -11,8 +11,8 @@ use sdk::ModerationSubmission;
 pub trait AsyncModerationStage: Send + Sync {
   fn name(&self) -> &str;
 
-  /// 评估一条 submission。失败时实现方应自行 fail-open 返回 Allow + 写日志，
-  /// 让流水线不被任一 stage 的故障阻塞用户提交。
+  /// 评估一条 submission。不返回错误：stage 自己决定失败时的判定并写日志
+  /// （LLM stage 见 `LlmFailureAction`）。
   async fn evaluate(&self, submission: &ModerationSubmission) -> Verdict;
 }
 

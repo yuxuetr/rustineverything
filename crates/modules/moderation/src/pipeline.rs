@@ -9,7 +9,8 @@
 //! - `from_site_config` 读 `site.json::moderation`：
 //!   - `enabled = false` → 返回空 pipeline，evaluate 总是 Allow
 //!   - `llm_review = true` 但没有 LLM 配置（env 未设）→ 跳过 LLM stage（无法发请求）
-//! - `evaluate` 上的每个 stage 自己 fail-open；pipeline 也对空 stages 返回 Allow
+//! - LLM 审核失败按 `on_llm_failure` 记为 Flag（默认，送人工复核）或 Block，
+//!   不放行；空 stages 返回 Allow
 
 use std::sync::Arc;
 
@@ -115,31 +116,27 @@ impl ModerationPipeline {
       return pipeline;
     };
     tracing::info!(provider = ?llm.provider(), "moderation: registered llm stage");
-    pipeline.register(LlmModerationStage::new(llm));
+    pipeline.register(LlmModerationStage::new(llm, site.moderation.on_llm_failure));
 
     pipeline
   }
 
-  /// 跑流水线。Block 早停；否则返回最高分的非 Allow（或 Allow，如果所有 stage 都 Allow）。
-  /// 最后统一应用阈值。空 stages 总是 Allow。
+  /// 跑流水线。每个 stage 的结论先按阈值升级，Block 早停；否则 Flag 优先于
+  /// Allow，同 label 取最高分。空 stages 总是 Allow。
   pub async fn evaluate(&self, submission: ModerationSubmission) -> Verdict {
-    if self.stages.is_empty() {
-      return Verdict::allow();
-    }
-    let mut best: Option<Verdict> = None;
+    let mut best = Verdict::allow();
     for stage in &self.stages {
-      let v = stage.evaluate(&submission).await;
+      let v = self.thresholds.apply(stage.evaluate(&submission).await);
       if v.label == ModerationLabel::Block {
-        // 阈值升级一遍即返回（Block 不会被降级）
-        return self.thresholds.apply(v);
+        return v;
       }
-      // 取最高 score 的非 Allow
-      let replace = !matches!(&best, Some(b) if b.score >= v.score);
-      if replace {
-        best = Some(v);
+      // 先比 label：审核失败的 Flag 分数为 0，不能输给前面 stage 的 Allow
+      let is_flag = |x: &Verdict| x.label == ModerationLabel::Flag;
+      if (is_flag(&v), v.score) > (is_flag(&best), best.score) {
+        best = v;
       }
     }
-    self.thresholds.apply(best.unwrap_or_else(Verdict::allow))
+    best
   }
 }
 
@@ -152,7 +149,7 @@ mod tests {
 
   struct StubStage(&'static str, Verdict);
 
-  /// 只用于构造 pipeline；这些测试不调用它。
+  /// 每次调用都失败的 LLM。
   struct NoLlm;
 
   #[async_trait]
@@ -161,7 +158,7 @@ mod tests {
       llm::LlmProvider::OpenAi
     }
     async fn chat(&self, _: Vec<llm::LlmMessage>) -> app_core::error::AppResult<String> {
-      Err(app_core::error::AppError::other("not called"))
+      Err(app_core::error::AppError::other("LLM down"))
     }
   }
 
@@ -201,6 +198,16 @@ mod tests {
     let v = p.evaluate(ModerationSubmission::new("x")).await;
     assert_eq!(v.label, ModerationLabel::Flag);
     assert_eq!(v.reason, "high");
+  }
+
+  #[tokio::test]
+  async fn zero_score_flag_beats_earlier_allow() {
+    // 审核失败的 Flag 没有分数；不能因为先跑的 stage 给了 Allow(0.0) 就被吞掉
+    let mut p = ModerationPipeline::new();
+    p.register(StubStage("a", Verdict::allow()));
+    p.register(StubStage("b", Verdict::flag(0.0, "review")));
+    let v = p.evaluate(ModerationSubmission::new("x")).await;
+    assert_eq!((v.label, v.reason.as_str()), (ModerationLabel::Flag, "review"));
   }
 
   #[tokio::test]
@@ -284,6 +291,26 @@ mod tests {
     // LLM 已配置：黑名单在前，LLM 在后
     let p = ModerationPipeline::from_site_config(&site, Some(Arc::new(NoLlm)));
     assert_eq!(p.stage_names(), vec!["url-blocklist", "llm"]);
+  }
+
+  #[tokio::test]
+  async fn llm_failure_is_not_allowed_through() {
+    use app_core::settings::LlmFailureAction;
+    let mut site = SiteConfig::default();
+    site.moderation = ModerationSettings {
+      enabled: true,
+      llm_review: true,
+      url_blocklist: vec!["scam.com".to_string()],
+      ..Default::default()
+    };
+    let p = ModerationPipeline::from_site_config(&site, Some(Arc::new(NoLlm)));
+    let v = p.evaluate(ModerationSubmission::new("正常评论")).await;
+    assert_eq!(v.label, ModerationLabel::Flag, "默认送人工复核");
+
+    site.moderation.on_llm_failure = LlmFailureAction::Reject;
+    let p = ModerationPipeline::from_site_config(&site, Some(Arc::new(NoLlm)));
+    let v = p.evaluate(ModerationSubmission::new("正常评论")).await;
+    assert_eq!(v.label, ModerationLabel::Block);
   }
 
   #[test]

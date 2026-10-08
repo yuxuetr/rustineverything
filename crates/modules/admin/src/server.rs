@@ -1254,6 +1254,7 @@ pub async fn admin_set_moderation_settings(
     tracing::info!(
       enabled = settings.enabled,
       llm_review = settings.llm_review,
+      on_llm_failure = ?settings.on_llm_failure,
       blocklist = settings.url_blocklist.len(),
       "admin: moderation settings updated + pipeline reloaded"
     );
@@ -1415,7 +1416,7 @@ mod tests {
 
   // ── Phase 308：moderation 配置校验 + 写回 ──
 
-  use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
+  use app_core::settings::{LlmFailureAction, ModerationSettings, ModerationThresholdsConfig};
 
   fn thresholds(flag: Option<f32>, block: Option<f32>) -> ModerationSettings {
     ModerationSettings {
@@ -1512,6 +1513,7 @@ mod tests {
     let new_settings = ModerationSettings {
       enabled: true,
       llm_review: true,
+      on_llm_failure: LlmFailureAction::Reject,
       thresholds: Some(ModerationThresholdsConfig {
         flag_above: Some(0.4),
         block_above: Some(0.85),
@@ -1531,6 +1533,7 @@ mod tests {
     // moderation 已替换
     assert_eq!(after["moderation"]["enabled"], true);
     assert_eq!(after["moderation"]["llm_review"], true);
+    assert_eq!(after["moderation"]["on_llm_failure"], "reject");
     assert_eq!(after["moderation"]["url_blocklist"], serde_json::json!(["scam.com"]));
     // f32 → JSON 经 f64 序列化会引入精度尾噪（0.4 ≠ 0.4000000059604645），按近似比较
     let flag = after["moderation"]["thresholds"]["flag_above"].as_f64().unwrap();

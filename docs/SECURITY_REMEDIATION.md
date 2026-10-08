@@ -80,7 +80,7 @@
 | R2 ✅ | SEC-08、SEC-11 的剩余部分 | 主题 CSS 内置，cookie / 设置只接受内置主题 id（B4 未做的「在主题列表内」由此得到） |
 | R3 ✅ | SEC-16、SEC-21 | 删除无调用方的 `/api/i18n/translate` 与未启用的 content-transformer |
 | R4 ✅ | — | 审核 stage 内置，经 `crates/llm` 调用 |
-| C3 | SEC-12 | 审核失败可配置为「送人工复核」，默认 fail closed；失败计数入日志 |
+| C3 ✅ | SEC-12 | 审核失败可配置为「送人工复核」，默认 fail closed；失败计数入日志 |
 | R5 | SEC-06、SEC-14、SEC-15、SEC-22 | 移除插件运行时、上传 / 重载入口、锁机制与插件文档 |
 
 重估条件：`assets/plugins/` 中出现无对应源码 crate 的 wasm，或站点要作为产品给他人部署。届时按原 C / D 方案（见 git 历史中本文件的 C1–C6、D1）重建插件宿主，认证仍保持内置。

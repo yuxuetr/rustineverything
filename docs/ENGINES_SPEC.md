@@ -168,7 +168,7 @@ pub trait ModerationStage: Send + Sync {
 - `evaluate` 改为 `async`，输入改为 `Submission { text, image_url }`（含视觉审核）
 - 内置 stages: `LLMStage` / `VLMStage`（OpenAI / Anthropic / LlamaGuard）
 - 阈值配置 `block_above` / `flag_above`
-- 5s 超时 + fail-open（Allow + 标记需复核）
+- 审核失败不放行：默认 Flag 送人工复核，可配为 Block（`on_llm_failure`）
 - 数据库表 `moderation_log` / `moderation_decisions` / `moderation_queue`
 ### 3.8 SearchEngine
 **骨架状态**（Phase 1C.4 ✅，Phase 3.4 完整迁移）。

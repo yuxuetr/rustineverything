@@ -34,7 +34,7 @@
 **选择规则**：
 1. `OPENAI_LLM_BASE_URL` + `OPENAI_LLM_API_KEY` 都非空 → OpenAI
 2. 否则 `ANTHROPIC_LLM_BASE_URL` + `ANTHROPIC_LLM_API_KEY` 都非空 → Anthropic
-3. 否则 → `None`（业务侧 fail-open）
+3. 否则 → `None`（审核流水线不注册 LLM stage）
 
 **没有运行时 failover**：选定后请求只走该协议；失败原样返回错误。两个协
 议的请求 / 响应 shape 不同，自动切换会产生不可预期的行为。

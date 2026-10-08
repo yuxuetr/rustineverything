@@ -22,8 +22,8 @@
 //! ## 设计
 //! - **transport 在 `crates/llm`**：端点 / 超时 / 鉴权 / 协议（OpenAI 兼容或
 //!   Anthropic 兼容）由 env 选择，本 crate 只管提示词与结论解析。
-//! - **fail-open**：LLM 失败 / 回复无法解析 → 当前 stage 返回 Allow，记
-//!   warning 日志，不阻塞用户提交。
+//! - **失败不放行**：LLM 失败 / 回复无法解析 → 按 `on_llm_failure` 记为 Flag
+//!   （默认：照常发布并进审核队列）或 Block（拒绝提交），warning 日志带累计失败次数。
 //! - **默认禁用**：`site.json::moderation.enabled` 与 `llm_review` 默认 false。
 //!
 //! ## 使用方式

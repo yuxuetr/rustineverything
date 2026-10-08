@@ -35,6 +35,10 @@ fn load_env() {
   let _ = dotenvy::from_path(workspace_root().join(".env"));
 }
 
+/// 64×64 纯色 PNG（中立内容）。内联成 data URL：模型服务下载不了 Wikimedia 的图
+/// （`invalid_image_url`）。
+const NEUTRAL_PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAT0lEQVR42u3PQQkAAAgEsAtvFWuZxQi+hcEKLNP1WgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQELgutj3HhYLf1FgAAAABJRU5ErkJggg==";
+
 /// 模拟业务 hook：把评论内容跑过流水线，返回 verdict label。
 async fn evaluate_comment(
   pipeline: &ModerationPipeline,
@@ -141,10 +145,13 @@ async fn full_pipeline_with_image_evaluates_vision() {
   };
   let pipeline = ModerationPipeline::from_site_config(&site, Some(llm));
 
-  // 评论里夹带 Rust 公开 logo —— 中立内容
-  let body = "看这张 logo：![rust](https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Rust_programming_language_black_logo.svg/240px-Rust_programming_language_black_logo.svg.png) 很简洁";
-
-  let label = evaluate_comment(&pipeline, "welcome", body).await;
-  println!("[comment-with-image] label={:?}", label);
-  assert_eq!(label, ModerationLabel::Allow);
+  // 中立图片内联为 data URL（模型服务下载不了 Wikimedia 的图，以前 fail-open 把这个
+  // 错误当成了 Allow）。data URL 不经 `extract_image_urls`，直接放进 submission。
+  let submission = ModerationSubmission::new("分享一张配色参考图，很简洁")
+    .with_kind("comment")
+    .with_ref_path("blog:welcome")
+    .with_images([ImageRef::url(NEUTRAL_PNG)]);
+  let v = pipeline.evaluate(submission).await;
+  println!("[comment-with-image] label={:?} reason={}", v.label, v.reason);
+  assert_eq!(v.label, ModerationLabel::Allow);
 }

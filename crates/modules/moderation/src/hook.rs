@@ -241,7 +241,7 @@ fn is_acceptable_image_url(url: &str) -> bool {
 
 /// 站内相对路径（如 `/uploads/xxx.jpg`）→ 绝对 URL（用 `BASE_URL` 拼接）。
 /// 已是 `http(s)://` 起首的原样返回；其它无 base_url 时也原样返回（LLM 大概率失败 →
-/// stage fail-open）。
+/// 按 `on_llm_failure` 送复核或拒绝）。
 pub fn absolutize_image_url(url: &str, base_url: &str) -> String {
   if url.starts_with("http://") || url.starts_with("https://") {
     return url.to_string();

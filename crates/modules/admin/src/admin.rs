@@ -7,7 +7,7 @@ use crate::server::{
   AdminPluginRow, AdminTopicRow, AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
 };
 use app_core::session::{SessionUser, ALL_ROLES};
-use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
+use app_core::settings::{LlmFailureAction, ModerationSettings, ModerationThresholdsConfig};
 use dioxus::prelude::*;
 use dioxus_shadcn::{
   button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, DensityProvider, Input,
@@ -1107,6 +1107,7 @@ pub fn AdminModerationSettingsPage() -> Element {
   let mut flag_text = use_signal(String::new);
   let mut block_text = use_signal(String::new);
   let mut llm_review = use_signal(|| false);
+  let mut on_llm_failure = use_signal(LlmFailureAction::default);
   let mut blocklist_text = use_signal(String::new);
   // 一次性把 server 值灌进表单（仅当本地表单 untouched / current 刚到达）
   let mut form_inited = use_signal(|| false);
@@ -1117,6 +1118,7 @@ pub fn AdminModerationSettingsPage() -> Element {
       flag_text.set(opt_f32_to_input(th.and_then(|t| t.flag_above)));
       block_text.set(opt_f32_to_input(th.and_then(|t| t.block_above)));
       llm_review.set(s.llm_review);
+      on_llm_failure.set(s.on_llm_failure);
       blocklist_text.set(vec_to_lines(&s.url_blocklist));
       form_inited.set(true);
     }
@@ -1151,6 +1153,7 @@ pub fn AdminModerationSettingsPage() -> Element {
     let settings = ModerationSettings {
       enabled: enabled(),
       llm_review: llm_review(),
+      on_llm_failure: on_llm_failure(),
       thresholds,
       url_blocklist: lines_to_vec(&blocklist_text()),
     };
@@ -1262,6 +1265,23 @@ pub fn AdminModerationSettingsPage() -> Element {
                       }
                       span { class: "text-xs text-slate-500 dark:text-slate-400 ml-auto",
                           "需配置 OPENAI_LLM_* 或 ANTHROPIC_LLM_* 环境变量，未配置时跳过。"
+                      }
+                  }
+
+                  // LLM 审核失败时的处理
+                  div {
+                      p { class: "{label_cls}", "LLM 审核失败时" }
+                      NativeSelect {
+                          class: "w-auto",
+                          "aria-label": "LLM 审核失败时",
+                          on_value_change: move |v: String| {
+                              on_llm_failure.set(if v == "reject" { LlmFailureAction::Reject } else { LlmFailureAction::Review });
+                          },
+                          NativeSelectOption { value: "review", selected: on_llm_failure() == LlmFailureAction::Review, "送人工复核（照常发布，进审核队列）" }
+                          NativeSelectOption { value: "reject", selected: on_llm_failure() == LlmFailureAction::Reject, "拒绝提交（提示用户稍后再试）" }
+                      }
+                      p { class: "{help_cls}",
+                          "模型调用出错或回复无法解析时生效。不提供放行：否则把审核打挂就能绕过。"
                       }
                   }
 

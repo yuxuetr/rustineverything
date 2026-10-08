@@ -38,7 +38,7 @@ pub struct SiteConfig {
   pub modules: HashMap<String, ModuleSettings>,
   /// Phase 4.3：审核插件配置（独立于通用 `modules` 开关，因为还要装
   /// 插件清单与阈值）。
-  /// 默认 disabled + 空插件列表 → 整条流水线短路，零开销 fail-open。
+  /// 默认 disabled → 整条流水线为空，提交直接通过，不调 LLM。
   /// 由 `crates/modules/moderation::ModerationPipeline::from_site_config`
   /// 读取并装载。
   #[serde(default)]
@@ -65,6 +65,9 @@ pub struct ModerationSettings {
   /// 还需配置 LLM 环境变量（`OPENAI_LLM_*` / `ANTHROPIC_LLM_*`），未配置时跳过。
   #[serde(default)]
   pub llm_review: bool,
+  /// LLM 调用失败 / 回复无法解析时怎么处理这条提交。默认送人工复核。
+  #[serde(default)]
+  pub on_llm_failure: LlmFailureAction,
   /// 可选：覆盖默认阈值（block_above = 0.9 / flag_above = 0.5）。
   /// 留空表示用默认。
   #[serde(default)]
@@ -78,6 +81,18 @@ pub struct ModerationSettings {
   /// 默认空 → 该 stage 不注册，零开销。
   #[serde(default)]
   pub url_blocklist: Vec<String>,
+}
+
+/// LLM 审核失败时的处理（SEC-12：不再放行）。没有「放行」选项：
+/// 开了 LLM 审核却在审核失败时放行，等于攻击者把审核打挂就能绕过。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LlmFailureAction {
+  /// 记为 Flag：照常发布，同时进审核队列等管理员复核。
+  #[default]
+  Review,
+  /// 记为 Block：拒绝提交，提示用户稍后再试。
+  Reject,
 }
 
 /// `ModerationSettings::thresholds` 的可选覆盖。字段缺失时不影响其它字段。
@@ -377,5 +392,15 @@ mod tests {
     let m: ModerationSettings = serde_json::from_str(json).expect("parse");
     assert!(m.enabled);
     assert!(!m.llm_review);
+  }
+
+  #[test]
+  fn llm_failure_defaults_to_review() {
+    let m: ModerationSettings = serde_json::from_str(r#"{"enabled": true}"#).expect("parse");
+    assert_eq!(m.on_llm_failure, LlmFailureAction::Review);
+    let m: ModerationSettings =
+      serde_json::from_str(r#"{"on_llm_failure": "reject"}"#).expect("parse");
+    assert_eq!(m.on_llm_failure, LlmFailureAction::Reject);
+    assert!(serde_json::from_str::<ModerationSettings>(r#"{"on_llm_failure": "allow"}"#).is_err());
   }
 }
