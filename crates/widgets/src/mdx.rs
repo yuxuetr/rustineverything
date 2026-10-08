@@ -586,9 +586,35 @@ fn render_code_block(lang: String, code_text: String, block_id: Option<String>) 
 }
 
 /// 使用 pulldown-latex 将 LaTeX 转换为 MathML
+///
+/// pulldown-latex 把文本类事件（`\text{}`、`\operatorname{}`、数字）和解析
+/// 错误信息原样写进 MathML，而结果会进 `dangerous_inner_html`：`$\text{<img
+/// onerror=…>}$` 即存储型 XSS（SEC-01）。这里先把这些字符串转义再交给它；
+/// 其余事件只携带单个字符或数值，单独的 `<` 不会被浏览器当作标签。
 fn latex_to_mathml_string(latex: &str, display: bool) -> String {
+  use pulldown_latex::event::{Content, Event as LatexEvent};
+
   let storage = Storage::new();
-  let parser = LatexParser::new(latex, &storage);
+  let events: Vec<_> = LatexParser::new(latex, &storage).collect();
+  let escaped: Vec<String> = events
+    .iter()
+    .map(|event| match event {
+      Ok(LatexEvent::Content(Content::Text(s) | Content::Number(s) | Content::Function(s))) => {
+        escape_markup(s)
+      }
+      Ok(_) => String::new(),
+      Err(e) => escape_markup(&e.to_string()),
+    })
+    .collect();
+  let parser = events.into_iter().zip(&escaped).map(|(event, esc)| match event {
+    Ok(LatexEvent::Content(Content::Text(_))) => Ok(LatexEvent::Content(Content::Text(esc))),
+    Ok(LatexEvent::Content(Content::Number(_))) => Ok(LatexEvent::Content(Content::Number(esc))),
+    Ok(LatexEvent::Content(Content::Function(_))) => {
+      Ok(LatexEvent::Content(Content::Function(esc)))
+    }
+    Ok(other) => Ok(other),
+    Err(_) => Err(EscapedLatexError(esc)),
+  });
   let mut mathml = String::new();
   let config = pulldown_latex::RenderConfig {
     display_mode: if display {
@@ -602,10 +628,26 @@ fn latex_to_mathml_string(latex: &str, display: bool) -> String {
     Ok(()) => mathml,
     Err(e) => {
       tracing::warn!(error = %e, "math: LaTeX render error");
-      format!("<code>{}</code>", latex.replace('<', "&lt;").replace('>', "&gt;"))
+      format!("<code>{}</code>", escape_markup(latex))
     }
   }
 }
+
+fn escape_markup(s: &str) -> String {
+  s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+/// 已转义的解析错误信息；pulldown-latex 用它的 `Display` 写进 `<merror>`。
+#[derive(Debug)]
+struct EscapedLatexError<'a>(&'a str);
+
+impl std::fmt::Display for EscapedLatexError<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(self.0)
+  }
+}
+
+impl std::error::Error for EscapedLatexError<'_> {}
 
 // Phase 2.2 后：`<Yellow .../>` / `<Underline .../>` / `<Strikethrough .../>`
 // 等文字样式组件都走 [`crate::components`] 下的 `MdxComponent` 实现，
@@ -728,5 +770,102 @@ mod tests {
     // 故意用不闭合的 LaTeX，确认走 fallback 不 panic
     let mathml = latex_to_mathml_string("\\frac{", false);
     assert!(mathml.contains("<code>") || mathml.contains("math"));
+  }
+
+  /// Every `<` that a browser would read as a tag opener must open a MathML
+  /// element; anything else in the output is an injected tag.
+  fn assert_only_mathml_tags(out: &str) {
+    const MATHML: &[&str] = &[
+      "math",
+      "semantics",
+      "annotation",
+      "mrow",
+      "mi",
+      "mn",
+      "mo",
+      "mtext",
+      "mspace",
+      "msub",
+      "msup",
+      "msubsup",
+      "munder",
+      "mover",
+      "munderover",
+      "mfrac",
+      "msqrt",
+      "mroot",
+      "mtable",
+      "mtr",
+      "mtd",
+      "mpadded",
+      "mphantom",
+      "menclose",
+      "merror",
+      "mstyle",
+    ];
+    for (i, _) in out.match_indices('<') {
+      let rest = out[i + 1..].trim_start_matches('/');
+      let name: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+      if name.is_empty() {
+        continue; // `<` followed by a non-letter is text to an HTML parser
+      }
+      assert!(MATHML.contains(&name.as_str()), "non-MathML tag <{name}> in {out}");
+    }
+  }
+
+  #[test]
+  fn latex_text_payloads_are_escaped() {
+    // SEC-01：这些都来自用户可写的评论 / 帖子
+    let payloads = [
+      r"\text{<img src=x onerror=alert(1)>}",
+      r"\text{<img src=x/onerror=alert(1)>}",
+      r#"\text{<a href="javascript:alert(1)">x</a>}"#,
+      r"\operatorname{<svg/onload=alert(1)>}",
+      r"\mathrm{\text{</math><img src=x onerror=alert(1)>}}",
+      r"\text{<script>alert(1)</script>}",
+    ];
+    for latex in payloads {
+      for display in [false, true] {
+        let out = latex_to_mathml_string(latex, display);
+        assert_only_mathml_tags(&out);
+        assert!(!out.contains("<img") && !out.contains("<a ") && !out.contains("<svg"), "{out}");
+      }
+    }
+  }
+
+  #[test]
+  fn latex_error_messages_are_escaped() {
+    // 解析错误会把出错的输入片段写进 <merror>
+    for latex in [r"\begin{<img src=x onerror=alert(1)>}", r"\unknown<img src=x onerror=alert(1)>"]
+    {
+      assert_only_mathml_tags(&latex_to_mathml_string(latex, false));
+    }
+  }
+
+  #[test]
+  fn latex_text_keeps_visible_characters() {
+    let out = latex_to_mathml_string(r"\text{a < b & c}", false);
+    assert!(out.contains("a &lt; b &amp; c"), "{out}");
+  }
+
+  #[test]
+  fn latex_common_formulas_render_unchanged() {
+    // 不含特殊字符的公式，输出与 pulldown-latex 直出一致
+    for latex in [
+      r"\frac{a}{b} + x_i^2",
+      r"\begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}",
+      r"\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}",
+      r"a < b \le c",
+      r"\sin x + \operatorname{arccot} y + \text{if } 3.14",
+    ] {
+      let storage = Storage::new();
+      let mut expected = String::new();
+      let config = pulldown_latex::RenderConfig {
+        display_mode: pulldown_latex::config::DisplayMode::Inline,
+        ..Default::default()
+      };
+      push_mathml(&mut expected, LatexParser::new(latex, &storage), config).unwrap();
+      assert_eq!(latex_to_mathml_string(latex, false), expected, "{latex}");
+    }
   }
 }
