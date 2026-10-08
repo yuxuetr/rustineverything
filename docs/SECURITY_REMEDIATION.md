@@ -70,29 +70,20 @@
 | B7 ✅ | SEC-17 | 不可信内容中的 mermaid 作为普通代码块显示 |
 | B8 ✅ | SEC-19、SEC-20 | 应用侧补 HSTS / Permissions-Policy；`ws:` 仅 debug 构建允许；删除 `/api/echo`；`/api/site/config` 无调用方，整个删除 |
 
-### 阶段 C：插件宿主加固
+### P-EVAL 决定（2026-10-08）：插件编译进宿主
+
+采纳方案 A，移除 WASM 运行时。原阶段 C（插件宿主加固）与阶段 D（插件开发者安全指南）中，除 C3 外全部取消：它们加固的是一个本站没有消费者的能力——全部插件都在本仓库构建，认证 / 主题插件的实际逻辑只有几十行，i18n、content-toc、审核插件在生产中未被调用或未启用。认证做成插件无法安全（宿主收回端点后，插件仍决定 `external_id`，可冒充任意用户），所以 SEC-05 只能靠内置解决。
 
 | 任务 | 覆盖 | 做法 |
 | --- | --- | --- |
-| C1 | SEC-05 | OAuth 端点由宿主配置固定（每个 provider 一份 https 白名单），插件只负责 profile 字段映射；`client_secret` 只发往宿主配置的端点 |
-| C2 | SEC-06、SEC-15 | 所有插件加载（含 auth / moderation）统一经带锁的共享管理器；提供锁生成命令；增加严格模式（未登记插件拒绝加载，上线配置默认开启）；上传时执行 `scan_uploaded_plugin`，硬失败即拒绝 |
-| C3 | SEC-12 | 审核插件失败可配置为「送人工复核」，默认 fail closed；失败计数入日志 / 指标 |
-| C4 | SEC-14 | `StoreLimits` 补 `table_elements` / `instances` / `tables` / `memories` 上限，附超限模块的测试 |
-| C5 | SEC-16 | 主题调用失败记日志；对外错误不含路径；翻译结果缓存，`translate_server` 限流 |
-| C6 | SEC-22 | SDK 对空输出不调用 `dealloc`（或 `dealloc` 处理空指针）；宏在输入解码失败时返回明确错误 |
+| R1 | SEC-05 | `Provider` 枚举内置四个 OAuth provider 的固定 https 端点与字段映射；`client_secret` 只发往枚举给出的 token 端点；缺 uid 报错 |
+| R2 | SEC-08、SEC-11 的剩余部分 | 主题 CSS 内置，cookie / 设置只接受内置主题 id（B4 未做的「在主题列表内」由此得到） |
+| R3 | SEC-16 | 删除无调用方的 `/api/i18n/translate` 与未启用的 content-transformer |
+| R4 | — | 审核 stage 内置，经 `crates/llm` 调用 |
+| C3 | SEC-12 | 审核失败可配置为「送人工复核」，默认 fail closed；失败计数入日志 |
+| R5 | SEC-06、SEC-14、SEC-15、SEC-22 | 移除插件运行时、上传 / 重载入口、锁机制与插件文档 |
 
-### 阶段 D：插件开发者安全指南
-
-新增 `docs/PLUGIN_SECURITY.md`，并修正 `docs/PLUGIN_DEV.md`：
-
-- **威胁模型**：沙箱只限制资源与 I/O，不判断输出是否正确；插件在其能力范围内是完全受信的。
-- **按能力的输出契约**：输出去向（页面 `<style>`、OAuth 流程、身份映射、审核结论、Markdown）、宿主校验什么、不校验什么。
-- **认证插件**：端点由宿主固定（C1 之后）；`external_id` 必须是稳定、非空的 provider uid，缺失时报错，不得伪造占位值（宿主自 A4 起拒绝空串与 `"0"`；内置四个认证插件源码仍是 `unwrap_or("0")`，做 D 时连同 wasm 一起改掉，免得被当成示例照抄）；不在输出中回显 token。
-- **主题插件**：只用白名单内的 CSS 构造；不引用外部资源；不做覆盖页面、伪造界面的样式（主题对所有访客全局生效）。
-- **审核插件**：用户内容是不可信输入，会进入提示词——要分隔、防提示词注入；无法判断时不得默认放行。
-- **ABI 注意事项**：输入为 JSON；空输出的处理；panic 即该次调用被跳过；fuel / 内存 / 输出上限及其配置项。
-- **供应链**：在自己的 CI 从源码构建；锁的生成与更新流程；`plugins/` 目录中不留 `.bak`；管理端上传插件等同于在认证流程中执行代码。
-- **修正现有文档中言过其实的说法**：`PLUGIN_DEV.md` §12.1 关于 SHA-256 锁（实际可选、被 auth/moderation 绕过、无工具）、manifest 一致性（加载与上传时都未执行）、CSS 净化（可绕过）的描述；§10 的 Ed25519 签名尚未实现，标注为计划项。文档与实现以 C 阶段完成后的状态为准同步更新。
+重估条件：`assets/plugins/` 中出现无对应源码 crate 的 wasm，或站点要作为产品给他人部署。届时按原 C / D 方案（见 git 历史中本文件的 C1–C6、D1）重建插件宿主，认证仍保持内置。
 
 ### 阶段 E：dioxus-ui（在 dioxus-ui 仓库修复）
 
@@ -110,6 +101,6 @@
 
 - A1–A4 互不依赖，先做；每项一提交。
 - B1 依赖 web-sys（Dioxus web 已间接依赖）；完成后 FB-02 的上游修复才有站点侧的验证环境（严格 CSP 下运行）。
-- C1 与 A4 改同一模块，A4 先做（小改动），C1 在其基础上重构端点来源。
-- D 在 C 完成后定稿（文档描述以实现为准）；草稿可提前写。
+- R1–R4 各自替换一类插件，互不依赖，按风险排序（认证先做）；C3 在 R4 的内置审核 stage 上做。
+- R5 最后做：删除运行时前，R1–R4 必须已去掉全部插件调用方。
 - dioxus-ui 迁移（U3 起）与本计划并行：不依赖 eval、不接收用户 URL 的组件（Button、Input、Textarea、Card、Badge、Table、NativeSelect、Spinner 等）不受影响。

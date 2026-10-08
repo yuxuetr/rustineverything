@@ -420,19 +420,16 @@
 - [x] B7 — SEC-17 不可信内容的 mermaid 按代码显示（cd81f5f：`renders_as_diagram(lang, untrusted)`，用户内容的 mermaid 走 `CodeBlock`（`language-mermaid`，引导脚本只扫 `.mermaid`）；单测先红后绿；浏览器验收：论坛帖显示为代码、无 SVG，welcome 文章两张图照常渲染；用户内容的原始 HTML 本就按文本输出，无法注入 `class="mermaid"`）
 - [x] B8 — SEC-19 / SEC-20 HSTS、Permissions-Policy、`ws:` 仅开发；删 `/api/echo`；裁剪公开配置（ca5307c：应用侧补 HSTS（与 gateway 同值）与 Permissions-Policy（关 camera / microphone / geolocation / payment / usb / browsing-topics，不动 fullscreen）；`connect-src` 仅 debug 构建放行 `ws: wss:`；删 `/api/echo` 与 Echo 组件；`/api/site/config` 无调用方且返回整份 site.json，直接删除而非裁剪 DTO；头部单测先红后绿，curl 验收两端点不再可用、新头已下发）
 
-### 待评估 — 插件改为编译期依赖（2026-10-08 提出，迁移完成后再定）
-- [ ] P-EVAL — 评估把第一方 WASM 插件改为编译进宿主：认证 → `AuthProvider` trait + 4 个实现（按凭据配置启用）；主题 → token 数据文件由宿主按白名单生成 CSS；i18n-fluent / content-toc / 审核 → 普通 crate；cargo features 只用于可选重依赖。若采纳，C1 / C2 / C4 / C6 与 D1 大部分随之取消，B3 并入。重估条件：出现不在本仓库构建的插件，或站点要作为产品给他人部署。**决定前不动 C 阶段**
+### 待评估 — 插件改为编译期依赖（2026-10-08 提出）
+- [x] P-EVAL — 采纳方案 A：第一方插件全部编译进宿主，移除 WASM 运行时（2026-10-08 决定）。依据：10 个插件全部在本仓库构建、同一作者；认证插件只是端点常量 + 十几行字段映射，主题是 CSS 字符串；i18n 插件生产无调用方（`/api/i18n/translate` 无客户端调用）；content-toc 与审核插件均未启用（`content_transformers: []`、site.json 无 moderation 块）；宿主插件设施 + SDK 约 3,400 行。剩余两个「高」（SEC-05 / SEC-06）只因运行时加载插件而存在，且认证做成插件无法安全：端点收回宿主后插件仍决定 `external_id`。C1 / C2 / C4 / C5 / C6、D1 随之取消，C3 保留。重估条件：`assets/plugins/` 中出现无对应源码 crate（`crates/plugins/` 或 `examples/`）的 wasm，或站点要作为产品给他人部署
 
-### 阶段 C — 插件宿主加固
-- [ ] C1 — SEC-05 OAuth 端点由宿主固定，`client_secret` 不交给插件决定去向
-- [ ] C2 — SEC-06 / SEC-15 统一带锁加载、锁生成命令、严格模式、上传时完整校验
-- [ ] C3 — SEC-12 审核插件失败默认 fail closed（送人工复核）
-- [ ] C4 — SEC-14 wasmi `StoreLimits` 补齐 table / 实例上限
-- [ ] C5 — SEC-16 主题失败记日志、错误不暴露路径、翻译缓存与限流
-- [ ] C6 — SEC-22 SDK 空输出 / 解码失败处理
-
-### 阶段 D — 插件开发者安全指南
-- [ ] D1 — 新增 `docs/PLUGIN_SECURITY.md`；修正 `PLUGIN_DEV.md` §10 / §12.1 中与实现不符的描述（以 C 阶段完成后的实现为准）
+### 阶段 R — 插件编译进宿主（P-EVAL 方案 A）
+- [ ] R1 — 认证内置：`Provider` 枚举（github / google / discord / twitter）给出固定 https 端点、展示信息与 `map_profile`（缺 uid 报错，不再 `unwrap_or(0)`）；`AuthService` 改用枚举，按凭据配置启用；删 4 个 auth 插件 crate 与 wasm（SEC-05）
+- [ ] R2 — 主题内置：内置主题表（ocean / sunset / catppuccin），site.json、管理端设置与 `site_theme` cookie 改用主题 id，只接受表内 id；删 3 个主题插件 crate、`examples/plugin-theme-purple` 与 wasm
+- [ ] R3 — 删除未使用的插件能力：i18n 插件与 `/api/i18n/translate`；content-transformer 引擎、`content_transformers` 配置、各模块 `apply_default_pre` 调用与 content-toc 插件
+- [ ] R4 — 审核内置：deepseek 的提示词构造 / 结论解析移入 moderation crate，经 `crates/llm` 调用，替换 `plugin_stage`；删 `examples/plugin-moderation-deepseek`
+- [ ] C3 — SEC-12 审核失败默认 fail closed（送人工复核）（在 R4 的内置 stage 上做）
+- [ ] R5 — 移除插件运行时：`PluginManager` / 插件引擎 / `plugin_security` / wasmi 依赖、SDK 的 ABI 部分与 `sdk-macros`（共享类型留在 `sdk`）、管理端插件上传 / 重载 / 列表、`/plugins` 公开页、`plugins_lock` 与 `lock_plugins`；删 `PLUGIN_DEV.md` / `PLUGIN_ABI.md`，README 与架构文档改写（SEC-06 / 14 / 15 / 16 / 22 的攻击面随之消失）
 
 ### 阶段 E — dioxus-ui（在 dioxus-ui 仓库修复）
 - [x] E-1 — 把 FB-02 ~ FB-12 同步到 dioxus-ui 的待办 / RFC，按其流程修复发版（上游 0.6.1 去除 eval、0.6.2 安全加固；FB-09/12/16 上游 wontfix 并给出理由；本站升级到 0.6.2，各条状态见 DIOXUS_UI_FEEDBACK.md）
