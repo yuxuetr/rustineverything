@@ -173,3 +173,22 @@
 - 影响：低。真正需要注意的日志（无法分类的类名）被淹没。
 - 建议的上游修复：只对「无法分类、不会生效」的类名报告；替换成功的情况默认不打，或加开关。
 - 状态：wontfix（上游说明：只在 debug 构建、`debug` 级别、每条不同信息只打一次）
+
+### FB-17 挂在关闭的 Dialog 里的 `Command`，键盘高亮永远不工作
+
+- 组件 / 版本：0.6.2 — `listbox.rs`（listbox 脚本的 `closed()` 判断）、`command.rs`（`use_listbox(true, …)`）
+- 现象：Dialog 关闭时 `DialogContent` 仍挂载，只带 `hidden`。放在里面的 `Command` 挂载即启动 listbox 脚本，脚本在第一帧看到祖先带 `hidden`，判定已关闭并退出；`use_listbox` 记着 `was_open = true`，Dialog 打开后不再启动脚本。结果：方向键不移动高亮、回车不触发 `on_select`，`aria-activedescendant` 始终为空。本站 U8b 搜索面板（⌘K）验收时发现（2026-10-08）。
+- 复现：`Dialog { open: false, DialogContent { Command { CommandInput {} CommandList { CommandItem { id: "a", "A" } } } } }`，打开 Dialog 后在输入框按 ↓。
+- 影响：中。命令面板最常见的形态就是放在 Dialog 里（shadcn 的 `CommandDialog`），按文档组合会得到一个看起来正常、键盘却失效的面板。
+- 站点临时处理：`if open() { Command { … } }`，只在打开时挂载（`search.rs`）。
+- 建议的上游修复：Command 在祖先 `hidden` 解除时重新启动脚本（例如脚本不因 `hidden` 退出、改为等待可见），或提供 `CommandDialog` 并在文档里写明挂载方式；浏览器测试加一组「Dialog 内的 Command」。
+- 状态：open
+
+### FB-18 `Command` 的结果异步到达时不会自动高亮第一项
+
+- 组件 / 版本：0.6.2 — `listbox.rs`（`onInput` 与 MutationObserver 的 `resetPending`）
+- 现象：输入事件把 `resetPending` 置真，紧接着的 DOM 变化（输入框自身的重渲染）就把它消耗掉；结果在防抖和服务端请求之后才渲染出来，此时 `highlighted` 为空，观察器不再补高亮。用户必须先按 ↓ 才能回车选中第一条。本站 U8b 验收时发现（2026-10-08）。
+- 影响：低。键盘仍可用，只是多一次按键；同步过滤（`command_matches`）的用法不受影响。
+- 站点临时处理：无。
+- 建议的上游修复：观察器在 `highlighted` 为空且出现可用选项时高亮 `initial()`（Command 模式下）。
+- 状态：open
