@@ -358,7 +358,9 @@
   - 验证：3 主题 × 亮/暗，`--primary`、`--background`、别名 `--color-bg`、body 底色均取插件值（**需绕过 CSP 验证**，见下）；app-core plugin/theme 66 测通过；clippy 同 U1
   - ⚠️ 发现：CSP 下 App 根组件的 `document::eval` 在页面加载时即 panic，wasm 运行时失效，主题 CSS 根本不注入、ThemePicker 不显示——**自 S1 起站点一直没有应用任何主题插件**（`bypassCSP` 对照实验确认；站点尚未上线）。见 E1
 - [x] E1 — 站点自身的 `document::eval` 改为 web-sys 直接调用，CSP 保持不含 `'unsafe-eval'`（2026-10-08 决定）。归入下方安全整改阶段 B1
-- [ ] U3 — admin（`admin.rs` + `admin_entitlements.rs`）：Button / Input / Textarea / NativeSelect / Tabs / Table / Spinner / Badge
+- [x] U3 — admin（`admin.rs` + `admin_entitlements.rs`）：Button / Input / Textarea / NativeSelect / Tabs / Table / Spinner / Badge
+  - 落点：admin 内容区包 `DensityProvider(Compact)`（否则 `Sm` 按钮被 `min-h-10` 撑高）；页签只用 `tabs_list_class` / `tabs_trigger_class`（Tabs 组件挂载即 eval，FB-14）；复选框保留原生（Checkbox 走 eval，FB-02）；状态标签改 Badge 语义色；表格行显式 `border-border`（FB-15）
+  - 验证：8 个 admin 页面在严格 CSP 下无 pageerror（仅既有 SEC-23 字体报错）；审核页签切换、全选启用批量按钮、单条「通过」、角色修改并刷新后保持、阈值输入均可用；亮 / 暗截图检查。测试数据（2 条审核记录、临时 admin 角色）已清理
 - [ ] U4 — course + 支付（`course.rs` + `pay_ui.rs`）：Card / Button / Badge / Table / Dialog
 - [ ] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert
 - [ ] U6 — cases / docs / podcast / search 列表部分
