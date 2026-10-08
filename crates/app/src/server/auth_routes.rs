@@ -5,12 +5,12 @@
 //!    `oauth_pkce` cookie 下发，302 到 OAuth 授权 URL。
 //! 2. `/api/auth/callback/{provider}`：读 `oauth_pkce` cookie → 校验 →
 //!    签发 JWT session cookie + 清 PKCE cookie + 跳转首页。
-//! 3. `/api/auth/logout`：清 session cookie。
+//! 3. `POST /api/auth/logout`：清 session cookie。
 
 use axum::extract::{Path, Query};
-use axum::http::{header::SET_COOKIE, HeaderMap};
+use axum::http::{header::SET_COOKIE, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 
 /// 挂载 OAuth 路由。`cookie_is_secure` 由 BASE_URL 是否 https 决定。
@@ -101,18 +101,74 @@ pub fn mount(router: Router, cookie_is_secure: bool) -> Router {
         },
       ),
     )
-    // 3. 登出：清除 Cookie
+    // 3. 登出：清除 Cookie。只收 POST（SEC-09）：GET 能被用户内容里的
+    //    `<img src>` / 链接预取触发；跨站表单提交按 Sec-Fetch-Site 拒绝
+    //    （不带该头的旧浏览器放行，登出 CSRF 危害有限）。
     .route(
       "/api/auth/logout",
-      get(move || async move {
+      post(move |headers: HeaderMap| async move {
+        if headers.get("sec-fetch-site").is_some_and(|v| v == "cross-site") {
+          return StatusCode::FORBIDDEN.into_response();
+        }
         let secure_flag = if cookie_is_secure { "; Secure" } else { "" };
         let cookie_str =
           format!("session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax{}", secure_flag);
-        let mut response = Redirect::temporary("/").into_response();
+        let mut response = Redirect::to("/").into_response();
         if let Ok(cookie_val) = cookie_str.parse() {
           response.headers_mut().insert(axum::http::header::SET_COOKIE, cookie_val);
         }
         response
       }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+  use axum::body::Body;
+  use axum::http::{header, Method, Request, StatusCode};
+  use tower::ServiceExt;
+
+  async fn logout(method: Method, fetch_site: Option<&str>) -> axum::response::Response {
+    let mut req = Request::builder().method(method).uri("/api/auth/logout");
+    if let Some(site) = fetch_site {
+      req = req.header("sec-fetch-site", site);
+    }
+    super::mount(axum::Router::new(), false)
+      .oneshot(req.body(Body::empty()).unwrap())
+      .await
+      .unwrap()
+  }
+
+  fn clears_session(res: &axum::response::Response) -> bool {
+    res
+      .headers()
+      .get_all(header::SET_COOKIE)
+      .iter()
+      .any(|v| v.to_str().is_ok_and(|v| v.starts_with("session=;") && v.contains("Max-Age=0")))
+  }
+
+  /// SEC-09：GET 登出可被 `<img src=/api/auth/logout>` 触发。
+  #[tokio::test]
+  async fn logout_rejects_get() {
+    let res = logout(Method::GET, None).await;
+    assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert!(!clears_session(&res));
+  }
+
+  #[tokio::test]
+  async fn logout_post_clears_session_and_redirects_home() {
+    for site in [None, Some("same-origin")] {
+      let res = logout(Method::POST, site).await;
+      assert_eq!(res.status(), StatusCode::SEE_OTHER);
+      assert_eq!(res.headers().get(header::LOCATION).and_then(|v| v.to_str().ok()), Some("/"));
+      assert!(clears_session(&res));
+    }
+  }
+
+  #[tokio::test]
+  async fn logout_rejects_cross_site_post() {
+    let res = logout(Method::POST, Some("cross-site")).await;
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    assert!(!clears_session(&res));
+  }
 }

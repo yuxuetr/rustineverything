@@ -61,8 +61,8 @@ pub fn UserMenu(user: SessionUser, compact: bool, show_my_topics: bool) -> Eleme
                   }
               }
               DropdownSeparator {}
-              // 退出走服务端路由清 cookie，需要整页跳转。
-              DropdownItem { onclick: move |_| widgets::browser::navigate("/api/auth/logout"), "{t(lang(), \"auth.logout\")}" }
+              // 退出走服务端路由清 cookie，需要整页跳转；该路由只收 POST（SEC-09）。
+              DropdownItem { onclick: move |_| widgets::browser::post_navigate("/api/auth/logout"), "{t(lang(), \"auth.logout\")}" }
           }
       }
   }

@@ -37,6 +37,24 @@ pub fn navigate(url: &str) {
   let _ = url;
 }
 
+/// 以 POST 整页提交到 `url`（无表单字段），用于登出这类有副作用、不能用 GET 的跳转。
+pub fn post_navigate(url: &str) {
+  #[cfg(target_arch = "wasm32")]
+  {
+    let submit = || -> Option<()> {
+      let doc = document()?;
+      let form = doc.create_element("form").ok()?.dyn_into::<web_sys::HtmlFormElement>().ok()?;
+      form.set_method("post");
+      form.set_action(url);
+      doc.body()?.append_child(&form).ok()?;
+      form.submit().ok()
+    };
+    let _ = submit();
+  }
+  #[cfg(not(target_arch = "wasm32"))]
+  let _ = url;
+}
+
 /// 重新加载当前页。
 pub fn reload() {
   #[cfg(target_arch = "wasm32")]
