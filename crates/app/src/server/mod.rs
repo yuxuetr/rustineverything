@@ -14,6 +14,7 @@ pub mod seo;
 pub mod static_assets;
 
 use app_core::session::SessionUser;
+#[cfg(feature = "server")]
 use app_core::settings::SiteConfig;
 #[cfg(feature = "server")]
 use app_core::utils::get_asset_root;
@@ -59,24 +60,6 @@ fn read_request_cookie(name: &str) -> Option<String> {
 /// Cookie 名（Phase 3.1）：存储用户选择的主题插件文件名。
 #[cfg(feature = "server")]
 pub const THEME_COOKIE_NAME: &str = "site_theme";
-
-// ========== 站点配置 ==========
-
-#[post("/api/site/config")]
-pub async fn get_site_config() -> Result<SiteConfig, ServerFnError> {
-  #[cfg(feature = "server")]
-  {
-    let config_path = get_asset_root().join("site.json");
-    // S10：mtime 缓存读取；返回需要 owned，clone 一次（配置体积小）。
-    SiteConfig::load_cached(config_path.to_str().unwrap_or_default())
-      .map(|cfg| (*cfg).clone())
-      .map_err(|e| ServerFnError::new(format!("配置文件加载失败: {}", e)))
-  }
-  #[cfg(not(feature = "server"))]
-  {
-    Ok(SiteConfig::default())
-  }
-}
 
 // ========== 插件浏览（Phase 5.5 公开页） ==========
 
@@ -552,11 +535,4 @@ pub async fn get_active_layout() -> Result<String, ServerFnError> {
   {
     Ok("classic".to_string())
   }
-}
-
-// ========== Echo ==========
-
-#[post("/api/echo")]
-pub async fn echo_server(input: String) -> Result<String, ServerFnError> {
-  Ok(input)
 }
