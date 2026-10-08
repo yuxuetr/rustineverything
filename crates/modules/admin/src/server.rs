@@ -632,44 +632,20 @@ pub async fn admin_list_plugins() -> Result<Vec<AdminPluginRow>, ServerFnError> 
   #[cfg(feature = "server")]
   {
     use app_core::session::require_admin;
-    use app_core::settings::SiteConfig;
 
     let _ = require_admin().await?;
 
-    let asset_root = get_asset_root();
-    let plugin_dir = asset_root.join("plugins");
-    let site =
-      SiteConfig::from_file(asset_root.join("site.json").to_str().unwrap_or("assets/site.json"))
-        .unwrap_or_default();
-
+    let plugin_dir = get_asset_root().join("plugins");
     let mut rows: Vec<AdminPluginRow> = Vec::new();
 
-    // 1. active_theme
-    if !site.active_theme.is_empty() {
-      let path = plugin_dir.join(&site.active_theme);
-      let (present, size, modified) = stat_plugin(&path);
-      rows.push(AdminPluginRow {
-        kind: "theme".to_string(),
-        id: "active_theme".to_string(),
-        filename: site.active_theme.clone(),
-        configured: true,
-        credentials_ready: true,
-        present,
-        size_bytes: size,
-        modified,
-      });
-    }
-
-    // 2. 文件系统中其他未在 site.json 列举的 wasm 插件 → 标记 configured=false
-    let known: std::collections::HashSet<String> =
-      rows.iter().map(|r| r.filename.clone()).collect();
+    // 认证与主题已内置（R1 / R2），这里只剩目录中的 wasm 插件。
     if let Ok(entries) = std::fs::read_dir(&plugin_dir) {
       for entry in entries.flatten() {
         let name = match entry.file_name().to_str() {
           Some(n) => n.to_string(),
           None => continue,
         };
-        if !name.ends_with(".wasm") || known.contains(&name) {
+        if !name.ends_with(".wasm") {
           continue;
         }
         let path = entry.path();

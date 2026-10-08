@@ -107,7 +107,7 @@ RUN cp -r assets/* crates/app/assets/ 2>/dev/null || true
 # 1. 编译 Tailwind CSS（产物落到 crates/app/assets/tailwind.css）
 RUN cd crates/app && npm run build
 
-# 2. 构建全部主题 WASM 插件，输出到 assets/plugins/
+# 2. 构建 WASM 插件（content-transformer 示例），输出到 assets/plugins/
 RUN bash scripts/build_themes.sh
 
 # 3. dx bundle：web 全栈 + release 优化，

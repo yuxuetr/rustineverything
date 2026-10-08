@@ -326,24 +326,4 @@ mod tests {
       Err(err) => panic!("strict_call 在已迁移插件上不应该失败: {}", err),
     }
   }
-
-  #[tokio::test]
-  async fn integration_filter_by_capability_finds_theme() {
-    let e = make_engine();
-    let theme = PathBuf::from("../../assets/plugins/theme_ocean_plugin.wasm");
-    let i18n = PathBuf::from("../../assets/plugins/i18n_fluent_plugin.wasm");
-    if !theme.exists() || !i18n.exists() {
-      return;
-    }
-    if e.try_get_manifest(&theme).await.is_none() {
-      return;
-    }
-    let refs: Vec<&Path> = vec![theme.as_path(), i18n.as_path()];
-    let themes = e.filter_by_capability(refs.clone(), capabilities::THEME).await;
-    let i18ns = e.filter_by_capability(refs, capabilities::I18N).await;
-    assert_eq!(themes.len(), 1);
-    assert!(themes[0].ends_with("theme_ocean_plugin.wasm"));
-    assert_eq!(i18ns.len(), 1);
-    assert!(i18ns[0].ends_with("i18n_fluent_plugin.wasm"));
-  }
 }

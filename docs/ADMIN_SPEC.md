@@ -69,7 +69,7 @@ DATABASE_URL=postgres://postgres:password@localhost/rustineverything \
 脚本将 `users.role` 改为 `admin`,然后重新登录一次,新签发的 JWT 即带 admin 角色。
 
 ## 7. 插件视图（含 Phase 5.1 hot reload）
-- 数据来源:`assets/site.json`(auth providers + active_theme) + `assets/plugins/*.wasm` 实际文件。
+- 数据来源:`assets/plugins/*.wasm` 实际文件（认证与主题已内置，不再列出，R1 / R2）。
 - 字段:`kind / id / filename / configured / credentials_ready / present / size_bytes / modified`。
 - **"重新载入"按钮**(`admin_reload_plugins`):清空共享 `PluginManager` 的 Module 缓存
   (i18n/主题/auth 下次调用按 mtime 重新加载) + 重建审核流水线(`reload_pipeline()`)。

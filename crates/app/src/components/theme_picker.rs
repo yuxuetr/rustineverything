@@ -1,6 +1,6 @@
 //! Phase 3.1：ThemePicker — Navbar 中的主题切换下拉。
 //!
-//! 通过 `list_available_themes` server fn 拉取插件目录下的可用主题，
+//! 通过 `list_available_themes` server fn 拉取内置主题，
 //! 点击后调用 `set_user_theme` 写入 cookie 并 bump `ThemeVersion` Signal，
 //! 触发上层 `theme_css` `use_resource` 重新请求合并 CSS。
 
@@ -15,12 +15,6 @@ use crate::server::{list_available_themes, set_user_theme, ThemeInfo};
 
 /// 主题 cookie 名（与后端 `THEME_COOKIE_NAME` 保持一致）。
 const THEME_COOKIE_NAME: &str = "site_theme";
-
-/// 去掉主题名的 `Theme ` 前缀，只留简短名（如 `Theme Catppuccin` → `Catppuccin`），
-/// 避免按钮 / 下拉项过长换行。
-fn short_theme_label(label: &str) -> String {
-  label.strip_prefix("Theme ").unwrap_or(label).trim().to_string()
-}
 
 /// 全局主题版本号：每次切换主题 +1，App 组件中的 `use_resource` 依赖该值，
 /// 使聚合 CSS 在用户切换主题后立即重取。
@@ -52,14 +46,9 @@ pub fn ThemePicker() -> Element {
   });
   let themes: Vec<ThemeInfo> = themes_res.read().as_ref().cloned().unwrap_or_default();
 
-  // 找到当前激活主题用于按钮 label（只取去前缀后的短名）
-  let active_file =
-    themes.iter().find(|t| t.is_active).map(|t| t.filename.clone()).unwrap_or_default();
-  let active_label = themes
-    .iter()
-    .find(|t| t.is_active)
-    .map(|t| short_theme_label(&t.label))
-    .unwrap_or_else(|| t(lang(), "theme.heading"));
+  let active = themes.iter().find(|t| t.is_active);
+  let active_id = active.map(|t| t.id.clone()).unwrap_or_default();
+  let active_label = active.map(|t| t.label.clone()).unwrap_or_else(|| t(lang(), "theme.heading"));
 
   // 不显示 picker 当只有 ≤ 1 个主题（无切换意义）
   if themes.len() <= 1 {
@@ -70,20 +59,20 @@ pub fn ThemePicker() -> Element {
   // 该闭包被后续多个 button.onclick 共享使用，所以需要 Copy + impl Fn。
   //
   // 持久化采用「双写」策略，修复「切不动 + 刷新回退」：
-  // 1. `set_user_theme`：服务端校验文件名并下发 Set-Cookie（桌面端走 reqwest
+  // 1. `set_user_theme`：服务端校验主题 id 并下发 Set-Cookie（桌面端走 reqwest
   //    cookie jar，跨平台兜底）。
   // 2. `document.cookie`：Web 端直接写入非 HttpOnly cookie，写入后再
   //    bump version，确保紧接着的聚合 CSS 重新请求一定携带新 cookie；刷新后 SSR
   //    也能读到，主题保持不变。
-  let switch = use_callback(move |filename: String| {
+  let switch = use_callback(move |id: String| {
     spawn(async move {
       // 1) 服务端校验 + Set-Cookie（best-effort，失败仅记日志，不阻断切换）。
-      if let Err(e) = set_user_theme(filename.clone()).await {
+      if let Err(e) = set_user_theme(id.clone()).await {
         tracing::error!(error = %e, "theme picker: set_user_theme failed");
       }
 
-      // 2) 客户端兜底写 cookie（同步完成）；空文件名即清除。
-      let trimmed = filename.trim();
+      // 2) 客户端兜底写 cookie（同步完成）；空 id 即清除。
+      let trimmed = id.trim();
       let max_age = if trimmed.is_empty() { 0 } else { 31_536_000 };
       widgets::browser::set_cookie(THEME_COOKIE_NAME, trimmed, max_age);
 
@@ -115,9 +104,9 @@ pub fn ThemePicker() -> Element {
           // `fixed`：菜单显示的第一帧不进文档流，否则会把同一行的触发按钮挤开、定位偏移（FB-19）。
           DropdownContent { class: "fixed w-48",
               DropdownLabel { class: "text-[10px] uppercase tracking-wider", "{t(lang(), \"theme.heading\")}" }
-              DropdownRadioGroup { value: active_file, on_value_change: move |f: String| switch.call(f),
+              DropdownRadioGroup { value: active_id, on_value_change: move |id: String| switch.call(id),
                   for t in themes.iter() {
-                      DropdownRadioItem { key: "{t.filename}", value: t.filename.clone(), "{short_theme_label(&t.label)}" }
+                      DropdownRadioItem { key: "{t.id}", value: t.id.clone(), "{t.label}" }
                   }
               }
               DropdownSeparator {}

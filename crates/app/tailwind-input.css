@@ -43,7 +43,7 @@
 /* === dioxus-shadcn 语义 token（docs/DIOXUS_UI_MIGRATION.md D2）===
    布局沿用 shadcn/ui v4：:root / .dark 存值，@theme inline 映射成 Tailwind 颜色。
    默认值取站点现有配色：中性色 stone，主色 orange（即上面 slate/blue 色阶映射
-   之后的实际颜色），保证组件替换后外观不变。主题插件在 U2 改写这些 token。 */
+   之后的实际颜色），保证组件替换后外观不变。内置主题（crates/core/src/engines/themes/）覆盖这些 token。 */
 :root {
     --radius: 0.5rem;
     --background: var(--color-stone-50);

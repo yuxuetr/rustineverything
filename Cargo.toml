@@ -25,11 +25,7 @@ members = [
     "crates/migration",
     "crates/app",
     "crates/plugins/i18n-fluent",
-    "crates/plugins/theme-ocean",
-    "crates/plugins/theme-sunset",
-    "crates/plugins/theme-catppuccin",
     "crates/plugins/content-toc",
-    "examples/plugin-theme-purple",
     "examples/plugin-moderation-deepseek",
 ]
 # Pingora gateway 是独立部署组件（自带 [workspace]），避免 openssl / native

@@ -111,6 +111,3 @@ jobs:
       # 后，wasm 落到 target/wasm32-unknown-unknown/release/ 中。
       - name: build-themes script
         run: bash scripts/build_themes.sh
-      # 同时把示例插件 (Phase 5.2.1) 编译到 wasm 验证 SDK 接口仍然兼容。
-      - name: cargo build --release plugin-theme-purple
-        run: cargo build -p plugin-theme-purple --target wasm32-unknown-unknown --release

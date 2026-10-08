@@ -138,13 +138,9 @@ target-dir = "/Users/<your-username>/.target"   # 或 /home/<user>/.target
 
 根据插件用途的不同，需要实现特定的导出函数名和输入输出逻辑。
 
-#### A. 主题插件 (Theme Plugin)
-*   **导出函数**：`get_theme_css`
-*   **输入**：目前为空（未来可扩展为传入当前配置 JSON）。
-*   **输出**：返回合法的 CSS 字符串，通常包含 `:root` 变量定义。
-*   **实现要点**：确保包含 `.dark` 选择器的适配。
+主题已内置进宿主（见 `docs/THEME_SPEC.md`），不再有主题插件。
 
-#### B. 多语言插件 (i18n Plugin)
+#### A. 多语言插件 (i18n Plugin)
 *   **导出函数**：`translate`
 *   **输入**：JSON 字符串，格式为 `{"key": "翻译键", "lang": "语言代码"}`。
 *   **输出**：翻译后的纯文本。
@@ -268,7 +264,6 @@ RUST_LOG="info,server::search_query=debug" dx serve
 - [ ] **编译目标**：是否使用了 `--target wasm32-unknown-unknown`？
 - [ ] **内存安全**：是否所有通过 `alloc` 分配的结果内存最终都能通过宿主的 `dealloc` 调用被释放？
 - [ ] **无 IO 限制**：插件是否避免了直接的文件系统读写或网络请求（这些应由宿主完成并通过参数传入）？
-- [ ] **性能优化**：对于主题插件，CSS 是否进行了压缩？
 
 ---
 

@@ -156,16 +156,13 @@ pub async fn translate_server(key: String, lang: String) -> Result<String, Serve
 
 // ========== 主题 ==========
 
-/// 可选主题的展示信息（Phase 3.1）。前端 ThemePicker 用。
+/// 主题切换菜单的一项。前端 ThemePicker 用。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ThemeInfo {
-  /// 插件文件名（如 `theme_ocean_plugin.wasm`），概括 cookie 存储的值。
-  pub filename: String,
-  /// 从插件 manifest 读到的 id（如 `theme-ocean`），不可用时以文件名去后缀代替。
+  /// 内置主题 id，也是 cookie 存储的值。
   pub id: String,
-  /// 展示名（如 `Theme Ocean`）；没读到 manifest 时同 id。
   pub label: String,
-  /// 在当前 site.json::themes 栈中是否默认激活的最顶层主题。
+  /// 是否是本次请求生效的主题。
   pub is_active: bool,
 }
 
@@ -173,29 +170,14 @@ pub struct ThemeInfo {
 pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use app_core::engines::theme::theme_with_override;
+    use app_core::engines::theme::resolve_theme;
 
-    let asset_root = get_asset_root();
     // S10：热路径（每次页面渲染拉主题 CSS）——mtime 缓存读取。
-    let config = SiteConfig::load_cached(asset_root.join("site.json").to_str().unwrap_or_default())
-      .unwrap_or_default();
-    let plugin_dir = asset_root.join("plugins");
-
-    // Phase 3.1：主题栈 + 可选 cookie 覆盖。
-    let stack: Vec<std::path::PathBuf> = config
-      .theme_stack()
-      .into_iter()
-      .filter(|name| !name.is_empty())
-      .map(|name| plugin_dir.join(name))
-      .collect();
+    let config =
+      SiteConfig::load_cached(get_asset_root().join("site.json").to_str().unwrap_or_default())
+        .unwrap_or_default();
     let cookie = read_request_cookie(THEME_COOKIE_NAME);
-    let resolved = theme_with_override(&stack, &plugin_dir, cookie.as_deref());
-
-    if resolved.is_empty() {
-      return Ok(String::new());
-    }
-    let manager = app_core::shared_plugin_manager();
-    Ok(manager.aggregate_theme_css_paths(&resolved).await)
+    Ok(resolve_theme(&config.theme, cookie.as_deref()).css.to_string())
   }
   #[cfg(not(feature = "server"))]
   {
@@ -203,70 +185,28 @@ pub async fn get_aggregated_theme_css() -> Result<String, ServerFnError> {
   }
 }
 
-/// Phase 3.1：枚举 `assets/plugins/` 下声明为 `theme` 的插件。
-///
-/// 实现策略：递归扫描 wasm 文件，试读 manifest，过滤 capability 含 `theme` 的。
-/// 失败不 manifest 的插件以“文件名含 `theme`”启发式判定为主题，以保证老插件可见。
+/// 主题切换菜单的选项：全部内置主题，标出当前生效的那个（cookie 覆盖优先）。
 #[post("/api/theme/list")]
 pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use app_core::{capabilities, PluginManifest};
+    use app_core::engines::theme::{resolve_theme, THEMES};
 
-    let asset_root = get_asset_root();
-    let plugin_dir = asset_root.join("plugins");
-    // S10：mtime 缓存读取。
-    let config = SiteConfig::load_cached(asset_root.join("site.json").to_str().unwrap_or_default())
-      .unwrap_or_default();
-    let stack = config.theme_stack();
-    // 激活态优先看用户 cookie（与 `get_aggregated_theme_css` 的覆盖语义一致），
-    // 没有 cookie 时回退到 site.json 主题栈顶。
-    let active_top = read_request_cookie(THEME_COOKIE_NAME)
-      .map(|c| c.trim().to_string())
-      .filter(|c| !c.is_empty())
-      .unwrap_or_else(|| stack.last().cloned().unwrap_or_default());
-
-    let manager = app_core::shared_plugin_manager();
-
-    let entries = match std::fs::read_dir(&plugin_dir) {
-      Ok(e) => e,
-      Err(_) => return Ok(vec![]),
-    };
-
-    let mut out: Vec<ThemeInfo> = Vec::new();
-    for entry in entries.flatten() {
-      let name = match entry.file_name().to_str() {
-        Some(s) => s.to_string(),
-        None => continue,
-      };
-      if !name.ends_with(".wasm") {
-        continue;
-      }
-      let path = entry.path();
-
-      // 读 manifest。读不到时以启发式判定。
-      let manifest_json = manager.call_path_with_string(&path, "get_manifest", "").await.ok();
-      let (id, label, is_theme) =
-        match manifest_json.as_deref().and_then(|s| serde_json::from_str::<PluginManifest>(s).ok())
-        {
-          Some(m) => {
-            let is_theme = m.has_capability(capabilities::THEME);
-            (m.id.clone(), m.name.clone(), is_theme)
-          }
-          None => {
-            let lower = name.to_lowercase();
-            let is_theme = lower.contains("theme");
-            let stem = name.trim_end_matches(".wasm").to_string();
-            (stem.clone(), stem, is_theme)
-          }
-        };
-      if !is_theme {
-        continue;
-      }
-      out.push(ThemeInfo { filename: name.clone(), id, label, is_active: name == active_top });
-    }
-    out.sort_by_key(|a| a.label.to_lowercase());
-    Ok(out)
+    let config =
+      SiteConfig::load_cached(get_asset_root().join("site.json").to_str().unwrap_or_default())
+        .unwrap_or_default();
+    let cookie = read_request_cookie(THEME_COOKIE_NAME);
+    let active = resolve_theme(&config.theme, cookie.as_deref()).id;
+    Ok(
+      THEMES
+        .iter()
+        .map(|t| ThemeInfo {
+          id: t.id.to_string(),
+          label: t.label.to_string(),
+          is_active: t.id == active,
+        })
+        .collect(),
+    )
   }
   #[cfg(not(feature = "server"))]
   {
@@ -274,33 +214,24 @@ pub async fn list_available_themes() -> Result<Vec<ThemeInfo>, ServerFnError> {
   }
 }
 
-/// Phase 3.1：设置用户主题 cookie（覆盖主题栈最后一项）。
+/// 设置访客主题 cookie（覆盖 site.json 的默认主题）。
 ///
-/// 传入空字符串表示“重置”（删除 cookie）。其他值会被严格校验：
-/// 1. 符合 [`app_core::engines::theme::is_theme_filename`]（`[A-Za-z0-9_-]+\.wasm`）
-/// 2. 必须在 `assets/plugins/` 中实际存在
+/// 传入空字符串表示“重置”（删除 cookie）；其他值必须是内置主题 id（SEC-11，读取侧
+/// [`app_core::engines::theme::resolve_theme`] 同样只认表内 id）。
 /// 写 `Set-Cookie: site_theme=...; Path=/; Max-Age=31536000; SameSite=Lax`。
 /// 生产环境（`BASE_URL` 以 https 开头）额外附加 `Secure`。
 #[post("/api/theme/set")]
-pub async fn set_user_theme(filename: String) -> Result<(), ServerFnError> {
+pub async fn set_user_theme(id: String) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
     use dioxus::fullstack::FullstackContext;
 
-    let trimmed = filename.trim();
-    let cookie_value = if trimmed.is_empty() {
-      // 清除 cookie
-      String::new()
-    } else {
-      // 与读取侧（theme_with_override）同一条规则（SEC-11）。
-      if !app_core::engines::theme::is_theme_filename(trimmed) {
-        return Err(ServerFnError::new("主题名必须形如 name.wasm（字母、数字、_、-）".to_string()));
-      }
-      let path = get_asset_root().join("plugins").join(trimmed);
-      if !path.exists() {
-        return Err(ServerFnError::new(format!("主题插件不存在: {}", trimmed)));
-      }
-      trimmed.to_string()
+    let trimmed = id.trim();
+    let cookie_value = match trimmed {
+      "" => "",
+      _ => app_core::engines::theme::find_theme(trimmed)
+        .map(|t| t.id)
+        .ok_or_else(|| ServerFnError::new(format!("没有这个主题: {}", trimmed.escape_debug())))?,
     };
 
     let secure_flag = std::env::var("BASE_URL")
@@ -329,7 +260,7 @@ pub async fn set_user_theme(filename: String) -> Result<(), ServerFnError> {
   }
   #[cfg(not(feature = "server"))]
   {
-    let _ = filename;
+    let _ = id;
     Ok(())
   }
 }

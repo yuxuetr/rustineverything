@@ -1,4 +1,8 @@
 # Engine Layer Spec
+
+> **现状说明（2026-10-08）**：本文是 Phase 1C 的设计记录，部分内容已过时——`Engine` trait /
+> `EngineRegistry` / `ContentEngine` 在 Phase 8.7 删除；`AuthEngine` 与 `ThemeEngine` 随认证、主题
+> 内置进宿主（R1 / R2）删除，现状分别见 [`AUTH_GUIDE.md`](AUTH_GUIDE.md) 与 [`THEME_SPEC.md`](THEME_SPEC.md)。
 > 适用阶段：Phase 1C 完成（v2.1 Todos.md）。
 > 8 大核心引擎在 `crates/core/src/engines/` 中实现，向上为 server fn / 业务模块提供统一接入点。
 ## 1. 总体架构
@@ -68,8 +72,8 @@ pub struct EngineContext {
 |---|---|---|---|
 | PluginEngine | `plugin` | `engines/plugin.rs` | wasmi Module 缓存 + ABI 校验 + 输出大小限制 + 能力分发 |
 | ModuleEngine | `module` | `engines/module.rs` | 业务模块注册中心 + site.json 开关 + 导航/搜索源过滤 |
-| AuthEngine | `auth` | `engines/auth.rs` | 包装 AuthService（OAuth/PKCE/state） |
-| ThemeEngine | `theme` | `engines/theme.rs` | 主题插件注册 + CSS 聚合 |
+| ~~AuthEngine~~ | — | 已删除（R1） | 认证见 `crates/core/src/auth/`（内置 provider） |
+| ~~ThemeEngine~~ | — | 已删除（R2） | `engines/theme.rs` 现为内置主题表 + `resolve_theme` |
 | LayoutEngine | `layout` | `engines/layout.rs` | LayoutPack 注册（Phase 3.3 完整实现） |
 | ContentEngine | `content` | `engines/content.rs` | MDX ComponentRegistry（Phase 2 完整实现） |
 | ModerationEngine | `moderation` | `engines/moderation.rs` | 串行审核流水线 + Verdict（Phase 4 完整实现） |
@@ -111,19 +115,10 @@ pub struct ModuleSpec {
   }
 }
 ```
-### 3.3 AuthEngine
-**完整状态**（Phase 1C.4 ✅，server-only）。包装现有 `crate::auth::AuthService`：
-- `service()` — 暴露 `&AuthService`，server fn 直接调用现有方法（list_available_providers / get_auth_url / handle_callback）
-- `replace_service(service)` — Hot reload 时替换内部 service
-- `init` 检查 `site_config.auth.enabled`，关闭则只发日志（AuthService 内部自然返回空 provider 列表）
-### 3.4 ThemeEngine
-**骨架状态**（Phase 1C.4 ✅，Phase 3.1 完整实现）。
-- 通过 `Arc<PluginEngine>` 调用每个主题插件的 `get_theme_css` 函数
-- `register_theme(path)` / `set_themes(paths)` — 主题栈
-- `aggregate_css()` — 按声明顺序拼接（后者覆盖前者）。失败的插件被跳过，不阻断
-- `init` 阶段从 `SiteConfig.active_theme`（已有字段）读出默认主题路径
-- 失败的插件被跳过，发 `eprintln` 日志
-**Phase 3.1 计划补充**：主题栈 `themes: ["base", "ocean"]` 多层覆盖 + 用户 navbar 切换 + cookie 持久。
+### 3.3 AuthEngine（已删除，R1）
+认证不再经由插件：`crates/core/src/auth/provider.rs` 内置 provider，见 [`AUTH_GUIDE.md`](AUTH_GUIDE.md)。
+### 3.4 ThemeEngine（已删除，R2）
+主题不再经由插件：`crates/core/src/engines/theme.rs` 的 `THEMES` 表与 `resolve_theme`，见 [`THEME_SPEC.md`](THEME_SPEC.md)。
 ### 3.5 LayoutEngine
 **骨架状态**（Phase 1C.4 ✅，Phase 3.3 完整实现）。
 ```rust
@@ -225,9 +220,7 @@ pub trait SearchSource: Send + Sync {
 ```
 ## 5. 依赖关系
 ```text
-PluginEngine ──┐
-               ├─► ThemeEngine（调 wasm 拿 CSS）
-               └─► AuthEngine（调 auth 插件）
+PluginEngine ──► （i18n / 审核 / content-transformer 插件，R3–R5 内置后移除）
 ModuleEngine ──┐
                ├─► SearchEngine（按 enabled_ids 过滤源）
                └─► （未来）LayoutEngine 决定哪些 nav 项显示
@@ -260,8 +253,7 @@ Phase 1C 完成时：
 - `crates/core/src/engines/mod.rs:100` — `EngineRegistry`
 - `crates/core/src/engines/plugin.rs:38` — `PluginEngine`
 - `crates/core/src/engines/module.rs:87` — `ModuleEngine`
-- `crates/core/src/engines/auth.rs:24` — `AuthEngine`（仅 server）
-- `crates/core/src/engines/theme.rs:18` — `ThemeEngine`
+- `crates/core/src/engines/theme.rs` — `THEMES` / `resolve_theme`
 - `crates/core/src/engines/layout.rs:25` — `LayoutEngine`
 - `crates/core/src/engines/content.rs:80` — `ContentEngine`
 - `crates/core/src/engines/moderation.rs:78` — `ModerationEngine`

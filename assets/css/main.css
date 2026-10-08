@@ -1,5 +1,5 @@
 /* === 旧主题变量 → shadcn token 别名（docs/DIOXUS_UI_MIGRATION.md D2）===
-   token 是唯一来源：默认值在 tailwind-input.css，主题插件运行时覆盖。
+   token 是唯一来源：默认值在 tailwind-input.css，内置主题运行时覆盖。
    这里只做转发，让现有 var(--color-*) 写法跟随 token；亮/暗由 token 的
    :root / .dark 两套值决定，这里不再分别定义。 */
 :root {

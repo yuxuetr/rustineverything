@@ -43,7 +43,8 @@ RUST_LOG=debug
 | `auth: PKCE code_verifier matched` | debug | PKCE 校验通过 |
 | `auth: site.json::auth.enabled=false` | warn | 登录被禁用（预期还是误配？） |
 | `search: index rebuilt documents=N` | info | tantivy 重建完成 |
-| `theme: skipping plugin ...` | warn | 主题插件加载失败，不阻塞 |
+| `theme: unknown cookie theme, ignoring` | warn | 访客 cookie 不是内置主题 id（旧值或被改写），已回退默认 |
+| `theme: unknown site.json theme, using default` | warn | site.json 的 `theme` 配错，已回退 `ocean` |
 | `[AppError::Db] ...` | error | 数据库错误已转 `ServerFnError`，详情留服务端 |
 | `comment: post_comment failed` | error | 用户提交失败，可能审核拒绝 |
 

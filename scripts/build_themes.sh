@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Phase 3.2: 一键构建全部主题插件 wasm 并复制到 assets/plugins/
+# 一键构建 wasm 插件并复制到 assets/plugins/。主题已内置进宿主（R2），
+# 这里只剩 content-transformer 示例插件。
 #
 # 使用方式：
-#   ./scripts/build_themes.sh             # 构建全部内置主题
-#   ./scripts/build_themes.sh sunset      # 仅构建 sunset
+#   ./scripts/build_themes.sh                 # 构建全部
+#   ./scripts/build_themes.sh content-toc     # 仅构建 content-toc
 #
 # 约束：
 #   - 构建产物路径强制 /Users/hal/.target（用户规则）
@@ -19,22 +20,13 @@ WASM_TRIPLE="wasm32-unknown-unknown"
 PROFILE="release"
 PLUGINS_OUT="$REPO_ROOT/assets/plugins"
 
-# 全部内置主题列表（crate 名 → 输出文件名）
-ALL_THEMES=(
-    "theme-ocean-plugin:theme_ocean_plugin.wasm"
-    "theme-sunset-plugin:theme_sunset_plugin.wasm"
-    "theme-catppuccin-plugin:theme_catppuccin_plugin.wasm"
-)
-
-# Phase 9.3 起：content-transformer 系列示例插件也跟着这个脚本一起构建，
-# 不另开 build_content_transformers.sh —— 命令行 / CI 流水线只需调一次。
 # 短名匹配规则：去掉 `-plugin` 后缀（content-toc-plugin → content-toc）。
 ALL_CONTENT_TRANSFORMERS=(
     "content-toc-plugin:content_toc_plugin.wasm"
 )
 
 # 合并所有支持的插件入口。`-` 前缀短名仍按子类别匹配。
-ALL_PLUGINS=("${ALL_THEMES[@]}" "${ALL_CONTENT_TRANSFORMERS[@]}")
+ALL_PLUGINS=("${ALL_CONTENT_TRANSFORMERS[@]}")
 
 # 解析参数：缺省构建全部，否则按短名匹配。
 SELECTED=()
@@ -45,9 +37,7 @@ else
         matched=0
         for entry in "${ALL_PLUGINS[@]}"; do
             crate="${entry%%:*}"
-            # 主题：theme-X-plugin → 短名 X；内容变换器：content-X-plugin → 短名 content-X
-            short="${crate#theme-}"
-            short="${short%-plugin}"
+            short="${crate%-plugin}"
             if [ "$arg" = "$short" ] || [ "$arg" = "$crate" ]; then
                 SELECTED+=("$entry")
                 matched=1
@@ -56,7 +46,6 @@ else
         done
         if [ "$matched" -eq 0 ]; then
             echo "错误：未识别的插件参数: $arg" >&2
-            echo "可用主题：ocean / sunset / catppuccin" >&2
             echo "可用 content-transformer：content-toc" >&2
             exit 1
         fi

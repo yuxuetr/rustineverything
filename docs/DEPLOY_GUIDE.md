@@ -393,7 +393,7 @@ labels:
 {
   "site_name": "你的站点名",
   "site_description": "副标题",
-  "themes": ["theme_sunset_plugin.wasm"],   // 主题栈
+  "theme": "sunset",                         // 内置主题 id：ocean / sunset / catppuccin
   "active_layout": "classic",                // 或 "minimal"
   "modules": {
     "forum": { "enabled": true },

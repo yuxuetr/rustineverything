@@ -99,11 +99,11 @@ token 类名自动跟随主题与暗色模式，不需要写 `dark:` 变体。
 - 代码中写 `text-slate-900` 实际渲染为 **石灰色**（stone-900）
 - 如果需要真正的蓝色，使用 `sky-*`、`indigo-*` 或 `cyan-*`
 
-存量代码里还有约 1100 处 `slate-*`。映射只改色阶，**不跟随主题插件**：主题的中性色 token 若取冷色，组件会是冷色，旁边手写的 `dark:bg-slate-900` 却是暖色 stone。所以内置主题的中性色都取 stone 色阶（ocean 自 2026-10-08 起，`crates/plugins/theme-ocean` 有测试守住）。新代码不要再写 `slate-*` / `blue-*`，改用 2.1 的 token。
+存量代码里还有约 1100 处 `slate-*`。映射只改色阶，**不跟随主题**：主题的中性色 token 若取冷色，组件会是冷色，旁边手写的 `dark:bg-slate-900` 却是暖色 stone。所以内置主题的中性色都取 stone 色阶（ocean 自 2026-10-08 起，`crates/core/src/engines/theme.rs` 有测试守住）。新代码不要再写 `slate-*` / `blue-*`，改用 2.1 的 token。
 
-### 2.3 WASM 主题插件
+### 2.3 主题
 
-主题插件输出 2.1 的 token（规范见 `docs/THEME_SPEC.md`）。旧变量 `--color-primary` / `--color-bg` / `--color-surface` / `--color-text` / `--color-text-muted` / `--color-border` 在 `assets/css/main.css` 中是 token 的别名，保留给只输出旧变量的第三方插件和 `var(--color-*)` 写法。
+内置主题输出 2.1 的 token（规范见 `docs/THEME_SPEC.md`）。旧变量 `--color-primary` / `--color-bg` / `--color-surface` / `--color-text` / `--color-text-muted` / `--color-border` 在 `assets/css/main.css` 中是 token 的别名，保留给 `var(--color-*)` 写法。
 
 ### 2.4 深色模式
 
