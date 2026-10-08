@@ -63,7 +63,7 @@
 
 ### D7 CSP 与 `document::eval`（2026-10-08 决定）
 
-CSP 保持不含 `'unsafe-eval'`。组件库在 web 端改用 web-sys（FB-02，上游修复）；站点自身的 `document::eval` 同样改掉（E1，即 [`SECURITY_REMEDIATION.md`](SECURITY_REMEDIATION.md) B1）。接收用户提交 URL 的组件（Avatar、Breadcrumb 等）在 FB-03 修复前不传入用户 URL。依赖 eval 的组件（Dialog、Dropdown、Popover、Command、Sheet、NavigationMenu，以及 Tabs / ToggleGroup 的键盘导航）要等上游发版后再迁移：U4 的支付模态、U8、U9 排在上游修复之后；U3 若用 Tabs，先验证点击路径不触发 eval。
+CSP 保持不含 `'unsafe-eval'`。组件库在 web 端改用 web-sys（FB-02，上游修复）；站点自身的 `document::eval` 同样改掉（E1，即 [`SECURITY_REMEDIATION.md`](SECURITY_REMEDIATION.md) B1）。接收用户提交 URL 的组件（Avatar、Breadcrumb 等）在 FB-03 修复前不传入用户 URL。依赖 eval 的组件（Dialog、Dropdown、Popover、Command、Sheet、NavigationMenu，以及 Tabs / ToggleGroup 的键盘导航）要等上游发版后再迁移：U4 的支付模态、U8、U9 排在上游修复之后；U3 原计划用 Tabs、先验证点击路径不触发 eval；读源码确认 Tabs 挂载即 eval、点击也依赖 eval（FB-14），U3 改为只用 `tabs_*_class` 类名函数。
 
 ### D3 Tailwind 扫描组件库源码：构建时生成，不写死路径
 

@@ -5,6 +5,12 @@
 //! 支付网关接入前（M5），运营可在此手动为用户开通课程（线下售卖后开通）。
 
 use dioxus::prelude::*;
+// TableRow 的 `border-b` 不带颜色，依赖 shadcn 的全局 base 规则，站点没有该规则
+// 时边框是 currentColor，所以每行显式给 `border-border`（FB-15）。
+use dioxus_shadcn::{
+  Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Input, Spinner, SpinnerSize, Table,
+  TableBody, TableCell, TableHead, TableHeader, TableRow,
+};
 
 use module_admin::admin::{is_current_user_admin, AdminShell, ForbiddenPanel};
 use module_course::server::{
@@ -49,8 +55,6 @@ pub fn AdminEntitlementsPage() -> Element {
     }
   };
 
-  let input_class = "rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500";
-
   rsx! {
       AdminShell { active: "entitlements".to_string(),
           h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-2", "课程权益" }
@@ -62,21 +66,21 @@ pub fn AdminEntitlementsPage() -> Element {
           div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 mb-8",
               h2 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3", "授予权益" }
               div { class: "flex flex-col sm:flex-row gap-3",
-                  input {
-                      class: "{input_class} sm:w-40",
+                  Input {
+                      class: "sm:w-40",
                       r#type: "number",
                       placeholder: "用户 ID",
-                      value: "{user_id}",
-                      oninput: move |e| user_id.set(e.value()),
+                      value: user_id(),
+                      on_value_change: move |v: String| user_id.set(v),
                   }
-                  input {
-                      class: "{input_class} flex-1",
+                  Input {
+                      class: "flex-1",
                       placeholder: "课程 slug，如 rust-basics",
-                      value: "{course_slug}",
-                      oninput: move |e| course_slug.set(e.value()),
+                      value: course_slug(),
+                      on_value_change: move |v: String| course_slug.set(v),
                   }
-                  button {
-                      class: "rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm font-semibold text-white whitespace-nowrap transition-colors",
+                  Button {
+                      class: "whitespace-nowrap",
                       onclick: do_grant,
                       "授予"
                   }
@@ -89,36 +93,38 @@ pub fn AdminEntitlementsPage() -> Element {
           // 权益列表
           if !loaded {
               div { class: "flex items-center justify-center py-16",
-                  div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
               }
           } else if rows.is_empty() {
               p { class: "text-center text-slate-400 py-10", "暂无任何权益记录。" }
           } else {
               div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
-                  table { class: "w-full text-sm",
-                      thead { class: "bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400",
-                          tr {
-                              th { class: "text-left font-medium px-4 py-2", "用户" }
-                              th { class: "text-left font-medium px-4 py-2", "课程" }
-                              th { class: "text-left font-medium px-4 py-2", "来源" }
-                              th { class: "text-left font-medium px-4 py-2", "授予时间" }
-                              th { class: "px-4 py-2" }
+                  Table {
+                      TableHeader { class: "bg-muted/50",
+                          TableRow { class: "border-border",
+                              TableHead { class: "h-10 px-4", "用户" }
+                              TableHead { class: "h-10 px-4", "课程" }
+                              TableHead { class: "h-10 px-4", "来源" }
+                              TableHead { class: "h-10 px-4", "授予时间" }
+                              TableHead { class: "h-10 px-4" }
                           }
                       }
-                      tbody { class: "divide-y divide-slate-100 dark:divide-slate-800",
+                      TableBody {
                           for r in rows.into_iter() {
                               {
                                   let uid = r.user_id;
                                   let slug = r.course_slug.clone();
                                   rsx! {
-                                      tr { key: "{r.user_id}-{r.course_slug}", class: "text-slate-700 dark:text-slate-200",
-                                          td { class: "px-4 py-2", "{r.nickname} #{r.user_id}" }
-                                          td { class: "px-4 py-2 font-mono text-xs", "{r.course_slug}" }
-                                          td { class: "px-4 py-2 text-slate-400", "{r.source}" }
-                                          td { class: "px-4 py-2 text-slate-400 text-xs", "{r.granted_at}" }
-                                          td { class: "px-4 py-2 text-right",
-                                              button {
-                                                  class: "text-xs font-medium text-rose-600 hover:text-rose-700",
+                                      TableRow { key: "{r.user_id}-{r.course_slug}", class: "border-border",
+                                          TableCell { class: "px-4 py-2", "{r.nickname} #{r.user_id}" }
+                                          TableCell { class: "px-4 py-2 font-mono text-xs", "{r.course_slug}" }
+                                          TableCell { class: "px-4 py-2 text-slate-400", "{r.source}" }
+                                          TableCell { class: "px-4 py-2 text-slate-400 text-xs", "{r.granted_at}" }
+                                          TableCell { class: "px-4 py-2 text-right",
+                                              Button {
+                                                  variant: ButtonVariant::Ghost,
+                                                  size: ButtonSize::Sm,
+                                                  class: "text-xs text-destructive hover:bg-destructive/10",
                                                   onclick: move |_| {
                                                       let slug = slug.clone();
                                                       spawn(async move {
@@ -174,25 +180,25 @@ fn OrdersSection() -> Element {
             }
             if !loaded {
                 div { class: "flex items-center justify-center py-8",
-                    div { class: "animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" }
+                    Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                 }
             } else if rows.is_empty() {
                 p { class: "text-center text-slate-400 py-6", "暂无订单。" }
             } else {
                 div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
-                    table { class: "w-full text-sm",
-                        thead { class: "bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400",
-                            tr {
-                                th { class: "text-left font-medium px-4 py-2", "订单号" }
-                                th { class: "text-left font-medium px-4 py-2", "用户" }
-                                th { class: "text-left font-medium px-4 py-2", "课程" }
-                                th { class: "text-left font-medium px-4 py-2", "金额" }
-                                th { class: "text-left font-medium px-4 py-2", "渠道" }
-                                th { class: "text-left font-medium px-4 py-2", "状态" }
-                                th { class: "px-4 py-2" }
+                    Table {
+                        TableHeader { class: "bg-muted/50",
+                            TableRow { class: "border-border",
+                                TableHead { class: "h-10 px-4", "订单号" }
+                                TableHead { class: "h-10 px-4", "用户" }
+                                TableHead { class: "h-10 px-4", "课程" }
+                                TableHead { class: "h-10 px-4", "金额" }
+                                TableHead { class: "h-10 px-4", "渠道" }
+                                TableHead { class: "h-10 px-4", "状态" }
+                                TableHead { class: "h-10 px-4" }
                             }
                         }
-                        tbody { class: "divide-y divide-slate-100 dark:divide-slate-800",
+                        TableBody {
                             for o in rows.into_iter() {
                                 {
                                     let otn = o.out_trade_no.clone();
@@ -200,17 +206,19 @@ fn OrdersSection() -> Element {
                                     let chan = if o.provider == "alipay" { "支付宝" } else { "微信" };
                                     let paid = o.status == "paid";
                                     rsx! {
-                                        tr { key: "{o.out_trade_no}", class: "text-slate-700 dark:text-slate-200",
-                                            td { class: "px-4 py-2 font-mono text-xs", "{o.out_trade_no}" }
-                                            td { class: "px-4 py-2", "{o.nickname} #{o.user_id}" }
-                                            td { class: "px-4 py-2 font-mono text-xs", "{o.course_slug}" }
-                                            td { class: "px-4 py-2 font-medium", "¥{yuan}" }
-                                            td { class: "px-4 py-2 text-slate-400", "{chan}" }
-                                            td { class: "px-4 py-2 text-xs", "{o.status}" }
-                                            td { class: "px-4 py-2 text-right",
+                                        TableRow { key: "{o.out_trade_no}", class: "border-border",
+                                            TableCell { class: "px-4 py-2 font-mono text-xs", "{o.out_trade_no}" }
+                                            TableCell { class: "px-4 py-2", "{o.nickname} #{o.user_id}" }
+                                            TableCell { class: "px-4 py-2 font-mono text-xs", "{o.course_slug}" }
+                                            TableCell { class: "px-4 py-2 font-medium", "¥{yuan}" }
+                                            TableCell { class: "px-4 py-2 text-slate-400", "{chan}" }
+                                            TableCell { class: "px-4 py-2 text-xs", "{o.status}" }
+                                            TableCell { class: "px-4 py-2 text-right",
                                                 if paid {
-                                                    button {
-                                                        class: "text-xs font-medium text-rose-600 hover:text-rose-700",
+                                                    Button {
+                                                        variant: ButtonVariant::Ghost,
+                                                        size: ButtonSize::Sm,
+                                                        class: "text-xs text-destructive hover:bg-destructive/10",
                                                         onclick: move |_| {
                                                             let otn = otn.clone();
                                                             spawn(async move {
@@ -271,8 +279,6 @@ fn MembershipSection() -> Element {
     }
   };
 
-  let input_class = "rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500";
-
   rsx! {
       div { class: "mt-12",
           h2 { class: "text-lg font-bold text-slate-900 dark:text-white mb-2", "Pro 会员" }
@@ -281,22 +287,22 @@ fn MembershipSection() -> Element {
           }
           div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 mb-6",
               div { class: "flex flex-col sm:flex-row gap-3",
-                  input {
-                      class: "{input_class} sm:w-40",
+                  Input {
+                      class: "sm:w-40",
                       r#type: "number",
                       placeholder: "用户 ID",
-                      value: "{user_id}",
-                      oninput: move |e| user_id.set(e.value()),
+                      value: user_id(),
+                      on_value_change: move |v: String| user_id.set(v),
                   }
-                  input {
-                      class: "{input_class} sm:w-32",
+                  Input {
+                      class: "sm:w-32",
                       r#type: "number",
                       placeholder: "天数",
-                      value: "{days}",
-                      oninput: move |e| days.set(e.value()),
+                      value: days(),
+                      on_value_change: move |v: String| days.set(v),
                   }
-                  button {
-                      class: "rounded-lg bg-blue-600 hover:bg-blue-700 px-4 py-2 text-sm font-semibold text-white whitespace-nowrap transition-colors",
+                  Button {
+                      class: "whitespace-nowrap",
                       onclick: do_grant,
                       "开通 / 续期"
                   }
@@ -308,42 +314,44 @@ fn MembershipSection() -> Element {
 
           if !loaded {
               div { class: "flex items-center justify-center py-8",
-                  div { class: "animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" }
+                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
               }
           } else if rows.is_empty() {
               p { class: "text-center text-slate-400 py-6", "暂无会员记录。" }
           } else {
               div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
-                  table { class: "w-full text-sm",
-                      thead { class: "bg-slate-50 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400",
-                          tr {
-                              th { class: "text-left font-medium px-4 py-2", "用户" }
-                              th { class: "text-left font-medium px-4 py-2", "层级" }
-                              th { class: "text-left font-medium px-4 py-2", "到期" }
-                              th { class: "text-left font-medium px-4 py-2", "状态" }
-                              th { class: "px-4 py-2" }
+                  Table {
+                      TableHeader { class: "bg-muted/50",
+                          TableRow { class: "border-border",
+                              TableHead { class: "h-10 px-4", "用户" }
+                              TableHead { class: "h-10 px-4", "层级" }
+                              TableHead { class: "h-10 px-4", "到期" }
+                              TableHead { class: "h-10 px-4", "状态" }
+                              TableHead { class: "h-10 px-4" }
                           }
                       }
-                      tbody { class: "divide-y divide-slate-100 dark:divide-slate-800",
+                      TableBody {
                           for m in rows.into_iter() {
                               {
                                   let uid = m.user_id;
                                   let date = m.expires_at.split('T').next().unwrap_or(&m.expires_at).to_string();
                                   rsx! {
-                                      tr { key: "{m.user_id}", class: "text-slate-700 dark:text-slate-200",
-                                          td { class: "px-4 py-2", "{m.nickname} #{m.user_id}" }
-                                          td { class: "px-4 py-2 uppercase text-xs font-semibold", "{m.tier}" }
-                                          td { class: "px-4 py-2 text-slate-400 text-xs", "{date}" }
-                                          td { class: "px-4 py-2",
+                                      TableRow { key: "{m.user_id}", class: "border-border",
+                                          TableCell { class: "px-4 py-2", "{m.nickname} #{m.user_id}" }
+                                          TableCell { class: "px-4 py-2 uppercase text-xs font-semibold", "{m.tier}" }
+                                          TableCell { class: "px-4 py-2 text-slate-400 text-xs", "{date}" }
+                                          TableCell { class: "px-4 py-2",
                                               if m.active {
-                                                  span { class: "text-xs px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400", "有效" }
+                                                  Badge { variant: BadgeVariant::Success, "有效" }
                                               } else {
-                                                  span { class: "text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500", "已过期" }
+                                                  Badge { variant: BadgeVariant::Secondary, "已过期" }
                                               }
                                           }
-                                          td { class: "px-4 py-2 text-right",
-                                              button {
-                                                  class: "text-xs font-medium text-rose-600 hover:text-rose-700",
+                                          TableCell { class: "px-4 py-2 text-right",
+                                              Button {
+                                                  variant: ButtonVariant::Ghost,
+                                                  size: ButtonSize::Sm,
+                                                  class: "text-xs text-destructive hover:bg-destructive/10",
                                                   onclick: move |_| {
                                                       spawn(async move {
                                                           let _ = revoke_membership(uid).await;

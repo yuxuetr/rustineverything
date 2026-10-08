@@ -147,3 +147,21 @@
 - 影响：中。按 FB-02 改完组件后，照着示例写 `document::Title` 的使用者仍然过不了 CSP L1，而且看起来像是组件库的问题。
 - 建议的上游修复：FB-10 的 CSP 说明里写明这一条；示例与文档站改用 web-sys 设置标题（服务端仍用 `document::Title` 输出 `<title>`）；向 Dioxus 报告 `set_title` 应直接用 `web_sys::Document::set_title`。
 - 状态：open
+
+### FB-14 `Tabs` 挂载即 eval，点击切换也只能经 eval 生效
+
+- 组件 / 版本：0.6.0 — `tabs.rs:135`（`TabsList` 调 `use_roving_group`）、`roving_group.rs:144-154`
+- 现象：`TabsList` 在 `use_effect` 里无条件执行 `document::eval(ROVING_GROUP_SCRIPT)`；`TabsTrigger` 本身没有 `onclick`，点击也是脚本监听后经 `eval.recv` 回传 `data-value` 才切换。FB-02 只写了「Tabs 的方向键导航」走 eval，实际上是**挂载就触发**、**点击也依赖**，在严格 CSP 下页面一加载 wasm 运行时就崩溃，不只是键盘导航失效。U3 读源码时发现（2026-10-08），未在浏览器里复现崩溃（结论来自代码路径，与 FB-02 的已复现路径相同）。
+- 影响：高（在 FB-02 范围内，单独列出是因为影响面被低估）。迁移计划 D7「先验证点击路径不触发 eval」的设想不成立。
+- 站点临时处理：admin 审核页签只用 `tabs_list_class` / `tabs_trigger_class` 配普通按钮（`aria-pressed`），不用 `Tabs` 组件。
+- 建议的上游修复：`TabsTrigger` 自带 `onclick` 调 `context.select`，点击不依赖脚本；roving 脚本只负责方向键，按 FB-02 改为 web-sys。ToggleGroup / Accordion 同样检查。
+- 状态：open
+
+### FB-15 `Table` 的边框不带颜色，依赖未说明的全局 base 规则
+
+- 组件 / 版本：0.6.0 — `table.rs`（`TABLE_HEADER_BASE_CLASS` 的 `[&_tr]:border-b`、`TABLE_ROW_BASE_CLASS` 的 `border-b`）
+- 现象：其余组件都显式写了边框颜色（`border-input`、`border-border`、`border-transparent`），Table 只写 `border-b`。Tailwind v4 的默认边框色是 `currentColor`，没有 shadcn `globals.css` 里 `* { @apply border-border }` 的站点上，表格行线是深色正文色。本站 U3 迁移权益页时截图发现（2026-10-08）。
+- 影响：低。外观问题，但只在没有 shadcn base 层的应用里出现，README 和 `dxui init` 都没有提这个前提。
+- 站点临时处理：每个 `TableRow` 传 `class: "border-border"`（`admin_entitlements.rs`）。
+- 建议的上游修复：行与表头加 `border-border`；或在 README 的接入步骤里写明需要的 base 规则。
+- 状态：open

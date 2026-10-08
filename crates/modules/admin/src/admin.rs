@@ -9,6 +9,11 @@ use crate::server::{
 use app_core::session::{SessionUser, ALL_ROLES};
 use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
 use dioxus::prelude::*;
+use dioxus_shadcn::{
+  button_class, tabs_list_class, tabs_trigger_class, Badge, BadgeVariant, Button, ButtonSize,
+  ButtonVariant, DensityProvider, Input, NativeSelect, NativeSelectOption, Spinner, SpinnerSize,
+  Textarea, UiDensity,
+};
 
 // =============================================================
 // 共享上下文 hooks
@@ -41,7 +46,7 @@ pub fn ForbiddenPanel() -> Element {
               p { class: "text-sm text-slate-500 dark:text-slate-400",
                   "你当前的账号没有访问后台的权限。如果你确认应当拥有该权限，请联系站点管理员或在数据库中将 role 调整为 admin。"
               }
-              a { href: "/", class: "inline-block mt-6 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700",
+              a { href: "/", class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-6"),
                   "返回首页"
               }
           }
@@ -72,7 +77,7 @@ pub fn AdminShell(active: String, children: Element) -> Element {
                   }
               }
               div { class: "flex-1 min-w-0 px-6 lg:px-10 py-8",
-                  {children}
+                  DensityProvider { density: UiDensity::Compact, {children} }
               }
           }
       }
@@ -83,7 +88,7 @@ pub fn AdminShell(active: String, children: Element) -> Element {
 fn AdminNavLink(href: String, label: String, key_id: String, active: String) -> Element {
   let is_active = key_id == active;
   let class = if is_active {
-    "block px-3 py-2 rounded-lg text-sm font-semibold bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+    "block px-3 py-2 rounded-lg text-sm font-semibold bg-primary/10 text-primary"
   } else {
     "block px-3 py-2 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
   };
@@ -93,10 +98,10 @@ fn AdminNavLink(href: String, label: String, key_id: String, active: String) -> 
 }
 
 #[component]
-fn Spinner() -> Element {
+fn Loading() -> Element {
   rsx! {
       div { class: "flex items-center justify-center py-20",
-          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
       }
   }
 }
@@ -122,7 +127,7 @@ pub fn AdminDashboardPage() -> Element {
           h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "概览" }
 
           match overview {
-              None => rsx! { Spinner {} },
+              None => rsx! { Loading {} },
               Some(data) => rsx! {
                   div { class: "grid grid-cols-2 md:grid-cols-3 gap-4 mb-8",
                       StatCard { label: "用户".to_string(), value: data.user_count, icon: "👥".to_string() }
@@ -199,7 +204,7 @@ pub fn AdminUsersPage() -> Element {
           }
 
           match data {
-              None => rsx! { Spinner {} },
+              None => rsx! { Loading {} },
               Some(p) if p.items.is_empty() => rsx! {
                   div { class: "py-16 text-center text-slate-500", "没有用户" }
               },
@@ -242,7 +247,7 @@ fn UserRow(user: AdminUserRow, on_role_changed: EventHandler<Result<(), String>>
               if let Some(ref a) = user.avatar_url {
                   img { src: "{a}", class: "w-10 h-10 rounded-full object-cover", alt: "{user.nickname}" }
               } else {
-                  div { class: "w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold",
+                  div { class: "w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold",
                       "{user.nickname.chars().next().unwrap_or('U')}"
                   }
               }
@@ -258,7 +263,7 @@ fn UserRow(user: AdminUserRow, on_role_changed: EventHandler<Result<(), String>>
                   if !user.providers.is_empty() {
                       span { "·" }
                       for p in user.providers.iter() {
-                          span { class: "px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-medium uppercase tracking-wide",
+                          Badge { variant: BadgeVariant::Secondary, class: "uppercase tracking-wide font-medium",
                               "{p}"
                           }
                       }
@@ -267,11 +272,11 @@ fn UserRow(user: AdminUserRow, on_role_changed: EventHandler<Result<(), String>>
           }
           // Role select
           div { class: "shrink-0",
-              select {
-                  class: "px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm",
+              NativeSelect {
+                  class: "w-auto",
                   disabled: submitting(),
-                  onchange: move |evt| {
-                      let new_role = evt.value();
+                  "aria-label": "角色",
+                  on_value_change: move |new_role: String| {
                       let on_role_changed = on_role_changed;
                       spawn(async move {
                           submitting.set(true);
@@ -284,7 +289,7 @@ fn UserRow(user: AdminUserRow, on_role_changed: EventHandler<Result<(), String>>
                       });
                   },
                   for r in ALL_ROLES.iter() {
-                      option { value: "{r}", selected: user.role == *r, "{r}" }
+                      NativeSelectOption { value: r.to_string(), selected: user.role == *r, "{r}" }
                   }
               }
           }
@@ -329,7 +334,7 @@ pub fn AdminCommentsPage() -> Element {
           }
 
           match data {
-              None => rsx! { Spinner {} },
+              None => rsx! { Loading {} },
               Some(p) if p.items.is_empty() => rsx! {
                   div { class: "py-16 text-center text-slate-500", "没有评论" }
               },
@@ -370,7 +375,7 @@ fn CommentRow(comment: AdminCommentRow, on_deleted: EventHandler<Result<(), Stri
               div { class: "flex items-center gap-2 mb-1 text-xs text-slate-500 flex-wrap",
                   span { class: "font-semibold text-slate-700 dark:text-slate-200", "{comment.author}" }
                   span { "·" }
-                  a { href: "/blog/{comment.blog_id}", class: "text-blue-600 hover:underline truncate max-w-xs",
+                  a { href: "/blog/{comment.blog_id}", class: "text-primary hover:underline truncate max-w-xs",
                       "{comment.blog_id}"
                   }
                   span { "·" }
@@ -383,8 +388,10 @@ fn CommentRow(comment: AdminCommentRow, on_deleted: EventHandler<Result<(), Stri
               }
           }
           div { class: "shrink-0",
-              button {
-                  class: "px-3 py-1 rounded text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50",
+              Button {
+                  variant: ButtonVariant::Ghost,
+                  size: ButtonSize::Sm,
+                  class: "text-destructive hover:bg-destructive/10",
                   disabled: submitting(),
                   onclick: move |_| {
                       let on_deleted = on_deleted;
@@ -441,7 +448,7 @@ pub fn AdminTopicsPage() -> Element {
           }
 
           match data {
-              None => rsx! { Spinner {} },
+              None => rsx! { Loading {} },
               Some(p) if p.items.is_empty() => rsx! {
                   div { class: "py-16 text-center text-slate-500", "没有话题" }
               },
@@ -485,9 +492,7 @@ fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) 
       div { class: "px-5 py-3 flex items-start gap-4",
           div { class: "flex-1 min-w-0",
               div { class: "flex items-center gap-2 mb-1 text-xs text-slate-500 flex-wrap",
-                  span { class: "px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300",
-                      "#{topic.tag}"
-                  }
+                  Badge { variant: BadgeVariant::Secondary, "#{topic.tag}" }
                   span { "·" }
                   span { class: "font-semibold text-slate-700 dark:text-slate-200", "{topic.author}" }
                   span { "·" }
@@ -498,13 +503,15 @@ fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) 
                   span { "{topic.reply_count} 回复" }
               }
               a { href: "/topics/{topic.id}",
-                  class: "block text-sm font-semibold text-slate-900 dark:text-white truncate hover:text-blue-600",
+                  class: "block text-sm font-semibold text-slate-900 dark:text-white truncate hover:text-primary",
                   "{topic.title}"
               }
           }
           div { class: "shrink-0",
-              button {
-                  class: "px-3 py-1 rounded text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50",
+              Button {
+                  variant: ButtonVariant::Ghost,
+                  size: ButtonSize::Sm,
+                  class: "text-destructive hover:bg-destructive/10",
                   disabled: submitting(),
                   onclick: move |_| {
                       let on_deleted = on_deleted;
@@ -592,7 +599,12 @@ pub fn AdminPluginsPage() -> Element {
               h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white", "插件" }
               div { class: "flex items-center gap-2",
                   label {
-                      class: "px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 cursor-pointer disabled:opacity-50",
+                      class: button_class(
+                          ButtonVariant::Outline,
+                          ButtonSize::Md,
+                          UiDensity::Comfortable,
+                          if uploading() { "cursor-wait opacity-50" } else { "cursor-pointer" },
+                      ),
                       input {
                           r#type: "file",
                           class: "hidden",
@@ -602,8 +614,7 @@ pub fn AdminPluginsPage() -> Element {
                       }
                       if uploading() { "上传中..." } else { "上传 .wasm" }
                   }
-                  button {
-                      class: "px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50",
+                  Button {
                       disabled: reloading(),
                       onclick: move |_| {
                           spawn(async move {
@@ -628,7 +639,7 @@ pub fn AdminPluginsPage() -> Element {
           }
 
           match plugins {
-              None => rsx! { Spinner {} },
+              None => rsx! { Loading {} },
               Some(list) if list.is_empty() => rsx! {
                   div { class: "py-16 text-center text-slate-500", "没有发现插件" }
               },
@@ -646,30 +657,28 @@ pub fn AdminPluginsPage() -> Element {
 
 #[component]
 fn PluginCard(plugin: AdminPluginRow) -> Element {
-  let badge_class = match plugin.kind.as_str() {
-    "auth" => "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300",
-    "theme" => "bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300",
-    "i18n" => "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300",
-    _ => "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
+  let kind_variant = match plugin.kind.as_str() {
+    "auth" => BadgeVariant::Info,
+    "theme" => BadgeVariant::Default,
+    "i18n" => BadgeVariant::Success,
+    _ => BadgeVariant::Secondary,
   };
   let size_kb = (plugin.size_bytes as f64) / 1024.0;
   let modified = plugin.modified.clone().unwrap_or_else(|| "-".to_string());
   rsx! {
       div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-5",
           div { class: "flex items-center gap-2 mb-3",
-              span { class: "text-xs px-2 py-0.5 rounded font-medium uppercase tracking-wide {badge_class}",
-                  "{plugin.kind}"
-              }
+              Badge { variant: kind_variant, class: "uppercase tracking-wide", "{plugin.kind}" }
               if plugin.configured {
-                  span { class: "text-xs px-2 py-0.5 rounded bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300", "已启用" }
+                  Badge { variant: BadgeVariant::Success, "已启用" }
               } else {
-                  span { class: "text-xs px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500", "未配置" }
+                  Badge { variant: BadgeVariant::Secondary, "未配置" }
               }
               if !plugin.present {
-                  span { class: "text-xs px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300", "文件缺失" }
+                  Badge { variant: BadgeVariant::Destructive, "文件缺失" }
               }
               if plugin.kind == "auth" && plugin.configured && !plugin.credentials_ready {
-                  span { class: "text-xs px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300", "缺凭据" }
+                  Badge { variant: BadgeVariant::Warning, "缺凭据" }
               }
           }
           h3 { class: "text-base font-bold text-slate-900 dark:text-white mb-1", "{plugin.id}" }
@@ -711,8 +720,9 @@ fn Pagination(page: u32, total_pages: u32, on_change: EventHandler<u32>) -> Elem
   let next_disabled = page + 1 >= total_pages;
   rsx! {
       div { class: "mt-6 flex items-center justify-center gap-2",
-          button {
-              class: "px-3 py-1 rounded border border-slate-200 dark:border-slate-700 text-sm disabled:opacity-50",
+          Button {
+              variant: ButtonVariant::Outline,
+              size: ButtonSize::Sm,
               disabled: prev_disabled,
               onclick: move |_| {
                   if page > 0 { on_change.call(page - 1); }
@@ -720,8 +730,9 @@ fn Pagination(page: u32, total_pages: u32, on_change: EventHandler<u32>) -> Elem
               "上一页"
           }
           span { class: "text-sm text-slate-500", "第 {page + 1} / {total_pages} 页" }
-          button {
-              class: "px-3 py-1 rounded border border-slate-200 dark:border-slate-700 text-sm disabled:opacity-50",
+          Button {
+              variant: ButtonVariant::Outline,
+              size: ButtonSize::Sm,
               disabled: next_disabled,
               onclick: move |_| {
                   if page + 1 < total_pages { on_change.call(page + 1); }
@@ -781,11 +792,9 @@ pub fn AdminModerationPage() -> Element {
     let key_owned = key.to_string();
     rsx! {
         button {
-            class: if active {
-                "px-3 py-1.5 rounded-md text-sm font-semibold bg-blue-600 text-white"
-            } else {
-                "px-3 py-1.5 rounded-md text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-            },
+            r#type: "button",
+            "aria-pressed": active.to_string(),
+            class: tabs_trigger_class(active, ""),
             onclick: move |_| filter.set(key_owned.clone()),
             "{label}"
         }
@@ -799,7 +808,8 @@ pub fn AdminModerationPage() -> Element {
               span { class: "text-sm text-slate-500", "共 {rows.len()} 条" }
           }
 
-          div { class: "flex gap-2 mb-4",
+          // 只借用 Tabs 的外观：Tabs 组件依赖 document::eval（FB-14）。
+          div { class: tabs_list_class("mb-4"),
               {tab_btn("pending", "待复核")}
               {tab_btn("approved", "已通过")}
               {tab_btn("rejected", "已拒绝")}
@@ -819,7 +829,7 @@ pub fn AdminModerationPage() -> Element {
                       input {
                           r#type: "checkbox",
                           checked: all_pending_selected,
-                          class: "h-4 w-4 accent-blue-600",
+                          class: "h-4 w-4 accent-primary",
                           onclick: {
                               let pending_ids = pending_ids.clone();
                               move |_| {
@@ -840,8 +850,9 @@ pub fn AdminModerationPage() -> Element {
                   }
                   span { class: "text-slate-500", "已选 {selected_count} 条" }
                   div { class: "flex-1" }
-                  button {
-                      class: "px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50",
+                  Button {
+                      size: ButtonSize::Sm,
+                      class: "bg-success text-success-foreground hover:bg-success/90",
                       disabled: selected_count == 0 || bulk_busy(),
                       onclick: move |_| {
                           let ids: Vec<i64> = selected().iter().copied().collect();
@@ -855,8 +866,9 @@ pub fn AdminModerationPage() -> Element {
                       },
                       "批量通过"
                   }
-                  button {
-                      class: "px-3 py-1.5 rounded-md text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50",
+                  Button {
+                      variant: ButtonVariant::Destructive,
+                      size: ButtonSize::Sm,
                       disabled: selected_count == 0 || bulk_busy(),
                       onclick: move |_| {
                           let ids: Vec<i64> = selected().iter().copied().collect();
@@ -874,7 +886,7 @@ pub fn AdminModerationPage() -> Element {
           }
 
           match res.read().as_ref() {
-              None => rsx! { Spinner {} },
+              None => rsx! { Loading {} },
               Some(_) if rows.is_empty() => rsx! {
                   div { class: "py-16 text-center text-slate-500", "暂无记录" }
               },
@@ -923,13 +935,11 @@ fn ModerationQueueRowView(
   let id = row.id;
 
   // 状态徽章颜色
-  let (status_class, status_label) = match row.status.as_str() {
-    "pending" => ("bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300", "待复核"),
-    "approved" => {
-      ("bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300", "已通过")
-    }
-    "rejected" => ("bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300", "已拒绝"),
-    _ => ("bg-slate-100 text-slate-800", row.status.as_str()),
+  let (status_variant, status_label) = match row.status.as_str() {
+    "pending" => (BadgeVariant::Warning, "待复核"),
+    "approved" => (BadgeVariant::Success, "已通过"),
+    "rejected" => (BadgeVariant::Destructive, "已拒绝"),
+    _ => (BadgeVariant::Secondary, row.status.as_str()),
   };
 
   let kind_label = match row.kind.as_str() {
@@ -954,20 +964,20 @@ fn ModerationQueueRowView(
                       r#type: "checkbox",
                       checked: selected,
                       onclick: move |_| on_toggle.call(id),
-                      class: "h-4 w-4 accent-blue-600 cursor-pointer",
+                      class: "h-4 w-4 accent-primary cursor-pointer",
                   }
               }
-              span { class: "px-2 py-0.5 rounded-full font-medium {status_class}", "{status_label}" }
-              span { class: "px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300", "{kind_label}" }
+              Badge { variant: status_variant, "{status_label}" }
+              Badge { variant: BadgeVariant::Secondary, "{kind_label}" }
               span { class: "text-slate-500 truncate max-w-xs", "{row.ref_path}" }
               span { class: "text-slate-400", "·" }
               span { class: "text-slate-500", "{author}" }
               // 作者历史违规：累计命中 > 1 时提示，已被拒绝（确认违规）单独红标
               if row.user_history_total > 1 {
-                  span { class: "px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300", "历史 {row.user_history_total} 次命中" }
+                  Badge { variant: BadgeVariant::Warning, "历史 {row.user_history_total} 次命中" }
               }
               if row.user_history_rejected > 0 {
-                  span { class: "px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300", "{row.user_history_rejected} 次确认违规" }
+                  Badge { variant: BadgeVariant::Destructive, "{row.user_history_rejected} 次确认违规" }
               }
               span { class: "text-slate-400", "·" }
               span { class: "text-slate-500", "{row.created_at}" }
@@ -1014,8 +1024,9 @@ fn ModerationQueueRowView(
               }
               if is_pending {
                   div { class: "flex gap-2",
-                      button {
-                          class: "px-3 py-1.5 rounded-md text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50",
+                      Button {
+                          size: ButtonSize::Sm,
+                          class: "bg-success text-success-foreground hover:bg-success/90",
                           disabled: submitting(),
                           onclick: move |_| {
                               let on_done = on_done;
@@ -1030,8 +1041,9 @@ fn ModerationQueueRowView(
                           },
                           "通过"
                       }
-                      button {
-                          class: "px-3 py-1.5 rounded-md text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50",
+                      Button {
+                          variant: ButtonVariant::Destructive,
+                          size: ButtonSize::Sm,
                           disabled: submitting(),
                           onclick: move |_| {
                               let on_done = on_done;
@@ -1170,8 +1182,6 @@ pub fn AdminModerationSettingsPage() -> Element {
 
   let label_cls = "block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-1";
   let help_cls = "text-xs text-slate-500 dark:text-slate-400 mt-1";
-  let input_cls = "w-full px-3 py-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm";
-  let area_cls = "w-full px-3 py-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm font-mono";
 
   rsx! {
       AdminShell { active: "moderation-settings".to_string(),
@@ -1183,7 +1193,7 @@ pub fn AdminModerationSettingsPage() -> Element {
           }
 
           if res.read().is_none() {
-              Spinner {}
+              Loading {}
           } else if current.is_none() {
               div { class: "rounded-lg border border-red-300 bg-red-50 text-red-800 p-4",
                   "加载审核设置失败：请检查 server 日志。"
@@ -1216,15 +1226,14 @@ pub fn AdminModerationSettingsPage() -> Element {
                   div { class: "grid grid-cols-1 sm:grid-cols-2 gap-4",
                       div {
                           label { r#for: "flag-above", class: "{label_cls}", "flag_above (0.0–1.0)" }
-                          input {
+                          Input {
                               id: "flag-above",
                               r#type: "number",
                               step: "0.01",
                               min: "0",
                               max: "1",
-                              class: "{input_cls}",
-                              value: "{flag_text}",
-                              oninput: move |evt| flag_text.set(evt.value()),
+                              value: flag_text(),
+                              on_value_change: move |v: String| flag_text.set(v),
                           }
                           p { class: "{help_cls}",
                               "评分 ≥ 此值即标记 Flag（入审核队列）。留空 = 用默认 0.5。"
@@ -1232,15 +1241,14 @@ pub fn AdminModerationSettingsPage() -> Element {
                       }
                       div {
                           label { r#for: "block-above", class: "{label_cls}", "block_above (0.0–1.0)" }
-                          input {
+                          Input {
                               id: "block-above",
                               r#type: "number",
                               step: "0.01",
                               min: "0",
                               max: "1",
-                              class: "{input_cls}",
-                              value: "{block_text}",
-                              oninput: move |evt| block_text.set(evt.value()),
+                              value: block_text(),
+                              on_value_change: move |v: String| block_text.set(v),
                           }
                           p { class: "{help_cls}",
                               "评分 ≥ 此值即直接拒绝（Block）。留空 = 用默认 0.9。需 ≥ flag_above。"
@@ -1251,13 +1259,13 @@ pub fn AdminModerationSettingsPage() -> Element {
                   // plugins
                   div {
                       label { r#for: "plugins", class: "{label_cls}", "审核插件文件名（一行一个）" }
-                      textarea {
+                      Textarea {
                           id: "plugins",
                           rows: "4",
-                          class: "{area_cls}",
+                          class: "font-mono",
                           placeholder: "例如：plugin_moderation_deepseek.wasm",
-                          value: "{plugins_text}",
-                          oninput: move |evt| plugins_text.set(evt.value()),
+                          value: plugins_text(),
+                          on_value_change: move |v: String| plugins_text.set(v),
                       }
                       p { class: "{help_cls}",
                           "相对 assets/plugins/ 的 wasm 文件名。启用但列表为空 = 没有 stage，全部 Allow。"
@@ -1267,13 +1275,13 @@ pub fn AdminModerationSettingsPage() -> Element {
                   // url_blocklist
                   div {
                       label { r#for: "blocklist", class: "{label_cls}", "URL 域名黑名单（一行一个）" }
-                      textarea {
+                      Textarea {
                           id: "blocklist",
                           rows: "5",
-                          class: "{area_cls}",
+                          class: "font-mono",
                           placeholder: "scam.com\n*.phishing.example",
-                          value: "{blocklist_text}",
-                          oninput: move |evt| blocklist_text.set(evt.value()),
+                          value: blocklist_text(),
+                          on_value_change: move |v: String| blocklist_text.set(v),
                       }
                       p { class: "{help_cls}",
                           "命中即 Block（score = 1.0），不走 LLM。支持通配 *.example.com；只填 host，勿带 https://。"
@@ -1282,10 +1290,9 @@ pub fn AdminModerationSettingsPage() -> Element {
 
                   // 保存 + 状态
                   div { class: "flex items-center gap-3",
-                      button {
+                      Button {
                           r#type: "submit",
                           disabled: saving(),
-                          class: "px-4 py-2 rounded-md text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50",
                           if saving() { "保存中…" } else { "保存并热重载" }
                       }
                       if saved_ok() {

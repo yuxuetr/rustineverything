@@ -15,7 +15,7 @@ serde_json.workspace = true
 # 核心库在前端不需要 server 特性
 app-core = { path = "../core" }
 widgets = { path = "../widgets" }
-dioxus-shadcn = { workspace = true }
+dioxus-shadcn = { workspace = true, features = ["badge", "button", "input", "spinner", "table"] }
 module-blog = { path = "../modules/blog" }
 module-podcast = { path = "../modules/podcast" }
 module-course = { path = "../modules/course" }

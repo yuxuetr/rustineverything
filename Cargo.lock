@@ -4548,6 +4548,7 @@ dependencies = [
  "base64",
  "chrono",
  "dioxus",
+ "dioxus-shadcn",
  "futures",
  "module-moderation",
  "sdk",
