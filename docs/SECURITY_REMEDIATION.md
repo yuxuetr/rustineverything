@@ -76,7 +76,7 @@
 
 | 任务 | 覆盖 | 做法 |
 | --- | --- | --- |
-| R1 | SEC-05 | `Provider` 枚举内置四个 OAuth provider 的固定 https 端点与字段映射；`client_secret` 只发往枚举给出的 token 端点；缺 uid 报错 |
+| R1 ✅ | SEC-05 | `Provider` 枚举内置四个 OAuth provider 的固定 https 端点与字段映射；`client_secret` 只发往枚举给出的 token 端点；缺 uid 报错 |
 | R2 | SEC-08、SEC-11 的剩余部分 | 主题 CSS 内置，cookie / 设置只接受内置主题 id（B4 未做的「在主题列表内」由此得到） |
 | R3 | SEC-16 | 删除无调用方的 `/api/i18n/translate` 与未启用的 content-transformer |
 | R4 | — | 审核 stage 内置，经 `crates/llm` 调用 |

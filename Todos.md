@@ -424,7 +424,7 @@
 - [x] P-EVAL — 采纳方案 A：第一方插件全部编译进宿主，移除 WASM 运行时（2026-10-08 决定）。依据：10 个插件全部在本仓库构建、同一作者；认证插件只是端点常量 + 十几行字段映射，主题是 CSS 字符串；i18n 插件生产无调用方（`/api/i18n/translate` 无客户端调用）；content-toc 与审核插件均未启用（`content_transformers: []`、site.json 无 moderation 块）；宿主插件设施 + SDK 约 3,400 行。剩余两个「高」（SEC-05 / SEC-06）只因运行时加载插件而存在，且认证做成插件无法安全：端点收回宿主后插件仍决定 `external_id`。C1 / C2 / C4 / C5 / C6、D1 随之取消，C3 保留。重估条件：`assets/plugins/` 中出现无对应源码 crate（`crates/plugins/` 或 `examples/`）的 wasm，或站点要作为产品给他人部署
 
 ### 阶段 R — 插件编译进宿主（P-EVAL 方案 A）
-- [ ] R1 — 认证内置：`Provider` 枚举（github / google / discord / twitter）给出固定 https 端点、展示信息与 `map_profile`（缺 uid 报错，不再 `unwrap_or(0)`）；`AuthService` 改用枚举，按凭据配置启用；删 4 个 auth 插件 crate 与 wasm（SEC-05）
+- [x] R1 — 认证内置：`Provider` 枚举（github / google / discord / twitter）给出固定 https 端点、展示信息与 `map_profile`（缺 uid 报错，不再 `unwrap_or(0)`）；`AuthService` 改用枚举，按凭据配置启用；删 4 个 auth 插件 crate 与 wasm（SEC-05）（a18de30：`core::auth::provider` 内置四份 `ProviderSpec` 常量与字段映射，`map_profile` 取不到可用 uid 返回 `None`；登录 / 回调只接受 site.json 启用的 provider，`auth.providers` 改为 id 列表；顺带删掉无调用方的 `AuthEngine` 与 sdk 的 auth 插件类型；AUTH_GUIDE 重写。provider 映射与启用规则 6 条新单测；live 验收：四个按钮、github / twitter（含 S256 challenge）跳转到固定端点、未知 provider 与缺 PKCE cookie 的回调被拒。未做真实第三方账号的完整登录往返）
 - [ ] R2 — 主题内置：内置主题表（ocean / sunset / catppuccin），site.json、管理端设置与 `site_theme` cookie 改用主题 id，只接受表内 id；删 3 个主题插件 crate、`examples/plugin-theme-purple` 与 wasm
 - [ ] R3 — 删除未使用的插件能力：i18n 插件与 `/api/i18n/translate`；content-transformer 引擎、`content_transformers` 配置、各模块 `apply_default_pre` 调用与 content-toc 插件
 - [ ] R4 — 审核内置：deepseek 的提示词构造 / 结论解析移入 moderation crate，经 `crates/llm` 调用，替换 `plugin_stage`；删 `examples/plugin-moderation-deepseek`
