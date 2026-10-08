@@ -116,9 +116,58 @@ where
   fp
 }
 
+/// 把请求里的相对路径 `raw` 拼到 `sub_root` 下，确认没有逃出 `sub_root`。
+///
+/// 防御 `../../etc/passwd` 与符号链接逃逸（forum Phase 8.2 引用接口、docs
+/// SEC-03 文档接口共用）：
+/// 1. 含 `..`、以 `/` 或 `\\` 开头的输入直接拒绝（canonicalize 之前就排除歧义）。
+/// 2. 目标存在时 canonicalize，必须仍以 `sub_root.canonicalize()` 为前缀。
+/// 3. `sub_root` 或目标不存在时只能做字符级检查；第 1 步已拒绝 `..`，join 不会逃出。
+pub fn safe_join_under(sub_root: &Path, raw: &str) -> Option<PathBuf> {
+  if raw.contains("..") || raw.starts_with('/') || raw.starts_with('\\') {
+    tracing::warn!(input = %raw, "safe_join_under: path traversal pattern, rejected");
+    return None;
+  }
+  let joined = sub_root.join(raw);
+  let Ok(canonical_root) = sub_root.canonicalize() else {
+    return Some(joined);
+  };
+  match joined.canonicalize() {
+    Ok(canonical) if canonical.starts_with(&canonical_root) => Some(canonical),
+    Ok(canonical) => {
+      tracing::warn!(input = %raw, resolved = %canonical.display(),
+        "safe_join_under: resolved outside root, rejected");
+      None
+    }
+    Err(_) => Some(joined),
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// Phase 8.2 path-traversal 防御：用户输入的 `ref_path` 不能逃出 sub_root。
+  #[test]
+  fn safe_join_under_rejects_dotdot_segments() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path();
+    std::fs::create_dir_all(root.join("posts/article")).expect("setup posts");
+
+    // 合法子路径
+    assert!(safe_join_under(&root.join("posts"), "article").is_some());
+
+    // `..` 段 → 立即拒绝（字符级别）
+    assert!(safe_join_under(&root.join("posts"), "../etc").is_none());
+    assert!(safe_join_under(&root.join("posts"), "article/../../etc").is_none());
+    assert!(safe_join_under(&root.join("posts"), "../../etc/passwd").is_none());
+
+    // 绝对路径 → 拒绝
+    assert!(safe_join_under(&root.join("posts"), "/etc/passwd").is_none());
+
+    // 不存在的子路径仍允许（lexical 检查通过），由上层 read_index_title 兜底
+    assert!(safe_join_under(&root.join("posts"), "no-such-article").is_some());
+  }
 
   #[test]
   fn returns_a_path_buf() {
