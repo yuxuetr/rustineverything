@@ -9,9 +9,9 @@ use app_core::session::{SessionUser, ALL_ROLES};
 use app_core::settings::{LlmFailureAction, ModerationSettings, ModerationThresholdsConfig};
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, DensityProvider, Input,
-  NativeSelect, NativeSelectOption, Spinner, SpinnerSize, Tabs, TabsContent, TabsList, TabsTrigger,
-  Textarea, UiDensity,
+  button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Checkbox, DensityProvider,
+  Input, NativeSelect, NativeSelectOption, Spinner, SpinnerSize, Switch, Tabs, TabsContent,
+  TabsList, TabsTrigger, Textarea, UiDensity,
 };
 
 // =============================================================
@@ -616,6 +616,8 @@ pub fn AdminModerationPage() -> Element {
   let selected_count = selected().len();
   let all_pending_selected =
     !pending_ids.is_empty() && pending_ids.iter().all(|id| selected().contains(id));
+  let some_pending_selected =
+    !all_pending_selected && pending_ids.iter().any(|id| selected().contains(id));
 
   // 批量操作完成后的统一收尾：清空选择 + 刷新列表。
   let mut finish_bulk = move |result: Result<u64, String>| {
@@ -657,21 +659,15 @@ pub fn AdminModerationPage() -> Element {
                   if !pending_ids.is_empty() {
                       div { class: "flex items-center gap-3 mb-4 px-4 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 text-sm flex-wrap",
                           label { class: "flex items-center gap-2 cursor-pointer",
-                              input {
-                                  r#type: "checkbox",
+                              Checkbox {
                                   checked: all_pending_selected,
-                                  class: "h-4 w-4 accent-primary",
-                                  onclick: {
+                                  indeterminate: some_pending_selected,
+                                  on_checked_change: {
                                       let pending_ids = pending_ids.clone();
-                                      move |_| {
-                                          let all = !pending_ids.is_empty()
-                                              && pending_ids.iter().all(|id| selected().contains(id));
-                                          let ids = pending_ids.clone();
+                                      move |select_all: bool| {
                                           selected.with_mut(|s| {
-                                              if all {
-                                                  for id in &ids { s.remove(id); }
-                                              } else {
-                                                  for id in &ids { s.insert(*id); }
+                                              for id in &pending_ids {
+                                                  if select_all { s.insert(*id); } else { s.remove(id); }
                                               }
                                           });
                                       }
@@ -793,11 +789,10 @@ fn ModerationQueueRowView(
           // 头部：勾选 / 状态徽章 / 类型 / 路径 / 作者历史 / 时间 / 评分
           div { class: "flex items-center gap-2 mb-2 text-xs flex-wrap",
               if is_pending {
-                  input {
-                      r#type: "checkbox",
+                  Checkbox {
                       checked: selected,
-                      onclick: move |_| on_toggle.call(id),
-                      class: "h-4 w-4 accent-primary cursor-pointer",
+                      on_checked_change: move |_| on_toggle.call(id),
+                      "aria-label": "选择此条",
                   }
               }
               Badge { variant: status_variant, "{status_label}" }
@@ -1041,14 +1036,10 @@ pub fn AdminModerationSettingsPage() -> Element {
 
                   // enabled 总开关
                   div { class: "flex items-center gap-3 p-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40",
-                      input {
-                          r#type: "checkbox",
+                      Switch {
                           id: "moderation-enabled",
                           checked: enabled(),
-                          class: "w-4 h-4",
-                          onchange: move |evt| {
-                              enabled.set(evt.value() == "true" || evt.value() == "on");
-                          },
+                          on_checked_change: move |on| enabled.set(on),
                       }
                       label { r#for: "moderation-enabled", class: "text-sm font-semibold text-slate-800 dark:text-slate-200",
                           "启用内容审核流水线"
@@ -1094,14 +1085,10 @@ pub fn AdminModerationSettingsPage() -> Element {
 
                   // LLM 审核开关
                   div { class: "flex items-center gap-3 p-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40",
-                      input {
-                          r#type: "checkbox",
+                      Switch {
                           id: "moderation-llm-review",
                           checked: llm_review(),
-                          class: "w-4 h-4",
-                          onchange: move |evt| {
-                              llm_review.set(evt.value() == "true" || evt.value() == "on");
-                          },
+                          on_checked_change: move |on| llm_review.set(on),
                       }
                       label { r#for: "moderation-llm-review", class: "text-sm font-semibold text-slate-800 dark:text-slate-200",
                           "LLM 审核"
