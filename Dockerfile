@@ -58,11 +58,11 @@ RUN apt-get update \
 RUN rustup target add wasm32-unknown-unknown
 
 # 安装 Dioxus CLI（fullstack bundle 工具）。
-# **必须与 Cargo.lock 中 dioxus 库版本精确一致**（当前 0.7.5）：dx CLI 负责生成
+# **必须与 Cargo.lock 中 dioxus 库版本精确一致**（当前 0.7.9）：dx CLI 负责生成
 # wasm-bindgen 胶水，版本不匹配会报 "dx and dioxus versions are incompatible!"
 # 并在 bundle 阶段以 "Failed to generate wasm-bindgen bindings" 失败。`^0.7` 会
-# 解析到最新 0.7.9，与 0.7.5 库不兼容；故锁定 `=0.7.5`。升级 dioxus 时同步改这里。
-RUN cargo install dioxus-cli --locked --version "=0.7.5" --no-default-features
+# 可能解析到更新的 0.7.x，与锁定的库不兼容；故精确锁定。升级 dioxus 时同步改这里。
+RUN cargo install dioxus-cli --locked --version "=0.7.9" --no-default-features
 
 WORKDIR /workspace
 
