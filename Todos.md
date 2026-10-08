@@ -405,6 +405,7 @@
   - [x] U11d — 博客 / podcast / cases 标签筛选 → `badge_class` + `aria-pressed`（与 U7 一致）（6551fb7：博客去掉硬编码 `bg-blue-600`，改用与 podcast 相同的 chip 样式；cases 分类选中保留 `btn-flow`，标签未选中保留各自配色；三处均补 `type=button` + `aria-pressed`。浏览器验证三页点击后 aria-pressed 正确切换、cases 标签再点取消。附带发现：`dx serve` 下 podcast 音频 404——build.rs 不同步 `audio/` 到 crates/app/assets，只影响开发态，Docker 用完整 assets 不受影响）
   - [x] U11e — 编辑 / 预览切换、课程代码页签 → Tabs（54e3853：评论、论坛发帖的编辑 / 预览与课程代码文件条改为 Tabs，带 role=tab / aria-selected / 方向键；只挂当前面板。浏览器验证代码页签（临时把付费课节设为试看，已还原）时发现：切换文件后代码不变、控制台 wasm-bindgen 报错——Prism 换掉了 <code> 的文本节点，原地更新写空；CodePanel 按文件加 key 重挂后修复，点击与方向键均切换且高亮。评论 / 论坛编辑器需登录，浏览器未验）
   - [x] U11f — 课程章节折叠 → Collapsible；课程标注开关 → Button（修暗色）（763e9b7：章节与课节视频块改 Collapsible，箭头由 data-state 驱动；标注眼睛按钮改 Outline/Icon Button 走主题变量，暗色不再白底。顺带修 build.rs 正向同步用 root 旧 tailwind.css 覆盖新编译产物的问题 59c3e5b。课节视频块无现成内容，未浏览器验证）
+  - [x] 课节页标题重复显示两次（9dd54cf：读课节时拆掉正文开头的 `# 标题`；frontmatter 标题优先，缺失时用该 H1，再退到 slug。注意标注 block id 按顶层块序号分配，正文增删块会让已有标注错位，未处理）
 
 ---
 
