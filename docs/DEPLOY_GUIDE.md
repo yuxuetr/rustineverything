@@ -401,9 +401,7 @@ labels:
   },
   "auth": {
     "enabled": true,
-    "providers": [
-      { "id": "github", "plugin": "github_auth_plugin.wasm" }
-    ]
+    "providers": ["github"]                  // 内置 provider id，按显示顺序
   }
 }
 ```

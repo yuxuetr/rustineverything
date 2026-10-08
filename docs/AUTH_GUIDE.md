@@ -1,34 +1,35 @@
 # 第三方授权登录接入指南
 
-本文档介绍 Rust in Everything 平台的插件化 OAuth 授权登录系统。该系统基于 WASM 插件架构，支持用户通过 `site.json` 配置文件灵活控制启用哪些登录方式，并允许开发者编写自定义 Auth 插件来接入任意第三方平台。
+本站支持 GitHub、Google、Discord、X（Twitter）四种 OAuth 登录。四个 provider 内置在宿主代码里（`crates/core/src/auth/provider.rs`）；`site.json` 决定启用哪些、按什么顺序显示，环境变量提供凭据。
 
 ---
 
 ## 1. 系统架构
 
 ```
-用户浏览器                     服务端                           WASM 插件
-    │                           │                               │
-    │ 点击登录按钮               │                               │
-    │──────────────────────────>│ 读取 site.json                │
-    │                           │ 加载 {provider}_auth_plugin   │
-    │                           │──────────────────────────────>│ get_provider_config()
-    │                           │<──────────────────────────────│ → auth_url, scopes...
-    │                           │ 读取 {PROVIDER}_CLIENT_ID     │
-    │ 302 重定向到第三方授权页    │<─────────────────────────────│
-    │<──────────────────────────│                               │
-    │                           │                               │
-    │ 授权回调 ?code=xxx        │                               │
-    │──────────────────────────>│ Token 交换 (宿主完成)         │
-    │                           │ 获取用户 Profile (宿主完成)   │
-    │                           │──────────────────────────────>│ map_profile(raw_json)
-    │                           │<──────────────────────────────│ → StandardUser
-    │                           │ 写入数据库                    │
-    │ 登录成功                   │<─────────────────────────────│
-    │<──────────────────────────│                               │
+用户浏览器                     服务端
+    │                           │
+    │ 点击登录按钮               │
+    │──────────────────────────>│ site.json 启用了该 provider？
+    │                           │ 读取 {PROVIDER}_CLIENT_ID
+    │ 302 重定向到第三方授权页    │ 授权 URL = Provider::spec().auth_url（固定常量）
+    │<──────────────────────────│
+    │                           │
+    │ 授权回调 ?code=xxx        │
+    │──────────────────────────>│ 校验 state / PKCE cookie
+    │                           │ Token 交换 → spec().token_url（固定常量）
+    │                           │ 获取 Profile → spec().profile_url（固定常量）
+    │                           │ Provider::map_profile → 缺用户 ID 即登录失败
+    │                           │ 写入数据库
+    │ 登录成功                   │
+    │<──────────────────────────│
 ```
 
-**核心原则**：插件只负责"数据描述"和"字段映射"，所有涉及网络请求、密钥管理、数据库操作均由宿主完成。
+**安全要点**（SEC-04 / SEC-05）：
+
+- 授权、token、profile 三个端点都是代码里的 https 常量，`client_secret` 只会发往对应 provider 的 token 端点，配置文件无法改动它们。
+- 账号匹配用的 provider 用户 ID 只从 profile 响应里取；取不到（错误响应、字段缺失、`0` / 空串）就拒绝登录，不会回退到占位 ID。
+- profile 请求按 HTTP 状态码拒绝错误响应。
 
 ---
 
@@ -75,23 +76,18 @@ BASE_URL=http://localhost:8080
 DATABASE_URL=postgresql://postgres:password@localhost:5432/rustineverything
 ```
 
-在 `assets/site.json` 的 `auth.providers` 中启用需要的 Provider：
+在 `assets/site.json` 的 `auth.providers` 中按显示顺序列出要启用的 provider id：
 
 ```json
 {
   "auth": {
     "enabled": true,
-    "providers": [
-      { "id": "github", "plugin": "github_auth_plugin.wasm" },
-      { "id": "google", "plugin": "google_auth_plugin.wasm" },
-      { "id": "discord", "plugin": "discord_auth_plugin.wasm" },
-      { "id": "twitter", "plugin": "twitter_auth_plugin.wasm" }
-    ]
+    "providers": ["github", "google", "discord", "twitter"]
   }
 }
 ```
 
-系统运行时会自动检查：**WASM 插件存在 + 环境变量已配置** → 在登录模态框中显示该 Provider 按钮。未配置凭据的 Provider 会被静默跳过。
+列出且配置了凭据的 provider 会显示在登录弹窗中；缺凭据的跳过并记 warn 日志，未知 id 同样忽略并记日志。没列出的 provider 即使配了凭据，登录与回调路由也会拒绝。
 
 ---
 
@@ -123,227 +119,38 @@ DATABASE_URL=postgresql://postgres:password@localhost:5432/rustineverything
 - **回调 URL**：`{BASE_URL}/api/auth/callback/twitter`
 - **Scopes**：`users.read tweet.read`
 - **Profile API**：v2 `/users/me`，字段在 `data.{id, name, username, profile_image_url}` 下
-- **注意**：Twitter OAuth 2.0 使用 PKCE 流程，当前宿主端尚未生成 `code_challenge`，接入前需补充此逻辑
+- **PKCE**：X 要求 PKCE（S256），token 交换用 HTTP Basic 传客户端凭据；两者都已内置
 
 ---
 
-## 4. 开发自定义 Auth 插件
+## 4. 新增登录方式
 
-如果需要接入系统未内置的平台（如微信、飞书、GitLab 等），可以开发自定义 Auth 插件。
+在 `crates/core/src/auth/provider.rs` 中：
 
-### 4.1 创建插件 Crate
+1. `Provider` 枚举加一个分支，`ALL` 数组同步加上；
+2. 写一个 `ProviderSpec` 常量（三个 https 端点、scopes、是否 PKCE、token 交换方式、按钮展示信息）；
+3. 补全 `id()` / `spec()` / `map_profile()` 的 `match`——漏掉任何一处都编译不过；
+4. 在测试 `maps_each_provider_profile` 与 `profiles_without_a_usable_uid_are_rejected` 中加上该 provider 的真实 profile 样例与缺 ID 样例。
 
-```bash
-mkdir -p crates/plugins/my-auth/src
-```
+然后在 site.json 的 `auth.providers` 里加上 id，在 `.env` 配 `{ID 大写}_CLIENT_ID` / `_CLIENT_SECRET`，并在第三方平台登记回调 URL `{BASE_URL}/api/auth/callback/{id}`。
 
-`crates/plugins/my-auth/Cargo.toml`：
-
-```toml
-[package]
-name = "my-auth-plugin"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-sdk = { path = "../../sdk" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-```
-
-### 4.2 实现三个必需导出函数
-
-每个 Auth 插件必须导出以下三个函数：
-
-#### `get_provider_config` — 返回 OAuth 端点配置
-
-```rust
-use sdk::{alloc, dealloc, AuthProviderConfig, AuthProviderDisplay, StandardUser};
-use std::slice;
-use serde_json::Value;
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn get_provider_config(_ptr: *mut u8, _len: usize) -> u64 {
-    let config = AuthProviderConfig {
-        auth_url: "https://example.com/oauth/authorize".to_string(),
-        token_url: "https://example.com/oauth/token".to_string(),
-        profile_url: "https://api.example.com/user".to_string(),
-        scopes: vec!["read:user".to_string(), "email".to_string()],
-    };
-
-    let result_str = serde_json::to_string(&config).unwrap_or_default();
-    unsafe { pack_result(result_str) }
-}
-```
-
-**SDK 类型 `AuthProviderConfig`**：
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `auth_url` | `String` | 用户授权页面 URL |
-| `token_url` | `String` | Token 交换 API URL |
-| `profile_url` | `String` | 获取用户信息 API URL |
-| `scopes` | `Vec<String>` | 需要申请的权限列表 |
-
-#### `get_display_info` — 返回前端展示信息
-
-```rust
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn get_display_info(_ptr: *mut u8, _len: usize) -> u64 {
-    let display = AuthProviderDisplay {
-        provider_id: "myplatform".to_string(),
-        display_name: "My Platform".to_string(),
-        icon_svg: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10...".to_string(), // SVG path d
-        brand_color: "#FF6600".to_string(), // 按钮背景色
-    };
-
-    let result_str = serde_json::to_string(&display).unwrap_or_default();
-    unsafe { pack_result(result_str) }
-}
-```
-
-**SDK 类型 `AuthProviderDisplay`**：
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `provider_id` | `String` | 插件标识，需与 site.json 中的 `id` 一致 |
-| `display_name` | `String` | 登录按钮上显示的名称 |
-| `icon_svg` | `String` | SVG `<path d="...">` 的 d 属性值 |
-| `brand_color` | `String` | 按钮品牌色 hex（亮色背景会自动使用深色文字） |
-
-#### `map_profile` — 将第三方原始 Profile 映射为标准用户
-
-```rust
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn map_profile(ptr: *mut u8, len: usize) -> u64 {
-    let input_bytes = unsafe { slice::from_raw_parts(ptr, len) };
-    let raw: Value = serde_json::from_slice(input_bytes).unwrap_or_default();
-
-    let user = StandardUser {
-        external_id: raw["uid"].as_str().unwrap_or("0").to_string(),
-        nickname: raw["display_name"].as_str().unwrap_or("User").to_string(),
-        avatar_url: raw["avatar"].as_str().map(|s| s.to_string()),
-        email: raw["email"].as_str().map(|s| s.to_string()),
-        provider: "myplatform".to_string(),
-        raw_data: raw.to_string(),
-    };
-
-    let result_str = serde_json::to_string(&user).unwrap_or_default();
-    unsafe { pack_result(result_str) }
-}
-```
-
-**SDK 类型 `StandardUser`**：
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `external_id` | `String` | 平台唯一用户 ID |
-| `nickname` | `String` | 用户昵称 |
-| `avatar_url` | `Option<String>` | 头像 URL |
-| `email` | `Option<String>` | 邮箱 |
-| `provider` | `String` | 平台标识 |
-| `raw_data` | `String` | 原始 Profile JSON 备份 |
-
-#### 辅助函数 `pack_result` 和 `plugin_unused_fix`
-
-```rust
-/// 将字符串打包为 (ptr << 32 | len) 格式返回给宿主
-unsafe fn pack_result(s: String) -> u64 {
-    let bytes = s.into_bytes();
-    let len = bytes.len();
-    let ptr = unsafe { alloc(len) };
-    let dst = unsafe { slice::from_raw_parts_mut(ptr, len) };
-    dst.copy_from_slice(&bytes);
-    ((ptr as u64) << 32) | (len as u64)
-}
-
-/// 确保 dealloc 被链接（WASM 编译需要）
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn plugin_unused_fix() {
-    unsafe { let _ = dealloc(std::ptr::null_mut(), 0); }
-}
-```
-
-### 4.3 编译与部署
-
-```bash
-# 1. 添加到 workspace（根 Cargo.toml）
-# members = [..., "crates/plugins/my-auth"]
-
-# 2. 编译 WASM
-CARGO_TARGET_DIR=~/.target cargo build \
-  --manifest-path crates/plugins/my-auth/Cargo.toml \
-  --target wasm32-unknown-unknown --release
-
-# 3. 部署到 assets
-cp ~/.target/wasm32-unknown-unknown/release/my_auth_plugin.wasm assets/plugins/
-```
-
-### 4.4 注册到 site.json
-
-```json
-{
-  "auth": {
-    "enabled": true,
-    "providers": [
-      { "id": "myplatform", "plugin": "my_auth_plugin.wasm" }
-    ]
-  }
-}
-```
-
-### 4.5 配置环境变量
-
-```env
-MYPLATFORM_CLIENT_ID=xxx
-MYPLATFORM_CLIENT_SECRET=xxx
-```
-
-命名规则：`{PROVIDER_ID 转大写}_CLIENT_ID` / `_CLIENT_SECRET`。
+`map_profile` 的约定：用户 ID 必须是 provider 给出的稳定、非空 uid，取不到就返回 `None`；昵称缺失时回退为「{显示名} 用户」；头像 URL 只在 profile 给出时填写（注意 CSP `img-src` 只放行四个已知头像 CDN，新 provider 的头像主机要加进 `crates/app/src/server/security.rs`）。
 
 ---
 
-## 5. 运行时流程详解
+## 5. 运行时流程
 
-当用户点击登录按钮时：
-
-1. **前端**调用 `get_auth_providers()` → 服务端读取 `site.json`
-2. **服务端**遍历 `auth.providers`，对每个 entry 执行：
-   - 检查 `assets/plugins/{plugin}` 文件是否存在
-   - 检查 `{ID}_CLIENT_ID` 和 `{ID}_CLIENT_SECRET` 环境变量是否已设置
-   - 加载 WASM 并调用 `get_display_info()` 获取展示信息
-3. **前端**渲染登录模态框，动态显示可用的 Provider 按钮
-4. 用户点击某个 Provider → 前端调用 `get_login_url(provider_id)`
-5. **服务端**查找 `site.json` 获取插件文件名 → 加载 WASM 调用 `get_provider_config()` → 组装授权 URL
-6. 浏览器 302 跳转到第三方授权页
-7. 用户授权后回调到 `/api/auth/callback/{provider}?code=xxx`
-8. **服务端**执行 Token 交换 → 获取 Profile → 加载 WASM 调用 `map_profile()` → 写入数据库
+1. 前端调用 `get_auth_providers()`：服务端按 site.json 的顺序取启用的内置 provider，过滤掉缺凭据的，返回展示信息。
+2. 用户点击按钮 → `GET /api/auth/login/{provider}`：provider 必须在 site.json 中启用；生成 state（及 X 的 PKCE verifier），加密写入 `oauth_pkce` cookie，302 到授权页。
+3. 第三方回调 `/api/auth/callback/{provider}?code=…&state=…`：校验 cookie 的 provider、state、TTL 与 PKCE verifier → token 交换 → 取 profile（非 2xx 拒绝）→ `map_profile` → 按 `(provider, uid)` 查找或创建账号 → 签发会话。
 
 ---
 
-## 6. 开发检查清单
+## 6. 已内置的 Provider
 
-- [ ] **edition 2024**：使用 `#[unsafe(no_mangle)]` 而非 `#[no_mangle]`
-- [ ] **三个导出函数**：`get_provider_config`、`get_display_info`、`map_profile` 均已实现
-- [ ] **provider_id 一致**：`get_display_info` 返回的 `provider_id` 与 `site.json` 中的 `id` 一致
-- [ ] **编译目标**：使用 `--target wasm32-unknown-unknown`
-- [ ] **环境变量命名**：`{PROVIDER_ID 大写}_CLIENT_ID` 和 `_CLIENT_SECRET`
-- [ ] **回调 URL**：在第三方平台配置 `{BASE_URL}/api/auth/callback/{provider_id}`
-- [ ] **无 IO 操作**：插件内不发起网络请求或文件读写（由宿主完成）
-- [ ] **内存安全**：通过 `alloc` 分配的内存由宿主 `dealloc` 释放
-- [ ] **SVG 图标**：`icon_svg` 为标准 24x24 viewBox 的 `<path d="...">` 值
-- [ ] **品牌色**：`brand_color` 为 6 位 hex 值（如 `#24292f`），系统会自动选择黑/白文字色
-
----
-
-## 7. 已内置的 Auth 插件
-
-| Provider | plugin 文件名 | 环境变量前缀 | OAuth 版本 | 备注 |
-|----------|--------------|-------------|-----------|------|
-| GitHub | `github_auth_plugin.wasm` | `GITHUB_` | OAuth 2.0 | 已验证 |
-| Google | `google_auth_plugin.wasm` | `GOOGLE_` | OAuth 2.0 + OpenID | 需 Google Cloud 项目 |
-| Discord | `discord_auth_plugin.wasm` | `DISCORD_` | OAuth 2.0 | 头像通过 CDN URL 构造 |
-| Twitter/X | `twitter_auth_plugin.wasm` | `TWITTER_` | OAuth 2.0 + PKCE | 需补充 PKCE code_challenge |
+| Provider | id / 环境变量前缀 | 协议 | 备注 |
+|----------|------------------|------|------|
+| GitHub | `github` / `GITHUB_` | OAuth 2.0 | 用户 ID 是数字 |
+| Google | `google` / `GOOGLE_` | OAuth 2.0 + OpenID | 需 Google Cloud 项目 |
+| Discord | `discord` / `DISCORD_` | OAuth 2.0 | 头像由 CDN URL 构造 |
+| X (Twitter) | `twitter` / `TWITTER_` | OAuth 2.0 + PKCE | token 交换用 HTTP Basic |

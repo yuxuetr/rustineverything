@@ -644,26 +644,7 @@ pub async fn admin_list_plugins() -> Result<Vec<AdminPluginRow>, ServerFnError> 
 
     let mut rows: Vec<AdminPluginRow> = Vec::new();
 
-    // 1. site.json 中显式配置的 auth providers
-    for entry in &site.auth.providers {
-      let path = plugin_dir.join(&entry.plugin);
-      let (present, size, modified) = stat_plugin(&path);
-      let upper = entry.id.to_uppercase();
-      let creds_ready = std::env::var(format!("{}_CLIENT_ID", upper)).is_ok()
-        && std::env::var(format!("{}_CLIENT_SECRET", upper)).is_ok();
-      rows.push(AdminPluginRow {
-        kind: "auth".to_string(),
-        id: entry.id.clone(),
-        filename: entry.plugin.clone(),
-        configured: site.auth.enabled,
-        credentials_ready: creds_ready,
-        present,
-        size_bytes: size,
-        modified,
-      });
-    }
-
-    // 2. active_theme
+    // 1. active_theme
     if !site.active_theme.is_empty() {
       let path = plugin_dir.join(&site.active_theme);
       let (present, size, modified) = stat_plugin(&path);
@@ -679,7 +660,7 @@ pub async fn admin_list_plugins() -> Result<Vec<AdminPluginRow>, ServerFnError> 
       });
     }
 
-    // 3. 文件系统中其他未在 site.json 列举的 wasm 插件 → 标记 configured=false
+    // 2. 文件系统中其他未在 site.json 列举的 wasm 插件 → 标记 configured=false
     let known: std::collections::HashSet<String> =
       rows.iter().map(|r| r.filename.clone()).collect();
     if let Ok(entries) = std::fs::read_dir(&plugin_dir) {

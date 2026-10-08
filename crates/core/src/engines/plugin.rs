@@ -291,7 +291,7 @@ mod tests {
   #[tokio::test]
   async fn integration_real_plugin_manifest() {
     let e = make_engine();
-    let wasm = Path::new("../../assets/plugins/github_auth_plugin.wasm");
+    let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
     if !wasm.exists() {
       return;
     }
@@ -299,9 +299,9 @@ mod tests {
       Ok(m) => m,
       Err(_) => return, // 插件未迁移也允许跳过
     };
-    assert_eq!(manifest.id, "github-auth");
-    assert!(manifest.is_compatible(), "github-auth ABI 不兼容: {}", manifest.abi_version);
-    assert!(manifest.has_capability(capabilities::AUTH_PROVIDER));
+    assert_eq!(manifest.id, "i18n-fluent");
+    assert!(manifest.is_compatible(), "i18n-fluent ABI 不兼容: {}", manifest.abi_version);
+    assert!(manifest.has_capability(capabilities::I18N));
   }
 
   #[tokio::test]
@@ -331,19 +331,19 @@ mod tests {
   async fn integration_filter_by_capability_finds_theme() {
     let e = make_engine();
     let theme = PathBuf::from("../../assets/plugins/theme_ocean_plugin.wasm");
-    let auth = PathBuf::from("../../assets/plugins/github_auth_plugin.wasm");
-    if !theme.exists() || !auth.exists() {
+    let i18n = PathBuf::from("../../assets/plugins/i18n_fluent_plugin.wasm");
+    if !theme.exists() || !i18n.exists() {
       return;
     }
     if e.try_get_manifest(&theme).await.is_none() {
       return;
     }
-    let refs: Vec<&Path> = vec![theme.as_path(), auth.as_path()];
+    let refs: Vec<&Path> = vec![theme.as_path(), i18n.as_path()];
     let themes = e.filter_by_capability(refs.clone(), capabilities::THEME).await;
-    let auths = e.filter_by_capability(refs, capabilities::AUTH_PROVIDER).await;
+    let i18ns = e.filter_by_capability(refs, capabilities::I18N).await;
     assert_eq!(themes.len(), 1);
     assert!(themes[0].ends_with("theme_ocean_plugin.wasm"));
-    assert_eq!(auths.len(), 1);
-    assert!(auths[0].ends_with("github_auth_plugin.wasm"));
+    assert_eq!(i18ns.len(), 1);
+    assert!(i18ns[0].ends_with("i18n_fluent_plugin.wasm"));
   }
 }

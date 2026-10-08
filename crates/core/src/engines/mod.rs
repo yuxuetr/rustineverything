@@ -9,7 +9,6 @@
 //! - [`theme`]：CSS 聚合（按主题栈）
 //! - [`module`]：业务模块开关 + 元数据（Navbar / sitemap 通过 [`module::ModuleSpec`] 单点读取）
 //! - [`layout`]：Classic / Minimal 布局选择
-//! - [`auth`]：基于 [`crate::auth::AuthService`] 的薄封装，便于上层注入插件目录
 //! - [`moderation`]：审核 verdict / pipeline 数据结构
 //! - [`search`]：搜索栈状态（具体 SearchEngine 在 module-search 里）
 //!
@@ -18,7 +17,6 @@
 //!   删除 `core::engines::content::ComponentRegistry`（与 `widgets::registry` 重复）。
 
 // 子引擎模块。
-pub mod auth;
 pub mod content_transformer;
 pub mod doc_source;
 pub mod layout;

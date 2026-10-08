@@ -353,13 +353,19 @@ fn build_auth_service() -> (app_core::auth::AuthService, SiteConfig) {
     .and_then(|p| SiteConfig::load_cached(p).ok())
     .map(|cfg| (*cfg).clone())
     .unwrap_or_default();
-  let auth_service = AuthService::new(config, get_asset_root().join("plugins"));
+  let auth_service = AuthService::new(config);
   (auth_service, site_config)
 }
 
+/// URL 里的 provider 段 → site.json 启用的内置 provider。
 #[cfg(feature = "server")]
-fn find_plugin_filename(site_config: &SiteConfig, provider: &str) -> Option<String> {
-  site_config.auth.providers.iter().find(|p| p.id == provider).map(|p| p.plugin.clone())
+fn resolve_provider(
+  site_config: &SiteConfig,
+  provider: &str,
+) -> Result<app_core::auth::Provider, app_core::error::AppError> {
+  app_core::auth::enabled_providers(site_config)
+    .find(|p| p.id() == provider)
+    .ok_or_else(|| format!("未启用的登录方式: {}", provider).into())
 }
 
 // ========== Auth 端点 ==========
@@ -369,7 +375,7 @@ pub async fn get_auth_providers() -> Result<Vec<app_core::AuthProviderDisplay>, 
   #[cfg(feature = "server")]
   {
     let (auth_service, site_config) = build_auth_service();
-    Ok(auth_service.list_available_providers(&site_config).await)
+    Ok(auth_service.list_available_providers(&site_config))
   }
   #[cfg(not(feature = "server"))]
   {
@@ -385,9 +391,8 @@ pub async fn prepare_login_for_provider(
   provider: String,
 ) -> Result<(String, String), app_core::error::AppError> {
   let (auth_service, site_config) = build_auth_service();
-  let plugin_filename = find_plugin_filename(&site_config, &provider)
-    .ok_or_else(|| format!("未在 site.json 中配置 provider: {}", provider))?;
-  let (url, payload) = auth_service.prepare_login(&provider, &plugin_filename).await?;
+  let provider = resolve_provider(&site_config, &provider)?;
+  let (url, payload) = auth_service.prepare_login(provider)?;
   let cookie_value = payload.encode()?;
   Ok((url, cookie_value))
 }
@@ -421,11 +426,10 @@ pub async fn auth_callback_internal(
   use app_core::session::create_jwt;
 
   let (auth_service, site_config) = build_auth_service();
-  let plugin_filename = find_plugin_filename(&site_config, &provider)
-    .ok_or_else(|| format!("未在 site.json 中配置 provider: {}", provider))?;
+  let provider = resolve_provider(&site_config, &provider)?;
 
   tracing::debug!(
-    provider = %provider,
+    provider = %provider.id(),
     code_len = code.len(),
     state_len = received_state.len(),
     "auth callback received"
@@ -433,9 +437,8 @@ pub async fn auth_callback_internal(
 
   let db = get_or_init_pool().await?;
 
-  let user = auth_service
-    .handle_callback(&db, &provider, &plugin_filename, code, &received_state, pkce_cookie)
-    .await?;
+  let user =
+    auth_service.handle_callback(&db, provider, code, &received_state, pkce_cookie).await?;
 
   let jwt_token = create_jwt(&user)?;
   tracing::info!(user = %user.nickname, "auth callback login success");

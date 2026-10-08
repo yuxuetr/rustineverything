@@ -1,7 +1,7 @@
 // S9（风险 R12）：生产代码禁 unwrap/expect（workspace lints）；测试代码豁免。
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
-#[cfg(feature = "server")]
+// 非 server 构建只用到 `AuthProviderDisplay`（登录弹窗）。
 pub mod auth;
 #[cfg(feature = "server")]
 pub mod db;
@@ -15,8 +15,8 @@ pub mod session;
 pub mod settings;
 pub mod utils;
 
+pub use auth::AuthProviderDisplay;
 // Re-export SDK types needed by the app crate
-pub use sdk::AuthProviderDisplay;
 pub use sdk::{capabilities, PluginManifest, SDK_ABI_VERSION};
 
 use std::collections::HashMap;

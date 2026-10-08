@@ -21,12 +21,7 @@
   ],
   "auth": {
     "enabled": true,
-    "providers": [
-      { "id": "github", "plugin": "github_auth_plugin.wasm" },
-      { "id": "google", "plugin": "google_auth_plugin.wasm" },
-      { "id": "discord", "plugin": "discord_auth_plugin.wasm" },
-      { "id": "twitter", "plugin": "twitter_auth_plugin.wasm" }
-    ]
+    "providers": ["github", "google", "discord", "twitter"]
   },
   "annotations": {
     "course": true,

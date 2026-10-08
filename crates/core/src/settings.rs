@@ -105,14 +105,8 @@ pub struct NavItem {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthSettings {
   pub enabled: bool,
-  pub providers: Vec<AuthProviderEntry>,
-}
-
-/// 单个授权提供者配置项
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthProviderEntry {
-  pub id: String,     // provider 标识，如 "github"
-  pub plugin: String, // 插件文件名，如 "github_auth_plugin.wasm"
+  /// 启用的内置 provider id（见 [`crate::auth::Provider`]），按登录弹窗显示顺序。
+  pub providers: Vec<String>,
 }
 
 impl SiteConfig {

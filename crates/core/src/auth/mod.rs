@@ -1,19 +1,21 @@
 #[cfg(feature = "server")]
 pub mod crypto;
+pub mod provider;
 
 #[cfg(feature = "server")]
 use crate::entities::{user, user_identity};
+#[cfg(feature = "server")]
 use crate::settings::SiteConfig;
 #[cfg(feature = "server")]
-use crate::PluginManager;
-#[cfg(feature = "server")]
 use chrono::Utc;
-use sdk::{AuthProviderConfig, AuthProviderDisplay, StandardUser};
+#[cfg(feature = "server")]
+use provider::TokenAuth;
+pub use provider::{AuthProviderDisplay, Provider};
 #[cfg(feature = "server")]
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "server")]
 use serde_json::Value;
-use std::path::PathBuf;
 #[cfg(feature = "server")]
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -158,63 +160,26 @@ impl AuthConfig {
 #[cfg(feature = "server")]
 pub struct AuthService {
   pub config: AuthConfig,
-  pub plugin_manager: PluginManager,
-  pub plugin_dir: PathBuf,
 }
 
 #[cfg(feature = "server")]
 impl AuthService {
-  pub fn new(config: AuthConfig, plugin_dir: PathBuf) -> Self {
-    Self { config, plugin_manager: PluginManager::new(), plugin_dir }
+  pub fn new(config: AuthConfig) -> Self {
+    Self { config }
   }
 
-  /// 根据 site.json 配置，返回已安装且已配置凭据的 auth provider 展示列表。
-  ///
-  /// 内部需要进入 wasmi 沙箱调用 `get_display_info`，因此整个函数是 async。
-  pub async fn list_available_providers(
-    &self,
-    site_config: &SiteConfig,
-  ) -> Vec<AuthProviderDisplay> {
-    if !site_config.auth.enabled {
-      return vec![];
-    }
-
-    let mut result = Vec::new();
-    for entry in &site_config.auth.providers {
-      let plugin_path = self.plugin_dir.join(&entry.plugin);
-
-      // 插件文件必须存在
-      if !plugin_path.exists() {
-        tracing::warn!(plugin = ?plugin_path, "auth: plugin file missing, skipping");
-        continue;
-      }
-
-      // 环境变量必须配置
-      if !AuthConfig::has_credentials(&entry.id) {
-        tracing::warn!(provider = %entry.id, "auth: no credentials configured, skipping");
-        continue;
-      }
-
-      // 调用插件获取展示信息
-      match std::fs::read(&plugin_path) {
-        Ok(wasm_bytes) => {
-          match self.plugin_manager.call_with_string(&wasm_bytes, "get_display_info", "").await {
-            Ok(json) => match serde_json::from_str::<AuthProviderDisplay>(&json) {
-              Ok(display) => result.push(display),
-              Err(e) => {
-                tracing::warn!(provider = %entry.id, error = %e, "auth: failed to parse display_info")
-              }
-            },
-            Err(e) => {
-              tracing::warn!(provider = %entry.id, error = %e, "auth: get_display_info call failed")
-            }
-          }
+  /// 登录弹窗要显示的 provider：site.json 里列出、且配置了凭据的，按列出顺序。
+  pub fn list_available_providers(&self, site_config: &SiteConfig) -> Vec<AuthProviderDisplay> {
+    enabled_providers(site_config)
+      .filter(|p| {
+        let ready = AuthConfig::has_credentials(p.id());
+        if !ready {
+          tracing::warn!(provider = %p.id(), "auth: no credentials configured, skipping");
         }
-        Err(e) => tracing::warn!(provider = %entry.id, error = %e, "auth: failed to read plugin"),
-      }
-    }
-
-    result
+        ready
+      })
+      .map(Provider::display)
+      .collect()
   }
 
   /// 准备 OAuth 登录：返回 (跳转 URL, [`PkceCookiePayload`])。
@@ -222,24 +187,14 @@ impl AuthService {
   /// 调用方负责把 payload 调 [`PkceCookiePayload::encode`] 后塞进 `Set-Cookie`
   /// （见 [`build_pkce_set_cookie`]）。Phase 7.2：服务端不再保存任何 state /
   /// verifier，全部由浏览器 cookie 承担。
-  pub async fn prepare_login(
+  pub fn prepare_login(
     &self,
-    provider: &str,
-    plugin_filename: &str,
+    provider: Provider,
   ) -> crate::error::AppResult<(String, PkceCookiePayload)> {
-    let plugin_path = self.plugin_dir.join(plugin_filename);
-    if !plugin_path.exists() {
-      return Err(format!("未找到插件: {:?}", plugin_path).into());
-    }
-
-    let wasm_bytes = std::fs::read(plugin_path)?;
-    let config_json =
-      self.plugin_manager.call_with_string(&wasm_bytes, "get_provider_config", "").await?;
-    let provider_config: AuthProviderConfig = serde_json::from_str(&config_json)?;
-
-    let (client_id, _) = AuthConfig::get_credentials(provider)?;
-    let redirect_url = self.config.redirect_url(provider);
-    let scopes = provider_config.scopes.join(" ");
+    let spec = provider.spec();
+    let (client_id, _) = AuthConfig::get_credentials(provider.id())?;
+    let redirect_url = self.config.redirect_url(provider.id());
+    let scopes = spec.scopes.join(" ");
 
     // 生成随机 state
     //
@@ -260,11 +215,11 @@ impl AuthService {
 
     let mut url = format!(
       "{}?client_id={}&redirect_uri={}&scope={}&response_type=code&state={}",
-      provider_config.auth_url, client_id, redirect_url, scopes, state
+      spec.auth_url, client_id, redirect_url, scopes, state
     );
 
     // PKCE: 生成 code_verifier 和 code_challenge
-    let verifier = if provider_config.requires_pkce {
+    let verifier = if spec.requires_pkce {
       use base64::Engine;
       use sha2::Digest;
 
@@ -280,13 +235,13 @@ impl AuthService {
       let code_challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest);
       url.push_str(&format!("&code_challenge={}&code_challenge_method=S256", code_challenge));
 
-      tracing::debug!(provider = %provider, "auth: PKCE enabled");
+      tracing::debug!(provider = %provider.id(), "auth: PKCE enabled");
       Some(code_verifier)
     } else {
       None
     };
 
-    let payload = PkceCookiePayload::new_now(provider.to_string(), state, verifier);
+    let payload = PkceCookiePayload::new_now(provider.id().to_string(), state, verifier);
     Ok((url, payload))
   }
 
@@ -296,12 +251,11 @@ impl AuthService {
   /// - state CSRF: `payload.state == received_state`
   /// - provider 绑定: `payload.provider == provider`
   /// - TTL: `!payload.is_expired()`
-  /// - 若插件要求 PKCE：`payload.verifier.is_some()`
+  /// - 若 provider 要求 PKCE：`payload.verifier.is_some()`
   pub async fn handle_callback(
     &self,
     db: &DatabaseConnection,
-    provider: &str,
-    plugin_filename: &str,
+    provider: Provider,
     code: String,
     received_state: &str,
     pkce_cookie: PkceCookiePayload,
@@ -310,31 +264,20 @@ impl AuthService {
     if pkce_cookie.is_expired() {
       return Err("OAuth 会话已过期，请重新登录".into());
     }
-    if pkce_cookie.provider != provider {
+    if pkce_cookie.provider != provider.id() {
       return Err("OAuth 会话 provider 不匹配".into());
     }
     if pkce_cookie.state != received_state {
       return Err("OAuth state 不匹配（疑似 CSRF）".into());
     }
 
-    let plugin_path = self.plugin_dir.join(plugin_filename);
-    let wasm_bytes = std::fs::read(&plugin_path)?;
+    let spec = provider.spec();
+    let (client_id, client_secret) = AuthConfig::get_credentials(provider.id())?;
+    let redirect_url = self.config.redirect_url(provider.id());
 
-    // 1. 获取插件配置
-    let config_json =
-      self.plugin_manager.call_with_string(&wasm_bytes, "get_provider_config", "").await?;
-    let provider_config: AuthProviderConfig = serde_json::from_str(&config_json)?;
-
-    let (client_id, client_secret) = AuthConfig::get_credentials(provider)?;
-    let redirect_url = self.config.redirect_url(provider);
-
-    // 2. 构建 Token 交换请求
+    // 1. 构建 Token 交换请求
     let http_client = reqwest::Client::new();
-    tracing::debug!(
-        provider = %provider,
-        auth_method = %provider_config.token_auth_method,
-        "auth: token exchange initiated"
-    );
+    tracing::debug!(provider = %provider.id(), "auth: token exchange initiated");
 
     let mut form_params: Vec<(&str, String)> = vec![
       ("code", code),
@@ -342,8 +285,8 @@ impl AuthService {
       ("grant_type", "authorization_code".to_string()),
     ];
 
-    // PKCE: 若插件要求 PKCE 但 cookie 里没有 verifier → 拒绝
-    if provider_config.requires_pkce && pkce_cookie.verifier.is_none() {
+    // PKCE: 若 provider 要求 PKCE 但 cookie 里没有 verifier → 拒绝
+    if spec.requires_pkce && pkce_cookie.verifier.is_none() {
       return Err("PKCE code_verifier 缺失".into());
     }
     if let Some(ref cv) = pkce_cookie.verifier {
@@ -351,60 +294,38 @@ impl AuthService {
       tracing::debug!("auth: PKCE code_verifier attached");
     }
 
-    // 根据认证方式构建请求
-    let request = if provider_config.token_auth_method == "basic_auth" {
-      // Basic Auth: client_id:client_secret in Authorization header
-      http_client
-        .post(&provider_config.token_url)
+    let request = match spec.token_auth {
+      TokenAuth::Basic => http_client
+        .post(spec.token_url)
         .header("Accept", "application/json")
         .header("Content-Type", "application/x-www-form-urlencoded")
         .basic_auth(&client_id, Some(&client_secret))
-        .form(&form_params)
-    } else {
-      // Form body (default): client_id/secret in form data
-      form_params.push(("client_id", client_id.clone()));
-      form_params.push(("client_secret", client_secret.clone()));
-      http_client
-        .post(&provider_config.token_url)
-        .header("Accept", "application/json")
-        .form(&form_params)
+        .form(&form_params),
+      TokenAuth::Form => {
+        form_params.push(("client_id", client_id.clone()));
+        form_params.push(("client_secret", client_secret.clone()));
+        http_client.post(spec.token_url).header("Accept", "application/json").form(&form_params)
+      }
     };
 
     let token_response: Value = request.send().await?.json().await?;
     // 安全：不输出完整 token 响应，仅记录是否拿到 access_token
     let access_token = token_response["access_token"].as_str().ok_or_else(|| {
       let err_kind = token_response["error"].as_str().unwrap_or("unknown_error");
-      format!("Token 交换失败 (provider={}, error={})", provider, err_kind)
+      format!("Token 交换失败 (provider={}, error={})", provider.id(), err_kind)
     })?;
-    tracing::info!(provider = %provider, "auth: token exchange success");
+    tracing::info!(provider = %provider.id(), "auth: token exchange success");
 
-    // 3. 获取用户信息
-    let profile_response =
-      fetch_profile(&http_client, &provider_config.profile_url, access_token).await?;
-    tracing::info!(provider = %provider, "auth: profile fetched");
+    // 2. 获取用户信息并映射（Phase 8.2：access_token 用完即丢，不持久化）
+    let profile = fetch_profile(&http_client, spec.profile_url, access_token).await?;
+    let Some(account) = provider.map_profile(&profile) else {
+      tracing::warn!(provider = %provider.id(), "auth: profile has no usable user id");
+      return Err(format!("登录失败：{} 未返回用户 ID", provider.id()).into());
+    };
+    tracing::info!(provider = %provider.id(), "auth: profile fetched");
 
-    // 4. 插件 Profile 映射
-    let standard_user_json = self
-      .plugin_manager
-      .call_with_string(&wasm_bytes, "map_profile", &profile_response.to_string())
-      .await?;
-    let standard_user: StandardUser = serde_json::from_str(&standard_user_json)?;
-    if !is_usable_external_id(&standard_user.external_id) {
-      tracing::warn!(provider = %provider, "auth: plugin returned no usable external_id");
-      return Err(format!("登录失败：{} 未返回用户 ID", provider).into());
-    }
-
-    // 5. 同步至数据库（Phase 8.2：不再持久化 access_token，直接丢弃）
-    let _ = access_token; // 调用链结束于此；进入 sync_user_to_db 之后不再需要
-    self
-      .sync_user_to_db(
-        db,
-        provider,
-        standard_user.external_id,
-        standard_user.nickname,
-        standard_user.avatar_url,
-      )
-      .await
+    // 3. 同步至数据库
+    self.sync_user_to_db(db, provider.id(), account.uid, account.nickname, account.avatar_url).await
   }
 
   async fn sync_user_to_db(
@@ -458,15 +379,23 @@ impl AuthService {
   }
 }
 
-/// 插件映射出的 provider 用户 ID 能否用来匹配 / 创建账号。空串与 `"0"` 是插件
-/// 取不到 ID 时的占位，接受它们会把不同的人登进同一个账号。
-fn is_usable_external_id(uid: &str) -> bool {
-  let uid = uid.trim();
-  !uid.is_empty() && uid != "0"
+/// site.json `auth.providers` 中列出、且是内置 provider 的项，按列出顺序。
+/// `auth.enabled = false` 时为空；未知 id 记日志后忽略。
+#[cfg(feature = "server")]
+pub fn enabled_providers(site_config: &SiteConfig) -> impl Iterator<Item = Provider> + '_ {
+  let ids = if site_config.auth.enabled { site_config.auth.providers.as_slice() } else { &[] };
+  ids.iter().filter_map(|id| {
+    let provider = Provider::from_id(id);
+    if provider.is_none() {
+      tracing::warn!(provider = %id, "auth: unknown provider in site.json, ignoring");
+    }
+    provider
+  })
 }
 
 /// 用 access token 取 provider 的用户信息。错误响应（401 / 限流）的 body
-/// 也是 JSON，必须按状态码拒绝，否则插件会从里面映射出一个占位用户（SEC-04）。
+/// 也是 JSON，必须按状态码拒绝，不能交给字段映射（SEC-04）。
+#[cfg(feature = "server")]
 async fn fetch_profile(
   client: &reqwest::Client,
   profile_url: &str,
@@ -485,7 +414,6 @@ async fn fetch_profile(
 #[cfg(all(test, feature = "server"))]
 mod tests {
   use super::*;
-  use std::fs;
 
   /// 本地起一个只回一次固定响应的 HTTP 服务，返回其 URL。
   async fn serve_once(status_line: &'static str, body: &'static str) -> String {
@@ -505,14 +433,22 @@ mod tests {
     format!("http://{addr}/user")
   }
 
+  fn site_with_providers(enabled: bool, ids: &[&str]) -> SiteConfig {
+    let mut site = SiteConfig::default();
+    site.auth.enabled = enabled;
+    site.auth.providers = ids.iter().map(|s| s.to_string()).collect();
+    site
+  }
+
+  /// 只有 site.json 列出的内置 provider 能登录；未知 id（旧配置里的自定义插件）被忽略。
   #[test]
-  fn external_id_placeholders_are_rejected() {
-    for bad in ["", " ", "0", " 0 "] {
-      assert!(!is_usable_external_id(bad), "{bad:?}");
-    }
-    for ok in ["12345", "a1b2", "00"] {
-      assert!(is_usable_external_id(ok), "{ok:?}");
-    }
+  fn enabled_providers_follow_site_json_order_and_skip_unknown_ids() {
+    let site = site_with_providers(true, &["twitter", "myplatform", "github"]);
+    let ids: Vec<&str> = enabled_providers(&site).map(Provider::id).collect();
+    assert_eq!(ids, ["twitter", "github"]);
+
+    let disabled = site_with_providers(false, &["github"]);
+    assert_eq!(enabled_providers(&disabled).count(), 0);
   }
 
   /// SEC-04：错误响应体也是合法 JSON，不检查状态就会被当成 profile 交给插件。
@@ -525,58 +461,6 @@ mod tests {
     }
     let url = serve_once("200 OK", r#"{"id":1}"#).await;
     assert_eq!(fetch_profile(&client, &url, "t").await.unwrap()["id"], 1);
-  }
-
-  #[tokio::test]
-  async fn test_github_auth_plugin_logic() {
-    // 插件路径（基于 target-dir 的位置或 build 后的位置）
-    let wasm_path = "../../assets/plugins/github_auth_plugin.wasm";
-    if !std::path::Path::new(wasm_path).exists() {
-      println!("跳过测试：插件文件不存在");
-      return;
-    }
-
-    let wasm_bytes = fs::read(wasm_path).expect("读取插件失败");
-    let manager = crate::PluginManager::new();
-
-    // 1. 测试获取配置
-    let config_json = manager
-      .call_with_string(&wasm_bytes, "get_provider_config", "")
-      .await
-      .expect("调用 get_provider_config 失败");
-    let config: AuthProviderConfig =
-      serde_json::from_str(&config_json).expect("解析配置 JSON 失败");
-    assert_eq!(config.auth_url, "https://github.com/login/oauth/authorize");
-    assert!(config.scopes.contains(&"read:user".to_string()));
-
-    // 2. 测试 Profile 映射
-    let mock_raw_profile = serde_json::json!({
-        "id": 12345,
-        "login": "test_user",
-        "avatar_url": "https://example.com/avatar.png",
-        "email": "test@example.com"
-    })
-    .to_string();
-
-    let standard_user_json = manager
-      .call_with_string(&wasm_bytes, "map_profile", &mock_raw_profile)
-      .await
-      .expect("调用 map_profile 失败");
-    let user: StandardUser =
-      serde_json::from_str(&standard_user_json).expect("解析 StandardUser 失败");
-
-    assert_eq!(user.external_id, "12345");
-    assert_eq!(user.nickname, "test_user");
-    assert_eq!(user.provider, "github");
-    assert_eq!(user.email, Some("test@example.com".to_string()));
-
-    // SEC-04：缺 id（如错误响应 body）不得映射出占位 ID
-    let json = manager
-      .call_with_string(&wasm_bytes, "map_profile", r#"{"message":"Bad credentials"}"#)
-      .await
-      .expect("调用 map_profile 失败");
-    let user: StandardUser = serde_json::from_str(&json).expect("解析 StandardUser 失败");
-    assert!(!is_usable_external_id(&user.external_id), "{:?}", user.external_id);
   }
 
   // ── Phase 7.2：PkceCookiePayload 加密 cookie 持久化 ──
@@ -719,10 +603,7 @@ mod tests {
     let db = Database::connect(&db_url).await.expect("连接测试数据库失败");
     Migrator::up(&db, None).await.expect("应用迁移失败");
 
-    let service = AuthService::new(
-      AuthConfig { base_url: "http://localhost:8080".to_string() },
-      std::path::PathBuf::from("."),
-    );
+    let service = AuthService::new(AuthConfig { base_url: "http://localhost:8080".to_string() });
 
     // 唯一标记：避免与既有数据冲突，并能精确断言/清理
     let marker = Utc::now().timestamp_micros();
