@@ -69,7 +69,7 @@ assets/tailwind.css                ← git 跟踪的 SoT
 
 ### 2.1 颜色来源：shadcn token 优先
 
-颜色的唯一来源是 dioxus-shadcn 的语义 token（`--background`、`--foreground`、`--primary`、`--muted`、`--muted-foreground`、`--card`、`--popover`、`--border`、`--input`、`--ring`、`--accent`、`--secondary`、`--destructive`、`--success`、`--warning` 等）。默认值在 `tailwind-input.css`，主题插件运行时覆盖（亮色写在 `:root`，暗色写在 `.dark`）。新代码用 token 类名：
+颜色的唯一来源是 dioxus-shadcn 的语义 token（`--background`、`--foreground`、`--primary`、`--muted`、`--muted-foreground`、`--card`、`--popover`、`--border`、`--input`、`--ring`、`--accent`、`--secondary`、`--destructive`、`--success`、`--warning` 等）。默认值在 `tailwind-input.css`，内置主题运行时覆盖（亮色写在 `:root`，暗色写在 `.dark`）。新代码用 token 类名：
 
 ```rust
 rsx! {
@@ -103,7 +103,7 @@ token 类名自动跟随主题与暗色模式，不需要写 `dark:` 变体。
 
 ### 2.3 主题
 
-内置主题输出 2.1 的 token（规范见 `docs/THEME_SPEC.md`）。旧变量 `--color-primary` / `--color-bg` / `--color-surface` / `--color-text` / `--color-text-muted` / `--color-border` 在 `assets/css/main.css` 中是 token 的别名，保留给 `var(--color-*)` 写法。
+内置主题输出 2.1 的 token（规范见 `docs/THEME_SPEC.md`）。旧变量 `--color-primary` / `--color-bg` / `--color-surface` / `--color-text` / `--color-text-muted` / `--color-border` 在 `assets/css/main.css` 中是 token 的别名，保留给存量的 `var(--color-*)` 手写类名（约 50 处）；新代码用 token。
 
 ### 2.4 深色模式
 

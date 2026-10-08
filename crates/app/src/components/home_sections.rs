@@ -7,6 +7,7 @@
 
 use dioxus::prelude::*;
 use dioxus::router::Link;
+use dioxus_shadcn::{Spinner, SpinnerSize};
 
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
@@ -86,7 +87,7 @@ fn SectionHeader(title: String, subtitle: String, all_label: String, to: Route) 
 fn loading_spinner() -> Element {
   rsx! {
       div { class: "flex items-center justify-center py-16",
-          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--color-primary)]" }
+          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
       }
   }
 }

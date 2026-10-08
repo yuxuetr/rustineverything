@@ -126,4 +126,4 @@ RSX 渲染对应壳，Outlet::<Route> 嵌入主内容
 
 主题应在 `:root` 与 `.dark` 各给一套完整的值（`.dark` 加在 `<html>` 上）。`--destructive` / `--success` / `--warning` / `--info`、`--chart-*`、`--sidebar-*` 可省略，沿用默认值。
 
-**旧变量（兼容）**：`--color-primary` / `--color-bg` / `--color-surface` / `--color-text` / `--color-text-muted` / `--color-border` 在 `assets/css/main.css` 中定义为上表 token 的别名（`--color-bg: var(--background)` 等）。只覆盖这些别名的主题只影响使用 `var(--color-*)` 的手写类名，**组件不会跟随**；主题请输出 token。
+**旧变量（兼容）**：`--color-primary` / `--color-bg` / `--color-surface` / `--color-text` / `--color-text-muted` / `--color-border` 在 `assets/css/main.css` 中定义为上表 token 的别名（`--color-bg: var(--background)` 等）。它们只为存量的 `var(--color-*)` 手写类名保留；只改别名不会让组件跟随，主题请输出 token。

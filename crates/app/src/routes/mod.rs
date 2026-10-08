@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 use dioxus::router::{Link, Routable};
+use dioxus_shadcn::{Spinner, SpinnerSize};
 
 use crate::components::admin_entitlements::AdminEntitlementsPage;
 use crate::components::comment::CommentBox;
@@ -306,7 +307,7 @@ fn BlogIndexInner() -> Element {
               SuspenseBoundary {
                   fallback: |_| rsx! {
                       div { class: "flex items-center justify-center py-20",
-                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                       }
                   },
                   BlogList {}
@@ -499,7 +500,7 @@ fn BlogInner(id: String) -> Element {
                       SuspenseBoundary {
                           fallback: |_| rsx! {
                               div { class: "flex items-center justify-center py-20",
-                                  div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                               }
                           },
                           BlogArticle { id: id.clone() }
@@ -558,7 +559,7 @@ fn BlogArticle(id: String) -> Element {
     },
     None => rsx! {
         div { class: "flex items-center justify-center py-20",
-            div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+            Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
         }
     },
   }
