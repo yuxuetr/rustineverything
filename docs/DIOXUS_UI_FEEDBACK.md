@@ -3,6 +3,20 @@
 > 在 rustineverything.app 迁移到 [`dioxus-shadcn`](https://github.com/yuxuetr/dioxus-ui) 的过程中（计划见 [`DIOXUS_UI_MIGRATION.md`](DIOXUS_UI_MIGRATION.md)），
 > 记录组件库本身的问题与改进点，之后整理成 dioxus-ui 的 issue / RFC。
 
+## 汇总（2026-10-08，本站使用 dioxus-shadcn 0.6.2）
+
+待上游处理（可直接转成 dioxus-ui 的 issue，每条都有复现与建议修复）：
+
+| 编号 | 问题 | 影响 | 本站临时处理 |
+| --- | --- | --- | --- |
+| FB-17 | Dialog 里的 Command 键盘高亮失效 | 中 | 只在打开时挂载（`search.rs`） |
+| FB-19 | 浮层先量锚点后脱离文档流，flex 行里定位偏移 | 中 | DropdownContent 加 `fixed` |
+| FB-18 | Command 异步结果不自动高亮第一项 | 低 | 无（按 ↓ 即可） |
+| FB-20 | NavigationMenu hydration 前打不开（建议） | 低到中 | 生态菜单保留纯 CSS |
+| FB-13 | 文档站仍用 `document::Title`（部分修复） | 低 | — |
+
+已在 0.6.1 / 0.6.2 修复：FB-01 ~ FB-08、FB-10、FB-11、FB-14、FB-15（本站的 FB-15 绕行写法已删除）。上游 wontfix 并给出理由：FB-09、FB-12、FB-16。
+
 ## 记录规则
 
 - **只记组件库的问题**：bug、API 难用、文档缺失、SSR/hydration 行为、样式可移植性。本项目自己的问题不记在这里。
