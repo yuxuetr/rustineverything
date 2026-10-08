@@ -102,6 +102,11 @@ target-dir = "/Users/<your-username>/.target"   # 或 /home/<user>/.target
 只要 `CARGO_TARGET_DIR` 环境变量被设置，就优先于 `.cargo/config.toml::build.target-dir`，
 所以 CI / Docker 不需要改本仓库的 config 文件。
 
+**`dx serve` 下 `/wasm` 整页请求是 404（只在 debug）**：debug 构建把 wasm 产物目录 `public/wasm/`
+整个挂在 `/wasm`（为热补丁动态读目录），盖住了 WASM 板块的 `/wasm` 与 `/wasm/:slug`。站内链接走客户端路由，
+不受影响；直接打开或刷新才会 404。release 构建把 wasm 产物放进带哈希的 `public/assets/`，没有这个目录，
+`/wasm` 正常服务端渲染（2026-10-08 用 `dx build --release` 按 Docker 目录布局验证）。
+
 ---
 
 ## 3. 扩展站点能力
