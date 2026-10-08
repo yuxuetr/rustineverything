@@ -127,23 +127,40 @@ mod tests {
     assert!(THEME_CSS.contains("#a78bfa"), "dark primary should be violet-400");
   }
 
+  /// docs/THEME_SPEC.md「Token 契约」：`:root` 与 `.dark` 各给一套完整的值。
+  const CONTRACT_TOKENS: &[&str] = &[
+    "--background",
+    "--foreground",
+    "--card",
+    "--card-foreground",
+    "--popover",
+    "--popover-foreground",
+    "--primary",
+    "--primary-foreground",
+    "--secondary",
+    "--secondary-foreground",
+    "--muted",
+    "--muted-foreground",
+    "--accent",
+    "--accent-foreground",
+    "--border",
+    "--input",
+    "--ring",
+  ];
+
   #[test]
-  fn declares_all_six_required_vars() {
-    for v in &[
-      "--color-primary",
-      "--color-bg",
-      "--color-surface",
-      "--color-text",
-      "--color-text-muted",
-      "--color-border",
-    ] {
-      assert!(THEME_CSS.contains(v), "missing required CSS var: {}", v);
+  fn declares_contract_tokens_for_light_and_dark() {
+    let (light, dark) = THEME_CSS.split_once(".dark {").expect(".dark block");
+    for token in CONTRACT_TOKENS {
+      let decl = format!("{token}:");
+      assert!(light.contains(&decl), "light block missing {token}");
+      assert!(dark.contains(&decl), "dark block missing {token}");
     }
   }
 
   #[test]
-  fn body_rule_overrides_default_bg() {
+  fn body_rule_follows_background_token() {
     assert!(THEME_CSS.contains("body {"));
-    assert!(THEME_CSS.contains("var(--color-bg) !important"));
+    assert!(THEME_CSS.contains("var(--background) !important"));
   }
 }
