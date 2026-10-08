@@ -356,8 +356,8 @@
   - 决定（2026-10-08）：ocean 主色保持品牌橙（不再用 hue 250 蓝），sunset / catppuccin 保留各自主色
   - 落点：`crates/plugins/theme-{ocean,sunset,catppuccin}/src/lib.rs` 输出 17 个 token（亮/暗各一套）；`assets/css/main.css` 旧变量改为别名；`tailwind-input.css` 删旧 `@theme` 默认值；`examples/plugin-theme-purple`、`docs/PLUGIN_DEV.md`、`docs/THEME_SPEC.md` §12「Token 契约」同步；`app-core` 主题测试断言 `--primary:`
   - 验证：3 主题 × 亮/暗，`--primary`、`--background`、别名 `--color-bg`、body 底色均取插件值（**需绕过 CSP 验证**，见下）；app-core plugin/theme 66 测通过；clippy 同 U1
-  - ⚠️ 发现：CSP 下 App 根组件的 `document::eval` 在页面加载时即 panic，wasm 运行时失效，主题 CSS 根本不注入、ThemePicker 不显示——**自 S1 起生产站点一直没有应用任何主题插件**（`bypassCSP` 对照实验确认）。见 E1
-- [ ] E1 — 站点自身的 `document::eval` 改为 web-sys 直接调用（App 语言检测、暗色切换、搜索模态 Escape 等），CSP 保持不含 `'unsafe-eval'`（2026-10-08 决定）
+  - ⚠️ 发现：CSP 下 App 根组件的 `document::eval` 在页面加载时即 panic，wasm 运行时失效，主题 CSS 根本不注入、ThemePicker 不显示——**自 S1 起站点一直没有应用任何主题插件**（`bypassCSP` 对照实验确认；站点尚未上线）。见 E1
+- [ ] E1 — 站点自身的 `document::eval` 改为 web-sys 直接调用，CSP 保持不含 `'unsafe-eval'`（2026-10-08 决定）。归入下方安全整改阶段 B1
 - [ ] U3 — admin（`admin.rs` + `admin_entitlements.rs`）：Button / Input / Textarea / NativeSelect / Tabs / Table / Spinner / Badge
 - [ ] U4 — course + 支付（`course.rs` + `pay_ui.rs`）：Card / Button / Badge / Table / Dialog
 - [ ] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert
@@ -366,3 +366,40 @@
 - [ ] U8 — 全局弹层：auth_modal / search 模态 → Dialog(+Command)；主题/语言/用户菜单 → Dropdown；移动端菜单 → Sheet
 - [ ] U9 — 生态 mega 菜单：评估 NavigationMenu 与现有纯 CSS 方案（D5），不劣于现状才替换
 - [ ] U10 — 收尾：清理无用类名与 CSS、评估移除色阶映射、更新 TAILWIND_GUIDE、反馈汇总
+
+---
+
+# 新阶段 — 安全整改（2026-10-08，上线前完成）
+
+> 详细发现（SEC-01 ~ SEC-22，含核实状态）与做法见 [`docs/SECURITY_REMEDIATION.md`](docs/SECURITY_REMEDIATION.md)；dioxus-ui 的问题见 `docs/DIOXUS_UI_FEEDBACK.md` FB-02 ~ FB-12。
+> 每项一提交；每个修复附「修复前失败」的测试，先确认红再修到绿。
+
+### 阶段 A — 可被直接利用的漏洞（最先做）
+- [ ] A1 — SEC-01 LaTeX `\text{}` 存储型 XSS：MathML 白名单过滤后再输出
+- [ ] A2 — SEC-02 `/courses` 静态目录绕过付费墙
+- [ ] A3 — SEC-03 `get_doc_content` 路径穿越
+- [ ] A4 — SEC-04 OAuth profile 不查状态 / `external_id` 回退 `"0"`
+
+### 阶段 B — 站点加固
+- [ ] B1 — SEC-07 / SEC-18 站点 `document::eval` → web-sys（即 E1）
+- [ ] B2 — SEC-09 登出改 POST；不可信内容图片只允许 `/uploads/`
+- [ ] B3 — SEC-08 主题 CSS 白名单化；收紧 `img-src`
+- [ ] B4 — SEC-11 `site_theme` cookie 读取侧校验
+- [ ] B5 — SEC-10 gateway 不覆盖应用 CSP
+- [ ] B6 — SEC-13 `require_writer` 回查数据库
+- [ ] B7 — SEC-17 不可信内容的 mermaid 按代码显示
+- [ ] B8 — SEC-19 / SEC-20 HSTS、Permissions-Policy、`ws:` 仅开发；删 `/api/echo`；裁剪公开配置
+
+### 阶段 C — 插件宿主加固
+- [ ] C1 — SEC-05 OAuth 端点由宿主固定，`client_secret` 不交给插件决定去向
+- [ ] C2 — SEC-06 / SEC-15 统一带锁加载、锁生成命令、严格模式、上传时完整校验
+- [ ] C3 — SEC-12 审核插件失败默认 fail closed（送人工复核）
+- [ ] C4 — SEC-14 wasmi `StoreLimits` 补齐 table / 实例上限
+- [ ] C5 — SEC-16 主题失败记日志、错误不暴露路径、翻译缓存与限流
+- [ ] C6 — SEC-22 SDK 空输出 / 解码失败处理
+
+### 阶段 D — 插件开发者安全指南
+- [ ] D1 — 新增 `docs/PLUGIN_SECURITY.md`；修正 `PLUGIN_DEV.md` §10 / §12.1 中与实现不符的描述（以 C 阶段完成后的实现为准）
+
+### 阶段 E — dioxus-ui（在 dioxus-ui 仓库修复）
+- [ ] E-1 — 把 FB-02 ~ FB-12 同步到 dioxus-ui 的待办 / RFC，按其流程修复发版
