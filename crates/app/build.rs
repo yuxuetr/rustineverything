@@ -87,6 +87,12 @@ fn sync_dir(src: &Path, dst: &Path) {
         }
       }
 
+      // tailwind.css 的 SoT 是 crates/app/assets（`npm run build` 产物），已存在时只做
+      // 下方的 app→root 反向同步；否则正向同步会先拿 root 的旧产物盖掉刚编译的新类。
+      if entry.file_name() == "tailwind.css" && dest_path.exists() {
+        continue;
+      }
+
       // 内容变化才拷贝（幂等），避免无谓 mtime 刷新触发 dx 重建循环。
       copy_if_changed(&path, &dest_path);
     }
