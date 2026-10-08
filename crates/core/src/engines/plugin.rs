@@ -4,8 +4,7 @@
 //!    `abi_version` 不等于 [`SDK_ABI_VERSION`] 直接拒绝。老插件未导出
 //!    `get_manifest` 时 [`PluginEngine::call`] 仍允许调用（兼容期），但
 //!    [`PluginEngine::strict_call`] 会拒绝。
-//! 2. **输出大小限制**：默认 8MB。覆盖主题 CSS / i18n 翻译 / Auth profile
-//!    / 审核响应等所有正常场景，仍然给恶意/失控插件 cap 防御。
+//! 2. **输出大小限制**：默认 8MB。覆盖审核插件的提示词 / 结论等所有正常场景，仍然给恶意/失控插件 cap 防御。
 //! 3. **能力协商**：[`PluginEngine::capabilities_of`] 返回插件声明的能力清单，
 //!    宿主据此分发到不同引擎。
 //!
@@ -177,6 +176,11 @@ mod tests {
   use super::*;
   use sdk::{capabilities, PluginManifest};
 
+  /// 运行时测试用的真实插件：仓库里唯一保留的 wasm（R5 随运行时一起删）。
+  const FIXTURE_WASM: &str = "../../assets/plugins/plugin_moderation_deepseek.wasm";
+  /// `moderation_parse_verdict` 的入参：一段模型输出文本。
+  const VERDICT_INPUT: &str = r#"{"score":0.9,"label":"block","reason":"spam"}"#;
+
   fn make_engine() -> PluginEngine {
     PluginEngine::new(Arc::new(crate::PluginManager::new()))
   }
@@ -200,16 +204,10 @@ mod tests {
   async fn shutdown_invalidates_cache() {
     let e = make_engine();
     // 用一个真实存在的 wasm 路径生成缓存条目；不存在则跳过
-    let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
+    let wasm = Path::new(FIXTURE_WASM);
     if wasm.exists() {
-      let _ = e
-        .manager
-        .call_path_with_string(
-          wasm,
-          "translate",
-          &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string(),
-        )
-        .await;
+      let _ =
+        e.manager.call_path_with_string(wasm, "moderation_parse_verdict", VERDICT_INPUT).await;
     }
     // shutdown 不返回 Result（无可失败步骤）—— 仅验证 cache 被清空。
     e.shutdown();
@@ -243,14 +241,12 @@ mod tests {
   #[tokio::test]
   async fn real_plugin_call_without_manifest_works() {
     let e = make_engine();
-    let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
+    let wasm = Path::new(FIXTURE_WASM);
     if !wasm.exists() {
       return;
     }
     // 这些插件还没迁移到新 ABI（无 get_manifest），call 必须降级允许。
-    let res = e
-      .call(wasm, "translate", &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string())
-      .await;
+    let res = e.call(wasm, "moderation_parse_verdict", VERDICT_INPUT).await;
     // 调用本身能成功，但结果是否准确取决于插件是否迁移；这里仅验证不报错或报错合理
     match res {
       Ok(_) => {} // 老插件直接成功
@@ -270,13 +266,11 @@ mod tests {
   async fn output_over_limit_is_rejected() {
     // 贴近零的限制下调用真实插件，输出必然超过 1 字节
     let e = make_engine().with_output_limit(1);
-    let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
+    let wasm = Path::new(FIXTURE_WASM);
     if !wasm.exists() {
       return; // 插件未构建跳过
     }
-    let res = e
-      .call(wasm, "translate", &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string())
-      .await;
+    let res = e.call(wasm, "moderation_parse_verdict", VERDICT_INPUT).await;
     match res {
       Err(err) => {
         let msg = format!("{}", err);
@@ -291,7 +285,7 @@ mod tests {
   #[tokio::test]
   async fn integration_real_plugin_manifest() {
     let e = make_engine();
-    let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
+    let wasm = Path::new(FIXTURE_WASM);
     if !wasm.exists() {
       return;
     }
@@ -299,30 +293,24 @@ mod tests {
       Ok(m) => m,
       Err(_) => return, // 插件未迁移也允许跳过
     };
-    assert_eq!(manifest.id, "i18n-fluent");
-    assert!(manifest.is_compatible(), "i18n-fluent ABI 不兼容: {}", manifest.abi_version);
-    assert!(manifest.has_capability(capabilities::I18N));
+    assert_eq!(manifest.id, "moderation-deepseek");
+    assert!(manifest.is_compatible(), "moderation-deepseek ABI 不兼容: {}", manifest.abi_version);
+    assert!(manifest.has_capability(capabilities::MODERATION_PROVIDER));
   }
 
   #[tokio::test]
   async fn integration_real_plugin_strict_call_succeeds() {
     let e = make_engine();
-    let wasm = Path::new("../../assets/plugins/i18n_fluent_plugin.wasm");
+    let wasm = Path::new(FIXTURE_WASM);
     if !wasm.exists() {
       return;
     }
     if e.try_get_manifest(wasm).await.is_none() {
       return; // 插件未迁移跳过
     }
-    let result = e
-      .strict_call(
-        wasm,
-        "translate",
-        &serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string(),
-      )
-      .await;
+    let result = e.strict_call(wasm, "moderation_parse_verdict", VERDICT_INPUT).await;
     match result {
-      Ok(s) => assert_eq!(s, "Blog"),
+      Ok(s) => assert_eq!(s, r#"{"score":0.9,"label":"block","reason":"spam"}"#),
       Err(err) => panic!("strict_call 在已迁移插件上不应该失败: {}", err),
     }
   }

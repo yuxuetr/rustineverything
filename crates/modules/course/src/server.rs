@@ -986,12 +986,6 @@ pub async fn get_lesson(
           lesson_ref.downloads = Vec::new();
         }
       }
-      // 仅对可见正文跑 transformer
-      if let Some(doc) = lesson_ref.doc.as_mut() {
-        // Phase 9.3：pre-stage content transformers chain（fail-open，空链路零开销直通）。
-        doc.markdown =
-          app_core::engines::content_transformer::apply_default_pre(&doc.markdown, "course").await;
-      }
     }
     Ok(lesson_opt)
   }

@@ -24,8 +24,6 @@ members = [
     "crates/modules/cli",
     "crates/migration",
     "crates/app",
-    "crates/plugins/i18n-fluent",
-    "crates/plugins/content-toc",
     "examples/plugin-moderation-deepseek",
 ]
 # Pingora gateway 是独立部署组件（自带 [workspace]），避免 openssl / native

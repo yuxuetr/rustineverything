@@ -38,7 +38,7 @@ gateway（Pingora，独立 workspace）--反代--> app
 - **组合根模式**：跨模块 UI 组合只发生在 `app`（Element 插槽注入）；跨模块数据
   依赖经 `core::engines::doc_source` IoC 注册表倒置。内容模块之间零横向依赖。
 - **引擎层抽象**：`core/src/engines/` 下 10 个引擎（module/theme/auth/search/
-  moderation/layout/content_transformer 等），插件按 capability 字符串路由。
+  moderation/layout 等），插件按 capability 字符串路由。
 - **插件沙箱四层防御**：fuel 上限、线性内存 cap、wall-clock 超时、输出长度
   clamp；外加 import 白名单（=∅）、SHA256 lock、manifest 一致性、CSS 反混淆扫描。
 - **编译期分层**：`#[cfg(feature = "server")]` 严格切分 server-only 代码，

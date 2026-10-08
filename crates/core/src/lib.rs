@@ -486,42 +486,24 @@ mod tests {
   use super::*;
   use std::fs;
 
-  #[tokio::test]
-  async fn test_i18n_fluent_plugin() {
-    let wasm_path = "../../target/wasm32-unknown-unknown/release/i18n_fluent_plugin.wasm";
-    if !std::path::Path::new(wasm_path).exists() {
-      return;
-    }
-
-    let wasm_bytes = fs::read(wasm_path).expect("Failed to read wasm file");
-    let manager = PluginManager::new();
-
-    let input = serde_json::json!({
-        "key": "nav-blog",
-        "lang": "en"
-    })
-    .to_string();
-
-    let result = manager
-      .call_with_string(&wasm_bytes, "translate", &input)
-      .await
-      .expect("Failed to call plugin");
-    assert_eq!(result, "Blog");
-  }
+  /// 运行时测试用的真实插件：仓库里唯一保留的 wasm（R5 随运行时一起删）。
+  const FIXTURE_WASM: &str = "../../assets/plugins/plugin_moderation_deepseek.wasm";
+  /// `moderation_parse_verdict` 的入参：一段模型输出文本。
+  const VERDICT_INPUT: &str = r#"{"score":0.9,"label":"block","reason":"spam"}"#;
 
   /// 实际调用插件验证 cache hit：同一路径调用 N 次仅产生 1 个缓存条目。
   /// 该测试仅在插件 wasm 已构建时运行。
   #[tokio::test]
   async fn test_path_cache_hit() {
-    let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+    let wasm_path = FIXTURE_WASM;
     if !std::path::Path::new(wasm_path).exists() {
       return;
     }
     let manager = PluginManager::new();
     let path = std::path::Path::new(wasm_path);
-    let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
+    let input = VERDICT_INPUT;
     for _ in 0..5 {
-      let _ = manager.call_path_with_string(path, "translate", &input).await;
+      let _ = manager.call_path_with_string(path, "moderation_parse_verdict", input).await;
     }
     let cache = manager.cache.lock().unwrap();
     assert_eq!(cache.len(), 1, "应仅产生 1 个缓存条目");
@@ -529,14 +511,14 @@ mod tests {
 
   #[tokio::test]
   async fn test_invalidate_clears_cache_entry() {
-    let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+    let wasm_path = FIXTURE_WASM;
     if !std::path::Path::new(wasm_path).exists() {
       return;
     }
     let manager = PluginManager::new();
     let path = std::path::Path::new(wasm_path);
-    let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
-    let _ = manager.call_path_with_string(path, "translate", &input).await;
+    let input = VERDICT_INPUT;
+    let _ = manager.call_path_with_string(path, "moderation_parse_verdict", input).await;
     assert_eq!(manager.cache.lock().unwrap().len(), 1);
     manager.invalidate(path);
     assert_eq!(manager.cache.lock().unwrap().len(), 0, "调用 invalidate 后缓存应为空");
@@ -544,14 +526,14 @@ mod tests {
 
   #[tokio::test]
   async fn test_invalidate_all_clears_cache() {
-    let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+    let wasm_path = FIXTURE_WASM;
     if !std::path::Path::new(wasm_path).exists() {
       return;
     }
     let manager = PluginManager::new();
     let path = std::path::Path::new(wasm_path);
-    let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
-    let _ = manager.call_path_with_string(path, "translate", &input).await;
+    let input = VERDICT_INPUT;
+    let _ = manager.call_path_with_string(path, "moderation_parse_verdict", input).await;
     manager.invalidate_all();
     assert!(manager.cache.lock().unwrap().is_empty());
   }
@@ -561,17 +543,17 @@ mod tests {
   /// 真正的 RSS 长跑监测在 `docs/OPERATIONS.md` 记录，单测只验证缓存不泄漏。
   #[tokio::test]
   async fn test_reload_evicts_old_module_cache_stays_bounded() {
-    let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+    let wasm_path = FIXTURE_WASM;
     if !std::path::Path::new(wasm_path).exists() {
       return;
     }
     let manager = PluginManager::new();
     let path = std::path::Path::new(wasm_path);
-    let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
+    let input = VERDICT_INPUT;
     for _ in 0..50 {
-      let _ = manager.call_path_with_string(path, "translate", &input).await;
+      let _ = manager.call_path_with_string(path, "moderation_parse_verdict", input).await;
       manager.invalidate(path);
-      let _ = manager.call_path_with_string(path, "translate", &input).await;
+      let _ = manager.call_path_with_string(path, "moderation_parse_verdict", input).await;
       assert_eq!(
         manager.cache.lock().unwrap().len(),
         1,
@@ -588,7 +570,7 @@ mod tests {
     assert!(manager.validate_plugin_bytes(b"not a wasm module").await.is_err());
     assert!(manager.validate_plugin_bytes(&[]).await.is_err());
 
-    let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+    let wasm_path = FIXTURE_WASM;
     if !std::path::Path::new(wasm_path).exists() {
       return;
     }
@@ -610,7 +592,7 @@ mod tests {
   /// 而不是 hang。验证 [`Config::consume_fuel`] + [`Store::set_fuel`] 路径生效。
   #[tokio::test]
   async fn fuel_exhaustion_traps_quickly() {
-    let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+    let wasm_path = FIXTURE_WASM;
     if !std::path::Path::new(wasm_path).exists() {
       return;
     }
@@ -624,9 +606,9 @@ mod tests {
     }
     assert_eq!(manager.fuel_limit(), 1);
     let path = std::path::Path::new(wasm_path);
-    let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
+    let input = VERDICT_INPUT;
     let start = std::time::Instant::now();
-    let res = manager.call_path_with_string(path, "translate", &input).await;
+    let res = manager.call_path_with_string(path, "moderation_parse_verdict", input).await;
     let elapsed = start.elapsed();
     assert!(res.is_err(), "fuel=1 时应当 trap，结果: {:?}", res);
     // 必须快速失败，不能因为没 fuel 限制而 hang。给 1s 充裕余地。
@@ -642,7 +624,7 @@ mod tests {
   /// （真实插件至少返回若干字节）。
   #[tokio::test]
   async fn output_length_is_clamped_before_alloc() {
-    let wasm_path = "../../assets/plugins/i18n_fluent_plugin.wasm";
+    let wasm_path = FIXTURE_WASM;
     if !std::path::Path::new(wasm_path).exists() {
       return;
     }
@@ -657,8 +639,8 @@ mod tests {
     }
     assert_eq!(manager.output_limit(), 1);
     let path = std::path::Path::new(wasm_path);
-    let input = serde_json::json!({"key": "nav-blog", "lang": "en"}).to_string();
-    let res = manager.call_path_with_string(path, "translate", &input).await;
+    let input = VERDICT_INPUT;
+    let res = manager.call_path_with_string(path, "moderation_parse_verdict", input).await;
     match res {
       Err(e) => {
         assert!(format!("{}", e).contains("exceeds limit"), "应当因输出超限拒绝，实际错误: {}", e)

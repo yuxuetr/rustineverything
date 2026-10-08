@@ -84,7 +84,6 @@ COPY crates/app/package-lock.json crates/app/package-lock.json
 COPY crates/app/tailwind-input.css crates/app/tailwind-input.css
 COPY crates/migration/Cargo.toml crates/migration/Cargo.toml
 COPY crates/modules ./crates/modules
-COPY crates/plugins ./crates/plugins
 COPY examples ./examples
 # build.rs 引用 ../../assets，提供占位避免预热阶段 panic
 RUN mkdir -p assets crates/app/assets
@@ -99,7 +98,6 @@ COPY crates/llm/src crates/llm/src
 COPY crates/widgets/src crates/widgets/src
 COPY crates/migration/src crates/migration/src
 COPY crates/app/src crates/app/src
-COPY scripts ./scripts
 COPY assets ./assets
 # `build.rs` 期望根 assets 同步到 crates/app/assets
 RUN cp -r assets/* crates/app/assets/ 2>/dev/null || true
@@ -107,14 +105,11 @@ RUN cp -r assets/* crates/app/assets/ 2>/dev/null || true
 # 1. 编译 Tailwind CSS（产物落到 crates/app/assets/tailwind.css）
 RUN cd crates/app && npm run build
 
-# 2. 构建 WASM 插件（content-transformer 示例），输出到 assets/plugins/
-RUN bash scripts/build_themes.sh
-
-# 3. dx bundle：web 全栈 + release 优化，
+# 2. dx bundle：web 全栈 + release 优化，
 #    产物在 /tmp/target/dx/app/release/web/{public,server}
 RUN cd crates/app && dx bundle --platform web --release --package app
 
-# 4. 收敛产物到统一目录，方便 runtime 阶段单层 COPY
+# 3. 收敛产物到统一目录，方便 runtime 阶段单层 COPY
 RUN mkdir -p /out \
  && cp -r /tmp/target/dx/app/release/web/public /out/public \
  && cp /tmp/target/dx/app/release/web/server /out/server \

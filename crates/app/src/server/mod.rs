@@ -128,32 +128,6 @@ pub async fn list_public_plugins() -> Result<Vec<PublicPluginInfo>, ServerFnErro
   }
 }
 
-// ========== i18n ==========
-
-#[post("/api/i18n/translate")]
-pub async fn translate_server(key: String, lang: String) -> Result<String, ServerFnError> {
-  #[cfg(feature = "server")]
-  {
-    let plugin_dir = get_asset_root().join("plugins");
-    let wasm_path = plugin_dir.join("i18n_fluent_plugin.wasm");
-
-    if !wasm_path.exists() {
-      return Ok(key);
-    }
-    let manager = app_core::shared_plugin_manager();
-    let input = serde_json::json!({ "key": key, "lang": lang }).to_string();
-    manager
-      .call_path_with_string(&wasm_path, "translate", &input)
-      .await
-      .map_err(|e| ServerFnError::new(e.to_string()))
-  }
-  #[cfg(not(feature = "server"))]
-  {
-    let _ = (key, lang);
-    Ok(String::new())
-  }
-}
-
 // ========== 主题 ==========
 
 /// 主题切换菜单的一项。前端 ThemePicker 用。

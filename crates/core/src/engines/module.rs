@@ -45,7 +45,7 @@ pub struct ModuleSpec {
   /// 在导航条中的位置：越小越靠前。`None` 不出现在导航。
   pub nav_position: Option<i32>,
   /// i18n key 用于 navbar 渲染 label；`None` 时用 `label` 字面值 fallback。
-  /// 例如 `"nav-blog"` → 在 i18n_fluent_plugin 中查表得到 "Blog" / "博客"。
+  /// 例如 `"nav-blog"` → 在 `assets/i18n/{zh,en}.ftl` 中查表得到 "Blog" / "博客"。
   #[serde(default)]
   pub nav_label_key: Option<String>,
   /// 模块对外的静态首页（如 `"/blog"`）。Sitemap 会自动把启用模块的这条路径加入。
@@ -119,8 +119,8 @@ pub struct ModuleEngine {
 /// 全部以 `enabled = true` 初始化，实际是否启用由
 /// [`ModuleEngine::apply_site_config`] 读 `site.json::modules` 覆盖。
 ///
-/// 这里不使用 `i18n` 翻译键以避免与插件耦合；前端用
-/// `nav-{id}` 作为 i18n key（与现有 i18n_fluent_plugin 表一致）。
+/// 这里不填 `nav_label_key`；前端用 `nav-{id}` 作为 i18n key
+/// （见 `assets/i18n/{zh,en}.ftl`）。
 pub fn default_module_specs() -> Vec<ModuleSpec> {
   vec![
     ModuleSpec::new("blog", "Blog")

@@ -137,8 +137,7 @@ pub async fn get_embedded_article(slug: String) -> Result<String, ServerFnError>
   };
   let raw =
     fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
-  // Phase 9.3：pre-stage content transformers chain（fail-open，空链路零开销直通）。
-  Ok(app_core::engines::content_transformer::apply_default_pre(&raw, BOARD_ID).await)
+  Ok(raw)
 }
 
 #[cfg(all(test, feature = "server"))]

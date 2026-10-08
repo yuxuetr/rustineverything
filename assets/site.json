@@ -21,6 +21,5 @@
     "course": true,
     "doc": true,
     "blog": true
-  },
-  "content_transformers": []
+  }
 }

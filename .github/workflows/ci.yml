@@ -95,19 +95,3 @@ jobs:
       - name: cargo check -p app (no payments, web)
         run: cargo check --no-default-features --features web -p app
 
-  build-wasm-plugins:
-    name: Build wasm plugins
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ci-wasm
-      # 复用项目脚本：自动 add target + 用 CARGO_TARGET_DIR 编译 +
-      # 拷贝 wasm 到 assets/plugins/。CI 上覆盖 .cargo/config.toml 路径
-      # 后，wasm 落到 target/wasm32-unknown-unknown/release/ 中。
-      - name: build-themes script
-        run: bash scripts/build_themes.sh

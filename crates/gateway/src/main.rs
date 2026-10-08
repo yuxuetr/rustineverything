@@ -52,7 +52,6 @@ const WRITE_PATH_PREFIXES: &[&str] = &[
   "/api/topics/",
   "/api/admin/",
   "/api/forum/",
-  "/api/i18n/translate", // 隐含的"写"语义：会触发 wasmi 调用
 ];
 
 /// 写端点配额：每 IP 10 req/min（覆盖恶意 brute-force 评论 / topic 创建）。
@@ -281,7 +280,6 @@ mod tests {
     assert!(is_write_path("/api/topics/create"));
     assert!(is_write_path("/api/admin/dashboard"));
     assert!(is_write_path("/api/forum/create"));
-    assert!(is_write_path("/api/i18n/translate"));
     // 读端点 / 静态资源 → 走 60/min 桶
     assert!(!is_write_path("/blog/welcome"));
     assert!(!is_write_path("/api/theme/aggregated-css"));

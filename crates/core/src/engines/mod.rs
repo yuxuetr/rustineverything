@@ -17,7 +17,6 @@
 //!   删除 `core::engines::content::ComponentRegistry`（与 `widgets::registry` 重复）。
 
 // 子引擎模块。
-pub mod content_transformer;
 pub mod doc_source;
 pub mod layout;
 pub mod moderation;

@@ -311,7 +311,7 @@ per-IP token-bucket 限流（基于 [`governor`](https://docs.rs/governor)）：
 
 | 路径 | 配额 / IP / 分钟 | env 覆盖 |
 | --- | --- | --- |
-| 写端点（`/api/auth/` `/api/upload` `/api/comments/` `/api/topics/` `/api/admin/` `/api/forum/` `/api/i18n/translate`） | 10 | `RATE_LIMIT_WRITE_PER_MIN` |
+| 写端点（`/api/auth/` `/api/upload` `/api/comments/` `/api/topics/` `/api/admin/` `/api/forum/`） | 10 | `RATE_LIMIT_WRITE_PER_MIN` |
 | 其他读端点 / 静态资源 | 60 | `RATE_LIMIT_READ_PER_MIN` |
 
 触发限流返回 `429 Too Many Requests` + `Retry-After: 60`；开发态 `RATE_LIMIT_DISABLE=true` 全关。
