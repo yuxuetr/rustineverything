@@ -81,6 +81,13 @@ CSP 保持不含 `'unsafe-eval'`。组件库在 web 端改用 web-sys（FB-02，
 
 `ecosystem_menu.rs` 是有意做成纯 CSS（`group-hover` / `group-focus-within`），没有 signal，hydration 之前就能展开。`NavigationMenu` 是受控组件，hydration 前可能无法展开。U9 先对比两者在 **SSR 首屏 + JS 未加载** 时的行为，没有优势就保留现状，结论写进 FB 记录。
 
+**U9 结论（2026-10-08，dioxus-shadcn 0.6.2）：保留纯 CSS 方案。**
+
+- 实验：Playwright 关闭 JavaScript 打开首页，悬停「Rust 生态」面板 `visibility` 由 `hidden` 变 `visible`，链接可见可点；Tab 聚焦触发按钮同样展开，移出收起。
+- NavigationMenu 的内容是 `hidden: !open`，`open` 只由组件状态与脚本改变，hydration 前（及 wasm 加载失败时）无法展开，桌面导航的全部领域入口不可达。
+- NavigationMenu 的收益：真实的 `aria-expanded`、Esc 关闭、点击开合、触发器间方向键。这些是现方案缺的，但不足以抵消首屏不可用。
+- 重估条件：NavigationMenu 提供无 JS 时也能展开的回退（例如内容同时带 `group-hover` / `group-focus-within` 可见类，脚本只负责增强），或站点的无障碍审计把 Esc / `aria-expanded` 列为必改项。上游建议见 FB-20。
+
 ### D6 SSR / hydration 一致性是每个任务的硬验收
 
 本站是 fullstack SSR。每迁一个页面都要检查：SSR 首屏 HTML 含组件结构，浏览器控制台没有 hydration mismatch 警告，弹层组件首屏默认关闭且不闪烁。

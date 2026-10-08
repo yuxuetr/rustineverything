@@ -202,3 +202,11 @@
 - 站点临时处理：`DropdownContent { class: "fixed …" }`，让内容第一帧就脱离文档流（`theme_picker.rs`、`lang_picker.rs`、`user_menu.rs`）。
 - 建议的上游修复：`place()` 里先设 `position: fixed`（以及 `--dxui-anchor-width`），再量锚点；或在基础类里带 `fixed`。浏览器测试加「flex 行内的触发器」布局。
 - 状态：open
+
+### FB-20 `NavigationMenu` 在 hydration 前无法展开（建议）
+
+- 组件 / 版本：0.6.2 — `navigation_menu.rs`（`NavigationMenuContent` 的 `hidden: !open`）
+- 现象：内容面板只由组件状态显示，SSR 输出全部带 `hidden`。wasm 加载完成前、或加载失败时，桌面导航的下拉面板打不开，里面的链接不可达。本站的生态 mega 菜单是纯 CSS（`group-hover` / `group-focus-within`），关闭 JavaScript 时仍能用悬停和键盘展开，U9 因此决定不迁移（2026-10-08，见 DIOXUS_UI_MIGRATION.md D5）。
+- 影响：低到中。只影响首屏与 wasm 失败的情形，但导航是站点里最不该依赖脚本的部分。
+- 建议的上游修复：渐进增强——SSR 时内容用 CSS 的 `:hover` / `:focus-within` 可见（例如根上加 `group`、内容加 `group-hover:block`），脚本接管后再改为状态驱动；或在文档里说明 NavigationMenu 需要 hydration 才可用。
+- 状态：open（建议）

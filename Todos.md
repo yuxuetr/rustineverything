@@ -389,7 +389,7 @@
   - 顺带修复：`tailwind-input.css` 只扫了 6 个 module crate，docs/search/5 个板块独有的 16 个类此前没有生成（ffaaf91）
   - [x] U8c — theme_picker / lang_picker / 用户菜单 → Dropdown（两个布局的用户菜单合并为 `UserMenu`；主题、语言为受控单选组；键盘、Escape、外部点击、跳转验证通过；发现 FB-19 菜单在 flex 行里定位偏移 → 内容加 `fixed`）
   - [x] U8d — 移动端菜单 → Sheet（右侧抽屉，放在 header 之外以免被 backdrop-filter 限制；新增 `nav.menu`；375px 下 Escape、焦点回位、点链接跳转并关闭验证通过，无横向滚动）
-- [ ] U9 — 生态 mega 菜单：评估 NavigationMenu 与现有纯 CSS 方案（D5），不劣于现状才替换
+- [x] U9 — 生态 mega 菜单：评估 NavigationMenu 与现有纯 CSS 方案（D5），不劣于现状才替换（结论：保留 CSS 方案——关闭 JS 时 CSS 菜单可悬停 / 聚焦展开，NavigationMenu hydration 前打不开；重估条件写入 D5；上游建议 FB-20）
 - [ ] U10 — 收尾：清理无用类名与 CSS、评估移除色阶映射、更新 TAILWIND_GUIDE、反馈汇总
 
 ---

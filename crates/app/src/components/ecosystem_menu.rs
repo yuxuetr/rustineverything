@@ -5,8 +5,8 @@
 //! 风险，且键盘 focus 进入即展开。面板顶部 `pt-2` 充当鼠标移动「桥」，避免
 //! 按钮与面板间出现死区导致闪烁。移动端（<lg）不用本组件，改走抽屉里的分组列表。
 //!
-//! a11y：`aria-haspopup` / `aria-expanded`（CSS 驱动，标注语义）；焦点移出即收起。
-//! Esc 关闭等增强留待后续打磨（见 docs/SITE_REDESIGN_SPEC.md §3.4）。
+//! a11y：键盘 focus 进入即展开、移出即收起；没有 `aria-expanded`（CSS 改不了属性），
+//! 也不支持 Esc 关闭。不换成 NavigationMenu 的原因见 docs/DIOXUS_UI_MIGRATION.md D5（U9）。
 
 use dioxus::prelude::*;
 use dioxus::router::Link;
