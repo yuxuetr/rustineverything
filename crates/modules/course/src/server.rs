@@ -974,22 +974,10 @@ pub async fn get_lesson(
       // 访问控制：付费/Pro 课程的非试看课节需鉴权（M4c + M6）。
       // 鉴权在服务端进行，锁定时清空正文/媒体/代码，绝不把付费内容下发到客户端。
       let course = read_course(&slug);
-      let course_paid = course.as_ref().map(|c| c.is_paid()).unwrap_or(false);
-      if course_paid {
-        let access_tier = course.as_ref().map(|c| c.access_tier.clone()).unwrap_or_default();
-        lesson_ref.price = course.as_ref().map(|c| c.price).unwrap_or(0);
-        // 收集鉴权信号（admin 直接放行，无需查库）。
-        let (is_admin, has_ent, is_pro) = match current_session_user() {
-          Some(u) if u.is_admin() => (true, false, false),
-          Some(u) => {
-            let db = open_db().await?;
-            (false, has_entitlement(&db, u.id, &slug).await, is_pro_member(&db, u.id).await)
-          }
-          None => (false, false, false),
-        };
-        let allowed =
-          can_access_lesson(&access_tier, lesson_ref.preview, is_admin, has_ent, is_pro);
-        if !allowed {
+      if let Some(course) = course.as_ref().filter(|c| c.is_paid()) {
+        lesson_ref.price = course.price;
+        let user = current_session_user();
+        if !lesson_access_allowed(course, &slug, lesson_ref.preview, user.as_ref()).await? {
           lesson_ref.locked = true;
           lesson_ref.doc = None;
           lesson_ref.audio = None;
@@ -1011,6 +999,91 @@ pub async fn get_lesson(
   {
     let _ = (slug, chapter, lesson);
     Ok(None)
+  }
+}
+
+/// 当前用户能否看某课节的正文与媒体（[`get_lesson`] 与 `/courses` 静态文件共用）。
+/// admin 直接放行，无需查库。
+#[cfg(feature = "server")]
+async fn lesson_access_allowed(
+  course: &Course,
+  course_slug: &str,
+  preview: bool,
+  user: Option<&app_core::session::SessionUser>,
+) -> Result<bool, ServerFnError> {
+  if !course.is_paid() {
+    return Ok(true);
+  }
+  let (is_admin, has_ent, is_pro) = match user {
+    Some(u) if u.is_admin() => (true, false, false),
+    Some(u) => {
+      let db = open_db().await?;
+      (false, has_entitlement(&db, u.id, course_slug).await, is_pro_member(&db, u.id).await)
+    }
+    None => (false, false, false),
+  };
+  Ok(can_access_lesson(&course.access_tier, preview, is_admin, has_ent, is_pro))
+}
+
+/// `/courses` 静态目录下一个文件的归属。
+#[cfg(feature = "server")]
+#[derive(Debug, PartialEq)]
+enum CourseFilePath {
+  /// 课程或章节目录下的文件（封面等），随课程公开。
+  Course,
+  /// 课时目录内的文件（正文 / 图片 / 音视频 / 代码 / 附件），与课时同权限。
+  Lesson { course: String, chapter: String, lesson: String },
+}
+
+/// 解析 `/courses` 之后的路径，如 `/rust-basics/01-x/01-y/a.mp3`。按 ServeDir
+/// 的方式逐段解码；出现空段 / `.` / `..` / 解码出的 `/` 或 `\` 时返回 `None`，由调用方拒绝。
+#[cfg(feature = "server")]
+fn parse_course_file_path(path: &str) -> Option<CourseFilePath> {
+  let segments = path
+    .trim_start_matches('/')
+    .split('/')
+    .map(|s| percent_encoding::percent_decode_str(s).decode_utf8().ok())
+    .collect::<Option<Vec<_>>>()?;
+  if segments.iter().any(|s| s.is_empty() || s == "." || s == ".." || s.contains(['/', '\\'])) {
+    return None;
+  }
+  match segments.as_slice() {
+    [_, _] | [_, _, _] => Some(CourseFilePath::Course),
+    [course, chapter, lesson, _, ..] => Some(CourseFilePath::Lesson {
+      course: course.to_string(),
+      chapter: chapter.to_string(),
+      lesson: lesson.to_string(),
+    }),
+    _ => None,
+  }
+}
+
+/// SEC-02：`/courses` 静态文件能否发给这个请求。`path` 是 nest 之后的路径。
+///
+/// 课时目录内的文件按 [`get_lesson`] 的同一规则判定；查不到课程 / 课时、
+/// 查库失败一律拒绝，免得课程配置出错时付费内容变成公开。
+#[cfg(feature = "server")]
+pub async fn may_serve_course_file(path: &str, cookie_header: Option<&str>) -> bool {
+  let (course_slug, preview) = match parse_course_file_path(path) {
+    None => return false,
+    Some(CourseFilePath::Course) => return true,
+    Some(CourseFilePath::Lesson { course, chapter, lesson }) => {
+      match read_lesson(&course, &chapter, &lesson) {
+        Some(l) => (course, l.preview),
+        None => return false,
+      }
+    }
+  };
+  let Some(course) = read_course(&course_slug) else {
+    return false;
+  };
+  let user = app_core::session::parse_session_from_cookie_header(cookie_header);
+  match lesson_access_allowed(&course, &course_slug, preview, user.as_ref()).await {
+    Ok(allowed) => allowed,
+    Err(e) => {
+      tracing::warn!(error = %e, path, "courses: access check failed, denying file");
+      false
+    }
   }
 }
 
@@ -2902,5 +2975,68 @@ mod tests {
     };
     std::env::set_current_dir(cwd).unwrap();
     res.unwrap();
+  }
+
+  #[test]
+  fn parse_course_file_path_classifies_and_rejects() {
+    use CourseFilePath::*;
+    assert_eq!(parse_course_file_path("/c/cover.png"), Some(Course));
+    assert_eq!(parse_course_file_path("/c/images/cover.png"), Some(Course));
+    let lesson = Lesson { course: "c".into(), chapter: "01-ch".into(), lesson: "01-le".into() };
+    assert_eq!(parse_course_file_path("/c/01-ch/01-le/index.md"), Some(lesson));
+    assert!(matches!(parse_course_file_path("/c/ch/le/code/main.rs"), Some(Lesson { .. })));
+    assert!(matches!(
+      parse_course_file_path("/c/ch/le/attachments/%E8%AE%B2%E4%B9%89.pdf"),
+      Some(Lesson { .. })
+    ));
+    for bad in [
+      "/",
+      "/c",
+      "/c/",
+      "/c/ch/le/",
+      "/c/../c2/ch/le/x.mp4",
+      "/c/%2e%2e/c2/x",
+      "/c/ch/.%2Fx",
+      "/c/ch/le/..%5Cx",
+      "/c/%FF/x",
+    ] {
+      assert_eq!(parse_course_file_path(bad), None, "{bad}");
+    }
+  }
+
+  #[test]
+  fn may_serve_course_file_gates_paid_lessons() {
+    let tmp = TempDir::new().unwrap();
+    let _cwd_guard = lock_cwd();
+    let cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let root = tmp.path().join("assets/courses");
+    write(&root.join("paid/course.yaml"), "title: P\naccess_tier: paid\nprice: 100\n");
+    touch(&root.join("paid/cover.png"));
+    write(&root.join("paid/01-ch/01-trial/index.md"), "---\npreview: true\n---\nfree\n");
+    write(&root.join("paid/01-ch/02-locked/index.md"), "---\ntitle: L\n---\nsecret\n");
+    touch(&root.join("paid/01-ch/02-locked/audio.mp3"));
+    write(&root.join("paid/01-ch/02-locked/code/main.rs"), "fn main(){}");
+    write(&root.join("free/course.yaml"), "title: F\naccess_tier: free\n");
+    write(&root.join("free/01-ch/01-le/index.md"), "body\n");
+
+    let cases = [
+      ("/paid/cover.png", true),
+      ("/paid/01-ch/01-trial/index.md", true),
+      ("/paid/01-ch/02-locked/index.md", false),
+      ("/paid/01-ch/02-locked/audio.mp3", false),
+      ("/paid/01-ch/02-locked/code/main.rs", false),
+      ("/paid/01-ch/02-LOCKED/audio.mp3", false),
+      ("/paid/01-ch/missing/x.png", false),
+      ("/free/01-ch/01-le/index.md", true),
+      ("/free/../paid/01-ch/02-locked/audio.mp3", false),
+    ];
+    let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let got: Vec<bool> =
+      cases.iter().map(|(path, _)| rt.block_on(may_serve_course_file(path, None))).collect();
+    std::env::set_current_dir(cwd).unwrap();
+    for ((path, want), got) in cases.iter().zip(got) {
+      assert_eq!(got, *want, "{path}");
+    }
   }
 }

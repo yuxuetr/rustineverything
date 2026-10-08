@@ -19,6 +19,8 @@ fast_qr = { version = "0.13", default-features = false, features = ["svg"], opti
 module-moderation = { path = "../moderation", optional = true }
 sea-orm = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+# /courses 静态文件鉴权：与 ServeDir 同样逐段解码路径（SEC-02）
+percent-encoding = { version = "2", optional = true }
 # 支付：网关实现（签名/验签/解密/下单/回调解析）已抽到 module-payment（PM2），
 # PM4 起为可选依赖（payments feature 门控）。web 目标只编译其中立类型与
 # trait；server 实现经下方弱依赖 `module-payment?/server` 级联开启。
@@ -39,6 +41,7 @@ server = [
     "dep:serde_yaml",
     "dep:sea-orm",
     "dep:rand",
+    "dep:percent-encoding",
     "module-payment?/server",
     "widgets/server",
     "module-blog/server",

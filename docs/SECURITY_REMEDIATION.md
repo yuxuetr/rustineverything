@@ -21,7 +21,7 @@
 | ID | 级别 | 位置 | 问题 | 核实 |
 | --- | --- | --- | --- | --- |
 | SEC-01 | 严重 | `crates/widgets/src/mdx.rs:182-191`、`:589`（`latex_to_mathml_string`）、`:89`（`ENABLE_MATH` 对不可信内容也开启） | 数学公式输出不经任何净化直接进 `dangerous_inner_html`；pulldown-latex 对 `\text{…}` 内容不转义。评论 / 论坛帖子写 `$\text{<img src=x/onerror=…>}$` 即对所有浏览者执行脚本（存储型 XSS），管理员浏览即账号接管 | **已修复（A1）**：库级复现 `<mtext><img src=x/onerror=alert(1)></mtext>`；解析错误信息（`<merror>`）同样回显原始输入 |
-| SEC-02 | 高 | `crates/app/src/server/static_assets.rs:15` | `/courses` 是无鉴权的 `ServeDir`，付费课时正文、音视频可直接下载，绕过 `get_lesson` 的权益检查 | 已复现（未登录 `GET /courses/rust-basics/02-ownership/01-borrow-rules/index.md` → 200） |
+| SEC-02 | 高 | `crates/app/src/server/static_assets.rs:15` | `/courses` 是无鉴权的 `ServeDir`，付费课时正文、音视频可直接下载，绕过 `get_lesson` 的权益检查 | **已修复（A2）**：复现为未登录 `GET /courses/rust-basics/02-ownership/01-borrow-rules/index.md` → 200；修复后 404，试看课时与课程级文件仍 200 |
 | SEC-03 | 高 | `crates/modules/docs/src/server.rs:226` | `get_doc_content(path)` 直接 `join(path)`，无 `..` / 绝对路径检查，且公开 | 已复现（`{"path":"../courses/…"}` 返回课时正文）；可读服务器上任意目录的 `index.md` |
 | SEC-04 | 高 | `crates/core/src/auth/mod.rs` profile 请求处；`crates/plugins/*-auth`（如 `github-auth/src/lib.rs:66`） | profile 响应不检查 HTTP 状态；插件取不到 `id` 时回退为 `"0"`。限流 / 错误响应会把不同用户映射到同一个 `(provider, "0")` 账号 | 代码确认 |
 | SEC-05 | 高 | `crates/core/src/auth/mod.rs:237`、profile/token 请求处 | `auth_url` / `token_url` / `profile_url` 由插件决定，宿主把 `client_secret` 发往插件给的 `token_url`；插件还决定 `external_id`。恶意插件可窃取 secret、SSRF、冒充任意用户 | 代码确认 |
@@ -52,7 +52,7 @@
 | 任务 | 覆盖 | 做法 | 先红后绿的测试 |
 | --- | --- | --- | --- |
 | A1 | SEC-01 | ~~输出白名单过滤~~ → 实际做法：读 pulldown-latex 0.7.1 写出器确认，用户文本只经 `Content::Text/Number/Function` 与解析错误信息进入输出（属性值全是数值或固定串），故在交给它渲染前把这些字符串转义（`mdx.rs::latex_to_mathml_string`）。比事后解析 HTML 小一个数量级；升级 pulldown-latex 时测试 `assert_only_mathml_tags` 兜底。可信与不可信内容同一路径 | `widgets` 单测：`$\text{<img src=x/onerror=alert(1)>}$`、`\text{<a href="javascript:…">}`、`/onerror=` 形式输出中不含 `<img` / `onerror` / `javascript:`；常见公式（分式、上下标、矩阵）输出不变 |
-| A2 | SEC-02 | `/courses` 只对外提供明确公开的资源（封面等）；课时正文与音视频走带权益检查的路由，或不再静态暴露 | 集成测试：未登录请求课时 `index.md` / 媒体 → 401/403/404；封面 → 200 |
+| A2 | SEC-02 | 实际做法：`/courses` 仍是 ServeDir，前面加中间件 `guard_course_file`；课时目录（第 4 段起）内的任何文件按 `get_lesson` 同一规则（抽成 `lesson_access_allowed` 共用）判定，课程 / 章节目录下的文件（封面）公开；路径按 ServeDir 方式逐段解码，`..` / 解码出的 `/` `\` / 查不到课时或课程 / 查库失败一律 404。限制：封面放在课程目录下两层以上会被当作课时文件拒绝 | 集成测试：未登录请求课时 `index.md` / 媒体 → 401/403/404；封面 → 200 |
 | A3 | SEC-03 | 路径拒绝 `..`、绝对路径、反斜杠；canonicalize 后必须以 docs 根目录为前缀（复用 forum 已有的同类函数） | 单测：`../courses/…`、`/etc`、`..\\x`、URL 编码形式 → 错误；正常文档路径 → 成功 |
 | A4 | SEC-04 | profile 响应 `error_for_status()`；宿主拒绝空 / `"0"` 的 `external_id`；四个认证插件缺 `id` 时报错而非回退 | 单测：profile 返回 401 或缺 `id` → 登录失败且不创建 / 匹配账号 |
 

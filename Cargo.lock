@@ -4647,6 +4647,7 @@ dependencies = [
  "module-blog",
  "module-moderation",
  "module-payment",
+ "percent-encoding",
  "rand 0.9.4",
  "sdk",
  "sea-orm",
