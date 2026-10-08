@@ -10,9 +10,9 @@ use app_core::session::{SessionUser, ALL_ROLES};
 use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  button_class, Badge, BadgeVariant, Button, ButtonSize,
-  ButtonVariant, DensityProvider, Input, NativeSelect, NativeSelectOption, Spinner, SpinnerSize,
-  Tabs, TabsContent, TabsList, TabsTrigger, Textarea, UiDensity,
+  button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, DensityProvider, Input,
+  NativeSelect, NativeSelectOption, Spinner, SpinnerSize, Tabs, TabsContent, TabsList, TabsTrigger,
+  Textarea, UiDensity,
 };
 
 // =============================================================

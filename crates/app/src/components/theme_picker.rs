@@ -53,7 +53,8 @@ pub fn ThemePicker() -> Element {
   let themes: Vec<ThemeInfo> = themes_res.read().as_ref().cloned().unwrap_or_default();
 
   // 找到当前激活主题用于按钮 label（只取去前缀后的短名）
-  let active_file = themes.iter().find(|t| t.is_active).map(|t| t.filename.clone()).unwrap_or_default();
+  let active_file =
+    themes.iter().find(|t| t.is_active).map(|t| t.filename.clone()).unwrap_or_default();
   let active_label = themes
     .iter()
     .find(|t| t.is_active)

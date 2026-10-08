@@ -10,10 +10,9 @@
 use dioxus::prelude::*;
 use dioxus::router::Link;
 use dioxus_shadcn::{
-  button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant,
-  Dialog, DialogClose, DialogContent, DialogOverlay, DialogTitle, DialogTrigger, Spinner,
-  SpinnerSize, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, ToggleGroup,
-  ToggleGroupItem, UiDensity,
+  button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Dialog, DialogClose,
+  DialogContent, DialogOverlay, DialogTitle, DialogTrigger, Spinner, SpinnerSize, Table, TableBody,
+  TableCell, TableHead, TableHeader, TableRow, ToggleGroup, ToggleGroupItem, UiDensity,
 };
 
 use crate::server::{create_order, list_my_orders, my_membership, query_order, OrderInfo};

@@ -10,9 +10,9 @@
 use crate::server::{search_query, SearchHit};
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  Alert, AlertDescription, AlertVariant, Command, CommandEmpty,
-  CommandInput, CommandItem, CommandList, CommandStatus, Dialog, DialogClose, DialogContent,
-  DialogOverlay, DialogTitle, ToggleGroup, ToggleGroupItem,
+  Alert, AlertDescription, AlertVariant, Command, CommandEmpty, CommandInput, CommandItem,
+  CommandList, CommandStatus, Dialog, DialogClose, DialogContent, DialogOverlay, DialogTitle,
+  ToggleGroup, ToggleGroupItem,
 };
 
 /// 用 wrapper 类型避免与其他全局 `Signal<bool>`(如 auth modal)冲突。
@@ -278,7 +278,14 @@ mod tests {
 
   #[test]
   fn rejects_paths_that_leave_the_site() {
-    for url in ["", "//evil.example", "/\\evil.example", "https://evil.example", "javascript:alert(1)", "blog/x"] {
+    for url in [
+      "",
+      "//evil.example",
+      "/\\evil.example",
+      "https://evil.example",
+      "javascript:alert(1)",
+      "blog/x",
+    ] {
       assert!(!is_site_path(url), "{url}");
     }
   }
