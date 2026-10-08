@@ -2,7 +2,8 @@
 
 > **现状说明（2026-10-08）**：本文是 Phase 1C 的设计记录，部分内容已过时——`Engine` trait /
 > `EngineRegistry` / `ContentEngine` 在 Phase 8.7 删除；`AuthEngine` 与 `ThemeEngine` 随认证、主题
-> 内置进宿主（R1 / R2）删除，现状分别见 [`AUTH_GUIDE.md`](AUTH_GUIDE.md) 与 [`THEME_SPEC.md`](THEME_SPEC.md)。
+> 内置进宿主（R1 / R2）删除，现状分别见 [`AUTH_GUIDE.md`](AUTH_GUIDE.md) 与 [`THEME_SPEC.md`](THEME_SPEC.md)；
+> `PluginEngine`、wasmi 运行时与 SDK 的插件 ABI 在 R5 删除，站点不再加载 WASM 插件。
 > 适用阶段：Phase 1C 完成（v2.1 Todos.md）。
 > 8 大核心引擎在 `crates/core/src/engines/` 中实现，向上为 server fn / 业务模块提供统一接入点。
 ## 1. 总体架构
@@ -18,7 +19,7 @@
 │                  crates/core/src/engines/                        │
 │                                                                  │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐          │
-│  │ Plugin   │  │ Module   │  │ Auth     │  │ Theme    │          │
+│  │ Plugin*  │  │ Module   │  │ Auth*    │  │ Theme*   │          │
 │  │ Engine   │  │ Engine   │  │ Engine   │  │ Engine   │          │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘          │
 │                                                                  │
@@ -29,13 +30,8 @@
 │                                                                  │
 │       共享 Engine trait / EngineRegistry / EngineContext          │
 └──────────────────────────────────────────────────────────────────┘
-                                 ▲
-                                 │ wasmi 调用
-                                 │
-┌──────────────────────────────────────────────────────────────────┐
-│         crates/plugins/  (WASM cdylibs + assets/plugins/*.wasm)  │
-└──────────────────────────────────────────────────────────────────┘
 ```
+`*` 已删除：Auth / Theme 内置（R1 / R2），Plugin 与其下的 WASM 插件层移除（R5）。
 ## 2. 共享抽象
 ### 2.1 `Engine` trait
 所有引擎的共同骨架，定义在 `crates/core/src/engines/mod.rs:73`。
@@ -66,11 +62,11 @@ pub struct EngineContext {
     pub asset_root: PathBuf,
 }
 ```
-不直接放 `PluginManager` / DB 句柄，避免和 `EngineRegistry` 互相借用：插件管理器交由 `PluginEngine` 持有，DB 句柄走 `crate::db::get_or_init_pool()` 全局取出。
+不直接放 DB 句柄：DB 走 `crate::db::get_or_init_pool()` 全局取出。
 ## 3. 8 个引擎详述
 | 引擎 | name | 主文件 | 职责 |
 |---|---|---|---|
-| PluginEngine | `plugin` | `engines/plugin.rs` | wasmi Module 缓存 + ABI 校验 + 输出大小限制 + 能力分发 |
+| ~~PluginEngine~~ | — | 已删除（R5） | 不再加载 WASM 插件 |
 | ModuleEngine | `module` | `engines/module.rs` | 业务模块注册中心 + site.json 开关 + 导航/搜索源过滤 |
 | ~~AuthEngine~~ | — | 已删除（R1） | 认证见 `crates/core/src/auth/`（内置 provider） |
 | ~~ThemeEngine~~ | — | 已删除（R2） | `engines/theme.rs` 现为内置主题表 + `resolve_theme` |
@@ -78,20 +74,8 @@ pub struct EngineContext {
 | ContentEngine | `content` | `engines/content.rs` | MDX ComponentRegistry（Phase 2 完整实现） |
 | ModerationEngine | `moderation` | `engines/moderation.rs` | 串行审核流水线 + Verdict（Phase 4 完整实现） |
 | SearchEngine | `search` | `engines/search.rs` | SearchSource 注册中心（Phase 3.4 完整迁移） |
-### 3.1 PluginEngine
-**完整状态**（Phase 1C.2 ✅）。包装 `Arc<PluginManager>`：
-- `call(path, fn, input)` — 自动读 manifest，ABI 不兼容拒绝；输出超过 `output_limit`（默认 8MB）报错
-- `strict_call(path, fn, input)` — 必须有 manifest，否则视为不兼容
-- `try_get_manifest(path)` / `get_manifest(path)` — 读插件 `get_manifest` 导出
-- `capabilities_of(path)` / `filter_by_capability(paths, cap)` — 能力分发
-- `with_output_limit(n)` — 链式覆盖大小限制
-- `shutdown()` 调用 `manager.invalidate_all()` 释放 wasmi cache
-ABI 协议：见 `RoadMap.md §2.7` + `crates/sdk/src/lib.rs`。SDK 提供：
-- `pack_output(Vec<u8>) -> u64`
-- `pack_json(&T) -> u64`
-- `read_input(ptr, len) -> &[u8]`
-- `PluginManifest` (含 `abi_version` + `capabilities`) + builder API
-- `capabilities` 常量模块
+### 3.1 PluginEngine（已删除，R5）
+原为 wasmi `Module` 缓存 + ABI 校验 + 能力分发。第一方插件全部编译进宿主后无调用方，随运行时一起移除；决策见 [`SECURITY_REMEDIATION.md`](SECURITY_REMEDIATION.md)。
 ### 3.2 ModuleEngine
 **完整状态**（Phase 1C.3 ✅）。
 ```rust
@@ -208,7 +192,7 @@ pub trait SearchSource: Send + Sync {
          ▼
 ┌────────────────┐
 │ init_all(&ctx) │      <- 按注册顺序，被依赖者先注册
-└────────┬───────┘         （PluginEngine → ThemeEngine → ...）
+└────────┬───────┘         （被依赖者先注册）
          ▼
 ┌────────────────┐
 │ serve traffic  │      <- server fn 通过 registry.get::<E>(name) 取出
@@ -216,11 +200,10 @@ pub trait SearchSource: Send + Sync {
          ▼
 ┌────────────────┐
 │ shutdown_all() │      <- 按注册逆序
-└────────────────┘         （ThemeEngine 先于 PluginEngine 关闭）
+└────────────────┘
 ```
 ## 5. 依赖关系
 ```text
-PluginEngine ──► （已无内置功能使用，R5 移除）
 ModuleEngine ──┐
                ├─► SearchEngine（按 enabled_ids 过滤源）
                └─► （未来）LayoutEngine 决定哪些 nav 项显示
@@ -231,7 +214,7 @@ Phase 1C 完成时：
 - 工作区 `cargo test --features server --workspace` 全绿
 - `engines::*` 单测合计 57 个
   - mod.rs（注册/init/shutdown）：8
-  - plugin.rs：12（含 3 个真实 wasm 集成测试）
+  - plugin.rs：12（含 3 个真实 wasm 集成测试；R5 随运行时删除）
   - module.rs：10
   - theme.rs：4
   - layout.rs：4
@@ -246,17 +229,15 @@ Phase 1C 完成时：
 | 2 | ContentEngine 接入 widgets crate；7 嵌入组件迁移到 ComponentRegistry |
 | 3 | ThemeEngine 多层主题栈；LayoutEngine 接入 classic / minimal 包；ModuleEngine 切换 admin UI |
 | 3.4 | SearchEngine：迁移 indexer.rs 硬编码 4 源到 SearchSource |
-| 4 | ModerationEngine：LLM/VLM stages 落地；ModerationProvider WASM ABI |
-| 5 | PluginEngine：Hot reload + 内存回收验证；Extism / wit-bindgen ABI v2 切换（可选） |
+| 4 | ModerationEngine：LLM/VLM stages 落地（R4 起为内置 `LlmModerationStage`） |
+| 5 | ~~PluginEngine：Hot reload + 内存回收验证~~（R5 移除插件运行时） |
 ## 附：关键文件路径
 - `crates/core/src/engines/mod.rs:73` — `Engine` trait
 - `crates/core/src/engines/mod.rs:100` — `EngineRegistry`
-- `crates/core/src/engines/plugin.rs:38` — `PluginEngine`
 - `crates/core/src/engines/module.rs:87` — `ModuleEngine`
 - `crates/core/src/engines/theme.rs` — `THEMES` / `resolve_theme`
 - `crates/core/src/engines/layout.rs:25` — `LayoutEngine`
 - `crates/core/src/engines/content.rs:80` — `ContentEngine`
 - `crates/core/src/engines/moderation.rs:78` — `ModerationEngine`
 - `crates/core/src/engines/search.rs:42` — `SearchEngine`
-- `crates/sdk/src/lib.rs:9` — `SDK_ABI_VERSION`
-- `crates/sdk/src/lib.rs:23` — `PluginManifest`
+- `crates/sdk/src/lib.rs` — `ModerationSubmission` / `ImageRef` / `AppModule`（R5 起仅剩共享类型）

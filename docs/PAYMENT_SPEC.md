@@ -236,5 +236,5 @@ trait 边界 = 未来 WASM ABI 边界，两路线不冲突。若把 Provider 下
    插件构造的请求不得自行指定（防“改收款方”供应链攻击）。
 4. **金额核验 / 原子认领 / 发货永远在宿主流水线**（pipeline 不下沉）；插件只做
    协议字段中立化，无 DB / 无发货能力。
-5. **强制 SHA256 lock**：支付插件必须进 `plugins_lock`（Phase 9.2）且不允许
+5. **强制 SHA256 lock**（`plugins_lock` 已随插件运行时在 R5 移除，届时需重建）：支付插件必须进 `plugins_lock`（Phase 9.2）且不允许
    warn-only 降级——hash 不匹配直接拒载。

@@ -91,38 +91,12 @@ docker run --rm -v app-uploads:/data -v $(pwd):/in \
   alpine sh -c 'cd /data && tar xzf /in/uploads-2026-05-27.tgz'
 ```
 
-### 2.3 site.json + plugins/
+### 2.3 site.json
 
-这两个跟随 git 仓库 / 镜像版本走，**不**需要独立备份。任何 `assets/`
-变更必须经 git → CI → 重新 build 镜像，才能上线。
-
-### 2.4 插件热更新（Hot Reload, Phase 5.1）
-
-admin 可在 `/admin/plugins` 直接上传 `.wasm`，无需重启进程：
-
-- **校验**：上传字节先在临时 wasmi Store 上编译 + 实例化，校验 `memory` /
-  `alloc` / `dealloc` 导出，并读 `get_manifest` 比对 ABI 版本。不兼容 / 非法
-  wasm 直接拒绝，文件不落盘。
-- **原子替换 + 回滚**：旧文件先复制为 `<name>.bak`，新字节写 `<name>.tmp` 后
-  `rename` 原子替换；任一 IO 步骤失败自动从 `.bak` 恢复。
-- **生效**：替换后失效 `PluginManager` 缓存（主题 / i18n / auth 下次调用按
-  mtime 重新加载）；审核类插件额外触发 `reload_pipeline()` 重建审核流水线。
-- 「重新载入」按钮 = `admin_reload_plugins`：清空全部插件缓存 + 重建审核流水线
-  （改完 `site.json::moderation` 阈值 / 插件列表后点一下即可生效）。
-
-> ⚠️ **持久化警告**：hot reload 写入的是**运行中容器**的 `assets/plugins/`。
-> 容器重建（`docker compose up --force-recreate` / 滚动发布）会回到镜像内的
-> 版本。要永久生效，仍需把 `.wasm` 提交进 git → CI → 重 build 镜像（见 2.3）。
-> 若希望热更新持久，可把 `assets/plugins/` 挂为命名卷。
-
-**内存回收监测**：每次 reload 旧 `wasmi::Module` 句柄从缓存 HashMap 移除即
-Drop（单测 `test_reload_evicts_old_module_cache_stays_bounded` 验证缓存恒为
-单条不累积）。生产环境若担心长跑泄漏，连续上传同一插件后观察 RSS：
-
-```bash
-# 反复 reload 时跟随容器内存（应趋于平稳，不持续爬升）
-watch -n 5 'docker compose exec app sh -c "cat /proc/1/status | grep VmRSS"'
-```
+跟随 git 仓库 / 镜像版本走，**不**需要独立备份。任何 `assets/`
+变更必须经 git → CI → 重新 build 镜像，才能上线。例外：admin 在
+`/admin/moderation/settings` 保存的审核配置直接写回运行中容器的 `site.json`，
+容器重建后丢失，需要同步提交到仓库。
 
 ## 3. 数据库迁移
 
@@ -242,7 +216,7 @@ docker compose logs app | grep "search:"
 期待看到 `index rebuilt with N documents`。N=0 通常意味着 `assets/posts/`
 里没文章，或文章 frontmatter 解析失败。
 
-强制刷新索引：admin 登录后访问 `/admin/plugins`（同时也会触发搜索 reload）。
+强制刷新索引：admin 会话下调用 `POST /api/search/reindex`（默认增量，`mode=full` 全量重建）。
 
 ### 5.5 主题不切换
 
@@ -250,9 +224,9 @@ docker compose logs app | grep "search:"
 docker compose logs app | grep -i theme
 ```
 
-期待看到 `frontend: fetched theme CSS len=N`。如果 N=0 / `failed to fetch theme`：
-- `assets/plugins/<theme>.wasm` 是否存在
-- ThemePicker 下拉用 `list_available_themes` server fn 扫 manifest；检查 wasm `get_manifest` capability 是否含 `theme`
+期待看到 `frontend: fetched theme CSS len=N`。主题是内置的（`crates/core/src/engines/theme.rs` 的 `THEMES`）：
+- `site.json::theme` / `site_theme` cookie 不在 `THEMES` 中时回退到默认主题
+- ThemePicker 下拉来自 `list_available_themes`，列的就是 `THEMES`
 
 ### 5.6 内容审核 LLM 不可用
 
@@ -333,12 +307,6 @@ CI 用 `Swatinem/rust-cache@v2` 节省 PR 编译时间。本地用 `sccache` 进
 cargo install sccache
 export RUSTC_WRAPPER=sccache
 ```
-
-### 7.3 wasm 插件冷启动
-
-每次 server fn 调用都会 `wasmi::Module::new`。Phase 1A.3 已加 mtime 缓存
-（`crates/core/src/lib.rs::PluginManager::cache`），同一 wasm 文件后续调
-用 ~µs 级。在 admin `/admin/plugins` 刷新会 invalidate 全部缓存。
 
 ## 8. 安全运维
 

@@ -263,47 +263,6 @@ fn main() {
       Box::leak(app_core::utils::get_asset_root().to_string_lossy().into_owned().into_boxed_str())
     });
 
-    // Phase 8.8：插件 hot reload 会留下 `assets/plugins/<name>.wasm.bak`
-    // 备份。超过 7 天的旧备份在启动时清理，避免长跑站点磁盘占用持续累加。
-    let plugin_dir = app_core::utils::get_asset_root().join("plugins");
-    if let Ok(entries) = std::fs::read_dir(&plugin_dir) {
-      let week = std::time::Duration::from_secs(7 * 24 * 3600);
-      let now = std::time::SystemTime::now();
-      for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) != Some("bak") {
-          continue;
-        }
-        let Ok(meta) = entry.metadata() else { continue };
-        let Ok(modified) = meta.modified() else { continue };
-        if now.duration_since(modified).map(|age| age > week).unwrap_or(false) {
-          match std::fs::remove_file(&path) {
-            Ok(()) => tracing::info!(path = %path.display(), "startup: pruned stale .bak (>7d)"),
-            Err(e) => {
-              tracing::warn!(error = %e, path = %path.display(), "startup: failed to prune .bak")
-            }
-          }
-        }
-      }
-    }
-
-    // Phase 9.2：从 site.json 读 plugins_lock，灌入全局 PluginManager。
-    // 后续 get_or_load_module 自动 SHA256 比对；空表（fork 首次部署）= warn-only。
-    let site_json_path =
-      app_core::utils::get_asset_root().join("site.json").to_string_lossy().to_string();
-    // S10：走 load_cached（启动期预热缓存，后续 server fn 直接命中）。
-    if let Ok(cfg) = app_core::settings::SiteConfig::load_cached(&site_json_path) {
-      let lock_count = cfg.plugins_lock.len();
-      app_core::shared_plugin_manager().set_plugins_lock(cfg.plugins_lock.clone());
-      if lock_count == 0 {
-        tracing::warn!(
-          "startup: site.json has empty plugins_lock; SHA256 verification disabled (warn-only)"
-        );
-      } else {
-        tracing::info!(count = lock_count, "startup: loaded plugins_lock entries");
-      }
-    }
-
     // S7（风险 R8）：router 组装拆到 server 子模块，main.rs 只留引导。
     // auth / pay / 静态资源 / SEO 各自一个 mount 函数，行为与拆分前一致。
     let router = dioxus::server::router(App)
@@ -460,7 +419,7 @@ fn App() -> Element {
     });
   });
 
-  // Fetch aggregated theme CSS from WASM plugins。订阅 theme_version 以便切换重拉。
+  // 拉取当前主题 CSS（内置主题）。订阅 theme_version 以便切换重拉。
   //
   // 重构 B6 评估：保留 use_resource，**不** 迁移到 use_server_future。理由：该调用
   // 位于 App 根组件，`use_server_future` 的 `?` 需要祖先 SuspenseBoundary，会把整个
@@ -490,7 +449,7 @@ fn App() -> Element {
       // Script，进而触发 dioxus-document "Changing the props … is not supported" 警告。
       HeadAssets {}
 
-      // 从 WASM 插件聚合出的主题 CSS（随用户切换变化，必须留在 App 内响应式渲染）。
+      // 当前内置主题的 CSS（随用户切换变化，必须留在 App 内响应式渲染）。
       // 注意：**不能**用 `document::Style`（变更 props 会触发警告且不更新 DOM）；
       // 改用普通 `style` + `dangerous_inner_html`：CSS 落在 <body> 仍全局生效，
       // 且 vdom diff 正常更新内容。

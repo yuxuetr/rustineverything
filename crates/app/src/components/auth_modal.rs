@@ -11,7 +11,7 @@ use crate::server::get_auth_providers;
 pub fn AuthModal(show: Signal<bool>) -> Element {
   let lang = use_i18n();
 
-  // Fetch available providers from server (plugin-driven)
+  // Fetch the configured login providers from the server
   let providers =
     use_resource(move || async move { get_auth_providers().await.unwrap_or_default() });
 
@@ -34,7 +34,7 @@ pub fn AuthModal(show: Signal<bool>) -> Element {
                   DialogDescription { "{t(lang(), \"auth.sign_in_desc\")}" }
               }
 
-              // Provider buttons (dynamic from plugins)
+              // Provider buttons (one per configured provider)
               div { class: "flex flex-col gap-3",
                   if provider_list.is_empty() {
                       Spinner { class: "mx-auto my-4 border-t-primary" }
@@ -105,7 +105,7 @@ fn render_provider_button(provider: &AuthProviderDisplay, lang: Language) -> Ele
 
 /// Simple heuristic to determine if a hex color is "light"
 fn is_light_color(hex: &str) -> bool {
-  // brand_color 来自插件 manifest：先确认是 ASCII 十六进制，再按字节切片。
+  // 先确认是 ASCII 十六进制，再按字节切片（防多字节字符让切片 panic）。
   let Some(hex) =
     hex.trim_start_matches('#').get(..6).filter(|h| h.bytes().all(|b| b.is_ascii_hexdigit()))
   else {
@@ -130,7 +130,7 @@ mod tests {
 
   #[test]
   fn non_hex_brand_color_is_not_light_and_does_not_panic() {
-    // 插件 manifest 里的 brand_color 不受站点控制；多字节字符曾让字节切片 panic。
+    // 多字节字符曾让字节切片 panic（brand_color 曾来自插件 manifest）。
     assert!(!is_light_color("#aé1234"));
     assert!(!is_light_color("#ééééé"));
     assert!(!is_light_color("red"));

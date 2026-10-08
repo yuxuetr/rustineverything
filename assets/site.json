@@ -5,9 +5,6 @@
   "active_layout": "classic",
   "default_language": "zh",
   "author": "yuxuetr",
-  "paths": {
-    "plugins": "assets/plugins"
-  },
   "navigation": [
     { "key": "nav-blog", "route": "/blog" },
     { "key": "nav-podcast", "route": "/podcast" },

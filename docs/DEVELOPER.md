@@ -1,6 +1,6 @@
 # Rust in Everything 开发者文档
 
-欢迎来到 **Rust in Everything** 项目！本系统是一个基于 Dioxus 0.7 深度定制的高性能、插件化全栈 Web 应用。本文档旨在帮助开发者理解项目架构、现有功能，并掌握如何开发新插件与集成新功能。
+欢迎来到 **Rust in Everything** 项目！本系统是一个基于 Dioxus 0.7 的全栈 Web 应用。本文档旨在帮助开发者理解项目架构、现有功能，以及如何添加主题、登录方式与审核规则等能力。
 
 ---
 
@@ -12,9 +12,10 @@
     *   **Doc 模块**：以目录为单位的三级文档树，支持 frontmatter SEO、`sidebar_position` / `sort_children` 控制侧栏。
     *   **Course 模块**： `Course → Chapter → Lesson` 三级模型，适配 Doc / Video / Audio / Code 四种课节布局，含进度与标注系统。
     *   **Forum 模块**：话题 / 回复 / Tag；支持从博客、文档、课节页面直接发起讨论并建立资源引用关联（详见 `docs/FORUM_SPEC.md`）。
-*   **WASM 插件系统**：
-    *   **动态主题**：通过 WASM 插件实时注入 CSS 变量，支持多主题切换。
-    *   **多语言 (i18n)**：基于 Fluent 引擎的 WASM 插件，实现后端驱动的动态翻译。
+*   **内置扩展点**（均编译进宿主，无运行时插件）：
+    *   **主题**：内置 CSS 变量主题，访客可切换（`docs/THEME_SPEC.md`）。
+    *   **登录方式**：GitHub / Google / Discord / Twitter，按凭据与 `site.json` 启用（`docs/AUTH_GUIDE.md`）。
+    *   **内容审核**：链接黑名单 + 可选 LLM 审核（`docs/MODERATION_SPEC.md`）。
 *   **权限与安全**：
     *   **OAuth2 集成**：支持 GitHub 登录，集成 PostgreSQL (Sea-ORM) 进行用户同步。
 *   **现代前端交互**：
@@ -30,24 +31,16 @@
 ### 2.1 目录结构
 
 ```text
-├── assets/                 # 静态资源 (posts, docs, courses, podcasts, images, plugins)
+├── assets/                 # 静态资源 (posts, docs, courses, podcasts, images)
 ├── crates/
 │   ├── app/                # 前端入口 (Dioxus App + Axum Server 路由)
-│   ├── core/               # 核心逻辑 (插件加载器、SeaORM Entities、认证、会话)
-│   ├── sdk/                # 共享接口 (Plugin & AppModule Trait 定义)
-│   ├── modules/            # 业务领域模块 (blog, podcast, course, forum)
-│   └── plugins/            # WASM 插件源码 (i18n, theme, *-auth)
+│   ├── core/               # 核心逻辑 (SeaORM Entities、认证、会话、主题、配置)
+│   ├── sdk/                # 业务模块共享类型 (AppModule、审核提交 ModerationSubmission)
+│   └── modules/            # 业务领域模块 (blog, podcast, course, forum, moderation ...)
 └── docs/                   # 开发者文档
 ```
 
-### 2.2 关键接口：WASM 插件协议
-
-插件系统基于 `wasmi` 运行时，通过 `crates/sdk` 定义的 FFI 内存分配协议进行通信：
-
-*   **alloc/dealloc**：用于在 WASM 线性内存中手动管理字符串空间。
-*   **Packed Result**：函数返回 `u64`，高 32 位为指针，低 32 位为长度，实现零拷贝数据传递。
-
-### 2.3 数据库层与连接池
+### 2.2 数据库层与连接池
 
 后端用 **SeaORM + PostgreSQL**。实体定义在 `crates/core/src/entities/`，schema 由
 `crates/migration`（sea-orm-migration）管理，应用启动时自动 `Migrator::up`（失败仅
@@ -74,7 +67,7 @@ API：
 > 本地用 `.env` 提供 `DATABASE_URL`；DB 不可用时仅 DB 相关 server fn 报错，静态/markdown
 > 页面（blog、内容板块等）仍可访问。
 
-### 2.4 本地构建产物路径（共享 target-dir）
+### 2.3 本地构建产物路径（共享 target-dir）
 
 仓库根 `.cargo/config.toml` 配置了项目全局的 cargo target-dir：
 
@@ -111,80 +104,33 @@ target-dir = "/Users/<your-username>/.target"   # 或 /home/<user>/.target
 
 ---
 
-## 3. 插件开发篇 (Plugin Development Guide)
+## 3. 扩展站点能力
 
-插件是本系统的核心扩展点。所有插件均编译为 WASM 模块，运行在宿主环境的沙箱中。
+站点不加载运行时插件：主题、登录方式、审核都是宿主里的普通 Rust 代码，改动随
+`cargo test` / clippy 一起受检。2026-10 之前这些能力由 wasmi 加载的 WASM 插件提供，
+因全部插件都在本仓库构建、且运行时加载带来的攻击面（见
+`docs/SECURITY_REMEDIATION.md`）没有对应收益而移除。
 
-### 3.1 核心规范：FFI 内存协议 (The Contract)
+### 3.1 新增主题
 
-由于 WASM 沙箱无法直接理解 Rust 的 `String` 或 `Vec<u8>`，插件必须遵循一套底层的内存管理协议来与宿主通信。
+在 `crates/core/src/engines/themes/` 放一份 CSS 变量文件，并在
+`crates/core/src/engines/theme.rs` 的 `THEMES` 表登记 id / 名称。cookie 与
+`site.json::theme` 只接受该表中的 id。详见 `docs/THEME_SPEC.md`。
 
-#### 必须导出的底层函数
-每个插件必须导出以下三个 C 兼容接口（推荐直接使用 `sdk` 提供的默认实现）：
+### 3.2 新增登录方式
 
-1.  **`alloc(size: usize) -> *mut u8`**
-    *   **作用**：由宿主调用，在插件内存中为输入数据预留空间。
-2.  **`dealloc(ptr: *mut u8, size: usize)`**
-    *   **作用**：由宿主调用，释放不再使用的插件内存，防止内存泄漏。
-3.  **业务处理函数 (Entry Point)**
-    *   **签名**：`fn func_name(ptr: *mut u8, len: usize) -> u64`
-    *   **返回值规范**：返回一个 `u64` 的“打包结果”（Packed Result）。
-        *   **高 32 位**：结果字符串在插件内存中的指针地址。
-        *   **低 32 位**：结果字符串的字节长度。
+在 `crates/core/src/auth/provider.rs` 的 `Provider` 枚举加一个变体，给出
+`ProviderSpec`（固定的 https 授权 / token / 用户信息端点、scope、展示信息）和
+`map_profile` 字段映射（取不到稳定的用户 id 时返回 `None`，登录失败而不是落到默认 id）。
+凭据只走环境变量。详见 `docs/AUTH_GUIDE.md`。
 
----
+### 3.3 调整内容审核
 
-### 3.2 业务接口规范 (Logical Interfaces)
-
-根据插件用途的不同，需要实现特定的导出函数名和输入输出逻辑。
-
-主题已内置进宿主（见 `docs/THEME_SPEC.md`），不再有主题插件。
-
-#### A. 多语言插件 (i18n Plugin)
-*   **导出函数**：`translate`
-*   **输入**：JSON 字符串，格式为 `{"key": "翻译键", "lang": "语言代码"}`。
-*   **输出**：翻译后的纯文本。
-*   **实现要点**：建议集成 `fluent-bundle` 提高翻译灵活性。
-
----
-
-### 3.3 开发流程与代码模板
-
-#### 第一步：配置 Cargo.toml
-```toml
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-sdk = { path = "../../sdk" }
-serde_json = "1.0"
-```
-
-#### 第二步：实现逻辑 (src/lib.rs)
-```rust
-use sdk::{alloc, dealloc};
-use std::slice;
-
-#[no_mangle]
-pub unsafe extern "C" fn your_custom_function(ptr: *mut u8, len: usize) -> u64 {
-    // 1. 获取并解析宿主传入的字符串
-    let input_bytes = slice::from_raw_parts(ptr, len);
-    let input_str = std::str::from_utf8(input_bytes).unwrap_or("");
-
-    // 2. 执行你的业务逻辑
-    let result_str = format!("Hello, {}! This is from WASM.", input_str);
-
-    // 3. 将结果写回插件内存并封包返回
-    let res_bytes = result_str.into_bytes();
-    let res_len = res_bytes.len();
-    let res_ptr = alloc(res_len);
-    slice::from_raw_parts_mut(res_ptr, res_len).copy_from_slice(&res_bytes);
-
-    ((res_ptr as u64) << 32) | (res_len as u64)
-}
-```
-
----
+审核流水线在 `crates/modules/moderation`：`UrlBlocklistStage`（链接黑名单）与
+`LlmModerationStage`（提示词 + 结论解析，经 `crates/llm` 调用模型）。新增规则时实现
+`AsyncModerationStage` 并在 `ModerationPipeline::from_site_config` 注册。stage 不返回
+错误，自己决定失败时的判定；LLM 失败默认送人工复核（`on_llm_failure`）。详见
+`docs/MODERATION_SPEC.md`。
 
 ### 3.4 server fn 联调日志规范（debug 习惯）
 
@@ -258,55 +204,10 @@ RUST_LOG="info,server::search_query=debug" dx serve
 
 新增 server fn 请照此模板加；改既有 fn 时顺手补上。
 
-### 3.5 插件开发 Check-list
+## 4. 最佳实践
 
-在发布插件前，请检查以下事项：
-- [ ] **编译目标**：是否使用了 `--target wasm32-unknown-unknown`？
-- [ ] **内存安全**：是否所有通过 `alloc` 分配的结果内存最终都能通过宿主的 `dealloc` 调用被释放？
-- [ ] **无 IO 限制**：插件是否避免了直接的文件系统读写或网络请求（这些应由宿主完成并通过参数传入）？
-
----
-
-### 4.4 多平台 OAuth 适配器集成 (OAuth Adapter Integration)
-
-对于需要支持 **GitHub, Google, Wechat, QQ, Feishu** 等多种登录方式的场景，系统采用“宿主驱动 + 插件适配”的混合模式。
-
-#### 为什么使用插件处理 OAuth？
-1.  **字段映射解耦**：GitHub 使用 `login` 字段，Google 使用 `name` 字段，通过插件统一映射为 `nickname`。
-2.  **动态准入规则**：可以在不重启服务器的情况下，通过更新 WASM 插件来调整特定平台的登录门槛（例如仅允许特定域名的 Google 账号登录）。
-3.  **零停机热扩容**：新增登录平台只需上传新的 `.wasm` 适配器。
-
-#### OAuth 适配器接口规范 (Auth Adapter Specification)
-开发者需要实现以下导出函数：
-
-1.  **`get_provider_metadata`** (无输入 -> JSON)
-    *   **输出**：包含 `auth_url`, `token_url`, `default_scopes` 的 JSON。
-2.  **`transform_profile`** (Raw Profile JSON -> Standard User JSON)
-    *   **输入**：第三方平台返回的原始 User Profile 字符串。
-    *   **输出**：标准化用户对象：
-        ```json
-        {
-          "external_id": "12345",
-          "nickname": "RustDev",
-          "avatar_url": "https://...",
-          "email": "dev@rust.app",
-          "raw_data_summary": "..."
-        }
-        ```
-
-#### 集成 Check-list
-- [ ] **环境隔离**：Secret 和 ClientID 仍由宿主环境变量持有，插件仅负责“逻辑转换”。
-- [ ] **错误处理**：对于非法的 Profile 结构，插件应返回清晰的错误 JSON。
-- [ ] **状态校验**：如 Wechat 登录涉及的 UnionID 处理，应在插件逻辑中明确。
-
----
-
-## 5. 最佳实践：插件化建议
-
-
-*   **调试插件**：可以利用 `crates/core/src/lib.rs` 中的测试用例进行 WASM 插件的单元测试。
 *   **Tailwind 编译**：修改样式后，在 `crates/app/` 目录下运行 `npm run build`（或 `npm run dev` 开启 watch 模式）。详细流程、主题映射、动态类名处理和 FAQ 请参考 [`docs/TAILWIND_GUIDE.md`](TAILWIND_GUIDE.md)。
-*   **后端驱动**：尽量通过 `assets/site.json` 配置应用行为，避免硬编码，以便通过插件系统进行扩展。
+*   **后端驱动**：站点级开关与参数放 `assets/site.json`（主题、启用的登录方式、模块开关、审核配置），避免硬编码。
 
 ---
 

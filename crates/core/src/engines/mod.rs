@@ -5,7 +5,6 @@
 //! 由 server fn 各自直接构造对应 engine 即可），Phase 8.7 删掉以减少
 //! 死代码维护成本。各子模块现在就是普通的 struct + 自由函数：
 //!
-//! - [`plugin`]：wasmi 调度 + ABI 校验
 //! - [`theme`]：CSS 聚合（按主题栈）
 //! - [`module`]：业务模块开关 + 元数据（Navbar / sitemap 通过 [`module::ModuleSpec`] 单点读取）
 //! - [`layout`]：Classic / Minimal 布局选择
@@ -21,6 +20,5 @@ pub mod doc_source;
 pub mod layout;
 pub mod moderation;
 pub mod module;
-pub mod plugin;
 pub mod search;
 pub mod theme;

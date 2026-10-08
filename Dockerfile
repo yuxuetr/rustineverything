@@ -3,8 +3,8 @@
 # Phase 7.4.1：多阶段 Debian (glibc) 镜像。
 #
 # 设计：
-# - **builder** 阶段在 `rust:1-trixie` 中完成 Tailwind CSS 编译 + WASM 主题
-#   插件构建 + `dx bundle --platform web --release` 的产物输出。
+# - **builder** 阶段在 `rust:1-trixie` 中完成 Tailwind CSS 编译 +
+#   `dx bundle --platform web --release` 的产物输出。
 # - **runtime** 阶段是 `debian:trixie-slim` + `ca-certificates`，只装 dx bundle
 #   产物。builder 与 runtime 同为 trixie，glibc 版本对齐，避免动态链接的 server
 #   二进制在运行阶段报 "version `GLIBC_x.xx' not found"。
@@ -54,7 +54,7 @@ RUN apt-get update \
       libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 
-# 添加 wasm 目标，用于插件编译
+# 添加 wasm 目标，用于前端（dx bundle 的 web 客户端）编译
 RUN rustup target add wasm32-unknown-unknown
 
 # 安装 Dioxus CLI（fullstack bundle 工具）。

@@ -28,7 +28,6 @@ pub struct SiteConfig {
   pub active_layout: String,
   pub default_language: String,
   pub author: String,
-  pub paths: HashMap<String, String>,
   pub navigation: Vec<NavItem>,
   #[serde(default)]
   pub auth: AuthSettings,
@@ -36,22 +35,13 @@ pub struct SiteConfig {
   /// `ModuleEngine::init` 读取该字段覆盖默认 enabled 状态。
   #[serde(default)]
   pub modules: HashMap<String, ModuleSettings>,
-  /// Phase 4.3：审核插件配置（独立于通用 `modules` 开关，因为还要装
-  /// 插件清单与阈值）。
+  /// Phase 4.3：审核配置（独立于通用 `modules` 开关，因为还有 LLM 开关、
+  /// 阈值与链接黑名单）。
   /// 默认 disabled → 整条流水线为空，提交直接通过，不调 LLM。
   /// 由 `crates/modules/moderation::ModerationPipeline::from_site_config`
   /// 读取并装载。
   #[serde(default)]
   pub moderation: ModerationSettings,
-  /// Phase 9.2：插件 SHA256 lock map。key = 插件文件名（如
-  /// `theme_ocean_plugin.wasm`），value = 期望的 SHA256 hex（64 字符小写）。
-  ///
-  /// 缺字段或值为空 → 加载时跳过校验（warn-only）；命中且不匹配 → 拒绝加载。
-  /// 用 `cargo run -p app --bin lock_plugins` 一键生成。
-  ///
-  /// 防御场景：插件文件在文件系统层被偷换（供应链攻击 / 误覆盖）。
-  #[serde(default)]
-  pub plugins_lock: HashMap<String, String>,
 }
 
 /// 审核功能在 site.json 中的配置块。**默认 disabled**，意味着评论 / 话题 /
@@ -180,9 +170,6 @@ impl SiteConfig {
 
 impl Default for SiteConfig {
   fn default() -> Self {
-    let mut paths = HashMap::new();
-    paths.insert("plugins".to_string(), "assets/plugins".to_string());
-
     Self {
       site_name: "Rust in Everything".to_string(),
       site_description: "".to_string(),
@@ -190,21 +177,11 @@ impl Default for SiteConfig {
       active_layout: DEFAULT_LAYOUT.to_string(),
       default_language: "zh".to_string(),
       author: "".to_string(),
-      paths,
       navigation: vec![],
       auth: AuthSettings::default(),
       modules: HashMap::new(),
       moderation: ModerationSettings::default(),
-      plugins_lock: HashMap::new(),
     }
-  }
-}
-
-impl SiteConfig {
-  /// Phase 9.2：查询某插件的预期 SHA256 hex。`None` 表示 site.json 未给该
-  /// 插件登记 lock（warn-only 模式，调用方应记日志但放行）。
-  pub fn plugin_sha256(&self, plugin_file_name: &str) -> Option<&str> {
-    self.plugins_lock.get(plugin_file_name).map(String::as_str).filter(|s| !s.is_empty())
   }
 }
 
@@ -217,7 +194,7 @@ mod tests {
 
   fn minimal_site_json(name: &str) -> String {
     format!(
-      r#"{{"site_name":"{}","site_description":"","default_language":"zh","author":"","paths":{{}},"navigation":[]}}"#,
+      r#"{{"site_name":"{}","site_description":"","default_language":"zh","author":"","navigation":[]}}"#,
       name
     )
   }
@@ -277,7 +254,6 @@ mod tests {
             "site_description": "",
             "default_language": "zh",
             "author": "",
-            "paths": {},
             "navigation": []
         }"#;
     let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
@@ -304,61 +280,26 @@ mod tests {
             "site_description": "",
             "default_language": "zh",
             "author": "",
-            "paths": {},
             "navigation": []
         }"#;
     let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
     assert!(!cfg.moderation.enabled);
   }
 
-  // ─── Phase 9.2 plugins_lock ──────────────────────────────
-
+  /// 插件运行时移除前的 site.json 带 `paths` / `plugins_lock`，仍应能读。
   #[test]
-  fn plugins_lock_defaults_to_empty() {
-    let cfg = SiteConfig::default();
-    assert!(cfg.plugins_lock.is_empty());
-  }
-
-  #[test]
-  fn plugins_lock_back_compat_when_field_missing() {
-    // 老 site.json 不含 plugins_lock 字段 → 默认空
+  fn legacy_plugin_fields_are_ignored() {
     let json = r#"{
             "site_name": "X",
             "site_description": "",
             "default_language": "zh",
             "author": "",
-            "paths": {},
-            "navigation": []
-        }"#;
-    let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
-    assert!(cfg.plugins_lock.is_empty());
-  }
-
-  #[test]
-  fn plugins_lock_parses_entries() {
-    let json = r#"{
-            "site_name": "X",
-            "site_description": "",
-            "default_language": "zh",
-            "author": "",
-            "paths": {},
+            "paths": {"plugins": "assets/plugins"},
             "navigation": [],
-            "plugins_lock": {
-                "theme_ocean_plugin.wasm": "deadbeef",
-                "i18n_fluent_plugin.wasm": "cafebabe"
-            }
+            "plugins_lock": {"theme_ocean_plugin.wasm": "deadbeef"}
         }"#;
     let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
-    assert_eq!(cfg.plugin_sha256("theme_ocean_plugin.wasm"), Some("deadbeef"));
-    assert_eq!(cfg.plugin_sha256("i18n_fluent_plugin.wasm"), Some("cafebabe"));
-    assert_eq!(cfg.plugin_sha256("unknown.wasm"), None);
-  }
-
-  #[test]
-  fn plugins_lock_empty_string_treated_as_missing() {
-    let mut cfg = SiteConfig::default();
-    cfg.plugins_lock.insert("x.wasm".into(), String::new());
-    assert_eq!(cfg.plugin_sha256("x.wasm"), None, "empty string should be treated as missing");
+    assert_eq!(cfg.site_name, "X");
   }
 
   #[test]
@@ -368,7 +309,6 @@ mod tests {
             "site_description": "",
             "default_language": "zh",
             "author": "",
-            "paths": {},
             "navigation": [],
             "moderation": {
                 "enabled": true,

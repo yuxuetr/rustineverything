@@ -6,8 +6,6 @@ edition = "2021"
 
 [dependencies]
 serde.workspace = true
+
+[dev-dependencies]
 serde_json.workspace = true
-sdk-macros = { path = "../sdk-macros" }
-fluent-bundle = "0.16.0"
-intl-memoizer = "0.5.2"
-unic-langid = "0.9.5"

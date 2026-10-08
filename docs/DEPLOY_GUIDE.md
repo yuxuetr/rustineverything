@@ -423,7 +423,6 @@ docker compose restart app
 | `courses/` | 课程多媒体 | ✅ |
 | `podcasts/` | 播客音频元数据 | ✅ |
 | `cases/` | 案例展示 | ✅ |
-| `plugins/` | WASM 插件 | ✅ |
 | `audio/` | 大体积音频 | ✅（10MB 以下；超过被 build.rs 跳过） |
 | `uploads/` | **用户上传** | ❌ 走持久卷 |
 

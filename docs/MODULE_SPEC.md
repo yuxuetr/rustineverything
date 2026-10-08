@@ -217,10 +217,9 @@ pub fn BlogIndex() -> Element {
 
 | 引擎 | 关系 |
 | --- | --- |
-| `PluginEngine` | 不直接关联；插件按 capability 注册到对应引擎 |
-| `ThemeEngine` | 正交（[`THEME_SPEC.md`](THEME_SPEC.md)） |
+| 主题（`engines/theme.rs`） | 正交（[`THEME_SPEC.md`](THEME_SPEC.md)） |
 | `LayoutEngine` | 正交（壳决定结构，模块决定内容） |
-| `AuthEngine` | 正交（auth 不是「模块」） |
+| 认证（`core::auth`） | 正交（auth 不是「模块」） |
 | `SearchEngine` | 消费 `enabled_ids()` 过滤索引源 |
 | `ContentEngine` | 正交（MDX 组件注册与模块开关无关） |
 | `ModerationEngine` | 后续 Phase 4：审核流水线会按模块开关启用各 hook |
@@ -238,7 +237,6 @@ pub fn BlogIndex() -> Element {
 ### 11.1 允许的依赖方向
 
 ```text
-sdk-macros → sdk → {core, widgets}
 core → llm
 {core, widgets, sdk} → modules/*        （单向：基础设施 → 业务模块）
 modules/* → app                          （单向：业务模块 → 组合根）

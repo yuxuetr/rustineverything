@@ -1,10 +1,9 @@
 use crate::server::{
   admin_approve_moderation, admin_bulk_approve_moderation, admin_bulk_reject_moderation,
   admin_delete_comment, admin_delete_reply, admin_delete_topic, admin_get_moderation_settings,
-  admin_list_comments, admin_list_moderation_queue, admin_list_plugins, admin_list_topics,
-  admin_list_users, admin_overview, admin_reject_moderation, admin_reload_plugins,
-  admin_set_moderation_settings, admin_set_user_role, admin_upload_plugin, AdminCommentRow,
-  AdminPluginRow, AdminTopicRow, AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
+  admin_list_comments, admin_list_moderation_queue, admin_list_topics, admin_list_users,
+  admin_overview, admin_reject_moderation, admin_set_moderation_settings, admin_set_user_role,
+  AdminCommentRow, AdminTopicRow, AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
 };
 use app_core::session::{SessionUser, ALL_ROLES};
 use app_core::settings::{LlmFailureAction, ModerationSettings, ModerationThresholdsConfig};
@@ -73,7 +72,6 @@ pub fn AdminShell(active: String, children: Element) -> Element {
                       AdminNavLink { href: "/admin/moderation", label: "审核".to_string(), key_id: "moderation".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/moderation/settings", label: "审核设置".to_string(), key_id: "moderation-settings".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/entitlements", label: "课程权益".to_string(), key_id: "entitlements".to_string(), active: active.clone() }
-                      AdminNavLink { href: "/admin/plugins", label: "插件".to_string(), key_id: "plugins".to_string(), active: active.clone() }
                   }
               }
               div { class: "flex-1 min-w-0 px-6 lg:px-10 py-8",
@@ -144,7 +142,7 @@ pub fn AdminDashboardPage() -> Element {
                           li { "用户页:调整角色" }
                           li { "评论页:删除违规评论" }
                           li { "话题页:管理论坛内容" }
-                          li { "插件页:查看 wasm 插件状态" }
+                          li { "审核页:复核被标记的内容" }
                       }
                   }
               },
@@ -535,161 +533,6 @@ fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) 
 #[allow(dead_code)]
 async fn delete_reply_from_admin(id: i32) -> Result<(), String> {
   admin_delete_reply(id).await.map_err(|e| e.to_string())
-}
-
-// =============================================================
-// /admin/plugins
-// =============================================================
-
-#[component]
-pub fn AdminPluginsPage() -> Element {
-  if !is_current_user_admin() {
-    return rsx! { ForbiddenPanel {} };
-  }
-
-  let mut bump = use_signal(|| 0u32);
-  let res = use_resource(move || {
-    let _ = bump();
-    async move { admin_list_plugins().await.unwrap_or_default() }
-  });
-  let plugins = res.read().as_ref().cloned();
-
-  let mut reload_msg = use_signal::<Option<String>>(|| None);
-  let mut reloading = use_signal(|| false);
-  let mut uploading = use_signal(|| false);
-
-  let handle_upload = move |evt: Event<FormData>| {
-    spawn(async move {
-      let files = evt.data().files();
-      for file in files {
-        let Ok(bytes) = file.read_bytes().await else {
-          reload_msg.set(Some(format!("读取文件失败：{}", file.name())));
-          continue;
-        };
-        uploading.set(true);
-        use base64::Engine as _;
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-        match admin_upload_plugin(file.name(), b64).await {
-          Ok(res) => {
-            let action = if res.replaced_existing { "已替换" } else { "已新增" };
-            reload_msg.set(Some(format!(
-              "{} 插件 {}（{}，{:.1} KB，能力：{}）",
-              action,
-              res.plugin_id,
-              res.filename,
-              (res.size_bytes as f64) / 1024.0,
-              if res.capabilities.is_empty() {
-                "无".to_string()
-              } else {
-                res.capabilities.join(", ")
-              }
-            )));
-          }
-          Err(e) => reload_msg.set(Some(format!("上传失败：{}", e))),
-        }
-        uploading.set(false);
-        bump.with_mut(|n| *n = n.wrapping_add(1));
-      }
-    });
-  };
-
-  rsx! {
-      AdminShell { active: "plugins".to_string(),
-          div { class: "flex items-center justify-between mb-6",
-              h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white", "插件" }
-              div { class: "flex items-center gap-2",
-                  label {
-                      class: button_class(
-                          ButtonVariant::Outline,
-                          ButtonSize::Md,
-                          UiDensity::Comfortable,
-                          if uploading() { "cursor-wait opacity-50" } else { "cursor-pointer" },
-                      ),
-                      input {
-                          r#type: "file",
-                          class: "hidden",
-                          accept: ".wasm,application/wasm",
-                          disabled: uploading(),
-                          onchange: handle_upload,
-                      }
-                      if uploading() { "上传中..." } else { "上传 .wasm" }
-                  }
-                  Button {
-                      disabled: reloading(),
-                      onclick: move |_| {
-                          spawn(async move {
-                              reloading.set(true);
-                              match admin_reload_plugins().await {
-                                  Ok(msg) => reload_msg.set(Some(msg)),
-                                  Err(e) => reload_msg.set(Some(format!("失败: {}", e))),
-                              }
-                              reloading.set(false);
-                              bump.with_mut(|n| *n = n.wrapping_add(1));
-                          });
-                      },
-                      if reloading() { "刷新中..." } else { "重新载入" }
-                  }
-              }
-          }
-
-          if let Some(msg) = reload_msg() {
-              div { class: "mb-4 px-4 py-2 rounded-lg text-sm bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200",
-                  "{msg}"
-              }
-          }
-
-          match plugins {
-              None => rsx! { Loading {} },
-              Some(list) if list.is_empty() => rsx! {
-                  div { class: "py-16 text-center text-slate-500", "没有发现插件" }
-              },
-              Some(list) => rsx! {
-                  div { class: "grid grid-cols-1 md:grid-cols-2 gap-4",
-                      for p in list.into_iter() {
-                          PluginCard { key: "{p.filename}", plugin: p }
-                      }
-                  }
-              },
-          }
-      }
-  }
-}
-
-#[component]
-fn PluginCard(plugin: AdminPluginRow) -> Element {
-  let kind_variant = match plugin.kind.as_str() {
-    "auth" => BadgeVariant::Info,
-    "theme" => BadgeVariant::Default,
-    "i18n" => BadgeVariant::Success,
-    _ => BadgeVariant::Secondary,
-  };
-  let size_kb = (plugin.size_bytes as f64) / 1024.0;
-  let modified = plugin.modified.clone().unwrap_or_else(|| "-".to_string());
-  rsx! {
-      div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-5",
-          div { class: "flex items-center gap-2 mb-3",
-              Badge { variant: kind_variant, class: "uppercase tracking-wide", "{plugin.kind}" }
-              if plugin.configured {
-                  Badge { variant: BadgeVariant::Success, "已启用" }
-              } else {
-                  Badge { variant: BadgeVariant::Secondary, "未配置" }
-              }
-              if !plugin.present {
-                  Badge { variant: BadgeVariant::Destructive, "文件缺失" }
-              }
-              if plugin.kind == "auth" && plugin.configured && !plugin.credentials_ready {
-                  Badge { variant: BadgeVariant::Warning, "缺凭据" }
-              }
-          }
-          h3 { class: "text-base font-bold text-slate-900 dark:text-white mb-1", "{plugin.id}" }
-          div { class: "text-xs text-slate-500 dark:text-slate-400 truncate font-mono", "{plugin.filename}" }
-          div { class: "mt-3 flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400",
-              span { "{size_kb:.1} KB" }
-              span { "·" }
-              span { "{modified}" }
-          }
-      }
-  }
 }
 
 // =============================================================

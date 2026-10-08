@@ -53,8 +53,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci-server
-      # Phase 7.7：收敛到 0-warning 后强校验（`-D warnings`）。WASM-ABI 的
-      # unsafe 导出与测试 setup 已用就地 #[allow] 标注（见 docs/PLUGIN_ABI.md）。
+      # Phase 7.7：收敛到 0-warning 后强校验（`-D warnings`）。测试 setup 的
+      # 例外已用就地 #[allow] 标注。
       - name: cargo clippy --features server --workspace
         run: cargo clippy --features server --workspace --all-targets -- -D warnings
 

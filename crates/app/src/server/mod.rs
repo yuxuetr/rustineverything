@@ -57,76 +57,9 @@ fn read_request_cookie(name: &str) -> Option<String> {
   None
 }
 
-/// Cookie 名（Phase 3.1）：存储用户选择的主题插件文件名。
+/// Cookie 名（Phase 3.1）：存储用户选择的主题 id。
 #[cfg(feature = "server")]
 pub const THEME_COOKIE_NAME: &str = "site_theme";
-
-// ========== 插件浏览（Phase 5.5 公开页） ==========
-
-/// 公开的插件信息（不含 admin-only 的凭据/配置状态）。供 `/plugins` 浏览页用。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PublicPluginInfo {
-  pub filename: String,
-  pub id: String,
-  pub name: String,
-  pub version: String,
-  pub description: String,
-  pub capabilities: Vec<String>,
-  /// ABI 是否与当前宿主兼容。
-  pub abi_compatible: bool,
-}
-
-/// 列出 `assets/plugins/` 中已安装且导出了 `get_manifest` 的插件（公开，无需登录）。
-/// 无 manifest 的老插件被跳过。
-#[post("/api/plugins/public-list")]
-pub async fn list_public_plugins() -> Result<Vec<PublicPluginInfo>, ServerFnError> {
-  #[cfg(feature = "server")]
-  {
-    use app_core::PluginManifest;
-
-    let plugin_dir = get_asset_root().join("plugins");
-    let manager = app_core::shared_plugin_manager();
-    let entries = match std::fs::read_dir(&plugin_dir) {
-      Ok(e) => e,
-      Err(_) => return Ok(vec![]),
-    };
-
-    let mut out: Vec<PublicPluginInfo> = Vec::new();
-    for entry in entries.flatten() {
-      let name = match entry.file_name().to_str() {
-        Some(s) => s.to_string(),
-        None => continue,
-      };
-      if !name.ends_with(".wasm") {
-        continue;
-      }
-      let path = entry.path();
-      let manifest_json = match manager.call_path_with_string(&path, "get_manifest", "").await {
-        Ok(j) => j,
-        Err(_) => continue, // 无 manifest（老插件）→ 跳过
-      };
-      let m: PluginManifest = match serde_json::from_str(&manifest_json) {
-        Ok(m) => m,
-        Err(_) => continue,
-      };
-      out.push(PublicPluginInfo {
-        filename: name,
-        abi_compatible: m.is_compatible(),
-        id: m.id,
-        name: m.name,
-        version: m.version,
-        description: m.description,
-        capabilities: m.capabilities,
-      });
-    }
-    out.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(out)
-  }
-  #[cfg(not(feature = "server"))]
-  {
-    Ok(vec![])
-  }
-}
 
 // ========== 主题 ==========
 
