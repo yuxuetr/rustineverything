@@ -653,6 +653,17 @@ pub fn scan_code_files(dir: &Path, base_url: &str) -> Vec<CodeFile> {
   out
 }
 
+/// 拆出正文开头的 `# 标题`：课节页已把标题渲染成 h1，正文里再有一个就会显示两次。
+/// 返回 `(标题文字, 去掉该行后的正文)`；开头不是 H1 时原样返回。
+#[cfg(feature = "server")]
+fn split_title_heading(body: &str) -> (Option<&str>, &str) {
+  let Some(heading) = body.trim_start().strip_prefix("# ") else {
+    return (None, body);
+  };
+  let (line, after) = heading.split_once('\n').unwrap_or((heading, ""));
+  (Some(line.trim()), after.trim_start())
+}
+
 /// 读取一个 lesson 目录的完整内容（含正文 / 媒体 / 代码 / 下载）
 #[cfg(feature = "server")]
 pub fn read_lesson(course_slug: &str, chapter_slug: &str, lesson_slug: &str) -> Option<Lesson> {
@@ -678,8 +689,14 @@ pub fn read_lesson(course_slug: &str, chapter_slug: &str, lesson_slug: &str) -> 
   if let Some(p) = md_path {
     let raw = fs::read_to_string(&p).unwrap_or_default();
     let (fm, body) = parse_frontmatter_lesson(&raw);
-    let rewritten = rewrite_image_urls(&body, &base_url);
-    let title = if !fm.title.is_empty() { fm.title.clone() } else { humanize_title(lesson_slug) };
+    // frontmatter 标题优先（列表页也用它），没有时退到正文 H1，再退到 slug
+    let (heading, body) = split_title_heading(&body);
+    let title = match (fm.title.is_empty(), heading) {
+      (false, _) => fm.title.clone(),
+      (true, Some(h)) if !h.is_empty() => h.to_string(),
+      _ => humanize_title(lesson_slug),
+    };
+    let rewritten = rewrite_image_urls(body, &base_url);
     doc_body = Some(DocBody { markdown: rewritten, title, description: fm.description.clone() });
     frontmatter = fm;
   }
@@ -2712,6 +2729,24 @@ mod tests {
   }
 
   #[test]
+  fn test_split_title_heading_takes_leading_h1() {
+    let body = "\n# 安装与开发环境\n\nRust 是一门系统编程语言。\n\n## 安装\n";
+    assert_eq!(
+      split_title_heading(body),
+      (Some("安装与开发环境"), "Rust 是一门系统编程语言。\n\n## 安装\n")
+    );
+    assert_eq!(split_title_heading("# 只有标题"), (Some("只有标题"), ""));
+  }
+
+  #[test]
+  fn test_split_title_heading_keeps_body_without_leading_h1() {
+    // 首个非空行不是 H1、只有 H2：都不动
+    for body in ["正文\n\n# 后面的 H1\n", "## 小节\n\n正文", "#不是标题\n"] {
+      assert_eq!(split_title_heading(body), (None, body));
+    }
+  }
+
+  #[test]
   fn test_rewrite_image_urls_keeps_external_and_absolute() {
     let md = "![](/already/abs.png)\n![](https://cdn.example.com/x.png)";
     let out = rewrite_image_urls(md, "/courses/c/ch/le");
@@ -2851,6 +2886,15 @@ mod tests {
       assert_eq!(lesson.code.len(), 1);
       assert_eq!(lesson.downloads.len(), 1);
       assert_eq!(lesson.downloads[0].size_bytes, "pdfdata".len() as u64);
+      assert!(!doc.markdown.contains("# heading"), "正文开头的 H1 应被拆出");
+
+      // 无 frontmatter 标题：取正文 H1
+      let untitled = tmp.path().join("assets/courses/rust-basics/01-fundamentals/02-untitled");
+      write(&untitled.join("index.md"), "# 来自正文的标题\n\n正文\n");
+      let lesson =
+        read_lesson("rust-basics", "01-fundamentals", "02-untitled").expect("untitled lesson");
+      assert_eq!(lesson.title, "来自正文的标题");
+      assert_eq!(lesson.doc.expect("doc body").markdown.trim(), "正文");
       Ok::<(), ()>(())
     };
     std::env::set_current_dir(cwd).unwrap();
