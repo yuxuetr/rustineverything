@@ -9,6 +9,7 @@
 
 use crate::server::{search_query, SearchHit};
 use dioxus::prelude::*;
+use dioxus_shadcn::{badge_class, Alert, AlertDescription, AlertVariant, BadgeVariant};
 
 /// 用 wrapper 类型避免与其他全局 `Signal<bool>`(如 auth modal)冲突。
 #[derive(Clone, Copy)]
@@ -165,8 +166,8 @@ pub fn SearchModal() -> Element {
               }
               // 错误
               if let Some(err) = error() {
-                  div { class: "px-4 py-2 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400",
-                      "{err}"
+                  Alert { variant: AlertVariant::Destructive, class: "rounded-none border-x-0 px-4 py-2",
+                      AlertDescription { variant: AlertVariant::Destructive, "{err}" }
                   }
               }
               // 结果
@@ -197,13 +198,15 @@ fn KindChip(
 ) -> Element {
   let is_active = value == current;
   let class = if is_active {
-    "px-2 py-0.5 rounded-full bg-blue-600 text-white"
+    badge_class(BadgeVariant::Default, "rounded-full font-normal")
   } else {
-    "px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+    badge_class(BadgeVariant::Secondary, "rounded-full font-normal hover:bg-accent")
   };
   rsx! {
       button {
-          class: "{class}",
+          r#type: "button",
+          "aria-pressed": is_active.to_string(),
+          class,
           onclick: move |_| on_select.call(value.clone()),
           "{label}"
       }
@@ -213,7 +216,7 @@ fn KindChip(
 #[component]
 fn HitRow(hit: SearchHit) -> Element {
   let badge = match hit.kind.as_str() {
-    "blog" => ("BLOG", "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"),
+    "blog" => ("BLOG", "bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"),
     "doc" => {
       ("DOC", "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300")
     }

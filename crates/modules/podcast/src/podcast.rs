@@ -2,6 +2,22 @@ use crate::server::{get_episode_by_id, list_episodes, Episode};
 use app_core::i18n::Language;
 use dioxus::prelude::try_use_context;
 use dioxus::prelude::*;
+use dioxus_shadcn::{
+  badge_class, card_class, Alert, AlertDescription, AlertVariant, BadgeVariant, Button, ButtonSize,
+  ButtonVariant, Empty, EmptyDescription, Spinner, SpinnerSize,
+};
+
+/// 标签筛选 chip：选中为主色实心，否则为描边。
+fn tag_chip_class(active: bool) -> String {
+  if active {
+    badge_class(BadgeVariant::Default, "gap-1 rounded-full px-3 py-1 font-medium")
+  } else {
+    badge_class(
+      BadgeVariant::Outline,
+      "gap-1 rounded-full bg-background px-3 py-1 font-medium text-muted-foreground hover:border-primary hover:text-primary",
+    )
+  }
+}
 
 /// 从 context 获取当前语言，默认中文
 fn use_language_ctx() -> Language {
@@ -109,11 +125,11 @@ pub fn PodcastPage() -> Element {
               match (current_episode.read().clone(), episodes.is_empty()) {
                   (None, true) => rsx! {
                       div { class: "flex items-center justify-center py-20",
-                          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                       }
                   },
                   (None, false) => rsx! {
-                      div { class: "text-center text-slate-500 py-20", "{tp(lang, \"podcast.empty\")}" }
+                      Empty { class: "py-20", EmptyDescription { "{tp(lang, \"podcast.empty\")}" } }
                   },
                   (Some(active), _) => rsx! {
                       // 2列布局：左=播放器+标签（sticky），右=节目列表（sticky）
@@ -126,7 +142,7 @@ pub fn PodcastPage() -> Element {
                               div { class: "overflow-hidden rounded-2xl bg-slate-900 shadow-2xl",
                                   div { class: "p-8 md:p-10",
                                       if let Some(ref guest) = active.guest {
-                                          div { class: "text-xs font-bold text-blue-400 uppercase tracking-widest mb-3",
+                                          div { class: "text-xs font-bold text-primary uppercase tracking-widest mb-3",
                                               "{tp(lang, \"podcast.guest\")}: {guest}"
                                           }
                                       }
@@ -165,7 +181,7 @@ pub fn PodcastPage() -> Element {
 
                               // 标签过滤面板（播放器下方）
                               if !all_tags.is_empty() {
-                                  div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-5",
+                                  div { class: card_class("rounded-2xl p-5 shadow-none"),
                                       p { class: "text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3",
                                           if lang == Language::Zh { "标签筛选" } else { "Filter by tag" }
                                       }
@@ -176,14 +192,7 @@ pub fn PodcastPage() -> Element {
                                               rsx! {
                                                   button {
                                                       onclick: move |_| active_tag.set(None),
-                                                      class: format_args!(
-                                                          "inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full font-medium transition-colors {}",
-                                                          if is_all {
-                                                              "bg-blue-600 text-white"
-                                                          } else {
-                                                              "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600"
-                                                          }
-                                                      ),
+                                                      class: tag_chip_class(is_all),
                                                       "{tp(lang, \"podcast.all\")}"
                                                       span { class: "opacity-60", "{episodes.len()}" }
                                                   }
@@ -200,14 +209,7 @@ pub fn PodcastPage() -> Element {
                                                       button {
                                                           key: "{t}",
                                                           onclick: move |_| active_tag.set(Some(t.clone())),
-                                                          class: format_args!(
-                                                              "inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full font-medium transition-colors {}",
-                                                              if is_active {
-                                                                  "bg-blue-600 text-white"
-                                                              } else {
-                                                                  "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600"
-                                                              }
-                                                          ),
+                                                          class: tag_chip_class(is_active),
                                                           "#{t2}"
                                                           span { class: "opacity-60", "{count}" }
                                                       }
@@ -220,7 +222,7 @@ pub fn PodcastPage() -> Element {
                           }
 
                           // ── 右列：节目列表（占满原列表+标签列合并宽度）──
-                          div { class: "lg:sticky lg:top-20 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-col",
+                          div { class: card_class("lg:sticky lg:top-20 rounded-2xl shadow-none flex flex-col"),
 
                               div { class: "flex items-center justify-between px-5 pt-5 pb-3",
                                   h3 { class: "text-sm font-semibold text-[var(--color-text)]",
@@ -250,7 +252,7 @@ pub fn PodcastPage() -> Element {
                                                   class: format_args!(
                                                       "w-full text-left px-5 py-4 transition-all {}",
                                                       if is_active_ep {
-                                                          "bg-orange-50 dark:bg-blue-900/20"
+                                                          "bg-primary/10"
                                                       } else {
                                                           "hover:bg-white dark:hover:bg-slate-800/60"
                                                       }
@@ -258,12 +260,12 @@ pub fn PodcastPage() -> Element {
                                                   div { class: "flex items-start gap-3",
                                                       div { class: format_args!(
                                                           "mt-1.5 shrink-0 w-2 h-2 rounded-full {}",
-                                                          if is_active_ep { "bg-blue-500 animate-pulse" } else { "bg-slate-300 dark:bg-slate-600" }
+                                                          if is_active_ep { "bg-primary animate-pulse" } else { "bg-slate-300 dark:bg-slate-600" }
                                                       )}
                                                       div { class: "flex-auto min-w-0",
                                                           h4 { class: format_args!(
                                                               "text-sm font-medium line-clamp-2 leading-snug {}",
-                                                              if is_active_ep { "text-blue-600 dark:text-blue-400" } else { "text-[var(--color-text)]" }
+                                                              if is_active_ep { "text-primary" } else { "text-[var(--color-text)]" }
                                                           ),
                                                               "{episode.title}"
                                                           }
@@ -282,27 +284,23 @@ pub fn PodcastPage() -> Element {
 
                               if total_pages > 1 {
                                   div { class: "flex items-center justify-between px-5 py-3 border-t border-slate-200 dark:border-slate-800",
-                                      button {
+                                      Button {
+                                          variant: ButtonVariant::Ghost,
+                                          size: ButtonSize::Sm,
                                           disabled: safe_page == 0,
+                                          "aria-label": "上一页",
                                           onclick: move |_| { if current_page() > 0 { current_page.set(current_page() - 1); } },
-                                          class: format_args!(
-                                              "px-3 py-1 rounded-lg text-sm transition-colors {}",
-                                              if safe_page == 0 { "text-slate-300 dark:text-slate-600 cursor-not-allowed" }
-                                              else { "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800" }
-                                          ),
                                           "←"
                                       }
                                       span { class: "text-xs text-slate-400 tabular-nums",
                                           "{safe_page + 1} / {total_pages}"
                                       }
-                                      button {
+                                      Button {
+                                          variant: ButtonVariant::Ghost,
+                                          size: ButtonSize::Sm,
                                           disabled: safe_page + 1 >= total_pages,
+                                          "aria-label": "下一页",
                                           onclick: move |_| { if current_page() + 1 < total_pages { current_page.set(current_page() + 1); } },
-                                          class: format_args!(
-                                              "px-3 py-1 rounded-lg text-sm transition-colors {}",
-                                              if safe_page + 1 >= total_pages { "text-slate-300 dark:text-slate-600 cursor-not-allowed" }
-                                              else { "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800" }
-                                          ),
                                           "→"
                                       }
                                   }
@@ -324,9 +322,9 @@ pub fn PodcastCard(id: i32) -> Element {
   let state = episode_res.read().clone();
   match state {
     Some(Some(ep)) => rsx! {
-        div { class: "not-prose my-8 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm flex flex-col md:flex-row gap-6 items-center",
+        div { class: card_class("not-prose my-8 p-6 rounded-2xl flex flex-col md:flex-row gap-6 items-center"),
             div { class: "flex-1 w-full",
-                div { class: "text-xs font-bold text-blue-600 uppercase tracking-widest mb-2", "Featured Podcast" }
+                div { class: "text-xs font-bold text-primary uppercase tracking-widest mb-2", "Featured Podcast" }
                 h4 { class: "text-xl font-extrabold text-slate-900 dark:text-white mb-2", "{ep.title}" }
                 div { class: "text-sm text-slate-500 mb-4", "{ep.date} · {ep.duration}" }
                 audio { class: "w-full h-10", controls: true, src: "{ep.url}" }
@@ -334,8 +332,8 @@ pub fn PodcastCard(id: i32) -> Element {
         }
     },
     Some(None) => rsx! {
-        div { class: "not-prose my-8 p-4 rounded-lg border border-amber-200 bg-amber-50 text-sm text-amber-800",
-            "找不到 ID 为 {id} 的播客节目"
+        Alert { variant: AlertVariant::Warning, class: "not-prose my-8",
+            AlertDescription { variant: AlertVariant::Warning, "找不到 ID 为 {id} 的播客节目" }
         }
     },
     None => rsx! {

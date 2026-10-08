@@ -1,4 +1,8 @@
 use dioxus::prelude::*;
+use dioxus_shadcn::{
+  badge_class, card_class, Alert, AlertDescription, AlertVariant, BadgeVariant, Empty,
+  EmptyDescription, Spinner, SpinnerSize,
+};
 
 use crate::server::{get_doc_content, list_doc_tree, DocTreeNode};
 use widgets::Markdown;
@@ -21,7 +25,7 @@ pub fn Docs() -> Element {
           SuspenseBoundary {
               fallback: |_| rsx! {
                   div { class: "flex items-center justify-center py-20",
-                      div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                      Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                   }
               },
               DocsIndexInner {}
@@ -69,11 +73,11 @@ fn DocsIndexInner() -> Element {
                               }
                           },
                           Some(_) => rsx! {
-                              div { class: "text-center text-slate-500 py-20", "暂无文档内容" }
+                              Empty { class: "py-20", EmptyDescription { "暂无文档内容" } }
                           },
                           None => rsx! {
                               div { class: "flex items-center justify-center py-20",
-                                  div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                               }
                           },
                       }
@@ -93,7 +97,7 @@ fn render_sidebar_link(node: &DocTreeNode, _active: &str) -> Element {
           href: "{href}",
           class: "flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mb-1",
           span { "{node.title}" }
-          span { class: "text-xs text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full",
+          span { class: badge_class(BadgeVariant::Secondary, "rounded-full px-1.5 font-normal text-muted-foreground"),
               "{child_count}"
           }
       }
@@ -124,13 +128,13 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
   rsx! {
       a {
           href: "{href}",
-          class: "group block p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-lg transition-all",
+          class: card_class("group block p-6 rounded-2xl hover:border-primary/50 hover:shadow-lg transition-all"),
           // 标题行
           div { class: "flex items-center justify-between mb-3",
-              h3 { class: "text-lg font-bold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors",
+              h3 { class: "text-lg font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors",
                   "{node.title}"
               }
-              span { class: "text-xs text-slate-400 bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full",
+              span { class: badge_class(BadgeVariant::Secondary, "rounded-full font-normal text-muted-foreground"),
                   "{child_count} 篇"
               }
           }
@@ -149,7 +153,7 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
               }
           }
           // 底部箭头
-          div { class: "mt-4 flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity",
+          div { class: "mt-4 flex items-center text-sm font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity",
               "开始阅读"
               svg { class: "w-4 h-4 ml-1", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                   path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M9 5l7 7-7 7" }
@@ -174,7 +178,7 @@ pub fn DocPage(path: Vec<String>, footer: Element) -> Element {
           SuspenseBoundary {
               fallback: |_| rsx! {
                   div { class: "flex items-center justify-center py-20",
-                      div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                      Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                   }
               },
               DocPageInner { path: path.clone(), footer: footer.clone() }
@@ -234,13 +238,13 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
                               {footer.clone()}
                           },
                           Some(Err(e)) => rsx! {
-                              div { class: "p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg",
-                                  "加载失败: {e}"
+                              Alert { variant: AlertVariant::Destructive,
+                                  AlertDescription { variant: AlertVariant::Destructive, "加载失败: {e}" }
                               }
                           },
                           None => rsx! {
                               div { class: "flex items-center justify-center py-20",
-                                  div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                               }
                           },
                       }
@@ -292,7 +296,7 @@ pub fn TreeSection(node: DocTreeNode, active_path: String, depth: u32) -> Elemen
                       a {
                           href: "{href}",
                           class: format_args!("text-xs font-semibold uppercase tracking-wider py-1 {}",
-                              if is_active { "text-blue-600 dark:text-blue-400" } else { "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" }
+                              if is_active { "text-primary" } else { "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" }
                           ),
                           "{node.title}"
                       }
@@ -318,7 +322,7 @@ pub fn TreeSection(node: DocTreeNode, active_path: String, depth: u32) -> Elemen
     // === 二级：章节，带展开/折叠 ===
     1 => {
       let item_class = if is_active {
-        "text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20"
+        "text-sm font-medium text-primary bg-primary/10"
       } else {
         "text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50"
       };
@@ -364,7 +368,7 @@ pub fn TreeSection(node: DocTreeNode, active_path: String, depth: u32) -> Elemen
     // === 三级：小节，叶子节点 ===
     _ => {
       let item_class = if is_active {
-        "text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20"
+        "text-xs font-medium text-primary bg-primary/10"
       } else {
         "text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50"
       };
