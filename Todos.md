@@ -387,7 +387,7 @@
   - [x] U8a — auth_modal → Dialog（新增 `auth.close` 文案；Escape、焦点限制与回位验证通过）
   - [x] U8b — search 模态 → Dialog + Command + ToggleGroup（回车只跳站内路径，`is_site_path` 带测试；发现 FB-17 Command 在关闭的 Dialog 里键盘失效 → 只在打开时挂载；FB-18 异步结果不自动高亮）
   - 顺带修复：`tailwind-input.css` 只扫了 6 个 module crate，docs/search/5 个板块独有的 16 个类此前没有生成（ffaaf91）
-  - [ ] U8c — theme_picker / lang_picker / 用户菜单 → Dropdown
+  - [x] U8c — theme_picker / lang_picker / 用户菜单 → Dropdown（两个布局的用户菜单合并为 `UserMenu`；主题、语言为受控单选组；键盘、Escape、外部点击、跳转验证通过；发现 FB-19 菜单在 flex 行里定位偏移 → 内容加 `fixed`）
   - [ ] U8d — 移动端菜单 → Sheet
 - [ ] U9 — 生态 mega 菜单：评估 NavigationMenu 与现有纯 CSS 方案（D5），不劣于现状才替换
 - [ ] U10 — 收尾：清理无用类名与 CSS、评估移除色阶映射、更新 TAILWIND_GUIDE、反馈汇总
