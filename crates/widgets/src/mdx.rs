@@ -144,7 +144,7 @@ fn render_stream<'a>(
                     }
                 }
                 let id = mint_block_id(top, block_idx);
-                if lang == "mermaid" {
+                if renders_as_diagram(&lang, untrusted) {
                     nodes.push(render_mermaid_block(code_text, id));
                 } else {
                     nodes.push(render_code_block(lang, code_text, id));
@@ -560,6 +560,12 @@ fn render_blockquote(
   }
 }
 
+/// ```` ```mermaid ```` 是否渲染成图（SEC-17）。用户内容只按普通代码块显示：
+/// mermaid 解析器与 SVG 生成是一大块额外攻击面，评论 / 论坛不需要画图。
+fn renders_as_diagram(lang: &str, untrusted: bool) -> bool {
+  lang == "mermaid" && !untrusted
+}
+
 fn render_mermaid_block(code_text: String, block_id: Option<String>) -> Element {
   let bid = block_id.unwrap_or_default();
   let has_bid = !bid.is_empty();
@@ -703,6 +709,13 @@ mod tests {
       Some("https://cdn.example.com/x.png")
     );
     assert_eq!(image_src("javascript:alert(1)", "1", false), None);
+  }
+
+  #[test]
+  fn mermaid_renders_as_diagram_only_in_trusted_content() {
+    assert!(renders_as_diagram("mermaid", false));
+    assert!(!renders_as_diagram("mermaid", true));
+    assert!(!renders_as_diagram("rust", false));
   }
 
   #[test]
