@@ -54,7 +54,7 @@
 
 1. `tailwind-input.css` 引入完整的 shadcn token（`:root` / `.dark` + `@theme inline`），**默认值取站点现有配色**：中性色取 stone（现在 slate→stone 的映射），主色取 orange（现在 blue→orange 的映射），保证不装主题插件时外观不变。
 2. 旧变量改成别名：`--color-bg: var(--background)`、`--color-surface: var(--card)`、`--color-text: var(--foreground)`、`--color-text-muted: var(--muted-foreground)`；`--color-primary` / `--color-border` 由 `@theme inline` 统一指向 `var(--primary)` / `var(--border)`，现有 `text-[var(--color-primary)]` 写法继续有效。
-3. 三个主题插件（ocean / sunset / catppuccin）改为输出 shadcn token（至少 `--background --foreground --card --primary --primary-foreground --muted --muted-foreground --accent --border --input --ring`，亮暗两套），重编 wasm。`plugin_security` 是黑名单过滤，新变量名不受影响。
+3. 三个主题插件（ocean / sunset / catppuccin）改为输出 shadcn token（至少 `--background --foreground --card --primary --primary-foreground --muted --muted-foreground --accent --border --input --ring`，亮暗两套），重编 wasm。`plugin_security` 的 CSS 检查不限制自定义属性名，新变量名不受影响（B3 起为白名单检查，见 PLUGIN_DEV.md）。
 4. slate→stone、blue→orange 的色阶映射暂时保留，服务尚未迁移的手写类名；收尾阶段（U10）再评估能否删除。
 
 **实验结论（U1）**：`@theme inline` 下 `bg-primary` 直接编译成 `background-color: var(--primary)`；`--color-primary: var(--primary)` 仍会输出，但位于 `@layer theme` 的 `:root` 中。分层规则输给未分层的 `main.css` 与插件 `<style>`，所以 U1 里 49 处 `var(--color-primary)` 继续取插件值（ocean 蓝），外观不变。U1 因此**只加 token、不改别名**；别名切换随 U2 插件改造一起做。站点原 `@theme` 里的 `--color-primary` / `--color-border` 默认值已删除（与组件库映射重名），其余旧变量的默认值仍在 `main.css`。

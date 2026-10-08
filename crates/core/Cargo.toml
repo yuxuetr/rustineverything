@@ -25,6 +25,8 @@ rand = { workspace = true, optional = true }
 jsonwebtoken = { workspace = true, optional = true }
 aes-gcm = { workspace = true, optional = true }
 tracing = { workspace = true }
+# 主题 CSS 白名单检查的分词器（plugin_security::check_theme_css）
+cssparser = "0.36"
 
 [features]
 server = ["dep:dioxus", "dep:tokio", "dep:sea-orm", "dep:oauth2", "dep:reqwest", "dep:sha2", "dep:base64", "dep:rand", "dep:jsonwebtoken", "dep:aes-gcm"]
