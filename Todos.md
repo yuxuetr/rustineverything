@@ -414,7 +414,7 @@
 - [x] B1 — SEC-07 / SEC-18 站点 `document::eval` → web-sys（即 E1）（另替换 `document::Title`；`widgets::browser` + 源码扫描测试 `csp_no_eval`；严格 CSP 下浏览器验收）
 - [x] B2 — SEC-09 登出改 POST；不可信内容图片只允许 `/uploads/`（3ccb475：只收 POST，303 回首页，GET 405、`Sec-Fetch-Site: cross-site` 403，菜单经 `browser::post_navigate` 提交表单；ee19c46：不可信图片必须是 uploads 生成的文件名形状，外部 / data / 其他站内路径一律拒绝；路由与 URL 单测先红后绿，浏览器验收登出）
 - [x] B3 — SEC-08 主题 CSS 白名单化；收紧 `img-src`（28ed724：cssparser 分词的白名单 `check_theme_css` 替换黑名单，at-rule / 函数 / `url()` 目标均白名单，拒 `<` / bad token / 深嵌套，字节聚合路径补检查，内置三主题过检测试且反向验证；2b9ed37：`img-src` 只留 self、data: 与四个 OAuth 头像 CDN；浏览器验收三主题生效）
-- [ ] B4 — SEC-11 `site_theme` cookie 读取侧校验
+- [x] B4 — SEC-11 `site_theme` cookie 读取侧校验（99deeb3：`engines::theme::is_theme_filename`（`[A-Za-z0-9_-]+\.wasm`）同时用于 `theme_with_override` 与 `/api/theme/set`，非法 cookie 忽略并 warn；单测先红后绿，curl 验收 `../`、`.wasm.bak` 回落默认主题。未做「在主题列表内」：指向非主题插件只会让该用户自己的主题 CSS 为空，缓存键数量受 plugins 目录文件数约束）
 - [ ] B5 — SEC-10 gateway 不覆盖应用 CSP
 - [ ] B6 — SEC-13 `require_writer` 回查数据库
 - [ ] B7 — SEC-17 不可信内容的 mermaid 按代码显示
