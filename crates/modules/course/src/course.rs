@@ -7,7 +7,7 @@ use crate::server::{
 use dioxus::prelude::*;
 use dioxus_shadcn::{
   button_class, card_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Progress,
-  Spinner, SpinnerSize, UiDensity,
+  Spinner, SpinnerSize, Tabs, TabsContent, TabsList, TabsTrigger, UiDensity,
 };
 use widgets::Markdown;
 
@@ -992,29 +992,23 @@ fn CodeTabs(files: Vec<CodeFile>, #[props(default = false)] large: bool) -> Elem
     widgets::browser::call_global("Prism", "highlightAll", None);
   });
 
+  // 页签值用下标：同一课节里文件名可能重复。
   rsx! {
-      div { class: "{panel_class}",
-          // Tab 条
-          div { class: "flex items-center gap-1 overflow-x-auto px-2 pt-2 border-b border-slate-200 dark:border-slate-800",
+      Tabs {
+          class: "{panel_class}",
+          value: active_idx.to_string(),
+          on_value_change: move |v: String| active.set(v.parse().unwrap_or(0)),
+          TabsList { class: "h-auto w-full justify-start gap-1 overflow-x-auto rounded-none border-b border-border bg-transparent px-2 pt-2 pb-0",
               for (i, f) in files.iter().enumerate() {
-                  button {
-                      key: "{i}",
-                      class: format_args!(
-                          "text-xs px-3 py-2 whitespace-nowrap rounded-t-md transition-colors {}",
-                          if i == active_idx {
-                              "text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 font-medium"
-                          } else {
-                              "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
-                          }
-                      ),
-                      onclick: move |_| active.set(i),
-                      "{f.name}"
-                  }
+                  TabsTrigger { key: "{i}", value: i.to_string(), class: "rounded-b-none px-3 py-2 text-xs", "{f.name}" }
               }
           }
-          // 内容区
           if let Some(file) = active_file {
-              CodePanel { file: file, large: large }
+              TabsContent { value: active_idx.to_string(), class: "mt-0",
+                  // 按文件重挂：Prism 已把 <code> 的文本节点换成高亮 span，
+                  // 原地更新会写到已不存在的节点上。
+                  CodePanel { key: "{active_idx}", file: file, large: large }
+              }
           }
       }
   }

@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_shadcn::{card_class, Button, Textarea};
+use dioxus_shadcn::{card_class, Button, Tabs, TabsContent, TabsList, TabsTrigger, Textarea};
 use module_comments::server::{get_comments, post_comment};
 use module_uploads::server::upload_image;
 use widgets::Markdown;
@@ -70,6 +70,9 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
 
   let is_logged_in = session_user().is_some();
 
+  // 编辑器页签的当前值（Tabs 与 TabsContent 共用）。
+  let editor_tab = if is_preview() { "preview" } else { "edit" }.to_string();
+
   rsx! {
       div { class: "mt-16 border-t border-slate-200 dark:border-slate-800 pt-10",
           h3 { class: "text-2xl font-bold text-slate-900 dark:text-white mb-8", "评论区" }
@@ -77,47 +80,43 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
           // Input Area — 已登录才展示编辑器，未登录提示登录
           if is_logged_in {
               div { class: card_class("rounded-2xl overflow-hidden"),
-                  // Toolbar
-                  div { class: "flex items-center justify-between px-5 py-3 border-b border-border bg-muted/50",
-                      div { class: "flex gap-4 text-xs font-medium text-slate-500",
-                          button {
-                              class: format_args!("pb-2 border-b-2 transition-all {}", if !is_preview() { "text-primary border-primary" } else { "border-transparent hover:text-foreground" }),
-                              onclick: move |_| is_preview.set(false),
-                              "编辑"
+                  Tabs {
+                      value: editor_tab.clone(),
+                      on_value_change: move |v: String| is_preview.set(v == "preview"),
+                      // Toolbar
+                      div { class: "flex items-center justify-between px-5 py-3 border-b border-border bg-muted/50",
+                          TabsList { class: "h-8",
+                              TabsTrigger { value: "edit", class: "py-1 text-xs", "编辑" }
+                              TabsTrigger { value: "preview", class: "py-1 text-xs", "预览" }
                           }
-                          button {
-                              class: format_args!("pb-2 border-b-2 transition-all {}", if is_preview() { "text-primary border-primary" } else { "border-transparent hover:text-foreground" }),
-                              onclick: move |_| is_preview.set(true),
-                              "预览"
+
+                          label { class: "cursor-pointer p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 transition-colors",
+                              input {
+                                  r#type: "file",
+                                  class: "hidden",
+                                  accept: "image/*",
+                                  onchange: handle_upload
+                              }
+                              svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
+                                  path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" }
+                              }
                           }
                       }
 
-                      label { class: "cursor-pointer p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 transition-colors",
-                          input {
-                              r#type: "file",
-                              class: "hidden",
-                              accept: "image/*",
-                              onchange: handle_upload
-                          }
-                          svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
-                              path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" }
-                          }
-                      }
-                  }
-
-                  // Body
-                  div { class: "px-5 py-4",
-                      if !is_preview() {
-                          Textarea {
-                              class: "h-36 border-0 bg-transparent px-0 focus-visible:ring-0 resize-y",
-                              value: content(),
-                              placeholder: "写下你的评论 (支持 Markdown, 图片)...",
-                              "aria-label": "评论内容",
-                              on_value_change: move |v: String| content.set(v),
-                          }
-                      } else {
-                          div { class: "min-h-[8rem] py-2",
-                              Markdown { content: content(), blog_id: props.blog_id.clone(), untrusted: true }
+                      // Body：只挂当前页签的面板，预览不在编辑时每次按键都渲染 Markdown。
+                      TabsContent { value: editor_tab, class: "mt-0 px-5 py-4",
+                          if !is_preview() {
+                              Textarea {
+                                  class: "h-36 border-0 bg-transparent px-0 focus-visible:ring-0 resize-y",
+                                  value: content(),
+                                  placeholder: "写下你的评论 (支持 Markdown, 图片)...",
+                                  "aria-label": "评论内容",
+                                  on_value_change: move |v: String| content.set(v),
+                              }
+                          } else {
+                              div { class: "min-h-[8rem] py-2",
+                                  Markdown { content: content(), blog_id: props.blog_id.clone(), untrusted: true }
+                              }
                           }
                       }
                   }

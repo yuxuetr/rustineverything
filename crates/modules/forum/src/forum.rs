@@ -7,8 +7,8 @@ use app_core::session::SessionUser;
 use dioxus::prelude::*;
 use dioxus_shadcn::{
   badge_class, button_class, card_class, Alert, AlertDescription, AlertVariant, BadgeVariant,
-  Button, ButtonSize, ButtonVariant, Empty, EmptyDescription, Input, Spinner, SpinnerSize,
-  Textarea, UiDensity,
+  Button, ButtonSize, ButtonVariant, Empty, EmptyDescription, Input, Spinner, SpinnerSize, Tabs,
+  TabsContent, TabsList, TabsTrigger, Textarea, UiDensity,
 };
 use widgets::Markdown;
 
@@ -736,6 +736,9 @@ pub fn NewTopicPage() -> Element {
   let path_clone = ref_path();
   let has_ref = kind_clone.is_some() && path_clone.is_some();
 
+  // 编辑器页签的当前值（Tabs 与 TabsContent 共用）。
+  let editor_tab = if is_preview() { "preview" } else { "edit" }.to_string();
+
   rsx! {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
@@ -785,33 +788,28 @@ pub fn NewTopicPage() -> Element {
                       }
                   }
               }
-              // 正文
-              div { class: "mb-4",
-                  div { class: "flex items-center gap-4 mb-2 text-xs font-medium",
-                      button {
-                          class: format_args!("pb-1 border-b-2 transition-colors {}",
-                              if !is_preview() { "text-primary border-primary" } else { "border-transparent text-muted-foreground hover:text-foreground" }),
-                          onclick: move |_| is_preview.set(false),
-                          "{tf(lang, \"forum.edit\")}"
-                      }
-                      button {
-                          class: format_args!("pb-1 border-b-2 transition-colors {}",
-                              if is_preview() { "text-primary border-primary" } else { "border-transparent text-muted-foreground hover:text-foreground" }),
-                          onclick: move |_| is_preview.set(true),
-                          "{tf(lang, \"forum.preview\")}"
-                      }
+              // 正文：只挂当前页签的面板（与评论区一致）。
+              Tabs {
+                  class: "mb-4",
+                  value: editor_tab.clone(),
+                  on_value_change: move |v: String| is_preview.set(v == "preview"),
+                  TabsList { class: "h-8 mb-2",
+                      TabsTrigger { value: "edit", class: "py-1 text-xs", "{tf(lang, \"forum.edit\")}" }
+                      TabsTrigger { value: "preview", class: "py-1 text-xs", "{tf(lang, \"forum.preview\")}" }
                   }
-                  if !is_preview() {
-                      Textarea {
-                          class: "h-64 font-mono",
-                          value: content(),
-                          placeholder: "Markdown...",
-                          "aria-label": tf(lang, "forum.edit"),
-                          on_value_change: move |v: String| content.set(v),
-                      }
-                  } else {
-                      div { class: "prose prose-slate dark:prose-invert max-w-none min-h-[16rem] p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40",
-                          Markdown { content: content(), blog_id: "topic:preview".to_string(), untrusted: true }
+                  TabsContent { value: editor_tab, class: "mt-0",
+                      if !is_preview() {
+                          Textarea {
+                              class: "h-64 font-mono",
+                              value: content(),
+                              placeholder: "Markdown...",
+                              "aria-label": tf(lang, "forum.edit"),
+                              on_value_change: move |v: String| content.set(v),
+                          }
+                      } else {
+                          div { class: "prose prose-slate dark:prose-invert max-w-none min-h-[16rem] p-4 rounded-lg border border-border bg-muted/40",
+                              Markdown { content: content(), blog_id: "topic:preview".to_string(), untrusted: true }
+                          }
                       }
                   }
               }
