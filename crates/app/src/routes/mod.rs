@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use dioxus::router::{Link, Routable};
-use dioxus_shadcn::{Spinner, SpinnerSize};
+use dioxus_shadcn::{Button, ButtonSize, ButtonVariant, Spinner, SpinnerSize};
 
 use crate::components::admin_entitlements::AdminEntitlementsPage;
 use crate::components::comment::CommentBox;
@@ -457,23 +457,21 @@ fn BlogList() -> Element {
                               // 分页栏
                               if total_pages > 1 {
                                   div { class: "flex items-center justify-between px-5 py-3 border-t border-slate-200 dark:border-slate-800",
-                                      button {
+                                      Button {
+                                          variant: ButtonVariant::Ghost,
+                                          size: ButtonSize::Sm,
                                           disabled: safe_page == 0,
+                                          "aria-label": t(lang(), "blog.prev_page"),
                                           onclick: move |_| { if current_page() > 0 { current_page.set(current_page() - 1); } },
-                                          class: format_args!("px-3 py-1 rounded-lg text-sm transition-colors {}",
-                                              if safe_page == 0 { "text-slate-300 dark:text-slate-600 cursor-not-allowed" }
-                                              else { "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800" }
-                                          ),
                                           "←"
                                       }
                                       span { class: "text-xs text-slate-400 tabular-nums", "{safe_page + 1} / {total_pages}" }
-                                      button {
+                                      Button {
+                                          variant: ButtonVariant::Ghost,
+                                          size: ButtonSize::Sm,
                                           disabled: safe_page + 1 >= total_pages,
+                                          "aria-label": t(lang(), "blog.next_page"),
                                           onclick: move |_| { if current_page() + 1 < total_pages { current_page.set(current_page() + 1); } },
-                                          class: format_args!("px-3 py-1 rounded-lg text-sm transition-colors {}",
-                                              if safe_page + 1 >= total_pages { "text-slate-300 dark:text-slate-600 cursor-not-allowed" }
-                                              else { "text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800" }
-                                          ),
                                           "→"
                                       }
                                   }

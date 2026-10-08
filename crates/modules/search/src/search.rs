@@ -10,9 +10,9 @@
 use crate::server::{search_query, SearchHit};
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  Alert, AlertDescription, AlertVariant, Command, CommandEmpty, CommandInput, CommandItem,
-  CommandList, CommandStatus, Dialog, DialogClose, DialogContent, DialogOverlay, DialogTitle,
-  ToggleGroup, ToggleGroupItem,
+  Alert, AlertDescription, AlertVariant, Button, ButtonSize, ButtonVariant, Command, CommandEmpty,
+  CommandInput, CommandItem, CommandList, CommandStatus, Dialog, DialogClose, DialogContent,
+  DialogOverlay, DialogTitle, ToggleGroup, ToggleGroupItem,
 };
 
 /// 用 wrapper 类型避免与其他全局 `Signal<bool>`(如 auth modal)冲突。
@@ -39,9 +39,13 @@ pub fn SearchButton() -> Element {
     None => return rsx! {},
   };
   rsx! {
-      button {
+      Button {
+          r#type: "button",
+          variant: ButtonVariant::Outline,
+          size: ButtonSize::Sm,
+          // min-h-8：Comfortable 密度给 Sm 加 min-h-10，导航栏里会撑高（FB-21）
+          class: "min-h-8 gap-2 px-3 text-xs font-normal text-muted-foreground",
           onclick: move |_| open.set(true),
-          class: "inline-flex items-center gap-2 px-3 h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs",
           title: "搜索 (⌘K)",
           svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
               path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2",
@@ -49,7 +53,7 @@ pub fn SearchButton() -> Element {
               }
           }
           span { class: "hidden sm:inline", "搜索" }
-          kbd { class: "hidden sm:inline px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-[10px]",
+          kbd { class: "hidden sm:inline px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px]",
               "⌘K"
           }
       }

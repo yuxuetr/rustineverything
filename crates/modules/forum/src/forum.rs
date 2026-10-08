@@ -634,11 +634,9 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
               ErrorAlert { message: err, class: "rounded-none border-x-0 px-5 py-2" }
           }
           div { class: "px-5 py-3 bg-muted/50 flex justify-end border-t border-border",
-              button {
-                  class: format_args!("px-5 py-2 rounded-lg font-semibold text-sm transition-all {}",
-                      if submitting() { "bg-slate-200 text-slate-400 cursor-not-allowed" }
-                      else { "btn-flow" }
-                  ),
+              Button {
+                  r#type: "button",
+                  class: if submitting() { "" } else { "btn-flow" },
                   disabled: submitting(),
                   onclick: handle_submit,
                   if submitting() { "{tf(lang, \"forum.submitting\")}" } else { "{tf(lang, \"forum.post_reply\")}" }
@@ -823,10 +821,9 @@ pub fn NewTopicPage() -> Element {
               }
 
               div { class: "flex justify-end",
-                  button {
-                      class: format_args!("px-5 py-2 rounded-lg font-semibold text-sm transition-all {}",
-                          if submitting() { "bg-slate-200 text-slate-400 cursor-not-allowed" }
-                          else { "btn-flow" }),
+                  Button {
+                      r#type: "button",
+                      class: if submitting() { "" } else { "btn-flow" },
                       disabled: submitting(),
                       onclick: handle_submit,
                       if submitting() { "{tf(lang, \"forum.publishing\")}" } else { "{tf(lang, \"forum.publish_topic\")}" }

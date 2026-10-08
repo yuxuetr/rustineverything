@@ -52,6 +52,8 @@ blog.all = 全部
 blog.empty = 暂无文章
 blog.articles = 文章
 blog.no_results = 没有匹配该标签的文章
+blog.prev_page = 上一页
+blog.next_page = 下一页
 
 # ── 页脚 ──
 footer.tagline = 专注 Rust 工业实战与 AI 生态：案例、课程、文档、社区一站式聚合。

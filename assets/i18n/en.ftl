@@ -52,6 +52,8 @@ blog.all = All
 blog.empty = No articles yet
 blog.articles = Articles
 blog.no_results = No articles match this tag
+blog.prev_page = Previous page
+blog.next_page = Next page
 
 # ── Footer ──
 footer.tagline = Industrial Rust practice and the AI ecosystem — cases, courses, docs, and community in one place.

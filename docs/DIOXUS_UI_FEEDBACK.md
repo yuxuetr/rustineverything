@@ -13,6 +13,7 @@
 | FB-19 | 浮层先量锚点后脱离文档流，flex 行里定位偏移 | 中 | DropdownContent 加 `fixed` |
 | FB-18 | Command 异步结果不自动高亮第一项 | 低 | 无（按 ↓ 即可） |
 | FB-20 | NavigationMenu hydration 前打不开（建议） | 低到中 | 生态菜单保留纯 CSS |
+| FB-21 | 默认密度下 `ButtonSize::Sm` 实际 40px | 低 | 导航栏搜索按钮加 `min-h-8` |
 | FB-13 | 文档站仍用 `document::Title`（部分修复） | 低 | — |
 
 已在 0.6.1 / 0.6.2 修复：FB-01 ~ FB-08、FB-10、FB-11、FB-14、FB-15（本站的 FB-15 绕行写法已删除）。上游 wontfix 并给出理由：FB-09、FB-12、FB-16。
@@ -224,3 +225,13 @@
 - 影响：低到中。只影响首屏与 wasm 失败的情形，但导航是站点里最不该依赖脚本的部分。
 - 建议的上游修复：渐进增强——SSR 时内容用 CSS 的 `:hover` / `:focus-within` 可见（例如根上加 `group`、内容加 `group-hover:block`），脚本接管后再改为状态驱动；或在文档里说明 NavigationMenu 需要 hydration 才可用。
 - 状态：open（建议）
+
+### FB-21 默认密度下 `ButtonSize::Sm` 实际是 40px
+
+- 组件 / 版本：0.6.2 — `button.rs`（`button_class` 的密度类）
+- 现象：`ButtonSize::Sm` 给 `h-8`，文档写「Small: 32 pixels high」；但 `button_class` 在 `UiDensity::Comfortable`（没有 `DensityProvider` 时的默认值）再加 `min-h-10`，`min-height` 压过 `height`，按钮实际 40px，与 `Md` 一样高。`density.rs` 说 Comfortable 是「the shadcn/ui sizes」，而 shadcn 的 sm 按钮是 `h-8`。U11b 把导航栏搜索入口换成 `Button { size: Sm }` 时发现（2026-10-08）：SSR 输出 `h-8 … min-h-10`。
+- 复现：`Button { size: ButtonSize::Sm, "x" }`，不包 `DensityProvider`，量 `offsetHeight` 得 40。
+- 影响：低。按钮只是变高；在导航栏、工具栏这种固定高度的行里会撑高整行。`Sm` 在默认密度下失去意义。
+- 站点临时处理：导航栏搜索按钮 `class` 加 `min-h-8`（`search.rs`）；cases、podcast、博客翻页的 `Sm` 按钮保持 40px，点击区域更大，不处理。
+- 建议的上游修复：密度最小高度按尺寸取，Comfortable 下 `Sm` 为 `min-h-8`（或 Comfortable 不加最小高度，只有 Touch 加）；补一个「Comfortable + Sm 高 32px」的测试。
+- 状态：open
