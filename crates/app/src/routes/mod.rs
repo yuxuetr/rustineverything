@@ -1,6 +1,8 @@
 use dioxus::prelude::*;
 use dioxus::router::{Link, Routable};
-use dioxus_shadcn::{Button, ButtonSize, ButtonVariant, Spinner, SpinnerSize};
+use dioxus_shadcn::{
+  badge_class, BadgeVariant, Button, ButtonSize, ButtonVariant, Spinner, SpinnerSize,
+};
 
 use crate::components::admin_entitlements::AdminEntitlementsPage;
 use crate::components::comment::CommentBox;
@@ -285,6 +287,18 @@ pub fn DocPage(path: Vec<String>) -> Element {
   }
 }
 
+/// 博客标签筛选 chip：选中为主色实心，否则为描边（与 podcast 一致）。
+fn tag_chip_class(active: bool) -> String {
+  if active {
+    badge_class(BadgeVariant::Default, "gap-1 rounded-full px-3 py-1 font-medium")
+  } else {
+    badge_class(
+      BadgeVariant::Outline,
+      "gap-1 rounded-full bg-background px-3 py-1 font-medium text-muted-foreground hover:border-primary hover:text-primary",
+    )
+  }
+}
+
 #[component]
 pub fn BlogIndex() -> Element {
   rsx! { ModuleGate { id: "blog".to_string(), BlogIndexInner {} } }
@@ -373,12 +387,10 @@ fn BlogList() -> Element {
                                               let label_all = t(lang(), "blog.all");
                                               rsx! {
                                                   button {
+                                                      r#type: "button",
+                                                      "aria-pressed": is_all.to_string(),
                                                       onclick: move |_| { active_tag.set(None); current_page.set(0); },
-                                                      class: format_args!(
-                                                          "inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full font-medium transition-colors {}",
-                                                          if is_all { "bg-blue-600 text-white" }
-                                                          else { "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:text-blue-600" }
-                                                      ),
+                                                      class: tag_chip_class(is_all),
                                                       "{label_all}"
                                                       span { class: "opacity-60", "{posts.len()}" }
                                                   }
@@ -394,12 +406,10 @@ fn BlogList() -> Element {
                                                   rsx! {
                                                       button {
                                                           key: "{t}",
+                                                          r#type: "button",
+                                                          "aria-pressed": is_active.to_string(),
                                                           onclick: move |_| { active_tag.set(Some(t.clone())); current_page.set(0); },
-                                                          class: format_args!(
-                                                              "inline-flex items-center gap-1 text-xs px-3 py-1 rounded-full font-medium transition-colors {}",
-                                                              if is_active { "bg-blue-600 text-white" }
-                                                              else { "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-blue-400 hover:text-blue-600" }
-                                                          ),
+                                                          class: tag_chip_class(is_active),
                                                           "{t2}"
                                                           span { class: "opacity-60", "{count}" }
                                                       }

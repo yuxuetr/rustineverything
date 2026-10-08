@@ -5,8 +5,8 @@ use app_core::i18n::Language;
 use dioxus::prelude::try_use_context;
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  button_class, card_class, Button, ButtonSize, ButtonVariant, Empty, EmptyDescription, Input,
-  Spinner, SpinnerSize, UiDensity,
+  badge_class, button_class, card_class, BadgeVariant, Button, ButtonSize, ButtonVariant, Empty,
+  EmptyDescription, Input, Spinner, SpinnerSize, UiDensity,
 };
 use module_forum::forum::DiscussionPanel;
 use widgets::Markdown;
@@ -321,24 +321,34 @@ fn CategoryChip(
 ) -> Element {
   let active = current == value;
   let emoji = value.as_deref().map(category_emoji).unwrap_or("🌐");
+  // 选中保留品牌渐变 `btn-flow`（main.css 无 layer，盖过 bg-primary）。
   let cls = if active {
-    "inline-flex items-center gap-1.5 rounded-full btn-flow px-4 py-2 text-xs font-bold shadow-md shadow-slate-500/20 transition-all"
+    badge_class(
+      BadgeVariant::Default,
+      "gap-1.5 rounded-full btn-flow px-4 py-2 font-bold shadow-md shadow-slate-500/20",
+    )
   } else {
-    "inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:border-primary hover:text-primary hover:shadow-sm transition-all"
+    badge_class(
+      BadgeVariant::Outline,
+      "gap-1.5 rounded-full bg-background px-4 py-2 text-muted-foreground hover:border-primary hover:text-primary",
+    )
   };
   rsx! {
       button {
-          class: "{cls}",
+          r#type: "button",
+          "aria-pressed": active.to_string(),
+          class: cls,
           onclick: move |_| on_select.call(value.clone()),
           span { "{emoji}" }
           span { "{label}" }
           if let Some(n) = count {
-              span { class: if active { "bg-white/20 px-1.5 py-0.5 rounded-full text-[10px]" } else { "bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full text-[10px]" }, "{n}" }
+              span { class: if active { "bg-white/20 px-1.5 py-0.5 rounded-full text-[10px]" } else { "bg-muted px-1.5 py-0.5 rounded-full text-[10px]" }, "{n}" }
           }
       }
   }
 }
 
+/// 再点一次已选标签即取消筛选，`aria-pressed` 表达这种开关语义。
 #[component]
 fn TagChip(
   tag: TagSummary,
@@ -346,26 +356,28 @@ fn TagChip(
   on_select: EventHandler<Option<String>>,
 ) -> Element {
   let active = current.as_deref() == Some(tag.tag.as_str());
-  let base = tag_color_class(&tag.tag);
   let selected = if active { None } else { Some(tag.tag.clone()) };
-  if active {
-    rsx! {
-        button {
-            class: "inline-flex items-center gap-1 rounded-lg bg-linear-to-r from-slate-800 to-slate-900 dark:from-slate-100 dark:to-slate-200 px-3 py-1.5 text-xs font-bold text-white dark:text-slate-900 shadow-md transition-all",
-            onclick: move |_| on_select.call(selected.clone()),
-            "#{tag.tag}"
-            span { class: "bg-white/20 px-1 py-0.5 rounded text-[10px]", "{tag.count}" }
-        }
-    }
+  // 未选中沿用每个标签自己的配色（tag_color_class 已含暗色）。
+  let cls = if active {
+    badge_class(BadgeVariant::Default, "gap-1 rounded-lg px-3 py-1.5 font-bold shadow-md")
   } else {
-    rsx! {
-        button {
-            class: "inline-flex items-center gap-1 rounded-lg {base} px-3 py-1.5 text-xs font-medium hover:brightness-95 hover:shadow-sm transition-all",
-            onclick: move |_| on_select.call(selected.clone()),
-            "#{tag.tag}"
-            span { class: "opacity-50 text-[10px]", "{tag.count}" }
-        }
-    }
+    badge_class(
+      BadgeVariant::Secondary,
+      &format!(
+        "gap-1 {} rounded-lg px-3 py-1.5 font-medium hover:brightness-95",
+        tag_color_class(&tag.tag)
+      ),
+    )
+  };
+  rsx! {
+      button {
+          r#type: "button",
+          "aria-pressed": active.to_string(),
+          class: cls,
+          onclick: move |_| on_select.call(selected.clone()),
+          "#{tag.tag}"
+          span { class: if active { "bg-white/20 px-1 py-0.5 rounded text-[10px]" } else { "opacity-50 text-[10px]" }, "{tag.count}" }
+      }
   }
 }
 

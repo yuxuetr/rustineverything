@@ -191,6 +191,8 @@ pub fn PodcastPage() -> Element {
                                               let is_all = active_tag().is_none();
                                               rsx! {
                                                   button {
+                                                      r#type: "button",
+                                                      "aria-pressed": is_all.to_string(),
                                                       onclick: move |_| active_tag.set(None),
                                                       class: tag_chip_class(is_all),
                                                       "{tp(lang, \"podcast.all\")}"
@@ -208,6 +210,8 @@ pub fn PodcastPage() -> Element {
                                                   rsx! {
                                                       button {
                                                           key: "{t}",
+                                                          r#type: "button",
+                                                          "aria-pressed": is_active.to_string(),
                                                           onclick: move |_| active_tag.set(Some(t.clone())),
                                                           class: tag_chip_class(is_active),
                                                           "#{t2}"
