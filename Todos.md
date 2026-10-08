@@ -407,6 +407,7 @@
   - [x] U11f — 课程章节折叠 → Collapsible；课程标注开关 → Button（修暗色）（763e9b7：章节与课节视频块改 Collapsible，箭头由 data-state 驱动；标注眼睛按钮改 Outline/Icon Button 走主题变量，暗色不再白底。顺带修 build.rs 正向同步用 root 旧 tailwind.css 覆盖新编译产物的问题 59c3e5b。课节视频块无现成内容，未浏览器验证）
   - [x] 课节页标题重复显示两次（9dd54cf：读课节时拆掉正文开头的 `# 标题`；frontmatter 标题优先，缺失时用该 H1，再退到 slug。注意标注 block id 按顶层块序号分配，正文增删块会让已有标注错位）
   - [x] 标注错位（abf2617：annotations.js 先核对 exact_text，对不上按原文 + 前后文在全部块里重找，原文已删则不画；浏览器内 5 种情形前后对比验证）
+  - [x] 我的标注跳回原文不准（2c2a0cf：链接改 `#anno-{id}`，闪烁重新定位后的标注本身；原文已删不闪；旧 `#b{n}` 仍兼容）
 
 
 ---
