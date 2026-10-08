@@ -374,7 +374,10 @@
 - [x] U6 — cases / docs / podcast / search 列表部分
   - 落点：案例 / 文档 / 播客卡片用 `card_class`；计数与标签 chip 用 `badge_class`；加载圈、空状态（`Empty`）、错误（`Alert`）、案例搜索框（`Input`）、播客翻页（Ghost `Button`）、搜索 kind 过滤（`aria-pressed`）换组件；蓝色强调改 `primary`；案例分类配色、播客播放器深色卡片保留
   - 验证：严格 CSP 下案例搜索 / 空状态 / 标签筛选、文档首页与详情、播客标签筛选、搜索过滤与结果均可用，无 pageerror；SSR 首屏含案例与文档卡片
-- [ ] U7 — 5 个内容板块（先 ai，再套用其余 4 个）
+- [x] U7 — 5 个内容板块（先 ai，再套用其余 4 个）
+  - 落点：搜索框 `Input`、子主题 chip（`badge_class` + `aria-pressed`）、文章卡片 `card_class`、标签 / 子主题徽章、加载圈、空状态、加载失败 `Alert`；先改 ai 验收，再用同一脚本套用到 cli / embedded / wasm / web3
+  - 验证：严格 CSP 下 5 个板块的筛选、搜索、空状态、文章详情、未找到文章的错误提示均可用，无 pageerror；SSR 首屏含卡片
+  - 发现（既有，未修）：`/wasm` 整页请求返回 404——路由与 Dioxus 静态目录 `/wasm/`（wasm 产物）冲突，只能经客户端路由进入；生产环境未验证。板块 crate 单独 `cargo test --features server` 编译失败（其 server feature 未开 `app-core/server`），不带 feature 时 13 测通过
 - [ ] U8 — 全局弹层：auth_modal / search 模态 → Dialog(+Command)；主题/语言/用户菜单 → Dropdown；移动端菜单 → Sheet
 - [ ] U9 — 生态 mega 菜单：评估 NavigationMenu 与现有纯 CSS 方案（D5），不劣于现状才替换
 - [ ] U10 — 收尾：清理无用类名与 CSS、评估移除色阶映射、更新 TAILWIND_GUIDE、反馈汇总
