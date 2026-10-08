@@ -2577,6 +2577,13 @@ mod tests {
     write(path, "");
   }
 
+  /// 课程读取走相对 cwd 的 `assets/courses`，改 cwd 的测试必须串行。
+  static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+  fn lock_cwd() -> std::sync::MutexGuard<'static, ()> {
+    CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+  }
+
   #[test]
   fn test_parse_order_prefix_numeric() {
     assert_eq!(parse_order_prefix("01-foo"), (1, "foo".to_string()));
@@ -2755,6 +2762,7 @@ mod tests {
   #[test]
   fn test_read_lesson_doc_with_assets() {
     let tmp = TempDir::new().unwrap();
+    let _cwd_guard = lock_cwd();
     let cwd = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let res = {
@@ -2792,6 +2800,7 @@ mod tests {
   #[test]
   fn test_scan_courses_full_tree() {
     let tmp = TempDir::new().unwrap();
+    let _cwd_guard = lock_cwd();
     let cwd = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let res = {
@@ -2876,6 +2885,7 @@ mod tests {
   #[test]
   fn test_scan_skips_courses_without_lessons() {
     let tmp = TempDir::new().unwrap();
+    let _cwd_guard = lock_cwd();
     let cwd = std::env::current_dir().unwrap();
     std::env::set_current_dir(tmp.path()).unwrap();
     let res = {
