@@ -29,7 +29,9 @@ use axum::response::Response;
 
 /// 默认 CSP。目录说明见模块注释。
 ///
-/// - `img-src … https:`：用户头像来自任意 OAuth 提供商 CDN。
+/// - `img-src`：站内 + data: + 四个 OAuth 头像 CDN（SEC-08）。不放行任意 https：
+///   外部图片会泄露浏览者 IP，也是主题 CSS / 用户内容的数据外泄通道。新增登录方式或
+///   作者内容要用外部图片时，在这里加具体主机（或用 `CSP_POLICY` 覆盖）。
 /// - `connect-src … ws: wss:`：dx serve 开发态热重载走 WebSocket；
 ///   生产无 ws 连接时该白名单不构成额外风险面（仍受同源脚本约束）。
 /// - `frame-src`：widgets 的 YouTube / Bilibili 嵌入组件。
@@ -38,7 +40,8 @@ pub fn default_csp() -> String {
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https:",
+    "img-src 'self' data: https://avatars.githubusercontent.com https://*.googleusercontent.com \
+     https://cdn.discordapp.com https://pbs.twimg.com",
     "font-src 'self' data:",
     "media-src 'self' https:",
     "connect-src 'self' ws: wss:",
@@ -121,6 +124,19 @@ mod tests {
     ] {
       assert!(csp.contains(directive), "CSP 缺少指令: {}", directive);
     }
+  }
+
+  /// SEC-08：`img-src` 不放行任意 https（外部图片会泄露浏览者 IP，也是 CSS 外泄通道），
+  /// 只放 OAuth 头像 CDN。
+  #[test]
+  fn img_src_only_allows_self_data_and_avatar_cdns() {
+    let csp = default_csp();
+    let img_src = csp.split("; ").find(|d| d.starts_with("img-src ")).expect("img-src directive");
+    assert_eq!(
+      img_src,
+      "img-src 'self' data: https://avatars.githubusercontent.com https://*.googleusercontent.com \
+       https://cdn.discordapp.com https://pbs.twimg.com"
+    );
   }
 
   #[test]
