@@ -379,14 +379,8 @@ impl AuthService {
     tracing::info!(provider = %provider, "auth: token exchange success");
 
     // 3. 获取用户信息
-    let profile_response: Value = http_client
-      .get(&provider_config.profile_url)
-      .header("Authorization", format!("Bearer {}", access_token))
-      .header("User-Agent", "app")
-      .send()
-      .await?
-      .json()
-      .await?;
+    let profile_response =
+      fetch_profile(&http_client, &provider_config.profile_url, access_token).await?;
     tracing::info!(provider = %provider, "auth: profile fetched");
 
     // 4. 插件 Profile 映射
@@ -395,6 +389,10 @@ impl AuthService {
       .call_with_string(&wasm_bytes, "map_profile", &profile_response.to_string())
       .await?;
     let standard_user: StandardUser = serde_json::from_str(&standard_user_json)?;
+    if !is_usable_external_id(&standard_user.external_id) {
+      tracing::warn!(provider = %provider, "auth: plugin returned no usable external_id");
+      return Err(format!("登录失败：{} 未返回用户 ID", provider).into());
+    }
 
     // 5. 同步至数据库（Phase 8.2：不再持久化 access_token，直接丢弃）
     let _ = access_token; // 调用链结束于此；进入 sync_user_to_db 之后不再需要
@@ -460,10 +458,74 @@ impl AuthService {
   }
 }
 
+/// 插件映射出的 provider 用户 ID 能否用来匹配 / 创建账号。空串与 `"0"` 是插件
+/// 取不到 ID 时的占位，接受它们会把不同的人登进同一个账号。
+fn is_usable_external_id(uid: &str) -> bool {
+  let uid = uid.trim();
+  !uid.is_empty() && uid != "0"
+}
+
+/// 用 access token 取 provider 的用户信息。错误响应（401 / 限流）的 body
+/// 也是 JSON，必须按状态码拒绝，否则插件会从里面映射出一个占位用户（SEC-04）。
+async fn fetch_profile(
+  client: &reqwest::Client,
+  profile_url: &str,
+  access_token: &str,
+) -> crate::error::AppResult<Value> {
+  let response = client
+    .get(profile_url)
+    .header("Authorization", format!("Bearer {}", access_token))
+    .header("User-Agent", "app")
+    .send()
+    .await?
+    .error_for_status()?;
+  Ok(response.json().await?)
+}
+
 #[cfg(all(test, feature = "server"))]
 mod tests {
   use super::*;
   use std::fs;
+
+  /// 本地起一个只回一次固定响应的 HTTP 服务，返回其 URL。
+  async fn serve_once(status_line: &'static str, body: &'static str) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+      let (mut sock, _) = listener.accept().await.unwrap();
+      let mut buf = [0u8; 4096];
+      let _ = sock.read(&mut buf).await;
+      let resp = format!(
+        "HTTP/1.1 {status_line}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+      );
+      sock.write_all(resp.as_bytes()).await.unwrap();
+    });
+    format!("http://{addr}/user")
+  }
+
+  #[test]
+  fn external_id_placeholders_are_rejected() {
+    for bad in ["", " ", "0", " 0 "] {
+      assert!(!is_usable_external_id(bad), "{bad:?}");
+    }
+    for ok in ["12345", "a1b2", "00"] {
+      assert!(is_usable_external_id(ok), "{ok:?}");
+    }
+  }
+
+  /// SEC-04：错误响应体也是合法 JSON，不检查状态就会被当成 profile 交给插件。
+  #[tokio::test]
+  async fn fetch_profile_rejects_error_status() {
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    for status in ["401 Unauthorized", "403 Forbidden", "429 Too Many Requests"] {
+      let url = serve_once(status, r#"{"message":"Bad credentials"}"#).await;
+      assert!(fetch_profile(&client, &url, "t").await.is_err(), "{status}");
+    }
+    let url = serve_once("200 OK", r#"{"id":1}"#).await;
+    assert_eq!(fetch_profile(&client, &url, "t").await.unwrap()["id"], 1);
+  }
 
   #[tokio::test]
   async fn test_github_auth_plugin_logic() {
@@ -507,6 +569,14 @@ mod tests {
     assert_eq!(user.nickname, "test_user");
     assert_eq!(user.provider, "github");
     assert_eq!(user.email, Some("test@example.com".to_string()));
+
+    // SEC-04：缺 id（如错误响应 body）不得映射出占位 ID
+    let json = manager
+      .call_with_string(&wasm_bytes, "map_profile", r#"{"message":"Bad credentials"}"#)
+      .await
+      .expect("调用 map_profile 失败");
+    let user: StandardUser = serde_json::from_str(&json).expect("解析 StandardUser 失败");
+    assert!(!is_usable_external_id(&user.external_id), "{:?}", user.external_id);
   }
 
   // ── Phase 7.2：PkceCookiePayload 加密 cookie 持久化 ──

@@ -23,7 +23,7 @@
 | SEC-01 | 严重 | `crates/widgets/src/mdx.rs:182-191`、`:589`（`latex_to_mathml_string`）、`:89`（`ENABLE_MATH` 对不可信内容也开启） | 数学公式输出不经任何净化直接进 `dangerous_inner_html`；pulldown-latex 对 `\text{…}` 内容不转义。评论 / 论坛帖子写 `$\text{<img src=x/onerror=…>}$` 即对所有浏览者执行脚本（存储型 XSS），管理员浏览即账号接管 | **已修复（A1）**：库级复现 `<mtext><img src=x/onerror=alert(1)></mtext>`；解析错误信息（`<merror>`）同样回显原始输入 |
 | SEC-02 | 高 | `crates/app/src/server/static_assets.rs:15` | `/courses` 是无鉴权的 `ServeDir`，付费课时正文、音视频可直接下载，绕过 `get_lesson` 的权益检查 | **已修复（A2）**：复现为未登录 `GET /courses/rust-basics/02-ownership/01-borrow-rules/index.md` → 200；修复后 404，试看课时与课程级文件仍 200 |
 | SEC-03 | 高 | `crates/modules/docs/src/server.rs:226` | `get_doc_content(path)` 直接 `join(path)`，无 `..` / 绝对路径检查，且公开 | **已修复（A3）**：复现为 `{"path":"../courses/…"}` 返回课时正文；修复后返回「文档未找到」，正常文档不受影响 |
-| SEC-04 | 高 | `crates/core/src/auth/mod.rs` profile 请求处；`crates/plugins/*-auth`（如 `github-auth/src/lib.rs:66`） | profile 响应不检查 HTTP 状态；插件取不到 `id` 时回退为 `"0"`。限流 / 错误响应会把不同用户映射到同一个 `(provider, "0")` 账号 | 代码确认 |
+| SEC-04 | 高 | `crates/core/src/auth/mod.rs` profile 请求处；`crates/plugins/*-auth`（如 `github-auth/src/lib.rs:66`） | profile 响应不检查 HTTP 状态；插件取不到 `id` 时回退为 `"0"`。限流 / 错误响应会把不同用户映射到同一个 `(provider, "0")` 账号 | **已修复（A4）**：单测确认 401 / 403 / 429 原先被当作 profile |
 | SEC-05 | 高 | `crates/core/src/auth/mod.rs:237`、profile/token 请求处 | `auth_url` / `token_url` / `profile_url` 由插件决定，宿主把 `client_secret` 发往插件给的 `token_url`；插件还决定 `external_id`。恶意插件可窃取 secret、SSRF、冒充任意用户 | 代码确认 |
 | SEC-06 | 高 | `crates/core/src/lib.rs`（`get_or_load_module`）；auth `mod.rs:168`、moderation `pipeline.rs:130` / `plugin_stage.rs:43` | SHA-256 锁只在共享管理器的加载路径生效，auth / moderation 各自 `PluginManager::new()` 绕过；`assets/site.json` 无 `plugins_lock` 条目；文档提到的锁生成工具不存在 | 静态审计 |
 | SEC-07 | 高（可用性） | `crates/app/src/server/security.rs:39`；全站约 20 处 `document::eval` | CSP 不含 `'unsafe-eval'`，`document::eval` 被拦截后 wasm panic，页面加载即失效：主题插件从不生效、暗色切换无效、交互不可靠 | 已复现（`bypassCSP` 对照实验） |
@@ -54,7 +54,7 @@
 | A1 | SEC-01 | ~~输出白名单过滤~~ → 实际做法：读 pulldown-latex 0.7.1 写出器确认，用户文本只经 `Content::Text/Number/Function` 与解析错误信息进入输出（属性值全是数值或固定串），故在交给它渲染前把这些字符串转义（`mdx.rs::latex_to_mathml_string`）。比事后解析 HTML 小一个数量级；升级 pulldown-latex 时测试 `assert_only_mathml_tags` 兜底。可信与不可信内容同一路径 | `widgets` 单测：`$\text{<img src=x/onerror=alert(1)>}$`、`\text{<a href="javascript:…">}`、`/onerror=` 形式输出中不含 `<img` / `onerror` / `javascript:`；常见公式（分式、上下标、矩阵）输出不变 |
 | A2 | SEC-02 | 实际做法：`/courses` 仍是 ServeDir，前面加中间件 `guard_course_file`；课时目录（第 4 段起）内的任何文件按 `get_lesson` 同一规则（抽成 `lesson_access_allowed` 共用）判定，课程 / 章节目录下的文件（封面）公开；路径按 ServeDir 方式逐段解码，`..` / 解码出的 `/` `\` / 查不到课时或课程 / 查库失败一律 404。限制：封面放在课程目录下两层以上会被当作课时文件拒绝 | 集成测试：未登录请求课时 `index.md` / 媒体 → 401/403/404；封面 → 200 |
 | A3 | SEC-03 | 路径拒绝 `..`、绝对路径、反斜杠；canonicalize 后必须以 docs 根目录为前缀（复用 forum 已有的同类函数）。实际做法：forum 的 `safe_join_under` 移到 `app_core::utils` 共用；docs 对完整的 `<path>/index.md(x)` 校验，文件本身是根外符号链接也拒绝 | 单测：`../courses/…`、`/etc`、`..\\x`、URL 编码形式 → 错误；正常文档路径 → 成功 |
-| A4 | SEC-04 | profile 响应 `error_for_status()`；宿主拒绝空 / `"0"` 的 `external_id`；四个认证插件缺 `id` 时报错而非回退 | 单测：profile 返回 401 或缺 `id` → 登录失败且不创建 / 匹配账号 |
+| A4 | SEC-04 | profile 响应 `error_for_status()`；宿主拒绝空 / `"0"` 的 `external_id`；~~四个认证插件缺 `id` 时报错而非回退~~（未改：插件唯一的回退值就是 `"0"`，宿主已拒绝，改插件不改变行为却要重建 4 个 wasm；「不要伪造 ID」写进 D1 指南） | 单测：profile 返回 401 或缺 `id` → 登录失败且不创建 / 匹配账号 |
 
 ### 阶段 B：站点加固
 
@@ -86,7 +86,7 @@
 
 - **威胁模型**：沙箱只限制资源与 I/O，不判断输出是否正确；插件在其能力范围内是完全受信的。
 - **按能力的输出契约**：输出去向（页面 `<style>`、OAuth 流程、身份映射、审核结论、Markdown）、宿主校验什么、不校验什么。
-- **认证插件**：端点由宿主固定（C1 之后）；`external_id` 必须是稳定、非空的 provider uid，缺失时报错；不在输出中回显 token。
+- **认证插件**：端点由宿主固定（C1 之后）；`external_id` 必须是稳定、非空的 provider uid，缺失时报错，不得伪造占位值（宿主自 A4 起拒绝空串与 `"0"`；内置四个认证插件源码仍是 `unwrap_or("0")`，做 D 时连同 wasm 一起改掉，免得被当成示例照抄）；不在输出中回显 token。
 - **主题插件**：只用白名单内的 CSS 构造；不引用外部资源；不做覆盖页面、伪造界面的样式（主题对所有访客全局生效）。
 - **审核插件**：用户内容是不可信输入，会进入提示词——要分隔、防提示词注入；无法判断时不得默认放行。
 - **ABI 注意事项**：输入为 JSON；空输出的处理；panic 即该次调用被跳过；fuel / 内存 / 输出上限及其配置项。
