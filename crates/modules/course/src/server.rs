@@ -1111,10 +1111,13 @@ fn current_session_user() -> Option<app_core::session::SessionUser> {
   parse_session_from_cookie_header(cookie_str.as_deref())
 }
 
-/// 限制：仅 admin / member 可写进度与标注
+/// 限制：仅 admin / member 可写进度与标注。
+///
+/// SEC-13：先回查 DB 的 token_version（角色变更会 bump 它），降级 / 删除的用户
+/// 旧 JWT 立即失效，再看 JWT 内角色。
 #[cfg(feature = "server")]
-fn require_writer() -> Result<app_core::session::SessionUser, ServerFnError> {
-  let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
+async fn require_writer() -> Result<app_core::session::SessionUser, ServerFnError> {
+  let user = app_core::session::require_session_verified().await?;
   if user.role == "admin" || user.role == "member" {
     Ok(user)
   } else {
@@ -1125,17 +1128,6 @@ fn require_writer() -> Result<app_core::session::SessionUser, ServerFnError> {
 #[cfg(feature = "server")]
 async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
   app_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
-}
-
-/// 限制：仅 admin 可授予 / 撤销权益。
-#[cfg(feature = "server")]
-fn require_admin_user() -> Result<app_core::session::SessionUser, ServerFnError> {
-  let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
-  if user.is_admin() {
-    Ok(user)
-  } else {
-    Err(ServerFnError::new("需要管理员权限".to_string()))
-  }
 }
 
 /// server-only：用户是否拥有某课程权益（get_lesson 访问控制复用）。
@@ -1231,7 +1223,7 @@ pub async fn list_entitlements() -> Result<Vec<EntitlementInfo>, ServerFnError> 
   {
     use app_core::entities::{entitlement, user as user_entity};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
-    require_admin_user()?;
+    app_core::session::require_admin().await?;
     let db = open_db().await?;
     let rows = entitlement::Entity::find()
       .order_by_desc(entitlement::Column::GrantedAt)
@@ -1301,7 +1293,7 @@ async fn grant_entitlement_internal(
 pub async fn grant_entitlement(user_id: i32, course_slug: String) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    require_admin_user()?;
+    app_core::session::require_admin().await?;
     let db = open_db().await?;
     grant_entitlement_internal(&db, user_id, course_slug, "admin_grant").await
   }
@@ -1319,7 +1311,7 @@ pub async fn revoke_entitlement(user_id: i32, course_slug: String) -> Result<(),
   {
     use app_core::entities::entitlement;
     use sea_orm::EntityTrait;
-    require_admin_user()?;
+    app_core::session::require_admin().await?;
     let db = open_db().await?;
     entitlement::Entity::delete_by_id((user_id, course_slug))
       .exec(&db)
@@ -1390,7 +1382,7 @@ pub async fn list_memberships() -> Result<Vec<MembershipAdminInfo>, ServerFnErro
   {
     use app_core::entities::{membership, user as user_entity};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
-    require_admin_user()?;
+    app_core::session::require_admin().await?;
     let db = open_db().await?;
     let now = chrono::Utc::now().fixed_offset();
     let rows = membership::Entity::find()
@@ -1435,7 +1427,7 @@ pub async fn grant_membership(user_id: i32, days: i64) -> Result<(), ServerFnErr
     use app_core::entities::membership;
     use chrono::Utc;
     use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
-    require_admin_user()?;
+    app_core::session::require_admin().await?;
     if days <= 0 {
       return Err(ServerFnError::new("天数需为正".to_string()));
     }
@@ -1483,7 +1475,7 @@ pub async fn revoke_membership(user_id: i32) -> Result<(), ServerFnError> {
   {
     use app_core::entities::membership;
     use sea_orm::EntityTrait;
-    require_admin_user()?;
+    app_core::session::require_admin().await?;
     let db = open_db().await?;
     membership::Entity::delete_by_id(user_id)
       .exec(&db)
@@ -1578,7 +1570,8 @@ pub async fn create_order(
     use chrono::Utc;
     use sea_orm::{ActiveValue::NotSet, ActiveValue::Set, EntityTrait};
 
-    let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
+    // 写路径：回查 token_version（SEC-13）。
+    let user = app_core::session::require_session_verified().await?;
     let provider = match provider.as_str() {
       "wechat" | "alipay" => provider,
       _ => return Err(ServerFnError::new("不支持的支付方式".to_string())),
@@ -2014,7 +2007,7 @@ pub async fn admin_list_orders() -> Result<Vec<AdminOrderInfo>, ServerFnError> {
   {
     use app_core::entities::{order, user as user_entity};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
-    require_admin_user()?;
+    app_core::session::require_admin().await?;
     let db = open_db().await?;
     let rows = order::Entity::find()
       .order_by_desc(order::Column::CreatedAt)
@@ -2071,7 +2064,7 @@ pub async fn admin_refund_order(out_trade_no: String) -> Result<(), ServerFnErro
     use sea_orm::sea_query::Expr;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
-    let admin = require_admin_user()?;
+    let admin = app_core::session::require_admin().await?;
     let db = open_db().await?;
     let row = order::Entity::find()
       .filter(order::Column::OutTradeNo.eq(&out_trade_no))
@@ -2189,7 +2182,7 @@ pub async fn mark_lesson_complete(
     use app_core::entities::course_progress;
     use chrono::Utc;
     use sea_orm::{sea_query::OnConflict, ActiveValue::Set, EntityTrait};
-    let user = require_writer()?;
+    let user = require_writer().await?;
     let db = open_db().await?;
     let am = course_progress::ActiveModel {
       user_id: Set(user.id),
@@ -2481,7 +2474,7 @@ pub async fn create_annotation(payload: AnnotationCreate) -> Result<Annotation, 
     use module_moderation::{enqueue_if_flagged, evaluate_submission};
     use sdk::ModerationSubmission;
     use sea_orm::{ActiveValue::Set, EntityTrait};
-    let user = require_writer()?;
+    let user = require_writer().await?;
 
     // ── 审核：只对 note 非空时调；exact_text 是被引用的原文，不是用户内容 ──
     // resource_kind + resource_path 组成 ref_path（便于 admin 复核时跳回原文）
@@ -2568,7 +2561,7 @@ pub async fn delete_annotation(id: i64) -> Result<(), ServerFnError> {
   {
     use app_core::entities::annotation;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-    let user = require_writer()?;
+    let user = require_writer().await?;
     let db = open_db().await?;
     annotation::Entity::delete_many()
       .filter(annotation::Column::Id.eq(id))
@@ -2597,7 +2590,7 @@ pub async fn update_annotation(
     use app_core::entities::annotation;
     use chrono::Utc;
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
-    let user = require_writer()?;
+    let user = require_writer().await?;
     let db = open_db().await?;
     let row = annotation::Entity::find_by_id(id)
       .filter(annotation::Column::UserId.eq(user.id))
