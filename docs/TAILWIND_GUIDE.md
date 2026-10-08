@@ -99,7 +99,7 @@ token 类名自动跟随主题与暗色模式，不需要写 `dark:` 变体。
 - 代码中写 `text-slate-900` 实际渲染为 **石灰色**（stone-900）
 - 如果需要真正的蓝色，使用 `sky-*`、`indigo-*` 或 `cyan-*`
 
-存量代码里还有约 1100 处 `slate-*`。映射只改色阶，**不跟随主题插件**：主题把 token 设成冷色（如 ocean 的暗色 `--card: #0f172a`）时，组件是冷色，旁边手写的 `dark:bg-slate-900` 却是暖色 stone。新代码不要再写 `slate-*` / `blue-*`，改用 2.1 的 token。
+存量代码里还有约 1100 处 `slate-*`。映射只改色阶，**不跟随主题插件**：主题的中性色 token 若取冷色，组件会是冷色，旁边手写的 `dark:bg-slate-900` 却是暖色 stone。所以内置主题的中性色都取 stone 色阶（ocean 自 2026-10-08 起，`crates/plugins/theme-ocean` 有测试守住）。新代码不要再写 `slate-*` / `blue-*`，改用 2.1 的 token。
 
 ### 2.3 WASM 主题插件
 
