@@ -390,6 +390,9 @@
 - [ ] B7 — SEC-17 不可信内容的 mermaid 按代码显示
 - [ ] B8 — SEC-19 / SEC-20 HSTS、Permissions-Policy、`ws:` 仅开发；删 `/api/echo`；裁剪公开配置
 
+### 待评估 — 插件改为编译期依赖（2026-10-08 提出，迁移完成后再定）
+- [ ] P-EVAL — 评估把第一方 WASM 插件改为编译进宿主：认证 → `AuthProvider` trait + 4 个实现（按凭据配置启用）；主题 → token 数据文件由宿主按白名单生成 CSS；i18n-fluent / content-toc / 审核 → 普通 crate；cargo features 只用于可选重依赖。若采纳，C1 / C2 / C4 / C6 与 D1 大部分随之取消，B3 并入。重估条件：出现不在本仓库构建的插件，或站点要作为产品给他人部署。**决定前不动 C 阶段**
+
 ### 阶段 C — 插件宿主加固
 - [ ] C1 — SEC-05 OAuth 端点由宿主固定，`client_secret` 不交给插件决定去向
 - [ ] C2 — SEC-06 / SEC-15 统一带锁加载、锁生成命令、严格模式、上传时完整校验
