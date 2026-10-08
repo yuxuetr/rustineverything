@@ -66,7 +66,7 @@
 | B3 ✅ | SEC-08 | 主题 CSS 改为基于 tokenizer 的白名单：拒绝 `<`、`@import`、`image-set`；`url()` 仅允许 `data:image/` 与 `/assets/`；收紧 CSP `img-src`。测试覆盖审计列出的每种绕过形式。实际做法：`plugin_security::check_theme_css` 用 cssparser 0.36 分词（转义 / 注释按浏览器规则解码），at-rule 与函数各一份白名单，`/assets/` 路径不得含 `.` / `..` 段，嵌套上限 32；`img-src` 改为 `'self' data:` + GitHub / Google / Discord / Twitter 头像 CDN（站点内容与代码中无其他外部图片）。属性选择器 + `/assets/` URL 仍可向本站发请求，只能被本站日志看到，不构成外泄 |
 | B4 ✅ | SEC-11 | cookie 读取侧复用设置侧的校验（`[A-Za-z0-9_-]+\.wasm` 且在主题列表内）。实际做法：`app_core::engines::theme::is_theme_filename` 由读写两侧共用；「在主题列表内」未做——判断要读 manifest（每请求一次插件调用），而指向非主题插件的后果只是该用户自己的主题 CSS 为空，缓存键已被文件名规则限定为 plugins 目录内的真实文件 |
 | B5 ✅ | SEC-10 | CSP 只由应用设置；gateway 不覆盖（或与应用共用同一份定义）。实际做法：gateway 不再定义 / 设置 CSP（`CSP_POLICY` 只对 app 进程生效）；nosniff / X-Frame-Options / Referrer-Policy 改为缺失才补，HSTS 与 `Server` 仍总是设置 |
-| B6 | SEC-13 | `require_writer` 改用回查数据库的会话校验 |
+| B6 ✅ | SEC-13 | `require_writer` 改用回查数据库的会话校验。实际做法：另发现同文件 `require_admin_user` 也只信 JWT，替换为 `session::require_admin`；`create_order` 同步改为 verified 会话 |
 | B7 | SEC-17 | 不可信内容中的 mermaid 作为普通代码块显示 |
 | B8 | SEC-19、SEC-20 | 应用侧补 HSTS / Permissions-Policy；`ws:` 仅开发构建允许；删除 `/api/echo`；裁剪公开配置 DTO |
 

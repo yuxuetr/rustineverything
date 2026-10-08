@@ -416,7 +416,7 @@
 - [x] B3 — SEC-08 主题 CSS 白名单化；收紧 `img-src`（28ed724：cssparser 分词的白名单 `check_theme_css` 替换黑名单，at-rule / 函数 / `url()` 目标均白名单，拒 `<` / bad token / 深嵌套，字节聚合路径补检查，内置三主题过检测试且反向验证；2b9ed37：`img-src` 只留 self、data: 与四个 OAuth 头像 CDN；浏览器验收三主题生效）
 - [x] B4 — SEC-11 `site_theme` cookie 读取侧校验（99deeb3：`engines::theme::is_theme_filename`（`[A-Za-z0-9_-]+\.wasm`）同时用于 `theme_with_override` 与 `/api/theme/set`，非法 cookie 忽略并 warn；单测先红后绿，curl 验收 `../`、`.wasm.bak` 回落默认主题。未做「在主题列表内」：指向非主题插件只会让该用户自己的主题 CSS 为空，缓存键数量受 plugins 目录文件数约束）
 - [x] B5 — SEC-10 gateway 不覆盖应用 CSP（1fef74c：删除 gateway 的 CSP 定义与 `CSP_POLICY` 读取，CSP 原样转发；通用安全头仅在应用未下发时补，HSTS 仍由 gateway 设；`apply_security_headers` 两条单测先红后绿；DEPLOY_GUIDE 表格更新。未起真实 Pingora + TLS 做端到端）
-- [ ] B6 — SEC-13 `require_writer` 回查数据库
+- [x] B6 — SEC-13 `require_writer` 回查数据库（dbc9a2b：`require_writer` 改走 `require_session_verified`；同文件的 `require_admin_user`（授予 / 撤销权益、订单管理）同样只信 JWT，换成 `session::require_admin`（回查 role + token_version）；`create_order` 写路径也改为 verified。无现成请求上下文 + DB 的测试设施，红绿用真实服务 + Postgres 验证：u2 旧 tv token 写入、u1 自称 admin 读权益列表，修前均通过，修后分别被拒；有效 token 仍可写）
 - [ ] B7 — SEC-17 不可信内容的 mermaid 按代码显示
 - [ ] B8 — SEC-19 / SEC-20 HSTS、Permissions-Policy、`ws:` 仅开发；删 `/api/echo`；裁剪公开配置
 
