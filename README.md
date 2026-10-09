@@ -85,4 +85,4 @@ Tailwind 源文件和 npm 工具链位于 `crates/app/` 下：
 
 ## 开源协议
 
-MIT
+[MIT](LICENSE)
