@@ -110,22 +110,40 @@ fn parse_frontmatter(content: &str) -> FrontMatter {
   serde_yaml::from_str(parts[1]).unwrap_or_default()
 }
 
+/// 文章源文件 `posts/<id>/index.mdx`（优先）或 `index.md`。`id` 必须是单段 slug：
+/// server fn 可被直接调用，`../courses/...` 这类 id 会读到付费课时等站内其他文件。
+#[allow(dead_code)]
+fn post_file(asset_root: &std::path::Path, id: &str) -> Option<PathBuf> {
+  if !app_core::utils::is_safe_slug(id) {
+    return None;
+  }
+  let dir = asset_root.join("posts").join(id);
+  ["index.mdx", "index.md"].into_iter().map(|name| dir.join(name)).find(|p| p.is_file())
+}
+
 #[server]
 pub async fn get_blog_content(id: String) -> Result<String, ServerFnError> {
-  let posts_dir = get_asset_root().join("posts").join(&id);
-
-  // 尝试 index.mdx 和 index.md
-  let mdx = posts_dir.join("index.mdx");
-  let md = posts_dir.join("index.md");
-  let filepath = if mdx.exists() {
-    mdx
-  } else if md.exists() {
-    md
-  } else {
+  let Some(filepath) = post_file(&get_asset_root(), &id) else {
     return Err(ServerFnError::new(format!("文章未找到: {}", id)));
   };
 
   let raw =
     fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
   Ok(raw)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn post_file_stays_inside_posts() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../assets");
+    assert!(post_file(&root, "welcome").is_some());
+    // 站内确实存在的 index.md，但不在 posts/ 下（含付费课时）
+    for id in ["../docs", "../courses/rust-basics/02-ownership/01-borrow-rules", "..", "welcome/.."]
+    {
+      assert_eq!(post_file(&root, id), None, "{id}");
+    }
+  }
 }

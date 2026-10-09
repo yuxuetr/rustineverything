@@ -143,9 +143,25 @@ pub fn safe_join_under(sub_root: &Path, raw: &str) -> Option<PathBuf> {
   }
 }
 
+/// 单个路径段形式的 slug：非空，只含 ASCII 字母数字、`-`、`_`。
+/// 用户给的 slug 拼进文件路径前必须过这一关，`..`、`/`、`\\` 都进不来。
+pub fn is_safe_slug(s: &str) -> bool {
+  !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn safe_slug_accepts_only_single_plain_segments() {
+    for ok in ["welcome", "rust-basics", "01-fundamentals", "a_b"] {
+      assert!(is_safe_slug(ok), "{ok}");
+    }
+    for bad in ["", "..", ".", "a/b", "../docs", "a\\b", "rust-basics/..", "a.b", "a b", "é"] {
+      assert!(!is_safe_slug(bad), "{bad}");
+    }
+  }
 
   /// Phase 8.2 path-traversal 防御：用户输入的 `ref_path` 不能逃出 sub_root。
   #[test]
