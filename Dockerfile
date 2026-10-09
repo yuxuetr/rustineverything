@@ -3,8 +3,8 @@
 # Phase 7.4.1：多阶段 Debian (glibc) 镜像。
 #
 # 设计：
-# - **builder** 阶段在 `rust:1-trixie` 中完成 Tailwind CSS 编译 + WASM 主题
-#   插件构建 + `dx bundle --platform web --release` 的产物输出。
+# - **builder** 阶段在 `rust:1-trixie` 中完成 Tailwind CSS 编译 +
+#   `dx bundle --platform web --release` 的产物输出。
 # - **runtime** 阶段是 `debian:trixie-slim` + `ca-certificates`，只装 dx bundle
 #   产物。builder 与 runtime 同为 trixie，glibc 版本对齐，避免动态链接的 server
 #   二进制在运行阶段报 "version `GLIBC_x.xx' not found"。
@@ -54,15 +54,15 @@ RUN apt-get update \
       libssl-dev \
  && rm -rf /var/lib/apt/lists/*
 
-# 添加 wasm 目标，用于插件编译
+# 添加 wasm 目标，用于前端（dx bundle 的 web 客户端）编译
 RUN rustup target add wasm32-unknown-unknown
 
 # 安装 Dioxus CLI（fullstack bundle 工具）。
-# **必须与 Cargo.lock 中 dioxus 库版本精确一致**（当前 0.7.5）：dx CLI 负责生成
+# **必须与 Cargo.lock 中 dioxus 库版本精确一致**（当前 0.7.9）：dx CLI 负责生成
 # wasm-bindgen 胶水，版本不匹配会报 "dx and dioxus versions are incompatible!"
 # 并在 bundle 阶段以 "Failed to generate wasm-bindgen bindings" 失败。`^0.7` 会
-# 解析到最新 0.7.9，与 0.7.5 库不兼容；故锁定 `=0.7.5`。升级 dioxus 时同步改这里。
-RUN cargo install dioxus-cli --locked --version "=0.7.5" --no-default-features
+# 可能解析到更新的 0.7.x，与锁定的库不兼容；故精确锁定。升级 dioxus 时同步改这里。
+RUN cargo install dioxus-cli --locked --version "=0.7.9" --no-default-features
 
 WORKDIR /workspace
 
@@ -84,8 +84,6 @@ COPY crates/app/package-lock.json crates/app/package-lock.json
 COPY crates/app/tailwind-input.css crates/app/tailwind-input.css
 COPY crates/migration/Cargo.toml crates/migration/Cargo.toml
 COPY crates/modules ./crates/modules
-COPY crates/plugins ./crates/plugins
-COPY examples ./examples
 # build.rs 引用 ../../assets，提供占位避免预热阶段 panic
 RUN mkdir -p assets crates/app/assets
 
@@ -99,7 +97,6 @@ COPY crates/llm/src crates/llm/src
 COPY crates/widgets/src crates/widgets/src
 COPY crates/migration/src crates/migration/src
 COPY crates/app/src crates/app/src
-COPY scripts ./scripts
 COPY assets ./assets
 # `build.rs` 期望根 assets 同步到 crates/app/assets
 RUN cp -r assets/* crates/app/assets/ 2>/dev/null || true
@@ -107,14 +104,11 @@ RUN cp -r assets/* crates/app/assets/ 2>/dev/null || true
 # 1. 编译 Tailwind CSS（产物落到 crates/app/assets/tailwind.css）
 RUN cd crates/app && npm run build
 
-# 2. 构建全部主题 WASM 插件，输出到 assets/plugins/
-RUN bash scripts/build_themes.sh
-
-# 3. dx bundle：web 全栈 + release 优化，
+# 2. dx bundle：web 全栈 + release 优化，
 #    产物在 /tmp/target/dx/app/release/web/{public,server}
 RUN cd crates/app && dx bundle --platform web --release --package app
 
-# 4. 收敛产物到统一目录，方便 runtime 阶段单层 COPY
+# 3. 收敛产物到统一目录，方便 runtime 阶段单层 COPY
 RUN mkdir -p /out \
  && cp -r /tmp/target/dx/app/release/web/public /out/public \
  && cp /tmp/target/dx/app/release/web/server /out/server \

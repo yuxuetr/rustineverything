@@ -2,9 +2,14 @@ use crate::server::{
   create_topic, get_topic, list_my_topics, list_tags, list_topics, list_topics_by_ref, post_reply,
   NewTopicInput, Reply, TagSummary, TopicDetail, TopicRef, TopicSummary,
 };
-use dioxus::prelude::*;
 use app_core::i18n::Language;
 use app_core::session::SessionUser;
+use dioxus::prelude::*;
+use dioxus_shadcn::{
+  badge_class, button_class, card_class, Alert, AlertDescription, AlertVariant, BadgeVariant,
+  Button, ButtonSize, ButtonVariant, Empty, EmptyDescription, Input, Spinner, SpinnerSize, Tabs,
+  TabsContent, TabsList, TabsTrigger, Textarea, UiDensity,
+};
 use widgets::Markdown;
 
 // =============================================================
@@ -96,10 +101,10 @@ fn LocalContainer(children: Element) -> Element {
 }
 
 #[component]
-fn Spinner() -> Element {
+fn Loading() -> Element {
   rsx! {
       div { class: "flex items-center justify-center py-20",
-          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
       }
   }
 }
@@ -107,8 +112,18 @@ fn Spinner() -> Element {
 #[component]
 fn EmptyState(message: String) -> Element {
   rsx! {
-      div { class: "text-center text-slate-500 dark:text-slate-400 py-16",
-          "{message}"
+      Empty { class: "py-16",
+          EmptyDescription { "{message}" }
+      }
+  }
+}
+
+/// 错误提示条。
+#[component]
+fn ErrorAlert(message: String, #[props(default)] class: String) -> Element {
+  rsx! {
+      Alert { variant: AlertVariant::Destructive, class,
+          AlertDescription { variant: AlertVariant::Destructive, "{message}" }
       }
   }
 }
@@ -123,7 +138,7 @@ fn TagBadge(tag: String) -> Element {
   rsx! {
       a {
           href: "{href}",
-          class: "inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors",
+          class: badge_class(BadgeVariant::Secondary, "rounded-full font-normal text-primary hover:bg-primary/10"),
           "#{tag}"
       }
   }
@@ -136,9 +151,9 @@ fn ReferenceCard(reference: TopicRef) -> Element {
   rsx! {
       a {
           href: "{href}",
-          class: "block rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 px-4 py-3 hover:border-blue-300 dark:hover:border-blue-700 transition-colors",
+          class: card_class("block rounded-xl px-4 py-3 shadow-none hover:border-primary/50 transition-colors"),
           div { class: "flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mb-1",
-              span { class: "px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 font-medium uppercase tracking-wide",
+              span { class: badge_class(BadgeVariant::Secondary, "px-1.5 uppercase tracking-wide font-medium"),
                   "{label}"
               }
               span { class: "truncate", "{path}" }
@@ -187,14 +202,14 @@ fn TopicCard(topic: TopicSummary) -> Element {
   let when = last_reply_at.unwrap_or_else(|| created_at.clone());
   let reply_label = format!("{} {}", reply_count, tf(lang, "forum.replies"));
   rsx! {
-      div { class: "group rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 p-5 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-sm transition-all",
+      div { class: card_class("group rounded-xl p-5 shadow-none hover:border-primary/50 hover:shadow-sm transition-all"),
           div { class: "flex gap-4",
               // Avatar
               div { class: "flex-none",
                   if let Some(ref a) = author_avatar {
                       img { src: "{a}", class: "w-10 h-10 rounded-full object-cover", alt: "{author}" }
                   } else {
-                      div { class: "w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold",
+                      div { class: "w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold",
                           "{author.chars().next().unwrap_or('U')}"
                       }
                   }
@@ -208,7 +223,7 @@ fn TopicCard(topic: TopicSummary) -> Element {
                       }
                   }
                   a { href: "{detail_href}",
-                      class: "block text-base font-semibold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors line-clamp-2",
+                      class: "block text-base font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors line-clamp-2",
                       "{title}"
                   }
                   if let Some(ref r) = reference {
@@ -235,6 +250,9 @@ fn TopicCard(topic: TopicSummary) -> Element {
 
 #[component]
 pub fn TopicsIndexPage() -> Element {
+  // 重构 B6 评估：论坛页（话题列表 / 详情 / 回复）保留 use_resource，**不** 迁移到
+  // use_server_future。理由：论坛是强交互 + 登录态相关（发帖 / 回复 / 实时刷新），
+  // 内容动态且非 SEO 关键；客户端加载更契合其交互模型。
   let topics_res =
     use_resource(|| async move { list_topics(None, Some(0)).await.unwrap_or_default() });
   let tags_res = use_resource(|| async move { list_tags().await.unwrap_or_default() });
@@ -258,7 +276,7 @@ pub fn TopicsIndexPage() -> Element {
                   div { class: "flex items-center gap-3",
                       if is_logged_in {
                           a { href: "/me/topics",
-                              class: "inline-flex items-center px-4 py-2 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
+                              class: button_class(ButtonVariant::Outline, ButtonSize::Md, UiDensity::Comfortable, "font-semibold"),
                               "{tf(lang, \"forum.my_topics\")}"
                           }
                       }
@@ -293,7 +311,7 @@ pub fn TopicsIndexPage() -> Element {
                   // Topics list (right)
                   div {
                       match topics {
-                          None => rsx! { Spinner {} },
+                          None => rsx! { Loading {} },
                           Some(list) if list.is_empty() => rsx! {
                               EmptyState { message: tf(lang, "forum.no_topics").to_string() }
                           },
@@ -318,7 +336,7 @@ fn TagCloudLink(tag: TagSummary) -> Element {
   rsx! {
       a {
           href: "{href}",
-          class: "inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-400 hover:text-blue-600 transition-colors",
+          class: badge_class(BadgeVariant::Outline, "gap-1 rounded-full px-2.5 py-1 font-normal bg-background hover:border-primary hover:text-primary"),
           span { "#{tag.tag}" }
           span { class: "text-slate-400", "{tag.topic_count}" }
       }
@@ -343,7 +361,7 @@ pub fn TopicsByTagPage(tag: String) -> Element {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
               div { class: "mb-6",
-                  a { href: "/topics", class: "text-sm text-blue-600 hover:underline", "{tf(lang, \"forum.back_all\")}" }
+                  a { href: "/topics", class: "text-sm text-primary hover:underline", "{tf(lang, \"forum.back_all\")}" }
               }
               h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-2",
                   "#{tag}"
@@ -359,7 +377,7 @@ pub fn TopicsByTagPage(tag: String) -> Element {
               }
 
               match topics {
-                  None => rsx! { Spinner {} },
+                  None => rsx! { Loading {} },
                   Some(list) if list.is_empty() => rsx! {
                       EmptyState { message: format!("#{}", tag) }
                   },
@@ -391,7 +409,7 @@ pub fn MyTopicsPage() -> Element {
           LocalContainer {
               h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "{tf(lang, \"forum.my_topics\")}" }
               match topics {
-                  None => rsx! { Spinner {} },
+                  None => rsx! { Loading {} },
                   Some(list) if list.is_empty() => rsx! {
                       div { class: "text-center py-16",
                           p { class: "text-slate-500 dark:text-slate-400 mb-4", "{tf(lang, \"forum.my_topics_empty\")}" }
@@ -437,10 +455,10 @@ pub fn TopicDetailPage(id: i32) -> Element {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
               div { class: "mb-6",
-                  a { href: "/topics", class: "text-sm text-blue-600 hover:underline", "{tf(lang, \"forum.back_all\")}" }
+                  a { href: "/topics", class: "text-sm text-primary hover:underline", "{tf(lang, \"forum.back_all\")}" }
               }
               match current {
-                  None => rsx! { Spinner {} },
+                  None => rsx! { Loading {} },
                   Some(d) => rsx! {
                       TopicDetailBody {
                           detail: d,
@@ -585,12 +603,12 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
 
   if !is_logged_in {
     return rsx! {
-        div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-6 text-center",
+        div { class: card_class("rounded-xl p-6 text-center shadow-none"),
             p { class: "text-sm text-slate-500 dark:text-slate-400 mb-3", "{tf(lang, \"forum.login_to_reply\")}" }
             if let Some(mut auth) = auth_modal {
-                button {
+                Button {
                     onclick: move |_| auth.set(true),
-                    class: "px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors",
+                    class: "font-semibold",
                     "{tf(lang, \"forum.login\")}"
                 }
             }
@@ -599,29 +617,26 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
   }
 
   rsx! {
-      div { class: "rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden",
-          div { class: "px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30",
+      div { class: card_class("rounded-xl overflow-hidden shadow-none"),
+          div { class: "px-5 py-3 border-b border-border bg-muted/50",
               span { class: "text-sm font-medium text-slate-700 dark:text-slate-300", "{tf(lang, \"forum.write_reply\")}" }
           }
           div { class: "px-5 py-4",
-              textarea {
-                  class: "w-full h-32 bg-transparent border-0 focus:ring-0 text-sm text-slate-700 dark:text-slate-200 placeholder-slate-400 resize-vertical",
+              Textarea {
+                  class: "h-32 border-0 bg-transparent px-0 focus-visible:ring-0 resize-y",
                   placeholder: "Markdown...",
-                  value: "{content}",
-                  oninput: move |e| content.set(e.value()),
+                  "aria-label": tf(lang, "forum.write_reply"),
+                  value: content(),
+                  on_value_change: move |v: String| content.set(v),
               }
           }
           if let Some(err) = error() {
-              div { class: "px-5 py-2 bg-red-50 dark:bg-red-900/20 text-xs text-red-700 dark:text-red-400",
-                  "{err}"
-              }
+              ErrorAlert { message: err, class: "rounded-none border-x-0 px-5 py-2" }
           }
-          div { class: "px-5 py-3 bg-slate-50/50 dark:bg-slate-800/30 flex justify-end border-t border-slate-100 dark:border-slate-800",
-              button {
-                  class: format_args!("px-5 py-2 rounded-lg font-semibold text-sm transition-all {}",
-                      if submitting() { "bg-slate-200 text-slate-400 cursor-not-allowed" }
-                      else { "btn-flow" }
-                  ),
+          div { class: "px-5 py-3 bg-muted/50 flex justify-end border-t border-border",
+              Button {
+                  r#type: "button",
+                  class: if submitting() { "" } else { "btn-flow" },
                   disabled: submitting(),
                   onclick: handle_submit,
                   if submitting() { "{tf(lang, \"forum.submitting\")}" } else { "{tf(lang, \"forum.post_reply\")}" }
@@ -654,31 +669,16 @@ pub fn NewTopicPage() -> Element {
   let mut ref_path = use_signal::<Option<String>>(|| None);
 
   use_effect(move || {
-    spawn(async move {
-      let script = r#"
-                const p = new URLSearchParams(window.location.search);
-                const k = p.get('ref_kind');
-                const r = p.get('ref_path');
-                dioxus.send([k, r]);
-            "#;
-      let mut e = dioxus::document::eval(script);
-      if let Ok(arr) = e.recv::<(Option<String>, Option<String>)>().await {
-        let (k, p) = arr;
-        if let Some(ref kind) = k {
-          if !kind.is_empty() {
-            ref_kind.set(Some(kind.clone()));
-            if tag_value().is_empty() {
-              tag_value.set(format!("from-{}", kind));
-            }
-          }
-        }
-        if let Some(ref pp) = p {
-          if !pp.is_empty() {
-            ref_path.set(Some(pp.clone()));
-          }
-        }
+    let kind = widgets::browser::query_param("ref_kind").filter(|k| !k.is_empty());
+    if let Some(kind) = kind {
+      if tag_value.peek().is_empty() {
+        tag_value.set(format!("from-{}", kind));
       }
-    });
+      ref_kind.set(Some(kind));
+    }
+    if let Some(path) = widgets::browser::query_param("ref_path").filter(|p| !p.is_empty()) {
+      ref_path.set(Some(path));
+    }
   });
 
   // 已有 tag 自动补全
@@ -702,7 +702,7 @@ pub fn NewTopicPage() -> Element {
       match create_topic(payload).await {
         Ok(summary) => {
           let url = format!("/topics/{}", summary.id);
-          let _ = dioxus::document::eval(&format!("window.location.href = '{}';", url));
+          widgets::browser::navigate(&url);
         }
         Err(e) => {
           error.set(Some(format!("创建失败: {}", e)));
@@ -716,13 +716,13 @@ pub fn NewTopicPage() -> Element {
     return rsx! {
         section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
             LocalContainer {
-                div { class: "max-w-md mx-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 p-8 text-center",
+                div { class: card_class("max-w-md mx-auto rounded-xl p-8 text-center shadow-none"),
                     h2 { class: "text-xl font-bold text-slate-900 dark:text-white mb-2", "{tf(lang, \"forum.please_login\")}" }
                     p { class: "text-sm text-slate-500 dark:text-slate-400 mb-4", "{tf(lang, \"forum.login_to_post\")}" }
                     if let Some(mut a) = auth_modal {
-                        button {
+                        Button {
                             onclick: move |_| a.set(true),
-                            class: "px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors",
+                            class: "font-semibold",
                             "{tf(lang, \"forum.login\")}"
                         }
                     }
@@ -736,11 +736,14 @@ pub fn NewTopicPage() -> Element {
   let path_clone = ref_path();
   let has_ref = kind_clone.is_some() && path_clone.is_some();
 
+  // 编辑器页签的当前值（Tabs 与 TabsContent 共用）。
+  let editor_tab = if is_preview() { "preview" } else { "edit" }.to_string();
+
   rsx! {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
               div { class: "mb-6",
-                  a { href: "/topics", class: "text-sm text-blue-600 hover:underline", "{tf(lang, \"forum.back_all\")}" }
+                  a { href: "/topics", class: "text-sm text-primary hover:underline", "{tf(lang, \"forum.back_all\")}" }
               }
               h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "{tf(lang, \"forum.new_topic_title\")}" }
 
@@ -759,25 +762,25 @@ pub fn NewTopicPage() -> Element {
 
               // 标题
               div { class: "mb-4",
-                  label { class: "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5", "{tf(lang, \"forum.title_label\")}" }
-                  input {
+                  label { r#for: "topic-title", class: "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5", "{tf(lang, \"forum.title_label\")}" }
+                  Input {
+                      id: "topic-title",
                       r#type: "text",
-                      class: "w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
-                      value: "{title}",
+                      value: title(),
                       placeholder: if lang == Language::En { "Summarize your question or topic" } else { "一句话概括你的问题或讨论方向" },
-                      oninput: move |e| title.set(e.value())
+                      on_value_change: move |v: String| title.set(v),
                   }
               }
               // Tag
               div { class: "mb-4",
-                  label { class: "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5", "{tf(lang, \"forum.tag_label\")}" }
-                  input {
+                  label { r#for: "topic-tag", class: "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5", "{tf(lang, \"forum.tag_label\")}" }
+                  Input {
+                      id: "topic-tag",
                       r#type: "text",
-                      class: "w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500",
-                      value: "{tag_value}",
+                      value: tag_value(),
                       list: "forum-tags",
                       placeholder: if lang == Language::En { "e.g. rust / dioxus / wasm (letters, digits, - _)" } else { "如 rust / dioxus / wasm（仅字母数字与 - _）" },
-                      oninput: move |e| tag_value.set(e.value())
+                      on_value_change: move |v: String| tag_value.set(v),
                   }
                   datalist { id: "forum-tags",
                       for t in existing_tags.iter() {
@@ -785,47 +788,40 @@ pub fn NewTopicPage() -> Element {
                       }
                   }
               }
-              // 正文
-              div { class: "mb-4",
-                  div { class: "flex items-center gap-4 mb-2 text-xs font-medium",
-                      button {
-                          class: format_args!("pb-1 border-b-2 transition-colors {}",
-                              if !is_preview() { "text-blue-600 border-blue-600" } else { "border-transparent text-slate-500 hover:text-slate-700" }),
-                          onclick: move |_| is_preview.set(false),
-                          "{tf(lang, \"forum.edit\")}"
-                      }
-                      button {
-                          class: format_args!("pb-1 border-b-2 transition-colors {}",
-                              if is_preview() { "text-blue-600 border-blue-600" } else { "border-transparent text-slate-500 hover:text-slate-700" }),
-                          onclick: move |_| is_preview.set(true),
-                          "{tf(lang, \"forum.preview\")}"
-                      }
+              // 正文：只挂当前页签的面板（与评论区一致）。
+              Tabs {
+                  class: "mb-4",
+                  value: editor_tab.clone(),
+                  on_value_change: move |v: String| is_preview.set(v == "preview"),
+                  TabsList { class: "h-8 mb-2",
+                      TabsTrigger { value: "edit", class: "py-1 text-xs", "{tf(lang, \"forum.edit\")}" }
+                      TabsTrigger { value: "preview", class: "py-1 text-xs", "{tf(lang, \"forum.preview\")}" }
                   }
-                  if !is_preview() {
-                      textarea {
-                          class: "w-full h-64 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono",
-                          value: "{content}",
-                          placeholder: "Markdown...",
-                          oninput: move |e| content.set(e.value())
-                      }
-                  } else {
-                      div { class: "prose prose-slate dark:prose-invert max-w-none min-h-[16rem] p-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40",
-                          Markdown { content: content(), blog_id: "topic:preview".to_string(), untrusted: true }
+                  TabsContent { value: editor_tab, class: "mt-0",
+                      if !is_preview() {
+                          Textarea {
+                              class: "h-64 font-mono",
+                              value: content(),
+                              placeholder: "Markdown...",
+                              "aria-label": tf(lang, "forum.edit"),
+                              on_value_change: move |v: String| content.set(v),
+                          }
+                      } else {
+                          div { class: "prose prose-slate dark:prose-invert max-w-none min-h-[16rem] p-4 rounded-lg border border-border bg-muted/40",
+                              Markdown { content: content(), blog_id: "topic:preview".to_string(), untrusted: true }
+                          }
                       }
                   }
               }
 
               if let Some(err) = error() {
-                  div { class: "mb-4 px-4 py-2 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400 rounded-lg",
-                      "{err}"
-                  }
+                  ErrorAlert { message: err, class: "mb-4 py-2" }
               }
 
               div { class: "flex justify-end",
-                  button {
-                      class: format_args!("px-5 py-2 rounded-lg font-semibold text-sm transition-all {}",
-                          if submitting() { "bg-slate-200 text-slate-400 cursor-not-allowed" }
-                          else { "btn-flow" }),
+                  Button {
+                      r#type: "button",
+                      class: if submitting() { "" } else { "btn-flow" },
                       disabled: submitting(),
                       onclick: handle_submit,
                       if submitting() { "{tf(lang, \"forum.publishing\")}" } else { "{tf(lang, \"forum.publish_topic\")}" }
@@ -892,7 +888,7 @@ fn DiscussionMiniRow(topic: TopicSummary) -> Element {
   let when = last_reply_at.unwrap_or(created_at);
   rsx! {
       a { href: "{href}",
-          class: "flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors",
+          class: "flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 hover:bg-primary/5 transition-colors",
           div { class: "flex-1 min-w-0",
               div { class: "flex items-center gap-2 mb-0.5",
                   TagBadge { tag: tag.clone() }

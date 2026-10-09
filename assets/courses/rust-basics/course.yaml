@@ -3,3 +3,7 @@ description: 从所有权与借用到异步与 Trait，系统化掌握 Rust 核�
 order: 1
 level: 入门
 tags: [rust, basics]
+# 付费课程示例（M4）：首节免费试看，其余需开通权益。可按需改回 free。
+access_tier: paid
+price: 9900
+currency: CNY

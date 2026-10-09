@@ -44,7 +44,7 @@ pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
   let json_ld = build_json_ld(meta, &canonical);
 
   rsx! {
-      document::Title { "{meta.title}" }
+      crate::browser::PageTitle { title: meta.title.clone() }
       if let Some(desc) = meta.description.as_ref() {
           if !desc.is_empty() {
               document::Meta { name: "description", content: "{desc}" }

@@ -34,7 +34,7 @@
 **选择规则**：
 1. `OPENAI_LLM_BASE_URL` + `OPENAI_LLM_API_KEY` 都非空 → OpenAI
 2. 否则 `ANTHROPIC_LLM_BASE_URL` + `ANTHROPIC_LLM_API_KEY` 都非空 → Anthropic
-3. 否则 → `None`（业务侧 fail-open）
+3. 否则 → `None`（审核流水线不注册 LLM stage）
 
 **没有运行时 failover**：选定后请求只走该协议；失败原样返回错误。两个协
 议的请求 / 响应 shape 不同，自动切换会产生不可预期的行为。
@@ -81,10 +81,6 @@ let msg = LlmMessage {
 | `ImageUrl` (http/s) | `{"type":"image_url","image_url":{"url":"..."}}` | `{"type":"image","source":{"type":"url","url":"..."}}` |
 | `ImageUrl` (data:) | 同 URL（OpenAI 直接接受 data URL） | 自动拆解为 `{"type":"base64","media_type":...,"data":...}` |
 | `ImageBase64` | 嵌入 data URL | `{"type":"image","source":{"type":"base64",...}}` |
-
-**反序列化兼容**：`LlmMessage` 自定义 Deserialize 同时接受 `content: "string"`
-（老格式 / 老插件）和 `content: [...]`（新多模态），所以**老 wasm 插件不用
-重建**也能在新宿主上跑。
 
 [`LlmClient`] trait：
 
@@ -155,8 +151,8 @@ pub trait LlmClient: Send + Sync {
 
 - **Phase 4 ModerationStage**：把 `LlmClient` 包装成 `ModerationStage`，
   prompt 让模型输出 `score + label + reason` JSON。
-- **Phase 5 moderation 插件**：WASM 插件只负责 `map_request` /
-  `map_verdict`；HTTP + LLM 调度由 host 通过该模块完成。
+- **内容审核**：`module_moderation::LlmModerationStage` 构造提示词、经 `LlmClient`
+  调用模型并解析结论（R4 起内置，此前为 WASM 插件）。
 - **管理后台 / Admin 助理**：摘要 / 关键词抽取 / 回复建议等都可直接调用。
 
 ## 8. 局限与后续

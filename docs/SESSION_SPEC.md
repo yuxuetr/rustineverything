@@ -28,7 +28,7 @@ App 组件加载 → use_effect 调用 get_current_user()
 
 ### 登出
 
-`GET /api/auth/logout` → 设置空 Cookie (Max-Age=0) → 重定向到 /
+`POST /api/auth/logout` → 设置空 Cookie (Max-Age=0) → 303 重定向到 /（GET 返回 405；`Sec-Fetch-Site: cross-site` 返回 403，SEC-09）
 
 ## 关键类型
 
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS comments (
 |------|------|------|
 | `/api/auth/login/{provider}` | GET | 重定向到 OAuth 授权页 |
 | `/api/auth/callback/{provider}` | GET | OAuth 回调，签发 JWT Cookie |
-| `/api/auth/logout` | GET | 清除 session Cookie |
+| `/api/auth/logout` | POST | 清除 session Cookie |
 | `/api/auth/me` | POST | 获取当前登录用户 |
 | `/api/auth/providers` | POST | 获取可用的 OAuth 提供商列表 |
 | `/api/comments/list` | POST | 获取指定博客的评论列表 |

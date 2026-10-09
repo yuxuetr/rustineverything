@@ -1,8 +1,10 @@
 use dioxus::prelude::*;
+use dioxus_shadcn::{
+  badge_class, card_class, Alert, AlertDescription, AlertVariant, BadgeVariant, Empty,
+  EmptyDescription, Spinner, SpinnerSize,
+};
 
 use crate::server::{get_doc_content, list_doc_tree, DocTreeNode};
-use module_course::course::AnnotationLayer;
-use module_forum::forum::DiscussionPanel;
 use widgets::Markdown;
 
 /// 给定文档路径段，构造 SPA URL（`/docs/<path>`）。
@@ -14,14 +16,30 @@ fn doc_href(path: &str) -> String {
   }
 }
 
-/// /docs 文档首页：左侧一级分类列表 + 右侧欢迎页和分类卡片
+/// /docs 文档首页：左侧一级分类列表 + 右侧欢迎页和分类卡片。
+/// 重构 B4：树形导航改由 `DocsIndexInner` 用 use_server_future 服务端预取（随 SSR HTML 下发）。
 #[component]
 pub fn Docs() -> Element {
-  let tree = use_resource(move || async move { list_doc_tree().await.unwrap_or_default() });
-
   rsx! {
       section { class: "min-h-screen bg-white dark:bg-slate-950",
-          div { class: "max-w-7xl mx-auto flex",
+          SuspenseBoundary {
+              fallback: |_| rsx! {
+                  div { class: "flex items-center justify-center py-20",
+                      Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
+                  }
+              },
+              DocsIndexInner {}
+          }
+      }
+  }
+}
+
+#[component]
+fn DocsIndexInner() -> Element {
+  let tree = use_server_future(|| async move { list_doc_tree().await.unwrap_or_default() })?;
+
+  rsx! {
+      div { class: "max-w-7xl mx-auto flex",
               // 左侧导航：一级分类列表（仅桌面端显示）
               aside { class: "hidden lg:block shrink-0 w-64 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 pt-8 pb-12 px-4",
                   nav {
@@ -55,18 +73,17 @@ pub fn Docs() -> Element {
                               }
                           },
                           Some(_) => rsx! {
-                              div { class: "text-center text-slate-500 py-20", "暂无文档内容" }
+                              Empty { class: "py-20", EmptyDescription { "暂无文档内容" } }
                           },
                           None => rsx! {
                               div { class: "flex items-center justify-center py-20",
-                                  div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                               }
                           },
                       }
                   }
               }
           }
-      }
   }
 }
 
@@ -80,7 +97,7 @@ fn render_sidebar_link(node: &DocTreeNode, _active: &str) -> Element {
           href: "{href}",
           class: "flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mb-1",
           span { "{node.title}" }
-          span { class: "text-xs text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full",
+          span { class: badge_class(BadgeVariant::Secondary, "rounded-full px-1.5 font-normal text-muted-foreground"),
               "{child_count}"
           }
       }
@@ -111,13 +128,13 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
   rsx! {
       a {
           href: "{href}",
-          class: "group block p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 hover:border-blue-300 dark:hover:border-blue-700 hover:shadow-lg transition-all",
+          class: card_class("group block p-6 rounded-2xl hover:border-primary/50 hover:shadow-lg transition-all"),
           // 标题行
           div { class: "flex items-center justify-between mb-3",
-              h3 { class: "text-lg font-bold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors",
+              h3 { class: "text-lg font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors",
                   "{node.title}"
               }
-              span { class: "text-xs text-slate-400 bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded-full",
+              span { class: badge_class(BadgeVariant::Secondary, "rounded-full font-normal text-muted-foreground"),
                   "{child_count} 篇"
               }
           }
@@ -136,7 +153,7 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
               }
           }
           // 底部箭头
-          div { class: "mt-4 flex items-center text-sm font-medium text-blue-600 dark:text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity",
+          div { class: "mt-4 flex items-center text-sm font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity",
               "开始阅读"
               svg { class: "w-4 h-4 ml-1", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                   path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M9 5l7 7-7 7" }
@@ -146,27 +163,45 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
   }
 }
 
-/// 文档页面：左侧树形导航 + 右侧 Markdown 内容
+/// 文档页面：左侧树形导航 + 右侧 Markdown 内容。
+///
+/// `footer` 插槽：标注层（AnnotationLayer）与讨论面板（DiscussionPanel）是跨模块
+/// 组合（分属 course / forum），为避免 docs 模块编译期依赖兄弟模块，这两个组件
+/// 由组合根 `app` 装配后通过该插槽注入；docs 自身只渲染内容主体。
+/// 重构 B4：文档详情页拆为 SuspenseBoundary 外壳 + `DocPageInner`，正文由
+/// use_server_future 服务端预取（随 SSR HTML 下发）；树形导航仍是客户端
+/// use_resource（导航辅助，非 SEO 关键）。
 #[component]
-pub fn DocPage(path: Vec<String>) -> Element {
+pub fn DocPage(path: Vec<String>, footer: Element) -> Element {
+  rsx! {
+      section { class: "min-h-screen bg-white dark:bg-slate-950",
+          SuspenseBoundary {
+              fallback: |_| rsx! {
+                  div { class: "flex items-center justify-center py-20",
+                      Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
+                  }
+              },
+              DocPageInner { path: path.clone(), footer: footer.clone() }
+          }
+      }
+  }
+}
+
+#[component]
+fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
   let doc_path = path.join("/");
   let doc_path_for_tree = doc_path.clone();
-  let doc_path_for_content = doc_path.clone();
-  // 标注资源路径：resource_kind="doc"，resource_path = 叶子路径
-  let anno_path = doc_path.clone();
   // Markdown blog_id 携带 "doc:<path>" 前缀，JS 运行时以此识别资源归属
   let anno_blog_id = format!("doc:{}", doc_path);
 
   let tree = use_resource(move || async move { list_doc_tree().await.unwrap_or_default() });
 
-  let content = use_resource(move || {
-    let p = doc_path_for_content.clone();
-    async move { get_doc_content(p).await }
-  });
+  // 正文：use_server_future 服务端预取，随路由参数 doc_path 变化重取。
+  let content =
+    use_server_future(use_reactive!(|doc_path| async move { get_doc_content(doc_path).await }))?;
 
   rsx! {
-      section { class: "min-h-screen bg-white dark:bg-slate-950",
-          div { class: "max-w-7xl mx-auto flex",
+      div { class: "max-w-7xl mx-auto flex",
               // 左侧导航（仅桌面端显示）
               aside { class: "hidden lg:block shrink-0 w-64 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 pt-8 pb-12 px-4",
                   nav {
@@ -185,7 +220,7 @@ pub fn DocPage(path: Vec<String>) -> Element {
                           Some(Ok(resp)) => rsx! {
                               // SEO: 注入 title / description / keywords / og:image
                               if !resp.meta.title.is_empty() {
-                                  document::Title { "{resp.meta.title} - Rust in Everything" }
+                                  widgets::browser::PageTitle { title: format!("{} - Rust in Everything", resp.meta.title) }
                               }
                               if !resp.meta.description.is_empty() {
                                   document::Meta { name: "description", content: "{resp.meta.description}" }
@@ -199,32 +234,23 @@ pub fn DocPage(path: Vec<String>) -> Element {
                               div { class: "text-slate-700 dark:text-slate-200",
                                   Markdown { content: resp.content.clone(), blog_id: anno_blog_id.clone() }
                               }
-                              // 标注层（resource_kind="doc"，path 为叶子路径）
-                              AnnotationLayer {
-                                  resource_kind: "doc".to_string(),
-                                  resource_path: anno_path.clone(),
-                              }
-                              // 资源讨论面板：关联论坛话题
-                              DiscussionPanel {
-                                  resource_kind: "doc".to_string(),
-                                  resource_path: anno_path.clone(),
-                              }
+                              // 跨模块组合（标注层 + 讨论面板）由 app 层注入。
+                              {footer.clone()}
                           },
                           Some(Err(e)) => rsx! {
-                              div { class: "p-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 rounded-lg",
-                                  "加载失败: {e}"
+                              Alert { variant: AlertVariant::Destructive,
+                                  AlertDescription { variant: AlertVariant::Destructive, "加载失败: {e}" }
                               }
                           },
                           None => rsx! {
                               div { class: "flex items-center justify-center py-20",
-                                  div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+                                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                               }
                           },
                       }
                   }
               }
           }
-      }
   }
 }
 
@@ -270,7 +296,7 @@ pub fn TreeSection(node: DocTreeNode, active_path: String, depth: u32) -> Elemen
                       a {
                           href: "{href}",
                           class: format_args!("text-xs font-semibold uppercase tracking-wider py-1 {}",
-                              if is_active { "text-blue-600 dark:text-blue-400" } else { "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" }
+                              if is_active { "text-primary" } else { "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" }
                           ),
                           "{node.title}"
                       }
@@ -296,7 +322,7 @@ pub fn TreeSection(node: DocTreeNode, active_path: String, depth: u32) -> Elemen
     // === 二级：章节，带展开/折叠 ===
     1 => {
       let item_class = if is_active {
-        "text-sm font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20"
+        "text-sm font-medium text-primary bg-primary/10"
       } else {
         "text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50"
       };
@@ -342,7 +368,7 @@ pub fn TreeSection(node: DocTreeNode, active_path: String, depth: u32) -> Elemen
     // === 三级：小节，叶子节点 ===
     _ => {
       let item_class = if is_active {
-        "text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20"
+        "text-xs font-medium text-primary bg-primary/10"
       } else {
         "text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50"
       };

@@ -3,7 +3,7 @@
 > 适用阶段：Phase 1C.4 ModerationEngine 骨架 + Phase 4.2 XSS 防护（v2.1 Todos.md）。
 > 本文记录用户内容的 **安全模型**（XSS / 内联事件 / 危险协议）与
 > **审核流水线骨架**（ModerationStage / Verdict / Pipeline）。
-> 完整 LLM/VLM 审核（Phase 4.3-4.5）待后续 PR 落地。
+> LLM/VLM 审核见 §3。
 
 ## 1. XSS 攻击面审计（Phase 4.2）
 
@@ -161,41 +161,37 @@ pub trait ModerationStage: Send + Sync {
 - ✅ 全 Allow → Allow
 - ✅ Score clamp 至 [0.0, 1.0]
 
-## 3. LLM 审核插件（Phase 4.3-4.4）
+## 3. LLM 审核（Phase 4.3-4.4；R4 起内置）
 
 ### 3.1 架构分层
 
 ```text
 crates/core::engines::moderation   # Verdict / Label / Thresholds / 同步 trait
 crates/llm                          # OpenAI + Anthropic 双协议 HTTP 客户端
-crates/modules/moderation           # AsyncModerationStage + PluginModerationStage + Pipeline
-examples/plugin-moderation-deepseek # 演示 wasm 插件（build_prompt + parse_verdict）
+crates/modules/moderation           # AsyncModerationStage + UrlBlocklistStage + LlmModerationStage + Pipeline
 ```
 
-**插件管 policy，宿主管 transport**：
-- **插件**：写 prompt、解释 LLM 输出。每个站点可以装多个不同策略的插件。
-- **宿主**：通过 `crates/llm` 的 `LlmClient` 实际发 HTTP 请求，复用四个 env
-  变量 (`OPENAI_LLM_BASE_URL` / `OPENAI_LLM_API_KEY` / `ANTHROPIC_LLM_BASE_URL`
-  / `ANTHROPIC_LLM_API_KEY`)。
+`LlmModerationStage`（`crates/modules/moderation/src/llm_stage.rs`）分三步：
 
-### 3.2 ABI（capability = `moderation-provider`）
+1. `build_messages(submission)`：系统提示词 + 用户消息（`[场景: kind ref_path]` 前缀、
+   正文、`[包含链接: ...]` 提示、图片块）
+2. `LlmClient::chat` 发请求。端点与协议由 `crates/llm` 按 env 选择
+   (`OPENAI_LLM_BASE_URL` / `OPENAI_LLM_API_KEY` / `ANTHROPIC_LLM_BASE_URL`
+   / `ANTHROPIC_LLM_API_KEY`)
+3. `parse_verdict(reply)`：先整体按 JSON 解析，失败取第一个 `{...}`（应对 markdown
+   围栏）；未知 label 视为 allow，score 夹到 0–1
 
-| 函数 | 输入 (JSON) | 输出 (JSON) |
-| --- | --- | --- |
-| `get_manifest` | — | `PluginManifest` |
-| `moderation_build_prompt` | `ModerationSubmission { content, kind, ref_path }` | `Vec<LlmMessage>` |
-| `moderation_parse_verdict` | LLM 原始文本 | `ModerationVerdict { score, label: "allow"\|"flag"\|"block", reason }` |
+R4 之前这两步（提示词、结论解析）在 wasm 插件 `plugin-moderation-deepseek` 里，
+现已编译进宿主，对同一批输入与原插件输出一致（迁移时用原 wasm 逐条对比过消息与结论）。
 
-类型定义在 `crates/sdk/src/lib.rs`，插件只需声明 capability `MODERATION_PROVIDER`
-即被 [`PluginEngine::filter_by_capability`](ENGINES_SPEC.md) 识别。
-
-### 3.3 配置（site.json）
+### 3.2 配置（site.json）
 
 ```jsonc
 {
   "moderation": {
     "enabled": false,                                     // 默认 disabled
-    "plugins": ["plugin_moderation_deepseek.wasm"],       // 装载顺序 = 评估顺序
+    "llm_review": false,                                  // 是否调 LLM 审核，默认关
+    "on_llm_failure": "review",                           // LLM 审核失败时：review（默认）/ reject
     "url_blocklist": [                                    // 链接黑名单，可选
       "scam.com",                                         // 精确匹配
       "*.phishing.example",                               // 通配子域
@@ -209,38 +205,54 @@ examples/plugin-moderation-deepseek # 演示 wasm 插件（build_prompt + parse_
 }
 ```
 
+R4 之前的 `"plugins": [...]` 字段已废弃：读取时忽略，不会开启 LLM 审核，
+需改为 `"llm_review": true`。
+
 **链接检测两层方案**：
 
 | Layer | 类型 | 何时跑 | 谁判定 |
 | --- | --- | --- | --- |
 | **1 UrlBlocklistStage** | host-native 同步 stage | 流水线第一站 | 直接命中域名 → Block(1.0)，不调 LLM |
-| **2 LLM prompt URL 上下文** | 插件 `build_prompt` 内嵌 | LLM 调用时 | 模型基于 `[包含链接: ...]` 上下文判断仿冒/钓鱼/诱导 |
+| **2 LLM prompt URL 上下文** | `build_messages` 内嵌 | LLM 调用时 | 模型基于 `[包含链接: ...]` 上下文判断仿冒/钓鱼/诱导 |
 
 Layer 1 便宜确定，专治已知坏域名；Layer 2 智能但贵，专治未知拼写仿冒
 （例如 `paypa1-security.com` 仿冒 `paypal.com`）。两层串联，先快后慢。
 
-URL 黑名单 **空数组 = 该 stage 不注册**，零开销；插件 Layer 2 总是检查
-但只有当评论里有 URL 时才追加 prompt 上下文。
+URL 黑名单 **空数组 = 该 stage 不注册**，零开销；Layer 2 只有当评论里有
+URL 时才追加 prompt 上下文。
 
 **默认安全**：
 - `enabled = false` → 流水线为空，evaluate 总是返回 Allow（零开销）
-- `enabled = true` 但 `plugins = []` → 仍为空流水线
-- `enabled = true` + plugins 配了但 LLM env 没配 → 也是空流水线 + warning 日志
+- `enabled = true` 但 `llm_review = false` 且无黑名单 → 仍为空流水线
+- `llm_review = true` 但 LLM env 没配 → 跳过 LLM stage + warning 日志
 - 三重保险，**不会**因配置错误把用户提交吞掉
 
-### 3.4 Fail-open 策略
+### 3.3 审核失败：不放行（SEC-12）
 
-每个 stage 任一步骤失败 → 返回 Allow + 写 warning 日志：
-- 插件文件不存在
-- 插件 `build_prompt` 调用失败 / 返回非法 JSON / 0 messages
-- LLM 调用失败（超时、网络、鉴权、配额）
-- 插件 `parse_verdict` 调用失败 / 返回非法 JSON
+LLM stage 以下任一情况视为审核失败：
+- LLM 调用失败（超时、网络、鉴权、配额、模型服务拒绝图片等）
+- 模型回复里读不出结论 JSON
 
-Block 决定必须由完整成功的流水线产出。这保证了 LLM 故障期间站点仍可用。
+失败时按 `on_llm_failure` 处理，**没有放行选项**（放行等于把审核打挂就能绕过）：
 
-### 3.5 多模态（图像审核）
+| 值 | 结论 | 用户看到 | 管理员 |
+| --- | --- | --- | --- |
+| `review`（默认） | Flag，分数 0，理由「LLM 审核失败，待人工复核」 | 照常发布 | 进 `moderation_queue`，在 `/admin/moderation` 复核 |
+| `reject` | Block，理由「审核服务暂不可用，请稍后再试」 | 提交被拒 | 无 |
 
-评论 / 话题中夹带的图片（站点 `/uploads/...`）也走同一条流水线，无需独立插件。
+`review` 下内容在复核前已经可见，`reject` 下 LLM 故障期间无法提交。
+每次失败记一条 warning `moderation: LLM review failed`，带 `cause`（原因）、
+`failures`（进程启动以来累计失败次数）和 `action`；`failures` 持续增长即 LLM 持续故障。
+
+流水线选结论时先比 label 再比分数：Block 早停，Flag 优先于 Allow，所以分数为 0
+的失败 Flag 不会被前面 stage 的 Allow 盖掉。
+
+注意：`llm_review = true` 但 LLM env 未配置时 LLM stage 不注册（启动时 warning），
+这是配置问题而不是审核失败，提交不经 LLM 审核。
+
+### 3.4 多模态（图像审核）
+
+评论 / 话题中夹带的图片（站点 `/uploads/...`）也走同一条流水线。
 
 **调用方式**：
 
@@ -266,45 +278,44 @@ let verdict = pipeline.evaluate(submission).await;
 - OpenAI 兼容：始终发 `image_url`，data URL 原样传
 - Anthropic 兼容：data URL 自动拆为 `source.base64`；http(s) URL 走 `source.url`
 
-**插件 build_prompt** 自动 detect `submission.images`，按顺序追加图像块到
-user message，并升级 system prompt 加入视觉审核维度（色情 / 血腥 / 政治
-符号 / 文本-图片不匹配的诱导）。
+`build_messages` 把 `submission.images` 中非空 URL 按顺序追加为图像块；系统
+提示词含视觉审核维度（色情 / 血腥 / 政治符号 / 文本-图片不匹配的诱导）。
 
-### 3.6 端到端实测
+### 3.5 端到端实测
 
-`examples/plugin-moderation-deepseek` 已对接两个端点实测：
+对接真实端点实测（R4 内置后重跑，结果一致）：
 
 | 输入 | LLM | label | score | 由谁判定 |
 | --- | --- | --- | --- | --- |
-| 「感谢分享，这篇博客写得很清晰」 | gpt-4o-mini | Allow | 0.00 | 插件 (LLM) |
-| 「你这个 sb，写的什么垃圾文章…」 | gpt-4o-mini | Block | 1.00 | 插件 (LLM) |
-| 「分享一张 Rust 的 logo」 + Rust logo 图 | gpt-4o-mini | Allow | 0.00 | 插件 (vision LLM) |
+| 「感谢分享，这篇博客写得很清晰」 | gpt-4o-mini | Allow | 0.00 | LLM |
+| 「你这个 sb，写的什么垃圾文章…」 | gpt-4o-mini | Block | 1.00 | LLM |
+| 「分享一张 Rust 的 logo」 + Rust logo 图 | gpt-4o-mini | Allow | 0.00 | vision LLM |
 | 「点 https://scam.example/x 领奖」 | — | Block | 1.00 | UrlBlocklistStage (精确) |
 | 「https://login.phishing.example/verify」 | — | Block | 1.00 | UrlBlocklistStage (通配) |
-| 「您的 PayPal 已冻结...登录 https://paypa1-security.com」 | gpt-4o-mini | Block | 1.00 | 插件 (URL 上下文 + LLM 判定仿冒) |
+| 「您的 PayPal 已冻结...登录 https://paypa1-security.com」 | gpt-4o-mini | Block | 1.00 | LLM（URL 上下文判定仿冒） |
 
 复现命令：
 ```sh
 cargo test -p module-moderation --test live_pipeline \
   -- --ignored --nocapture --test-threads=1
 ```
-要求 `.env` 配好任一对 LLM env，且 wasm 已 `cp` 到 `assets/plugins/`。
+要求 `.env` 配好任一对 LLM env。
 
-### 3.7 启用 / 禁用
+### 3.6 启用 / 禁用
 
 ```sh
-# 启用：编辑 site.json 把 enabled 设 true，列上需要的插件
+# 启用：编辑 site.json 把 enabled 设 true（需要 LLM 审核再把 llm_review 设 true）
 $EDITOR assets/site.json
 docker compose restart app   # 重启使配置生效
 
-# 禁用：把 enabled 设回 false（plugins 字段可留着备用）
+# 禁用：把 enabled 设回 false
 $EDITOR assets/site.json
 docker compose restart app
 ```
 
-无须改代码，无须重新 build 镜像。
+无须改代码，无须重新 build 镜像。也可在 `/admin/moderation-settings` 修改，保存即热重载。
 
-### 3.8 业务模块接入
+### 3.7 业务模块接入
 
 5 个提交入口已 hook 到全局 pipeline：
 
@@ -325,11 +336,11 @@ docker compose restart app
 
 [`shared_pipeline`] 是进程级 `OnceLock<RwLock<Arc<ModerationPipeline>>>`，首次
 访问时读 `site.json` + env 装载。**Phase 5.1 后支持 hot reload**：`reload_pipeline()`
-原子替换全局 pipeline（重读 site.json + 插件目录），admin 上传审核插件或点
-「重新载入」即生效，无需重启进程。阈值在装载时经 `ModerationThresholds::validate()`
+原子替换全局 pipeline（重读 site.json + LLM env），admin 保存审核设置即生效，
+无需重启进程。阈值在装载时经 `ModerationThresholds::validate()`
 校验（越界 / NaN / block<flag → 回退默认 + 告警）。
 
-### 3.9 审核队列（Phase 4.5）
+### 3.8 审核队列（Phase 4.5）
 
 Flag 决定自动入 `moderation_queue` 表等待 admin 复核。
 
@@ -374,7 +385,7 @@ already exists`）。一次性修复：
 脚本会建 `seaql_migrations` 表（如未建）并补一条 `initial_schema` 记录，
 之后 Migrator 跳过 initial、正常跑 `m20260530_000002_moderation_queue`。
 
-### 3.10 Phase 4.5 待补
+### 3.9 Phase 4.5 待补
 
 | 项 | 说明 |
 | --- | --- |
@@ -390,8 +401,7 @@ already exists`）。一次性修复：
 | 引擎 | 关系 |
 | --- | --- |
 | `ModuleEngine` | 模块开关与审核正交。Phase 4 实现后，每模块可独立配置审核阈值 |
-| `PluginEngine` | 审核插件通过 PluginEngine 加载，capability = `moderation_provider` |
-| `AuthEngine` | 用户标识用于审核日志（用户重复违规可触发 ban） |
+| `crates/llm` | LLM stage 的 transport；只在 `llm_review = true` 时被调用 |
 | `ContentEngine` | XSS 防护层位于此处之前 — sanitize 在 cmark 之前 |
 
 ## 5. 安全清单（持续维护）
@@ -405,6 +415,6 @@ already exists`）。一次性修复：
 | Cookie Secure flag (生产) | ✅ Phase 1A |
 | **用户 Markdown XSS 防护** | ✅ Phase 4.2 |
 | **`dangerous_inner_html` 审计** | ✅ Phase 4.2（仅 2 处，pulldown-latex 输出，无用户字面回显） |
-| LLM 内容审核（插件 + 默认 disabled） | ✅ Phase 4.3-4.5（基础设施 + DB/Admin + 5 条 hook 全部就绪） |
+| LLM 内容审核（内置 stage + 默认 disabled） | ✅ Phase 4.3-4.5（基础设施 + DB/Admin + 5 条 hook 全部就绪） |
 | 视觉审核（图片评论） | ✅ 通过 `ModerationSubmission.images` + 多模态 LlmMessage，已对 gpt-4o-mini 实测 |
 | Hot Reload 内存回收验证 | ✅ Phase 5.1（invalidate 即 Drop 旧 Module，单测验证缓存恒为 1；RSS 长跑见 OPERATIONS.md §2.4） |

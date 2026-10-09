@@ -9,7 +9,9 @@ pub struct Model {
   pub user_id: i32,
   pub provider: String,     // "github", "google", "wechat", "qq"
   pub provider_uid: String, // The UID from the social platform
-  pub access_token: Option<String>,
+  // Phase 8.2：原 `access_token: Option<String>` 已删（migration 0003）。
+  // 当时存的是 AES-GCM 加密的 OAuth token，但宿主从未解密 / 转发它 ——
+  // dead-stored 状态。未来真要做 token 转发请走单独临时表，不要复用本表。
   pub refresh_token: Option<String>,
   pub created_at: DateTimeWithTimeZone,
 }

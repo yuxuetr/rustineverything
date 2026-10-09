@@ -1,264 +1,140 @@
-//! [`ThemeEngine`] 骨架：聚合主题 WASM 插件输出的 CSS。
+//! 内置主题（R2）：每个主题是一份写死在代码里的 CSS（shadcn 语义 token，见
+//! `docs/THEME_SPEC.md`）。
 //!
-//! ## Phase 3.1 能力
-//! - **主题栈**：`SiteConfig.themes` 声明顺序即 CSS 输出顺序，后者覆盖前者。
-//!   当 `themes` 为空时回退到单插件 `active_theme`。
-//! - **用户覆盖**：[`theme_with_override`] 接收可选的 cookie 主题文件名，
-//!   存在时覆盖栈的最后一项（表示“用户选择的最顶层主题”）。
-//! - **插件调用**：通过 [`PluginEngine`] 调 `get_theme_css`，调用失败跳过不阻断其他主题。
-//! - **`init`**：调用 [`ThemeEngine::apply_site_config`] 使用 [`SiteConfig::theme_stack`]。
+//! 站点默认主题来自 site.json 的 `theme`；访客可用 `site_theme` cookie 覆盖。两者都
+//! 只认 [`THEMES`] 里的 id——cookie 由浏览器提交、可被任意改写（SEC-11），表外的值一律
+//! 忽略。主题 CSS 是作者写的受信内容，原样输出到页面 `<style>`。
 
-use std::path::PathBuf;
-use std::sync::Arc;
-
-use super::plugin::PluginEngine;
-use super::{Engine, EngineContext};
-use crate::error::AppResult;
-use crate::settings::SiteConfig;
-
-/// ThemeEngine：管理主题插件路径列表，按顺序聚合 CSS。
-pub struct ThemeEngine {
-  plugin: Arc<PluginEngine>,
-  /// 当前生效的主题插件路径列表。索引顺序即覆盖顺序（后者覆盖前者）。
-  themes: Vec<PathBuf>,
+/// 一个内置主题。
+#[derive(Debug, PartialEq, Eq)]
+pub struct Theme {
+  /// site.json、cookie 与 `/api/theme/set` 用的 id。
+  pub id: &'static str,
+  /// 主题切换菜单里显示的名字。
+  pub label: &'static str,
+  pub css: &'static str,
 }
 
-impl ThemeEngine {
-  pub fn new(plugin: Arc<PluginEngine>) -> Self {
-    Self { plugin, themes: Vec::new() }
-  }
+/// 全部内置主题，顺序即切换菜单的顺序。第一个是 site.json 未配置 / 配错时的回退。
+pub const THEMES: &[Theme] = &[
+  Theme { id: "ocean", label: "Ocean", css: include_str!("themes/ocean.css") },
+  Theme { id: "sunset", label: "Sunset", css: include_str!("themes/sunset.css") },
+  Theme { id: "catppuccin", label: "Catppuccin", css: include_str!("themes/catppuccin.css") },
+];
 
-  /// 注册一个主题插件路径。可重复调用。
-  pub fn register_theme(&mut self, path: PathBuf) {
-    self.themes.push(path);
-  }
-
-  /// 替换全部主题栈。
-  pub fn set_themes(&mut self, themes: Vec<PathBuf>) {
-    self.themes = themes;
-  }
-
-  /// 当前注册的主题插件路径列表（只读）。
-  pub fn themes(&self) -> &[PathBuf] {
-    &self.themes
-  }
-
-  /// 从 [`SiteConfig::theme_stack`] 装填主题栈（Phase 3.1）。
-  ///
-  /// `asset_root` 需指向资产根目录（`assets`），本函数拼接
-  /// `asset_root/plugins/<filename>` 作为插件路径。会清空现有栈。
-  pub fn apply_site_config(&mut self, site: &SiteConfig, asset_root: &std::path::Path) {
-    let plugin_dir = asset_root.join("plugins");
-    self.themes = site
-      .theme_stack()
-      .into_iter()
-      .filter(|name| !name.is_empty())
-      .map(|name| plugin_dir.join(name))
-      .collect();
-  }
-
-  /// 聚合所有主题插件的 CSS。失败的插件会被跳过（不阻断其他主题）。
-  pub fn aggregate_css(&self) -> String {
-    let mut out = String::new();
-    for path in &self.themes {
-      match self.plugin.call(path, "get_theme_css", "") {
-        Ok(css) => {
-          out.push_str(&css);
-          out.push('\n');
-        }
-        Err(e) => {
-          tracing::warn!(theme = %path.display(), error = %e, "theme: skipping plugin");
-        }
-      }
-    }
-    out
-  }
+pub fn find_theme(id: &str) -> Option<&'static Theme> {
+  THEMES.iter().find(|t| t.id == id)
 }
 
-/// 纯函数：从主题栈 + 可选 cookie 覆盖计算实际生效的插件路径列表。
-///
-/// 语义：`override_filename` 为用户 cookie 中的主题文件名（如 `theme_sunset_plugin.wasm`）：
-/// - `None` / 空串 → 保留原栈（仅过滤不存在的文件）
-/// - `Some(name)` 且 `plugin_dir/name` 存在 → 覆盖栈最后一项（若栈为空则追加一项）
-/// - `Some(name)` 但文件不存在 → 记录 stderr，保留原栈
-///
-/// 提供为 `pub` 以便在 server fn、单测、未来 admin 预览中复用。
-pub fn theme_with_override(
-  stack: &[PathBuf],
-  plugin_dir: &std::path::Path,
-  override_filename: Option<&str>,
-) -> Vec<PathBuf> {
-  // 1. 过滤不存在的文件，避免后续 wasmi 加载失败
-  let mut result: Vec<PathBuf> = stack.iter().filter(|p| p.exists()).cloned().collect();
-
-  // 2. 覆盖最后一项
-  let candidate =
-    override_filename.map(str::trim).filter(|s| !s.is_empty()).map(|name| plugin_dir.join(name));
-  if let Some(path) = candidate {
-    if path.exists() {
-      if result.is_empty() {
-        result.push(path);
-      } else {
-        let last = result.len() - 1;
-        result[last] = path;
-      }
-    } else {
-      tracing::warn!(
-          theme = %path.display(),
-          "theme: cookie override file not found, ignoring"
-      );
+/// 本次请求生效的主题：合法的 cookie 覆盖 > site.json 默认 > 第一个内置主题。
+pub fn resolve_theme(site_default: &str, cookie: Option<&str>) -> &'static Theme {
+  if let Some(raw) = cookie.map(str::trim).filter(|s| !s.is_empty()) {
+    match find_theme(raw) {
+      Some(theme) => return theme,
+      None => tracing::warn!(cookie = %raw.escape_debug(), "theme: unknown cookie theme, ignoring"),
     }
   }
-
-  result
-}
-
-impl Engine for ThemeEngine {
-  fn name(&self) -> &'static str {
-    "theme"
-  }
-
-  fn init(&mut self, ctx: &EngineContext) -> AppResult<()> {
-    // Phase 3.1：走主题栈语义，成为唯一装填路径。
-    self.apply_site_config(&ctx.site_config, &ctx.asset_root);
-    Ok(())
-  }
-
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-
-  fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-    self
-  }
+  find_theme(site_default).unwrap_or_else(|| {
+    tracing::warn!(theme = %site_default, "theme: unknown site.json theme, using default");
+    &THEMES[0]
+  })
 }
 
 #[cfg(test)]
-#[allow(clippy::field_reassign_with_default)] // 测试 setup：Default + 逐字段赋值更易读
 mod tests {
   use super::*;
-  use std::fs;
 
-  fn make() -> ThemeEngine {
-    let pm = Arc::new(crate::PluginManager::new());
-    let pe = Arc::new(PluginEngine::new(pm));
-    ThemeEngine::new(pe)
-  }
-
-  /// 在给定目录下创建占位主题文件，返回全路径。
-  fn touch_plugin(dir: &std::path::Path, name: &str) -> PathBuf {
-    let p = dir.join(name);
-    fs::write(&p, b"\0asm").expect("write fake wasm");
-    p
+  #[test]
+  fn cookie_overrides_site_default_only_with_a_builtin_id() {
+    assert_eq!(resolve_theme("ocean", None).id, "ocean");
+    assert_eq!(resolve_theme("ocean", Some("")).id, "ocean");
+    assert_eq!(resolve_theme("ocean", Some(" sunset ")).id, "sunset");
+    // SEC-11：路径、旧的插件文件名、其他插件、大小写变体都不是主题。
+    for bad in
+      ["../plugins/x", "theme_sunset_plugin.wasm", "i18n_fluent_plugin.wasm", "Sunset", "sun set"]
+    {
+      assert_eq!(resolve_theme("ocean", Some(bad)).id, "ocean", "{bad:?}");
+    }
   }
 
   #[test]
-  fn name_is_theme() {
-    let e = make();
-    assert_eq!(<ThemeEngine as Engine>::name(&e), "theme");
+  fn unknown_site_default_falls_back_to_first_theme() {
+    assert_eq!(resolve_theme("theme_ocean_plugin.wasm", None).id, THEMES[0].id);
+    assert_eq!(resolve_theme("", Some("catppuccin")).id, "catppuccin");
   }
 
   #[test]
-  fn register_and_set() {
-    let mut e = make();
-    e.register_theme(PathBuf::from("a.wasm"));
-    e.register_theme(PathBuf::from("b.wasm"));
-    assert_eq!(e.themes().len(), 2);
-    e.set_themes(vec![PathBuf::from("c.wasm")]);
-    assert_eq!(e.themes(), &[PathBuf::from("c.wasm")]);
+  fn theme_ids_are_unique_and_every_theme_sets_light_and_dark_tokens() {
+    for (i, theme) in THEMES.iter().enumerate() {
+      assert!(THEMES[..i].iter().all(|t| t.id != theme.id), "重复 id {}", theme.id);
+      assert!(theme.css.contains(":root {"), "{} 缺少亮色 token", theme.id);
+      assert!(theme.css.contains(".dark {"), "{} 缺少暗色 token", theme.id);
+    }
+  }
+
+  /// Tailwind v4 的 stone 色阶。站点把手写的 `slate-*` 类映射到 stone，
+  /// 默认主题的中性色 token 也取 stone，组件和手写区域才不会冷暖不一。
+  const STONE_50: &str = "oklch(98.5% 0.001 106.423)";
+  const STONE_200: &str = "oklch(92.3% 0.003 48.717)";
+  const STONE_400: &str = "oklch(70.9% 0.01 56.259)";
+  const STONE_600: &str = "oklch(44.4% 0.011 73.639)";
+  const STONE_800: &str = "oklch(26.8% 0.007 34.298)";
+  const STONE_900: &str = "oklch(21.6% 0.006 56.043)";
+  const STONE_950: &str = "oklch(14.7% 0.004 49.25)";
+
+  fn value_of(block: &str, token: &str) -> String {
+    let decl = format!("{token}:");
+    block
+      .lines()
+      .find_map(|line| line.trim().strip_prefix(decl.as_str()))
+      .map(|v| v.trim().trim_end_matches(';').to_string())
+      .unwrap_or_else(|| panic!("missing {token}"))
   }
 
   #[test]
-  fn init_loads_active_theme_from_site_config() {
-    let mut e = make();
-    let ctx = EngineContext::for_tests();
-    e.init(&ctx).unwrap();
-    assert_eq!(e.themes().len(), 1);
-    assert!(e.themes()[0].ends_with("theme_ocean_plugin.wasm"));
+  fn ocean_neutral_tokens_use_the_stone_scale() {
+    let css = find_theme("ocean").map(|t| t.css).unwrap_or_default();
+    let (light, dark) = css.split_once(".dark {").expect(".dark block");
+    let light_expected = [
+      ("--foreground", STONE_900),
+      ("--card-foreground", STONE_900),
+      ("--popover-foreground", STONE_900),
+      ("--secondary", STONE_50),
+      ("--secondary-foreground", STONE_900),
+      ("--muted", STONE_50),
+      ("--muted-foreground", STONE_600),
+      ("--accent", STONE_50),
+      ("--accent-foreground", STONE_900),
+      ("--border", STONE_200),
+      ("--input", STONE_200),
+    ];
+    let dark_expected = [
+      ("--background", STONE_950),
+      ("--foreground", STONE_50),
+      ("--card", STONE_900),
+      ("--card-foreground", STONE_50),
+      ("--popover", STONE_900),
+      ("--popover-foreground", STONE_50),
+      ("--secondary", STONE_800),
+      ("--secondary-foreground", STONE_50),
+      ("--muted", STONE_800),
+      ("--muted-foreground", STONE_400),
+      ("--accent", STONE_800),
+      ("--accent-foreground", STONE_50),
+      ("--border", STONE_800),
+      ("--input", STONE_800),
+    ];
+    for (token, want) in light_expected {
+      assert_eq!(value_of(light, token), want, "light {token}");
+    }
+    for (token, want) in dark_expected {
+      assert_eq!(value_of(dark, token), want, "dark {token}");
+    }
   }
 
   #[test]
-  fn aggregate_css_with_no_themes_is_empty() {
-    let e = make();
-    assert_eq!(e.aggregate_css(), "");
-  }
-
-  #[test]
-  fn apply_site_config_uses_theme_stack() {
-    let mut e = make();
-    let mut cfg = SiteConfig::default();
-    cfg.themes = vec!["base.wasm".to_string(), "ocean.wasm".to_string()];
-    e.apply_site_config(&cfg, std::path::Path::new("assets"));
-    let names: Vec<_> =
-      e.themes().iter().map(|p| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
-    assert_eq!(names, vec!["base.wasm", "ocean.wasm"]);
-    assert!(e.themes()[0].starts_with("assets/plugins"));
-  }
-
-  #[test]
-  fn apply_site_config_falls_back_to_active_theme() {
-    let mut e = make();
-    let mut cfg = SiteConfig::default();
-    cfg.themes = Vec::new();
-    cfg.active_theme = "legacy.wasm".to_string();
-    e.apply_site_config(&cfg, std::path::Path::new("assets"));
-    assert_eq!(e.themes().len(), 1);
-    assert!(e.themes()[0].ends_with("legacy.wasm"));
-  }
-
-  #[test]
-  fn override_replaces_last_layer_when_file_exists() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let plugin_dir = tmp.path();
-    let base = touch_plugin(plugin_dir, "theme_base.wasm");
-    let ocean = touch_plugin(plugin_dir, "theme_ocean_plugin.wasm");
-    let _sunset = touch_plugin(plugin_dir, "theme_sunset_plugin.wasm");
-
-    let stack = vec![base.clone(), ocean.clone()];
-    let result = theme_with_override(&stack, plugin_dir, Some("theme_sunset_plugin.wasm"));
-    assert_eq!(result.len(), 2);
-    assert!(result[0].ends_with("theme_base.wasm"));
-    assert!(result[1].ends_with("theme_sunset_plugin.wasm"));
-  }
-
-  #[test]
-  fn override_appends_when_stack_empty() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let plugin_dir = tmp.path();
-    let _sunset = touch_plugin(plugin_dir, "theme_sunset_plugin.wasm");
-    let result = theme_with_override(&[], plugin_dir, Some("theme_sunset_plugin.wasm"));
-    assert_eq!(result.len(), 1);
-    assert!(result[0].ends_with("theme_sunset_plugin.wasm"));
-  }
-
-  #[test]
-  fn override_skipped_when_file_missing() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let plugin_dir = tmp.path();
-    let base = touch_plugin(plugin_dir, "theme_base.wasm");
-    let stack = vec![base.clone()];
-    let result = theme_with_override(&stack, plugin_dir, Some("missing.wasm"));
-    assert_eq!(result, vec![base]);
-  }
-
-  #[test]
-  fn override_none_keeps_existing_stack_filtered() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let plugin_dir = tmp.path();
-    let exists = touch_plugin(plugin_dir, "a.wasm");
-    let missing = plugin_dir.join("b.wasm"); // 未创建文件
-    let stack = vec![exists.clone(), missing];
-    let result = theme_with_override(&stack, plugin_dir, None);
-    assert_eq!(result, vec![exists]);
-  }
-
-  #[test]
-  fn override_empty_string_treated_as_none() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let plugin_dir = tmp.path();
-    let base = touch_plugin(plugin_dir, "a.wasm");
-    let stack = vec![base.clone()];
-    let r = theme_with_override(&stack, plugin_dir, Some("   "));
-    assert_eq!(r, vec![base]);
+  fn ocean_primary_stays_brand_orange() {
+    let css = find_theme("ocean").map(|t| t.css).unwrap_or_default();
+    assert_eq!(css.matches("--primary: oklch(64.6% 0.222 41.116);").count(), 2);
   }
 }

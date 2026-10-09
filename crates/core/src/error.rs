@@ -1,7 +1,7 @@
 //! 全应用统一错误类型 [`AppError`]。
 //!
 //! ## 设计目标
-//! - **单一来源**：用一个枚举覆盖 Db / Plugin / Auth / Io / Validation 等常见
+//! - **单一来源**：用一个枚举覆盖 Db / Auth / Io / Validation 等常见
 //!   失败模式，逐步替换原本散落的 `Box<dyn std::error::Error>` 返回值。
 //! - **客户端不暴露内部细节**：错误转换到 `ServerFnError` 时，仅返回简短的
 //!   人类可读消息（数据库错误统一返回"内部错误"），原始细节走日志。
@@ -32,8 +32,6 @@ pub enum AppError {
   /// 数据库 / SeaORM 失败
   #[cfg(feature = "server")]
   Db(sea_orm::DbErr),
-  /// 插件层（WASM 加载 / 调用 / ABI 不兼容）
-  Plugin(String),
   /// 鉴权 / OAuth / Session 相关
   Auth(String),
   /// 标准库 IO
@@ -45,11 +43,6 @@ pub enum AppError {
 }
 
 impl AppError {
-  /// 构造一个 `Plugin` 错误（接受任何可转 `String` 的输入）
-  pub fn plugin<T: Into<String>>(msg: T) -> Self {
-    AppError::Plugin(msg.into())
-  }
-
   /// 构造一个 `Auth` 错误
   pub fn auth<T: Into<String>>(msg: T) -> Self {
     AppError::Auth(msg.into())
@@ -71,7 +64,6 @@ impl AppError {
     match self {
       #[cfg(feature = "server")]
       AppError::Db(_) => "内部错误".to_string(),
-      AppError::Plugin(msg) => format!("插件错误: {}", msg),
       AppError::Auth(msg) => msg.clone(),
       AppError::Io(_) => "内部错误".to_string(),
       AppError::Validation(msg) => msg.clone(),
@@ -85,7 +77,6 @@ impl fmt::Display for AppError {
     match self {
       #[cfg(feature = "server")]
       AppError::Db(e) => write!(f, "Db error: {}", e),
-      AppError::Plugin(msg) => write!(f, "Plugin error: {}", msg),
       AppError::Auth(msg) => write!(f, "Auth error: {}", msg),
       AppError::Io(e) => write!(f, "IO error: {}", e),
       AppError::Validation(msg) => write!(f, "Validation error: {}", msg),
@@ -144,13 +135,6 @@ impl From<serde_yaml::Error> for AppError {
   }
 }
 
-/// wasmi 运行时错误（编译 / 实例化 / 调用 wasm）统一归到 `Plugin`。
-impl From<wasmi::Error> for AppError {
-  fn from(e: wasmi::Error) -> Self {
-    AppError::Plugin(format!("wasm runtime error: {}", e))
-  }
-}
-
 /// reqwest 错误（仅 core 内 OAuth HTTP 调用使用）归到 `Auth`。
 #[cfg(feature = "server")]
 impl From<reqwest::Error> for AppError {
@@ -189,12 +173,6 @@ mod tests {
     assert!(matches!(err, AppError::Validation(_)));
     assert_eq!(err.client_message(), "blog_id is empty");
     assert_eq!(format!("{}", err), "Validation error: blog_id is empty");
-  }
-
-  #[test]
-  fn plugin_constructor_works() {
-    let err = AppError::plugin("module not found");
-    assert_eq!(err.client_message(), "插件错误: module not found");
   }
 
   #[test]

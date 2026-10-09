@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 widgets = { path = "../../widgets" }
 dioxus = { workspace = true, features = ["fullstack"] }
+dioxus-shadcn = { workspace = true, features = ["alert", "badge", "button", "card", "empty", "spinner"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml = { workspace = true, optional = true }

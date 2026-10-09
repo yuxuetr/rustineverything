@@ -21,10 +21,19 @@
 //!   预期的迁移列表对齐。
 //! - 集成测试（需 DATABASE_URL）：`cargo test -p migration -- --ignored`
 
+// S9（风险 R12）：生产代码禁 unwrap/expect（workspace lints）；测试代码豁免。
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+
 pub use sea_orm_migration::prelude::*;
 
 mod m20260527_000001_initial_schema;
 mod m20260530_000002_moderation_queue;
+mod m20260601_000003_drop_access_token;
+mod m20260601_000004_comments_index;
+mod m20260628_000005_entitlements;
+mod m20260628_000006_orders;
+mod m20260628_000007_memberships;
+mod m20260721_000008_users_token_version;
 
 pub struct Migrator;
 
@@ -34,6 +43,12 @@ impl MigratorTrait for Migrator {
     vec![
       Box::new(m20260527_000001_initial_schema::Migration),
       Box::new(m20260530_000002_moderation_queue::Migration),
+      Box::new(m20260601_000003_drop_access_token::Migration),
+      Box::new(m20260601_000004_comments_index::Migration),
+      Box::new(m20260628_000005_entitlements::Migration),
+      Box::new(m20260628_000006_orders::Migration),
+      Box::new(m20260628_000007_memberships::Migration),
+      Box::new(m20260721_000008_users_token_version::Migration),
     ]
   }
 }
@@ -50,6 +65,12 @@ mod tests {
       vec![
         "m20260527_000001_initial_schema".to_string(),
         "m20260530_000002_moderation_queue".to_string(),
+        "m20260601_000003_drop_access_token".to_string(),
+        "m20260601_000004_comments_index".to_string(),
+        "m20260628_000005_entitlements".to_string(),
+        "m20260628_000006_orders".to_string(),
+        "m20260628_000007_memberships".to_string(),
+        "m20260721_000008_users_token_version".to_string(),
       ]
     );
   }

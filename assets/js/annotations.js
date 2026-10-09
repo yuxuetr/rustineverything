@@ -6,7 +6,8 @@
  *   window.RIE_ANNO.submit(payload)                // POST /api/annotations/create
  *
  * 锚点策略：以最近的 [data-block-id] 祖先为基准；start/end 是该祖先 textContent 的字符偏移。
- * Markdown 渲染层尚未给顶层块注入 data-block-id 时，apply 会跳过对应条目（兼容退化）。
+ * 块号按顶层块序号分配，正文一改就可能错位，所以 apply 先核对 exact_text，
+ * 对不上再按原文 + 前后文重找（resolveAnchor）；原文已不存在的条目不画。
  */
 (function () {
   if (window.RIE_ANNO) return; // 幂等
@@ -163,14 +164,58 @@ body.no-anno .rie-anno {
     return window.__rieAppliedIds;
   }
 
+  /** 共同后缀 / 共同前缀长度，用来给候选位置的上下文打分 */
+  function commonSuffixLen(a, b) {
+    let n = 0;
+    while (n < a.length && n < b.length && a[a.length - 1 - n] === b[b.length - 1 - n]) n++;
+    return n;
+  }
+  function commonPrefixLen(a, b) {
+    let n = 0;
+    while (n < a.length && n < b.length && a[n] === b[n]) n++;
+    return n;
+  }
+
+  /** 找到标注当前应包裹的位置 {block, start, end}；原文已不在正文里时返回 null。
+   *  block_id 是顶层块序号、offset 是块内字符偏移，正文增删块或改字都会让它们失效，
+   *  所以先核对存下的原文，对不上再按「原文 + 前后文」在全部块里重找。 */
+  function resolveAnchor(item) {
+    const exact = item.exact_text || '';
+    const stored = findBlock(item.block_id);
+    // 旧数据没有原文，无从核对，只能按位置
+    if (!exact) return stored ? { block: stored, start: item.start_offset, end: item.end_offset } : null;
+    if (stored && (stored.textContent || '').slice(item.start_offset, item.end_offset) === exact) {
+      return { block: stored, start: item.start_offset, end: item.end_offset };
+    }
+    const prefix = item.prefix_text || '';
+    const suffix = item.suffix_text || '';
+    let best = null;
+    document.querySelectorAll('[data-block-id]').forEach(block => {
+      const text = block.textContent || '';
+      for (let at = text.indexOf(exact); at !== -1; at = text.indexOf(exact, at + 1)) {
+        const end = at + exact.length;
+        const score = commonSuffixLen(text.slice(0, at), prefix) + commonPrefixLen(text.slice(end), suffix);
+        const sameBlock = block === stored;
+        const drift = Math.abs(at - item.start_offset);
+        if (!best || score > best.score
+            || (score === best.score && sameBlock && !best.sameBlock)
+            || (score === best.score && sameBlock === best.sameBlock && drift < best.drift)) {
+          best = { block, start: at, end, score, sameBlock, drift };
+        }
+      }
+    });
+    return best;
+  }
+
   // ---------- apply a single annotation — 增量包裹，不动现有 DOM ----------
   function applyOne(item) {
     if (!item || appliedSet().has(item.id)) return false;
-    const block = findBlock(item.block_id);
-    if (!block) return false;
+    const anchor = resolveAnchor(item);
+    if (!anchor) return false;
+    const block = anchor.block;
     let cls = styleClass(item.style);
     if (item.author_nickname) cls += ' rie-anno-by-other';
-    const ok = wrapRange(block, item.start_offset, item.end_offset, cls, item.id);
+    const ok = wrapRange(block, anchor.start, anchor.end, cls, item.id);
     if (!ok) return false;
     appliedSet().add(item.id);
     if (item.author_nickname) {
@@ -378,7 +423,12 @@ body.no-anno .rie-anno {
   function flashTargetFromHash() {
     const raw = (location.hash || '').replace(/^#/, '');
     if (!raw) return;
-    const el = findBlock(raw) || document.getElementById(raw);
+    // #anno-{id}：闪烁该标注本身（已按原文重新定位）。还没画出来时等 apply 后再试；
+    // 原文已删、不会画出来的，就不闪，免得闪到无关的块。
+    const annoId = /^anno-(\d+)$/.exec(raw);
+    const el = annoId
+      ? document.querySelector(`span.rie-anno[data-anno-id="${annoId[1]}"]`)
+      : findBlock(raw) || document.getElementById(raw);
     if (!el) return;
     try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
     el.classList.remove('rie-anno-flash');

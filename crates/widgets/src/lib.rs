@@ -3,6 +3,7 @@
 //! ## 内容
 //! - [`mdx`]：MDX 渲染管道（GFM / 数学 / Mermaid / 代码 + Copy / 标注 block-id）。
 //! - [`registry`]：MDX 嵌入组件注册表（Phase 2.1 引入 / Phase 2.2 完整接入）。
+//! - [`browser`]：浏览器操作的 web-sys 实现与 [`browser::PageTitle`]（替代 `document::eval` / `document::Title`）。
 //!
 //! widgets crate 不依赖任何 `crates/modules/*`，业务模块通过 [`registry::register`]
 //! 在 app 启动时注入自定义 MDX 组件（如 `<PodcastCard id="1" />`）。
@@ -17,6 +18,7 @@
 //! rsx! { Markdown { content: text, blog_id: "welcome".to_string() } }
 //! ```
 
+pub mod browser;
 pub mod components;
 pub mod feed;
 pub mod mdx;

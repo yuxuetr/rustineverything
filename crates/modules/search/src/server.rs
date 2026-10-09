@@ -119,7 +119,7 @@ pub async fn search_reindex(mode: Option<String>) -> Result<ReindexReport, Serve
   #[cfg(feature = "server")]
   {
     use app_core::session::require_admin;
-    let _ = require_admin()?;
+    let _ = require_admin().await?;
     let mode_str = mode.as_deref().map(|s| s.trim()).unwrap_or("incremental");
     match mode_str {
       "full" => {
@@ -128,12 +128,7 @@ pub async fn search_reindex(mode: Option<String>) -> Result<ReindexReport, Serve
         let engine = crate::engine::rebuild().await.map_err(ServerFnError::new)?;
         let total = engine.reader.searcher().num_docs() as usize;
         let elapsed_ms = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
-        Ok(ReindexReport {
-          mode: "full".to_string(),
-          upserts: total,
-          deletes: 0,
-          elapsed_ms,
-        })
+        Ok(ReindexReport { mode: "full".to_string(), upserts: total, deletes: 0, elapsed_ms })
       }
       _ => {
         let r = crate::engine::reindex_incremental().await.map_err(ServerFnError::new)?;

@@ -1,4 +1,4 @@
-//! Phase 4.3-4.4：LLM 审核流水线 + WASM 插件运行时。
+//! LLM 审核流水线。
 //!
 //! ## 架构
 //! ```text
@@ -7,36 +7,31 @@
 //!         ▼
 //! ModerationPipeline (本 crate)
 //!         │
-//!         ├─ for each PluginModerationStage:
-//!         │     1. plugin.moderation_build_prompt(submission) → Vec<LlmMessage>
-//!         │     2. LlmClient.chat(messages) → LLM 文本（llm）
-//!         │     3. plugin.moderation_parse_verdict(text) → Verdict
-//!         │     4. ModerationThresholds::apply → label 升级
-//!         │     5. 早停：任一 Block 立刻返回
+//!         ├─ UrlBlocklistStage：链接命中黑名单 → Block（不调 LLM）
+//!         ├─ LlmModerationStage：
+//!         │     1. build_messages(submission) → Vec<LlmMessage>
+//!         │     2. LlmClient.chat(messages) → 模型回复（crates/llm）
+//!         │     3. parse_verdict(reply) → Verdict
+//!         ├─ ModerationThresholds::apply → label 升级
+//!         └─ 早停：任一 Block 立刻返回
 //!         │
 //!         ▼
 //!  最终 Verdict (Allow / Flag / Block)
 //! ```
 //!
 //! ## 设计
-//! - **插件管 policy**：prompt 措辞、verdict 解析格式。
-//! - **宿主管 transport**：复用 `crates/llm` 的 [`LlmClient`]，统一管端点 /
-//!   超时 / 鉴权 / 协议（OpenAI 兼容或 Anthropic 兼容）。
-//! - **fail-open**：插件加载失败 / LLM 失败 / 解析失败 → 当前 stage 返回
-//!   Allow，记 warning 日志，不阻塞用户提交。Block 决定必须来自成功的
-//!   完整流水线。
-//! - **默认禁用**：`site.json::modules.moderation.enabled` 默认 false，
-//!   plugins 数组默认空。即使开启 enabled，没有插件就什么也不做。
+//! - **transport 在 `crates/llm`**：端点 / 超时 / 鉴权 / 协议（OpenAI 兼容或
+//!   Anthropic 兼容）由 env 选择，本 crate 只管提示词与结论解析。
+//! - **失败不放行**：LLM 失败 / 回复无法解析 → 按 `on_llm_failure` 记为 Flag
+//!   （默认：照常发布并进审核队列）或 Block（拒绝提交），warning 日志带累计失败次数。
+//! - **默认禁用**：`site.json::moderation.enabled` 与 `llm_review` 默认 false。
 //!
 //! ## 使用方式
 //! ```ignore
 //! use module_moderation::ModerationPipeline;
 //! use sdk::ModerationSubmission;
 //!
-//! // 启动期一次性构造（启用且配了插件才有内容）
-//! let pipeline = ModerationPipeline::from_site_config(&site_cfg, &asset_root);
-//!
-//! // 提交路径调用
+//! let pipeline = ModerationPipeline::from_site_config(&site_cfg, llm);
 //! let submission = ModerationSubmission::new(comment_body).with_kind("comment");
 //! let verdict = pipeline.evaluate(submission).await;
 //! match verdict.label {
@@ -47,8 +42,8 @@
 //! ```
 
 pub mod hook;
+pub mod llm_stage;
 pub mod pipeline;
-pub mod plugin_stage;
 pub mod stage;
 pub mod url_blocklist;
 
@@ -56,13 +51,11 @@ pub use hook::{
   absolutize_image_url, enqueue_if_flagged, evaluate_submission, evaluate_with_images,
   extract_image_urls, reload_pipeline, shared_pipeline,
 };
+pub use llm_stage::LlmModerationStage;
 pub use pipeline::ModerationPipeline;
-pub use plugin_stage::PluginModerationStage;
 pub use stage::AsyncModerationStage;
 pub use url_blocklist::UrlBlocklistStage;
 
 // 重导出常用类型，调用方只需要 use 本 crate 顶层。
-pub use app_core::engines::moderation::{
-  ModerationLabel, ModerationThresholds, Verdict,
-};
-pub use sdk::{ModerationSubmission, ModerationVerdict};
+pub use app_core::engines::moderation::{ModerationLabel, ModerationThresholds, Verdict};
+pub use sdk::ModerationSubmission;

@@ -38,8 +38,8 @@ pub use anthropic::AnthropicChat;
 pub use config::{LlmConfig, LlmProvider};
 pub use openai::OpenAiChat;
 
-use async_trait::async_trait;
 use app_core::error::AppResult;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// 聊天消息中的角色。两个协议共用此抽象，序列化时分别按各自约定写入。
@@ -104,37 +104,6 @@ pub struct LlmMessage {
   pub content: Vec<LlmContentBlock>,
 }
 
-/// 反序列化时容忍两种 content 形态：
-/// - **字符串**：`{"role":"user","content":"hi"}`（老格式 / 老插件 / 大多数文档示例）
-///   → 自动包装为单个 [`LlmContentBlock::Text`]
-/// - **数组**：`{"role":"user","content":[{"type":"text","text":"..."}]}`（多模态）
-///
-/// 这保证旧插件（编译时只懂 String content）emit 的 JSON 仍能被新宿主消费。
-impl<'de> serde::Deserialize<'de> for LlmMessage {
-  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-  where
-    D: serde::Deserializer<'de>,
-  {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum ContentRepr {
-      Str(String),
-      Blocks(Vec<LlmContentBlock>),
-    }
-    #[derive(Deserialize)]
-    struct Helper {
-      role: LlmRole,
-      content: ContentRepr,
-    }
-    let h = Helper::deserialize(deserializer)?;
-    let content = match h.content {
-      ContentRepr::Str(s) => vec![LlmContentBlock::Text { text: s }],
-      ContentRepr::Blocks(b) => b,
-    };
-    Ok(LlmMessage { role: h.role, content })
-  }
-}
-
 impl LlmMessage {
   pub fn system(content: impl Into<String>) -> Self {
     Self { role: LlmRole::System, content: vec![LlmContentBlock::text(content)] }
@@ -190,7 +159,7 @@ pub trait LlmClient: Send + Sync {
 }
 
 /// 从 env 构造默认客户端。`None` 表示没有任一协议被配置 — 调用方应做
-/// 优雅降级（例如 LLM 审核流水线 fail-open）。
+/// 优雅降级（例如审核流水线不注册 LLM stage）。
 pub fn default_client_from_env() -> Option<Box<dyn LlmClient>> {
   let cfg = LlmConfig::from_env();
   cfg.build()
@@ -239,32 +208,6 @@ mod tests {
     assert_eq!(m.content.len(), 3);
     assert!(m.has_images());
     assert_eq!(m.text_only(), "what's in these?");
-  }
-
-  // ── 兼容老 wire format：content 是字符串 → 自动转成单 Text block ──
-
-  #[test]
-  fn deserialize_legacy_string_content_works() {
-    let json = r#"{"role":"user","content":"hello"}"#;
-    let m: LlmMessage = serde_json::from_str(json).unwrap();
-    assert_eq!(m.role, LlmRole::User);
-    assert_eq!(m.content.len(), 1);
-    assert_eq!(m.text_only(), "hello");
-  }
-
-  #[test]
-  fn deserialize_array_blocks_works() {
-    let json = r#"{
-      "role": "user",
-      "content": [
-        {"type": "text", "text": "describe"},
-        {"type": "image_url", "url": "https://x.example/a.jpg"}
-      ]
-    }"#;
-    let m: LlmMessage = serde_json::from_str(json).unwrap();
-    assert_eq!(m.content.len(), 2);
-    assert_eq!(m.text_only(), "describe");
-    assert!(m.has_images());
   }
 
   #[test]

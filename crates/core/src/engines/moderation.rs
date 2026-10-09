@@ -12,9 +12,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{Engine, EngineContext};
-use crate::error::AppResult;
-
 /// 审核结果分类。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ModerationLabel {
@@ -184,23 +181,8 @@ impl ModerationEngine {
   }
 }
 
-impl Engine for ModerationEngine {
-  fn name(&self) -> &'static str {
-    "moderation"
-  }
-
-  fn init(&mut self, _ctx: &EngineContext) -> AppResult<()> {
-    Ok(())
-  }
-
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-
-  fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-    self
-  }
-}
+// Phase 8.7：删除了 Engine trait + EngineRegistry；ModerationEngine
+// 现在就是普通 struct，对外暴露 evaluate(&content) + thresholds 等方法。
 
 #[cfg(test)]
 mod tests {
@@ -217,11 +199,7 @@ mod tests {
     }
   }
 
-  #[test]
-  fn engine_name_is_moderation() {
-    let e = ModerationEngine::new();
-    assert_eq!(<ModerationEngine as Engine>::name(&e), "moderation");
-  }
+  // Phase 8.7：删除了 Engine trait，原 engine_name_is_moderation 不再有意义。
 
   #[test]
   fn empty_pipeline_allows_everything() {

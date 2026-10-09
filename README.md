@@ -4,7 +4,7 @@
 
 ## 核心特性
 
-- **插件化架构**：支持动态加载 WASM 插件（身份认证、主题、i18n 等）。
+- **内置扩展点**：主题、OAuth 登录（GitHub / Google / Discord / X）、内容审核（链接黑名单 + 可选 LLM），均为宿主内的普通 Rust 代码。
 - **全栈 Rust**：基于 Dioxus 0.7 + Axum，支持 Web、Desktop 和 Fullstack Server。
 - **现代化 UI**：Tailwind CSS v4 + 深色模式，Rust 主题配色。
 - **全站搜索**：Tantivy 嵌入式搜索引擎，支持中英文分词。
@@ -39,6 +39,7 @@ Tailwind 源文件和 npm 工具链位于 `crates/app/` 下：
 
 ## 文档
 
+- [架构评估总结报告](docs/ARCHITECTURE_ASSESSMENT.md)
 - [开发者指南](docs/DEVELOPER.md)
 - [认证系统说明](docs/AUTH_SPEC.md)
 - [认证配置指南](docs/AUTH_GUIDE.md)
@@ -46,6 +47,8 @@ Tailwind 源文件和 npm 工具链位于 `crates/app/` 下：
 - [标注系统](docs/ANNOTATION_SPEC.md)
 - [论坛系统](docs/FORUM_SPEC.md)
 - [搜索系统](docs/SEARCH_SPEC.md)
+- [内容审核](docs/MODERATION_SPEC.md)
+- [安全整改记录](docs/SECURITY_REMEDIATION.md)
 - [案例展示](docs/CASE_SPEC.md)
 - [Tailwind CSS 指南](docs/TAILWIND_GUIDE.md)
 

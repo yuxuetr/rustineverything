@@ -217,10 +217,9 @@ pub fn BlogIndex() -> Element {
 
 | 引擎 | 关系 |
 | --- | --- |
-| `PluginEngine` | 不直接关联；插件按 capability 注册到对应引擎 |
-| `ThemeEngine` | 正交（[`THEME_SPEC.md`](THEME_SPEC.md)） |
+| 主题（`engines/theme.rs`） | 正交（[`THEME_SPEC.md`](THEME_SPEC.md)） |
 | `LayoutEngine` | 正交（壳决定结构，模块决定内容） |
-| `AuthEngine` | 正交（auth 不是「模块」） |
+| 认证（`core::auth`） | 正交（auth 不是「模块」） |
 | `SearchEngine` | 消费 `enabled_ids()` 过滤索引源 |
 | `ContentEngine` | 正交（MDX 组件注册与模块开关无关） |
 | `ModerationEngine` | 后续 Phase 4：审核流水线会按模块开关启用各 hook |
@@ -230,3 +229,58 @@ pub fn BlogIndex() -> Element {
 - **Phase 6**（已完成）：5 个内容板块（embedded / ai / web3 / wasm / cli）已通过 `default_module_specs` 注册，享受同样的开关能力（nav / 路由 gate / sitemap / feed）。
 - **Phase 5**：Admin 页面提供 UI 切换 `modules.<id>.enabled`，写回 site.json（目前只能手改文件 + hot reload「重新载入」生效）。
 - **Phase 7**：CI/CD 在不同环境（staging / prod）通过 site.json 控制模块灰度。
+
+## 11. 模块依赖规则（Module Dependency Policy）
+
+> 来源：2026-06-26 架构评估。目标是保持分层单向、避免内容模块间的“横向”编译期耦合。
+
+### 11.1 允许的依赖方向
+
+```text
+core → llm
+{core, widgets, sdk} → modules/*        （单向：基础设施 → 业务模块）
+modules/* → app                          （单向：业务模块 → 组合根）
+```
+
+- **内容模块（`crates/modules/<id>`）只可依赖 `app-core` / `sdk` / `widgets`**，
+  不得依赖其他兄弟内容模块。
+- **跨模块的 UI 组合发生在组合根 `app`**（它可以依赖一切模块）：需要把
+  A 模块的组件放进 B 模块页面时，由 `app` 通过插槽（`Element` prop / children）注入，
+  而不是让 B 直接依赖 A。
+- **跨模块的数据依赖通过 `app-core` 中立抽象倒置**（IoC 注册表），由 `app`
+  在启动期注入具体实现，避免消费方编译期依赖生产方。
+- **`module-moderation`** 是可选的审核基础设施（依赖 `core`+`llm`+`sdk`），可被其他
+  内容模块以 `optional = true` 引入（如 forum / comments / admin）——这属于“业务模块 →
+  审核基设”的单向依赖，不违反本规则。
+- **`module-payment`**（PM1–PM5，2026-07-27）是可选的支付基础设施（依赖 `core`），
+  被 `module-course` 以 `optional = true` + `payments` feature 引入——同属“业务模块 →
+  基设”单向依赖（payment 不反向依赖任何业务模块；发货经注入回调完成，订单实体
+  下沉 `core::entities::order`）。架构见 [PAYMENT_SPEC](./PAYMENT_SPEC.md) §14。
+
+### 11.2 实现手法与现状
+
+- **UI 组合插槽**：`docs` 不再依赖 `course` / `forum`。`module_docs::docs::DocPage`
+  接受 `footer: Element` 插槽，由 `app/src/routes/mod.rs` 的 `DocPage` 包装传入
+  `AnnotationLayer`（course）+ `DiscussionPanel`（forum）。
+- **数据源 IoC**：`search` 不再依赖 `cases`。`app_core::engines::doc_source` 提供
+  `register_doc_source` / `collect_registered_docs`；`app` 在启动期把 `cases` 注册为
+  外部索引文档来源（见 `app/src/main.rs`）。
+- **死依赖清理**：`forum` / `docs` 原有的 `module-blog` / `module-course` 是未使用的
+  死依赖，已移除。
+
+### 11.3 当前合规边与例外
+
+- ✅ 所有内容模块仅依赖 `core` / `sdk` / `widgets`（及可选基设 `module-moderation` /
+  `module-payment`）。
+- ✅ `app` 依赖全部模块，是唯一的跨模块组合点。
+- ⚠️ 例外：`module-moderation` 被 `forum` / `comments` / `admin` 以 `optional` 引入。
+  这是可接受的“业务模块 → 审核基设”单向依赖（moderation 不反向依赖任何业务模块）。
+- ⚠️ 例外：`module-payment` 被 `course` 以 `optional`（`payments` feature）引入。
+  同上属“业务模块 → 支付基设”单向依赖；payment 只依赖 `core`（订单实体 /
+  DB 句柄），发货动作（写 entitlement）由 course 侧注入回调提供。
+
+### 11.4 新增跨模块交互时的决策
+
+1. 只是“把 A 的组件放进 B 页面”→ 用 `app` 层插槽注入（同 A2）。
+2. “B 需要 A 的数据”→ 在 `core` 定义中立类型 + 注册表，`app` 注入（同 A3）。
+3. 真正的公共领域类型（多模块共享）→ 上提到 `core` 或 `sdk`。

@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 dioxus = { workspace = true, features = ["fullstack", "router"] }
+dioxus-shadcn = { workspace = true, features = ["badge", "button", "card", "collapsible", "dialog", "progress", "spinner", "table", "tabs", "toggle-group"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml = { workspace = true, optional = true }
@@ -14,19 +15,35 @@ sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
 module-blog = { path = "../blog" }
 app-core = { path = "../../core" }
+# 购买二维码渲染（client + server 均可用，纯 Rust → SVG；仅 payments UI 用）
+fast_qr = { version = "0.13", default-features = false, features = ["svg"], optional = true }
 module-moderation = { path = "../moderation", optional = true }
 sea-orm = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+# /courses 静态文件鉴权：与 ServeDir 同样逐段解码路径（SEC-02）
+percent-encoding = { version = "2", optional = true }
+# 支付：网关实现（签名/验签/解密/下单/回调解析）已抽到 module-payment（PM2），
+# PM4 起为可选依赖（payments feature 门控）。web 目标只编译其中立类型与
+# trait；server 实现经下方弱依赖 `module-payment?/server` 级联开启。
+module-payment = { path = "../payment", optional = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
 
 [features]
+# 在线支付（PM4，可选）：订单 server fns + notify 入口 + 购买 UI
+# （PurchaseModal / 我的订单 / 课程详情购买入口）。关闭时 Paywall 退化为
+# 「联系管理员开通」，权益仍可由 /admin/entitlements 手动授予。
+payments = ["dep:module-payment", "dep:fast_qr"]
 server = [
     "dioxus/server",
     "dep:tokio",
     "dep:serde_yaml",
     "dep:sea-orm",
+    "dep:rand",
+    "dep:percent-encoding",
+    "module-payment?/server",
     "widgets/server",
     "module-blog/server",
     "app-core/server",

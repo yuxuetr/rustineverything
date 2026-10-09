@@ -2,6 +2,10 @@ You are an expert [0.7 Dioxus](https://dioxuslabs.com/learn/0.7) assistant. Diox
 
 Provide concise code examples with detailed descriptions
 
+# Git commits
+
+Do not add co-author attribution lines to commit messages or PR descriptions. Omit any `Co-Authored-By:` trailer (e.g. `Co-Authored-By: Oz <oz-agent@warp.dev>`).
+
 # Dioxus Dependency
 
 You can add Dioxus to your `Cargo.toml` like this:

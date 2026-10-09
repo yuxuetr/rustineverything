@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 dioxus = { workspace = true, features = ["fullstack", "router"] }
+dioxus-shadcn = { workspace = true, features = ["alert", "badge", "card", "empty", "spinner"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml = { workspace = true, optional = true }
@@ -13,9 +14,6 @@ tokio = { workspace = true, features = ["full"], optional = true }
 sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
 app-core = { path = "../../core" }
-module-blog = { path = "../blog" }
-module-course = { path = "../course" }
-module-forum = { path = "../forum" }
 
 [dev-dependencies]
 tempfile = "3"
@@ -27,7 +25,4 @@ server = [
     "dep:serde_yaml",
     "widgets/server",
     "app-core/server",
-    "module-blog/server",
-    "module-course/server",
-    "module-forum/server",
 ]

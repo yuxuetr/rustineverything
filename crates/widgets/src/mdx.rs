@@ -96,10 +96,13 @@ pub fn Markdown(props: MarkdownProps) -> Element {
 
   // 渲染流，传入 blog_id；同时按顶层块编号注入 data-block-id 供标注定位
   let mut block_idx: usize = 1;
-  let elements = render_stream(&mut it, &props.blog_id, &mut block_idx, true);
+  let elements = render_stream(&mut it, &props.blog_id, props.untrusted, &mut block_idx, true);
 
   rsx! {
-      document::Title { "{metadata.title}" }
+      // 没有 frontmatter 标题时不设置，免得把页面自己的标题（如文档页）覆盖成空串
+      if !metadata.title.is_empty() {
+          crate::browser::PageTitle { title: metadata.title.clone() }
+      }
 
       div { class: "prose prose-slate dark:prose-invert max-w-none",
           {elements.into_iter()}
@@ -117,6 +120,7 @@ pub fn Markdown(props: MarkdownProps) -> Element {
 fn render_stream<'a>(
   it: &mut std::iter::Peekable<Parser<'a>>,
   blog_id: &str,
+  untrusted: bool,
   block_idx: &mut usize,
   top: bool,
 ) -> Vec<Element> {
@@ -140,7 +144,7 @@ fn render_stream<'a>(
                     }
                 }
                 let id = mint_block_id(top, block_idx);
-                if lang == "mermaid" {
+                if renders_as_diagram(&lang, untrusted) {
                     nodes.push(render_mermaid_block(code_text, id));
                 } else {
                     nodes.push(render_code_block(lang, code_text, id));
@@ -152,7 +156,7 @@ fn render_stream<'a>(
                 while let Some(event) = it.next() {
                     match event {
                         Event::Start(Tag::TableCell) => {
-                            let cell_children = render_stream(it, blog_id, block_idx, false);
+                            let cell_children = render_stream(it, blog_id, untrusted, block_idx, false);
                             header_cells.push(rsx! {
                                 th { class: "px-4 py-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-300",
                                     {cell_children.into_iter()}
@@ -171,8 +175,8 @@ fn render_stream<'a>(
             }
             Event::Start(tag) => {
                 let id = mint_block_id(top, block_idx);
-                let children = render_stream(it, blog_id, block_idx, false);
-                nodes.push(render_tag(tag, children, blog_id, id));
+                let children = render_stream(it, blog_id, untrusted, block_idx, false);
+                nodes.push(render_tag(tag, children, blog_id, untrusted, id));
             }
             Event::End(_) => break,
             Event::Text(text) => nodes.push(rsx! { "{text}" }),
@@ -224,6 +228,7 @@ fn render_tag(
   tag: Tag,
   children: Vec<Element>,
   blog_id: &str,
+  untrusted: bool,
   block_id: Option<String>,
 ) -> Element {
   let bid = block_id.unwrap_or_default();
@@ -279,18 +284,21 @@ fn render_tag(
       rsx! { pre { {children.into_iter()} } }
     }
     Tag::Link { dest_url, .. } => {
-      rsx! { a { href: "{dest_url}", class: "text-blue-600 dark:text-blue-400 underline decoration-blue-500/30 hover:decoration-blue-500 transition-all", {children.into_iter()} } }
+      // Phase 8.6：scheme allowlist。任何 HTML-entity / 大小写 / 制表符变体的
+      // `javascript:` / `data:` 编码 URL 都会被 reject，渲染为纯文本（保留 children）。
+      // 实体反编码 + 协议检查在 [`crate::sanitize::is_safe_link_url`]。
+      if crate::sanitize::is_safe_link_url(dest_url.as_ref()) {
+        rsx! { a { href: "{dest_url}", class: "text-blue-600 dark:text-blue-400 underline decoration-blue-500/30 hover:decoration-blue-500 transition-all", {children.into_iter()} } }
+      } else {
+        // 丢弃链接、保留可见文本，避免内容因 URL 被拒而消失
+        rsx! { span { {children.into_iter()} } }
+      }
     }
 
     // --- 核心：处理图片相对路径 ---
     Tag::Image { dest_url, title, .. } => {
-      let url = dest_url.to_string();
-      let src = if url.starts_with("http") || url.starts_with('/') {
-        url
-      } else {
-        // 处理 ID 为 "1" 的特殊情况，映射到 welcome 目录
-        let folder = if blog_id == "1" { "welcome" } else { blog_id };
-        format!("/posts/{}/{}", folder, url)
+      let Some(src) = image_src(&dest_url, blog_id, untrusted) else {
+        return rsx! { span { class: "text-red-500", "[image rejected: unsafe URL]" } };
       };
       rsx! {
           figure { class: "my-8",
@@ -331,6 +339,27 @@ fn render_tag(
 /// 在启动期预注册；podcast 等业务模块走自己的 `register_components`。
 /// 未注册的标签返回 None，调用方（`render_stream`）会降级为
 /// 占位 span，保证整篇文章仍可渲染。
+/// 图片最终的 `src`；`None` 表示拒绝渲染。
+///
+/// 站点作者内容：scheme 白名单（[`crate::sanitize::is_safe_image_url`]），
+/// 相对路径解析到文章资产目录。不可信内容只允许本站上传的图片
+/// （[`crate::sanitize::is_upload_image_url`]，SEC-09）：其余站内路径会被浏览者
+/// 的浏览器带 cookie 请求（如 `/api/auth/logout`），外部图片会泄露浏览者 IP。
+fn image_src(url: &str, blog_id: &str, untrusted: bool) -> Option<String> {
+  if untrusted {
+    return crate::sanitize::is_upload_image_url(url).then(|| url.to_string());
+  }
+  if !crate::sanitize::is_safe_image_url(url) {
+    return None;
+  }
+  if url.starts_with("http") || url.starts_with('/') {
+    return Some(url.to_string());
+  }
+  // 处理 ID 为 "1" 的特殊情况，映射到 welcome 目录
+  let folder = if blog_id == "1" { "welcome" } else { blog_id };
+  Some(format!("/posts/{}/{}", folder, url))
+}
+
 fn render_mdx_registry(html: &str) -> Option<Element> {
   let clean_html = html.trim();
   let name = detect_registered_tag(clean_html)?;
@@ -531,6 +560,12 @@ fn render_blockquote(
   }
 }
 
+/// ```` ```mermaid ```` 是否渲染成图（SEC-17）。用户内容只按普通代码块显示：
+/// mermaid 解析器与 SVG 生成是一大块额外攻击面，评论 / 论坛不需要画图。
+fn renders_as_diagram(lang: &str, untrusted: bool) -> bool {
+  lang == "mermaid" && !untrusted
+}
+
 fn render_mermaid_block(code_text: String, block_id: Option<String>) -> Element {
   let bid = block_id.unwrap_or_default();
   let has_bid = !bid.is_empty();
@@ -545,9 +580,15 @@ fn render_mermaid_block(code_text: String, block_id: Option<String>) -> Element 
 }
 
 fn render_code_block(lang: String, code_text: String, block_id: Option<String>) -> Element {
-  let code_for_copy = code_text.clone();
+  rsx! { CodeBlock { lang, code_text, block_id } }
+}
+
+#[component]
+fn CodeBlock(lang: String, code_text: String, block_id: Option<String>) -> Element {
+  let mut copied = use_signal(|| false);
   let bid = block_id.unwrap_or_default();
   let has_bid = !bid.is_empty();
+  let code_for_copy = code_text.clone();
 
   rsx! {
       div {
@@ -559,11 +600,16 @@ fn render_code_block(lang: String, code_text: String, block_id: Option<String>) 
               class: "absolute z-10 px-2.5 py-1 text-xs font-medium text-slate-400 bg-slate-800/80 border border-slate-700 rounded-md hover:text-white hover:bg-slate-700 transition-all cursor-pointer",
               style: "position:absolute;right:0.75rem;top:0.75rem",
               onclick: move |_| {
-                  let json_str = serde_json::to_string(&code_for_copy).unwrap_or_default();
-                  let js = format!("navigator.clipboard.writeText({json}).then(()=>{{let b=document.activeElement;if(b){{b.textContent='Copied!';setTimeout(()=>b.textContent='Copy',1500)}}}})" , json = json_str);
-                  dioxus::document::eval(&js);
+                  let text = code_for_copy.clone();
+                  spawn(async move {
+                      if crate::browser::copy_text(&text).await {
+                          copied.set(true);
+                          crate::browser::sleep_ms(1500).await;
+                          copied.set(false);
+                      }
+                  });
               },
-              "Copy"
+              if copied() { "Copied!" } else { "Copy" }
           }
           pre { class: "rounded-xl p-4 bg-slate-900 overflow-x-auto shadow-inner",
               code { class: "language-{lang} text-sm text-slate-200", "{code_text}" }
@@ -573,9 +619,35 @@ fn render_code_block(lang: String, code_text: String, block_id: Option<String>) 
 }
 
 /// 使用 pulldown-latex 将 LaTeX 转换为 MathML
+///
+/// pulldown-latex 把文本类事件（`\text{}`、`\operatorname{}`、数字）和解析
+/// 错误信息原样写进 MathML，而结果会进 `dangerous_inner_html`：`$\text{<img
+/// onerror=…>}$` 即存储型 XSS（SEC-01）。这里先把这些字符串转义再交给它；
+/// 其余事件只携带单个字符或数值，单独的 `<` 不会被浏览器当作标签。
 fn latex_to_mathml_string(latex: &str, display: bool) -> String {
+  use pulldown_latex::event::{Content, Event as LatexEvent};
+
   let storage = Storage::new();
-  let parser = LatexParser::new(latex, &storage);
+  let events: Vec<_> = LatexParser::new(latex, &storage).collect();
+  let escaped: Vec<String> = events
+    .iter()
+    .map(|event| match event {
+      Ok(LatexEvent::Content(Content::Text(s) | Content::Number(s) | Content::Function(s))) => {
+        escape_markup(s)
+      }
+      Ok(_) => String::new(),
+      Err(e) => escape_markup(&e.to_string()),
+    })
+    .collect();
+  let parser = events.into_iter().zip(&escaped).map(|(event, esc)| match event {
+    Ok(LatexEvent::Content(Content::Text(_))) => Ok(LatexEvent::Content(Content::Text(esc))),
+    Ok(LatexEvent::Content(Content::Number(_))) => Ok(LatexEvent::Content(Content::Number(esc))),
+    Ok(LatexEvent::Content(Content::Function(_))) => {
+      Ok(LatexEvent::Content(Content::Function(esc)))
+    }
+    Ok(other) => Ok(other),
+    Err(_) => Err(EscapedLatexError(esc)),
+  });
   let mut mathml = String::new();
   let config = pulldown_latex::RenderConfig {
     display_mode: if display {
@@ -589,10 +661,26 @@ fn latex_to_mathml_string(latex: &str, display: bool) -> String {
     Ok(()) => mathml,
     Err(e) => {
       tracing::warn!(error = %e, "math: LaTeX render error");
-      format!("<code>{}</code>", latex.replace('<', "&lt;").replace('>', "&gt;"))
+      format!("<code>{}</code>", escape_markup(latex))
     }
   }
 }
+
+fn escape_markup(s: &str) -> String {
+  s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+/// 已转义的解析错误信息；pulldown-latex 用它的 `Display` 写进 `<merror>`。
+#[derive(Debug)]
+struct EscapedLatexError<'a>(&'a str);
+
+impl std::fmt::Display for EscapedLatexError<'_> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(self.0)
+  }
+}
+
+impl std::error::Error for EscapedLatexError<'_> {}
 
 // Phase 2.2 后：`<Yellow .../>` / `<Underline .../>` / `<Strikethrough .../>`
 // 等文字样式组件都走 [`crate::components`] 下的 `MdxComponent` 实现，
@@ -611,6 +699,37 @@ fn extract_attr(html: &str, attr: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn trusted_images_keep_relative_and_external_sources() {
+    assert_eq!(image_src("hero.jpg", "1", false).as_deref(), Some("/posts/welcome/hero.jpg"));
+    assert_eq!(image_src("a.png", "rust-intro", false).as_deref(), Some("/posts/rust-intro/a.png"));
+    assert_eq!(
+      image_src("https://cdn.example.com/x.png", "1", false).as_deref(),
+      Some("https://cdn.example.com/x.png")
+    );
+    assert_eq!(image_src("javascript:alert(1)", "1", false), None);
+  }
+
+  #[test]
+  fn mermaid_renders_as_diagram_only_in_trusted_content() {
+    assert!(renders_as_diagram("mermaid", false));
+    assert!(!renders_as_diagram("mermaid", true));
+    assert!(!renders_as_diagram("rust", false));
+  }
+
+  #[test]
+  fn untrusted_images_only_load_uploads() {
+    assert_eq!(
+      image_src("/uploads/1700_cat_Ab12Cd.png", "comment", true).as_deref(),
+      Some("/uploads/1700_cat_Ab12Cd.png")
+    );
+    // 站内接口、外部图片（泄露 IP）、相对路径（会落到 /posts/... 下）都拒绝
+    for bad in ["/api/auth/logout", "https://evil.example/x.png", "x.png", "/uploads/../api/x.png"]
+    {
+      assert_eq!(image_src(bad, "comment", true), None, "{bad}");
+    }
+  }
 
   #[test]
   fn parse_mdx_without_frontmatter() {
@@ -715,5 +834,102 @@ mod tests {
     // 故意用不闭合的 LaTeX，确认走 fallback 不 panic
     let mathml = latex_to_mathml_string("\\frac{", false);
     assert!(mathml.contains("<code>") || mathml.contains("math"));
+  }
+
+  /// Every `<` that a browser would read as a tag opener must open a MathML
+  /// element; anything else in the output is an injected tag.
+  fn assert_only_mathml_tags(out: &str) {
+    const MATHML: &[&str] = &[
+      "math",
+      "semantics",
+      "annotation",
+      "mrow",
+      "mi",
+      "mn",
+      "mo",
+      "mtext",
+      "mspace",
+      "msub",
+      "msup",
+      "msubsup",
+      "munder",
+      "mover",
+      "munderover",
+      "mfrac",
+      "msqrt",
+      "mroot",
+      "mtable",
+      "mtr",
+      "mtd",
+      "mpadded",
+      "mphantom",
+      "menclose",
+      "merror",
+      "mstyle",
+    ];
+    for (i, _) in out.match_indices('<') {
+      let rest = out[i + 1..].trim_start_matches('/');
+      let name: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+      if name.is_empty() {
+        continue; // `<` followed by a non-letter is text to an HTML parser
+      }
+      assert!(MATHML.contains(&name.as_str()), "non-MathML tag <{name}> in {out}");
+    }
+  }
+
+  #[test]
+  fn latex_text_payloads_are_escaped() {
+    // SEC-01：这些都来自用户可写的评论 / 帖子
+    let payloads = [
+      r"\text{<img src=x onerror=alert(1)>}",
+      r"\text{<img src=x/onerror=alert(1)>}",
+      r#"\text{<a href="javascript:alert(1)">x</a>}"#,
+      r"\operatorname{<svg/onload=alert(1)>}",
+      r"\mathrm{\text{</math><img src=x onerror=alert(1)>}}",
+      r"\text{<script>alert(1)</script>}",
+    ];
+    for latex in payloads {
+      for display in [false, true] {
+        let out = latex_to_mathml_string(latex, display);
+        assert_only_mathml_tags(&out);
+        assert!(!out.contains("<img") && !out.contains("<a ") && !out.contains("<svg"), "{out}");
+      }
+    }
+  }
+
+  #[test]
+  fn latex_error_messages_are_escaped() {
+    // 解析错误会把出错的输入片段写进 <merror>
+    for latex in [r"\begin{<img src=x onerror=alert(1)>}", r"\unknown<img src=x onerror=alert(1)>"]
+    {
+      assert_only_mathml_tags(&latex_to_mathml_string(latex, false));
+    }
+  }
+
+  #[test]
+  fn latex_text_keeps_visible_characters() {
+    let out = latex_to_mathml_string(r"\text{a < b & c}", false);
+    assert!(out.contains("a &lt; b &amp; c"), "{out}");
+  }
+
+  #[test]
+  fn latex_common_formulas_render_unchanged() {
+    // 不含特殊字符的公式，输出与 pulldown-latex 直出一致
+    for latex in [
+      r"\frac{a}{b} + x_i^2",
+      r"\begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}",
+      r"\sum_{n=1}^{\infty} \frac{1}{n^2} = \frac{\pi^2}{6}",
+      r"a < b \le c",
+      r"\sin x + \operatorname{arccot} y + \text{if } 3.14",
+    ] {
+      let storage = Storage::new();
+      let mut expected = String::new();
+      let config = pulldown_latex::RenderConfig {
+        display_mode: pulldown_latex::config::DisplayMode::Inline,
+        ..Default::default()
+      };
+      push_mathml(&mut expected, LatexParser::new(latex, &storage), config).unwrap();
+      assert_eq!(latex_to_mathml_string(latex, false), expected, "{latex}");
+    }
   }
 }

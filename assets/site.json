@@ -1,19 +1,10 @@
 {
   "site_name": "Rust in Everything",
   "site_description": "专注 Rust 技术栈的学习与实战",
-  "active_theme": "theme_ocean_plugin.wasm",
-  "themes": ["theme_ocean_plugin.wasm"],
-  "_themes_available": [
-    "theme_ocean_plugin.wasm",
-    "theme_sunset_plugin.wasm",
-    "theme_catppuccin_plugin.wasm"
-  ],
+  "theme": "ocean",
   "active_layout": "classic",
   "default_language": "zh",
   "author": "yuxuetr",
-  "paths": {
-    "plugins": "assets/plugins"
-  },
   "navigation": [
     { "key": "nav-blog", "route": "/blog" },
     { "key": "nav-podcast", "route": "/podcast" },
@@ -21,12 +12,7 @@
   ],
   "auth": {
     "enabled": true,
-    "providers": [
-      { "id": "github", "plugin": "github_auth_plugin.wasm" },
-      { "id": "google", "plugin": "google_auth_plugin.wasm" },
-      { "id": "discord", "plugin": "discord_auth_plugin.wasm" },
-      { "id": "twitter", "plugin": "twitter_auth_plugin.wasm" }
-    ]
+    "providers": ["github", "google", "discord", "twitter"]
   },
   "annotations": {
     "course": true,

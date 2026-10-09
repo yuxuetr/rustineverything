@@ -1,449 +1,450 @@
-# 开发计划（v2.1 — 补充 Dioxus 原生化与 WASM 内存安全）
+# 开发计划 — 重构冲刺：业务模块解耦 + SSR Hydration 优化
 
-> 旧版已备份至 `Todos.old.md`。本版本（v2.1）在 v2 基础上补充：
-> 1. 安全加固与性能热点前置（不再等到 Phase 7）
-> 2. Phase 1 拆分为 3 个可独立交付的子阶段，降低单次重构风险
-> 3. 引擎层分批落地，先 3 个核心引擎，后 5 个补齐
-> 4. 删除/降级对个人站过度设计的任务
-> 5. **v2.1 新增**：Dioxus 渲染原生化（去 JS eval）+ WASM 通信重构（引入 Extism/wit-bindgen）+ 安全补遗（OAuth state CSRF、DB 事务、上传校验、token 加密）
+> 上一阶段（Phase 8 安全 & 性能硬化 + Phase 9）归档在 [`Todos.refactor-backup.md`](docs/archive/todos/Todos.refactor-backup.md)。
+> 本文档承接 2026-06-26 整体架构评估的两项结论，聚焦 **(A) 业务模块编译期解耦** 与 **(B) SSR hydration 优化**。
 
----
+## 本阶段目标
 
-## Phase 0 — 已完成基线 ✅
+1. **模块解耦**：内容模块只依赖 `app-core` / `sdk` / `widgets`；跨模块 UI 组合上提到组合根 `app`；数据源依赖显式化。
+2. **SSR hydration**：把 SEO/首屏关键的内容承载页从 `use_resource` 迁移到 `use_server_future`，消除首屏 spinner、二次抓取与 hydration 不匹配。
 
-> 细节请查 `docs/*_SPEC.md` 与 git log，此处仅列条目。
-
-- ✅ Session / JWT / Cookie / 全局用户上下文
-- ✅ 评论系统迁移到 PostgreSQL（comments 表 + SeaORM）
-- ✅ MDX 渲染管道已稳定（520 行，frontmatter / GFM / 数学 / Mermaid / 代码 + Copy / 标注 block-id / 7 嵌入组件）
-- ✅ 文档系统 `/docs`：三级嵌套、frontmatter、sidebar_label/position、sort_children，16 测试
-- ✅ Podcast 动态化：YAML 元数据 + 自动音频探测，18 测试
-- ✅ 课程系统 `/course`：三级结构、Doc|Video|Audio|Code 自适应、进度跟踪
-- ✅ 标注系统 v2（5 色 / 4 visibility / data-block-id 回放 / 个人列表页），15 测试
-- ✅ 论坛 `/topics`：发帖/回复 + 标签 + ref_kind/ref_path，18 测试
-- ✅ DiscussionPanel 接入 blog / doc / lesson
-- ✅ Admin 后台：5 页面 + AdminShell
-- ✅ 全站搜索：Tantivy 0.26 + jieba + Cmd+K + 4 索引源，34 测试
-- ✅ 案例展示 `/case`：网格 + 分类 + 标签 + Issue Form，12+ 测试
-- ✅ 6 WASM 插件：github/google/discord/twitter auth + theme-ocean + i18n-fluent
+**不在本阶段范围**（留作后续独立计划）：
+- 5 个内容板块 crate（`modules/{ai,cli,embedded,wasm,web3}`）合并去重
+- 插件 ABI v2（Extism / wit-bindgen）
+- 桌面 / 移动端迁移
 
 ---
 
-## Phase 1A — 安全加固 + 性能热点（最高优先级）
+## 持续约定
 
-> 目标：修复评估发现的安全隐患和性能瓶颈，不涉及架构重构，可快速交付。
+- **每任务一提交**：每完成一个任务，`cargo fmt` + 构建 + 测试 + `clippy -D warnings` 通过后提交一次。
+- **提交信息不带共同作者行**（不加 `Co-Authored-By`）。
+- **提交后同步本文档**：勾选完成项 + 补实际落点（文件:行号 / 测试名），再开下一个任务。
+- **构建命令**统一带 `CARGO_TARGET_DIR=/Users/hal/.target`；新代码不使用 `unwrap` / `expect`。
+- **数据库（按需）**：需要 DB 时用 macOS `apple container` 起 `postgres:16`，环境变量从 `.env` 读取（不回显密钥）。内容页 SSR 验证只读 `assets/`，不需要 DB。
 
-### 1A.1 安全修复（紧急）
-- [x] **JWT Secret 强制配置**：`get_jwt_secret()` 缺失 `JWT_SECRET` 时 panic 而非 fallback 默认值
-- [x] **删除 Token 日志泄露**：`auth/mod.rs:187` 的 `println!("[Auth] Token response: {:?}")` 移除或替换为脱敏日志
-- [x] **Cookie 加固**：生产环境 Set-Cookie 增加 `Secure` 标志（通过 `BASE_URL` 是否 https 判断）
-- [x] **PKCE Store TTL**：`PKCE_STORE` 增加过期清理（5 分钟 TTL），防止内存泄漏
-- [x] **BASE_URL 强制配置**：缺失时 panic，不再 fallback `localhost:8080`
-- [x] 单测：JWT Secret 缺失 panic / PKCE 过期清理 / Cookie Secure 标志
+### 校验命令
 
-### 1A.2 数据库连接池（性能关键）
-- [x] 新建 `crates/core/src/db/pool.rs`：`OnceCell<DatabaseConnection>` 单例
-- [x] `init_pool(url: &str)` 应用启动时调用一次，`get_or_init_pool() -> DatabaseConnection` 全局获取
-- [x] 逐模块替换 `init_db(&db_url)` 调用（约 20+ 处）：
-  - [x] `app/src/server/mod.rs` 中的评论 / 文档 / 上传
-  - [x] `app/src/main.rs` 中的 auth callback
-  - [x] `modules/forum/src/server.rs`
-  - [x] `modules/course/src/server.rs`
-  - [x] `modules/admin/src/server.rs`
-  - [x] `modules/cases/src/server.rs`（N/A：cases 纯磁盘 markdown 扫描，无 `init_db`/`DatabaseConnection` 调用，无需替换）
-  - [x] `modules/search/src/indexer.rs`
-- [x] 性能基准：`scripts/bench_comments.sh`（压 `POST /api/comments/list`；有 `oha` 用 oha，否则 curl 循环 + awk 算 P50/P95/P99；参数化 N/blog_id/base_url，脚本头含种子+清理说明）。已对本地 postgres 实跑验证（种子 5000 评论 → p95≈111ms@dx-serve 调试构建 → 清理）。注：调试构建数值偏高，release 会显著更低；"前后对比"基线已失效（连接池 1A.2 早已落地）
-- [x] `docs/DEVELOPER.md` DB 章节更新：新增 §2.3「数据库层与连接池」，文档化 SeaORM+PG + sea-orm-migration 自动迁移 + `init_pool/get_or_init_pool/pool` 连接池单例 API + 旧 `init_db` 兼容说明
-
-### 1A.3 PluginManager 缓存
-- [x] `PluginManager` 增加 `Module` 缓存：`HashMap<PathBuf, CachedModule { module, mtime }>`
-- [x] `call_path_with_string()` 先查缓存，mtime 不变则复用 `Module`（保留原 `call_with_string` 以兼容）
-- [x] 避免每次 `fs::read()` + `Module::new()` 的开销（i18n / theme 高频调用 → 全局 `shared_plugin_manager()`）
-- [x] `invalidate(path)` / `invalidate_all()` 供 admin 显式刷新
-- [x] 单测：缓存命中 / invalidate 中一 / invalidate_all
-
-### 1A.4 高优先级安全补遗（评估补充发现）
-- [x] **OAuth `state` 参数 CSRF 校验**：当前 `auth/mod.rs` 生成 state 但回调路径**完全未验证**；新增 state store（HashMap + 5 分钟 TTL）+ 回调强校验，state 不匹配直接 401
-- [x] **用户创建事务化**：`sync_user_to_db` 中 `user::insert` + `user_identity::insert` 包入 SeaORM 事务（`db.begin().await?`），避免 identity 失败时残留孤儿 user
-- [x] **图片上传校验**：`upload_image` 增加 MIME 嗅探（白名单 png/jpg/gif/webp）+ 文件大小上限（5MB）+ 安全文件名（移除 `..`、`/`、`\`，限制扩展名）
-- [x] **`access_token` 加密存表**：`user_identities.access_token` 当前明文落库；用 `JWT_SECRET` 派生密钥做 AES-GCM 加密；解密失败时强制重新登录
-- [x] **删除 dead code**：`crates/plugins/prefix-plugin/` 是 hello-world demo，未在 site.json 引用；移到 `examples/` 或直接删除
-- [x] 单测：state 校验失败拒绝登录（`auth/mod.rs` 3 例：非法/provider 不符/一次性消费）/ 大文件上传拒绝（`uploads/server.rs::check_upload_size` 3 例）/ 非白名单 MIME 拒绝（sniff + safe_filename 5 例）/ 加密 token 可解密回原值（`auth/crypto.rs` 3 例：roundtrip/唯一 nonce/篡改失败）
-  - [x] 事务回滚正确 — `auth/mod.rs::tests::sync_user_to_db_rolls_back_on_identity_insert_failure`（`#[ignore]` live-DB 集成测试）：用 300 字符超长 `provider_uid` 制造确定性的 identity 插入失败，断言 user 已回滚无孤儿 + 正向对照成功。2026-05-29 对一次性 docker postgres 实跑通过。运行：`DATABASE_URL=... cargo test --features server -p rustineverything-core -- --ignored`
-
-### 1A.5 Dioxus 渲染原生化（去 JS 依赖）
-- [x] `app/src/main.rs`：移除通过 `dioxus::document::eval` 动态创建 `<style>` 标签的 JavaScript 注入逻辑
-- [x] 使用原生 RSX 语法重构：在虚拟 DOM 中直接渲染 `<style id="wasm-theme-style">{theme_css}</style>`
-- [x] 验证：确保切换主题时无闪烁，且去除对浏览器 DOM API 的直接依赖
-- [x] 同步排查：`widgets/src/mdx.rs` 中 Prism / Mermaid 的 `dioxus::document::eval` 已替换为 `document::Script` + 内联 JS 常量 `MARKDOWN_REHIGHLIGHT_SCRIPT`：声明式渲染 `<script>` 节点，SSR 直接随 HTML 流执行、客户端 Dioxus 挂载时同样触发、desktop/mobile 后端按普通节点忽略 → 不再依赖仅 web 可用的 `eval` JS 注入。脚本本身保留轮询（等 `/js/prism.min.js`、`/js/mermaid.min.js` 就绪）+ Mermaid `try/catch` 抗重复运行。同步修复 markdown 渲染回归：`assets/js/` 此前完全没有 vendor JS（prism 系列 + mermaid + annotations 都仅存于 `.gitignore` 的 `crates/app/assets/js/`，新克隆即缺失 → 代码高亮失效 + Mermaid 不渲染），本次把 Prism 1.30.0 core + 6 语言包 (rust/bash/toml/json/yaml/python) + Mermaid + annotations.js 全部 vendor 到 `assets/js/` 由 `build.rs` 同步
-
-### 1A.6 验收门禁
-- [x] `cargo test --features server --workspace` 全绿（183 tests pass under —test-threads=1）
-- [-] 评论列表 P95 延迟下降 ≥ 50%：`bench_comments.sh` 已就绪并可实跑（见 1A.2）。但"下降 ≥50%"的前后对比基线已不存在——连接池在 1A.2 一次性落地，没有保留"每请求新建连接"的旧路径可对照。现状：脚本可随时测当前 P95（部署/release 环境下做正式数值）
-- [x] JWT Secret 未配置时服务启动即失败（`get_jwt_secret()` panic）
-- [x] `grep -r "Token response" crates/` 返回空
-- [x] OAuth 不带合法 state 的回调请求被拒绝（`AuthService::validate_state` + 3 个单测）
-- [x] 主题切换不再触发 JS eval（DevTools Console 无 `Injecting CSS` 日志）
-- [x] `crates/plugins/prefix-plugin/` 已移除
+- 格式化：`cargo fmt`
+- 构建：`CARGO_TARGET_DIR=/Users/hal/.target cargo build -p app --features server`
+- 测试：`CARGO_TARGET_DIR=/Users/hal/.target cargo test --features server --workspace -- --test-threads=1`
+- Lint：`CARGO_TARGET_DIR=/Users/hal/.target cargo clippy --workspace --features server --all-targets -- -D warnings`
+- SSR 烟测（B 类）：`dx serve --package app` 后 `curl -s http://127.0.0.1:8080/<路由>`，断言首屏 HTML 含正文/列表文本而非 loading spinner。
 
 ---
 
-## Phase 1B — App Crate 拆分（758 行 → ≤ 200 行）
+## 前置任务
 
-> 目标：把 `app/src/server/mod.rs` 中混合的 5 个领域拆分到独立模块。
+### P0 — 备份并重建 Todos.md
+- [x] 备份当前 `Todos.md` → `Todos.refactor-backup.md`
+- [x] 按本计划重写 `Todos.md`（A/B 全部任务 + 持续约定）
+- [x] 提交（无共同作者行）
 
-### 1B.1 文档模块独立
-- [x] 新建 `crates/modules/docs/`（Cargo.toml + lib.rs + server.rs + docs.rs）
-- [x] 迁移：`DocMeta / DocTreeNode / DocContentResponse / parse_doc_frontmatter / extract_doc_info / scan_doc_dir` + 15 个测试（原计划 16，实际原始代码 15）
-- [x] 迁移路由组件：`Docs / DocPage / TreeSection` 从 `routes/mod.rs` 移到 `modules/docs/src/docs.rs`（使用 `<a href>` 打灯 避免对 app `Route` 循环依赖）
-- [x] `routes/mod.rs` 改为 `use rustineverything_module_docs::docs::{Docs, DocPage}`（路由仍由 app crate 控制）
-- [x] workspace Cargo.toml 注册新 crate
-- [x] 验证：15 个文档系统测试通过（`cargo test -p rustineverything-module-docs --features server`）
-
-### 1B.2 评论模块独立
-- [x] 新建 `crates/modules/comments/`（Cargo.toml + lib.rs + server.rs）
-- [x] 迁移：`Comment` struct + `get_comments / post_comment` server fn（使用 `rustineverything_core::session::current_session_user`）
-- [x] `CommentBox` 组件调用改为 `rustineverything_module_comments::server::{get_comments, post_comment}`
-- [x] 在工作区 Cargo.toml + app/Cargo.toml 注册
-
-### 1B.3 上传模块独立
-- [x] 新建 `crates/modules/uploads/`（Cargo.toml + lib.rs + server.rs）
-- [x] 迁移：`upload_image` server fn + `sniff_image_mime` + `safe_upload_filename` + 9 个单测
-- [x] `CommentBox` 调用改为 `rustineverything_module_uploads::server::upload_image`
-- [x] 从 `app/src/server/mod.rs` 移除上传路由与上传测试，避免重复注册 `/api/upload`
-
-### 1B.4 App server/mod.rs 精简
-- [x] 仅保留：站点配置 / i18n / 主题 CSS / Auth 辅助 / echo（实际 162 行）
-- [x] 移除所有内联的评论 / 文档 / 上传逻辑
-- [x] 抽出 `get_asset_root()` 到 `crates/core/src/utils.rs`，`app/src/server/mod.rs` 与 `app/src/main.rs` 都改为 `rustineverything_core::utils::get_asset_root`（上游模块还未请河，在后续阶段迫出）
-
-### 1B.5 统一错误类型
-- [x] 新建 `crates/core/src/error.rs`：`pub enum AppError { Db(sea_orm::DbErr), Plugin(String), Auth(String), Io(std::io::Error), Validation(String), Other(String) }` + `pub type AppResult<T>`
-- [x] 实现 `From<AppError> for ServerFnError`（仅 server feature），From<sea_orm::DbErr / std::io::Error / String / &str / serde_json::Error / serde_yaml::Error>
-- [x] 错误信息不向客户端暴露内部细节：Db / Io 变体转 ServerFnError 后仅返回“内部错误”，原始详情走 eprintln 日志（6 个 tests 验证）
-- [x] 示范迁移：`SiteConfig::from_file()` 从 `Box<dyn Error>` 改为 `AppResult<Self>`，调用方 (3 处) 无需修改（`unwrap_or_default` / `Display` formatting 兼容）
-- [x] 迁移剩余 `Box<dyn Error>` 返回值到 `AppResult`：session::create_jwt/verify_jwt、auth::*（get_credentials/get_auth_url/validate_state/handle_callback/sync_user_to_db）、PluginManager::*（get_or_load_module/call_with_string/call_path_with_string/invoke_module）、app `auth_callback_internal`。新增 `From<wasmi::Error>`(→Plugin) + `From<reqwest::Error>`(→Auth, server) 让 `?` 自动转换;jwt/memory/utf8 等用 `map_err` 精确归类。全工作区 `Box<dyn Error>` 仅剩 sdk 的 `AppModule::init`（sdk 不依赖 core，无法用 AppError，保留）
-
-### 1B.6 验收门禁
-- [x] `wc -l crates/app/src/server/mod.rs` ≤ 200（实际 162）
-- [x] `cargo test --features server --workspace` 全绿（192 tests passed; 0 failed，含新增的 docs / uploads / AppError 测试）
-- [x] 所有页面功能不变（仅代码位置调整 + 依赖重接，路由与组件外部 API 不变）
-- [x] `grep -rE 'Box<dyn .*Error' crates/` 从 15 → **1**：仅剩 `crates/sdk/src/lib.rs` 的 `AppModule::init`（sdk 是插件 ABI crate，不依赖 core，故保留 `Box<dyn Error>`）。其余全部迁到 `AppResult`
+### P1 —（按需）apple container 起 PostgreSQL ✅
+- [x] 用 `apple container` 起 `postgres:16-alpine` 容器 `rie-postgres`，凭据从 `.env` 的 `DATABASE_URL` 解析（user=postgres / db=github-auth），发布端口 `127.0.0.1:5432`；psql TCP 密码鉴权通过，`dx serve` 启动日志 `schema migrations applied`（9 表）
 
 ---
 
-## Phase 1C — 引擎层抽象（3 核心 + 5 占位）
+## 工作流 A：业务模块解耦
 
-> 目标：建立引擎注册机制，先实现 PluginEngine / DB Engine / ModuleEngine 三个核心引擎。
+### A1 — 移除 forum 的死依赖（blog / course）✅
+- [x] 确认 `forum` 全树无 `module_blog::` / `module_course::` 使用（grep 0 命中）
+- [x] 从 `crates/modules/forum/Cargo.toml` 删除 `module-blog` / `module-course` 依赖及 `server` feature 中的 `module-blog/server` / `module-course/server`
+- [x] 保留 `module-moderation`（可选）；`module-forum` + `app` 全量构建通过，forum 21 测试通过
 
-### 1C.1 引擎抽象基础
-- [x] `crates/core/src/engines/mod.rs`：`Engine` trait（`name() / init() / shutdown()` + `as_any/as_any_mut` 供按类型 downcast）
-- [x] `EngineRegistry`：按顺序注册 + 按名查询 + `init_all` / `shutdown_all`（shutdown 逆序）
-- [x] `EngineContext`：持有 `Arc<SiteConfig>` + `asset_root: PathBuf`（DB / PluginManager 交由各引擎自己老仪，避免互借塑）
-- [x] 单测 8 个：注册两个 / 重复名报错 / init 顺序 / init 警告传递 / shutdown 调用 / 错误类型 downcast / get_mut / EngineContext::for_tests
+### A2 — 上提 docs 的跨模块 UI 组合到 app 层 ✅
+- [x] `DocPage` 改造为接受 `footer: Element` 插槽（`docs.rs:153`），组件本身不再 `use module_course` / `use module_forum`
+- [x] `app/src/routes/mod.rs` 的 `DocPage` 包装组件把 `AnnotationLayer` + `DiscussionPanel` 作为 `footer` 插槽传入（`routes/mod.rs:196`）
+- [x] 从 `crates/modules/docs/Cargo.toml` 删除 `module-blog`（同为死依赖）/ `module-course` / `module-forum` 依赖
+- [x] app（server）+ docs（server/client）构建通过，clippy `-D warnings` 零告警；标注层/讨论面板仍在 docs 文章页身位渲染
 
-### 1C.2 PluginEngine（替代 PluginManager）与 ABI 重构
-- [x] `engines/plugin.rs`：`PluginEngine` 包装 1A.3 的缓存 `PluginManager`，实现 `Engine` trait（`init/shutdown/as_any`）
-- [-] **WASM 通信重构**：本阶段保留 `alloc`/`dealloc` + u64 打包，在 SDK 中提供 `pack_output` / `pack_json` / `read_input` 安全包装屏蔽原始 unsafe 指针运算；深入切换 Extism / wit-bindgen 是后续 PR（需 ABI v2 + 全量重建插件）
-- [x] **清理安全隐患**：SDK 提供高阶辅助（`pack_json`）减少插件 boilerplate；宿主侧原 `PluginManager::call_path_with_string` 仍保留以防老插件 (等 ABI v2 后一次性干掉手动打包)
-- [x] **WASM 输出大小限制**：`PluginEngine::DEFAULT_PLUGIN_OUTPUT_LIMIT = 8MB`，`with_output_limit(n)` 可调；超过限制返回 `AppError::Plugin`。单测覆盖（`output_over_limit_is_rejected`）
-- [x] SDK 新增 `pub const SDK_ABI_VERSION: u32 = 1`
-- [x] `PluginManifest` 增加 `abi_version: u32` + `capabilities: Vec<String>` + builder API + `is_compatible/has_capability` + 能力常量模块 (`AUTH_PROVIDER` / `THEME` / `I18N` / `MODERATION_PROVIDER` / `NOTIFICATION` / `LAYOUT` / `MDX_COMPONENT`)
-- [x] 所有 6 个插件新增 `get_manifest()` 导出函数，使用 `pack_json`
-- [x] 加载时校验：`PluginEngine::call` 调用前读 manifest，不兼容 → 拒绝 + `AppError::Plugin`；老插件未导出 manifest 时降级为 `call` 可运行 / `strict_call` 拒绝
-- [x] 能力协商：`capabilities_of(path)` / `filter_by_capability(paths, cap)` 实现能力分发
-- [x] 迁移 6 个插件并重建 wasm：github/google/discord/twitter auth (capability=AUTH_PROVIDER) + theme-ocean (THEME) + i18n-fluent (I18N)
-- [x] 单测 22 个：SDK 10 (manifest 创建/不兼容/能力/序列化/向后兼容/pack_output/pack_json/read_input) + PluginEngine 12 (名字/限制/shutdown/init/manifest 检测/filter_by_capability/老插件/超限/3 集成)
+### A3 — 解耦 search → cases 数据源 ✅（选择：IoC 倒置）
+- [x] 新增 `app-core::engines::doc_source`：中立 `ExternalIndexedDoc` + `register_doc_source` / `collect_registered_docs` 注册表（同 `ComponentRegistry` IoC 模式）
+- [x] `indexer.rs` 的 `collect_cases` → `collect_registered_external`，改读 core 注册表；从 `module-search/Cargo.toml` 删除 `module-cases` 依赖及 `module-cases/server`
+- [x] `app/src/main.rs` 启动期注册 cases 来源（server-only）；core 155 + search 64 测试通过，clippy `-D warnings` 零告警
 
-### 1C.3 ModuleEngine（模块注册 + 开关）
-- [x] `engines/module.rs`：`ModuleSpec { id, label, routes, nav_position, enabled }` + builder API + `disabled()` 反变是
-- [x] `ModuleEngine` 实现 `Engine` trait：register/get/is_enabled/enabled_modules/navigation/enabled_ids；init 阶段调 `apply_site_config` 备践 SiteConfig.modules
-- [x] `site.json::modules` 段控制 `enabled`：`SiteConfig` 增加 `modules: HashMap<String, ModuleSettings>` 字段，default 不不是不唭互选（默认 enabled = true 在 ModuleSettings 同名字段上）
-- [x] `ModuleEngine::navigation()` 仅返回 enabled 且 `nav_position.is_some()` 的模块，按位置升序（稳定排序）
-- [x] `ModuleEngine::enabled_ids()` 供搜索 / sitemap / feed 接入
-- [x] 单测 10 个：builder / 注册查询 / 重复 id 拒绝 / site.json 关闭 / nav 过滤 / 搜索源 / `ModuleSettings` 默认 enabled / Engine trait / with_specs / nav 同位置稳定
-
-### 1C.4 其余 5 引擎占位 + AuthEngine
-- [x] `engines/theme.rs`：ThemeEngine 骨架包装 `PluginEngine`：register_theme/set_themes/aggregate_css；init 阶段从 `SiteConfig.active_theme` 读出默认主题路径（4 单测）
-- [x] `engines/layout.rs`：`LayoutPack` trait（name + label）+ `LayoutEngine` 注册中心 + active layout 记录（4 单测）
-- [x] `engines/content.rs`：`MdxComponent` trait（name + render(attrs)）+ `ComponentRegistry`（register / lookup / list / render）+ `ContentEngine`（5 单测，含未知组件降级占位）
-- [x] `engines/moderation.rs`：`ModerationLabel` (Allow/Flag/Block) + `Verdict { score, label, reason }` + `ModerationStage` trait + 串行流水线（8 单测，含早停 / Flag 取最高分 / score 夹估）
-- [x] `engines/auth.rs`：`AuthEngine` (server-only) 包装 `AuthService`，init 读 `site_config.auth.enabled`（4 单测）
-- [x] `engines/search.rs`：`SearchDocument` 数据 + `SearchSource` trait + `SearchEngine`（collect_all / collect_filtered 按 enabled 过滤）（4 单测）
-- [x] 小计：8 引擎全部实现 `Engine` trait，核心 (`plugin/module/auth`) 可接入现有 server fn；5 占位骨架 (`theme/layout/content/moderation/search`) 为后续 Phase 2/3/4 准备 trait 契约。全部 57 个 engines::* 单测通过
-
-### 1C.5 验收门禁
-- [x] `cargo test --features server --workspace` 全绿（8 引擎 + SDK + 全部模块，总计 ~249 tests passed）
-- [x] `docs/ENGINES_SPEC.md` 完成：8 引擎职责 / 接口 / 架构图 / 生命周期 / 依赖关系 / 后续阶段路径
-- [-] 关闭 forum 模块后导航 / 搜索 / 路由均正确响应：ModuleEngine `apply_site_config` + `enabled_ids/navigation` 在单测中已验证。实际 server fn / 路由层接入（路由 404 表现 / 搜索 indexer 调用）是 Phase 3.4 路纱
+### A4 — 固化模块依赖策略文档 ✅
+- [x] `docs/MODULE_SPEC.md` 新增 §11「模块依赖规则」：允许的依赖方向 / 实现手法（插槽 + IoC）/ 当前合规边与例外（moderation）/ 新增交互决策树
 
 ---
 
-## Phase 2 — MDX 开放注册 + SEO
+## 工作流 B：SSR Hydration 优化
 
-> 目标：MDX 解析器不重写，仅开放组件注册 + SEO 一次到位。
+> 技术前提：server fn 返回类型已 `Serialize + Deserialize`；`use_server_future` 需置于 `SuspenseBoundary` 内、闭包捕获其依赖的响应式值；错误分支 fail-safe 不 panic。
+> 非 SEO / 强交互 / 鉴权页（forum 互动、admin、登录态）保持 `use_resource` 并注释理由。
 
-### 2.1 widgets crate 迁移
-- [x] 新建 `crates/widgets/`，将 `modules/blog/src/markdown.rs` 搬到 `crates/widgets/src/mdx.rs`（520 → 716 行，含 13 个新增单测）
-- [x] 移除 `markdown.rs` 对 `rustineverything-module-podcast::PodcastCard` 的直接依赖：引入 `MdxComponent` trait + 全局 `OnceLock<RwLock<ComponentRegistry>>`，podcast 模块在 `register_components()` 中注册自身
-- [x] `Blog / DocPage / Lesson / Cases / Forum / Comments` 改为从 widgets 引入 `Markdown`（6 处 import 全部迁移）
-- [x] 单测保持现有覆盖：`cargo test -p rustineverything-widgets` 全绿（19 单测：6 registry + 13 mdx），`cargo test --workspace` 全绿（278 tests passed; 0 failed）
-- [x] workspace + 6 处 Cargo.toml 注册 widgets 依赖（含 server feature 透传）；`crates/app/src/main.rs` 启动期调 `rustineverything_module_podcast::register_components()`
+### B1 — 建立模式与参照迁移（blog 详情页）✅
+- [x] `BlogInner` 拆为布局外壳 + `BlogArticle`（`routes/mod.rs:449`）；`BlogArticle` 用 `use_server_future` + `use_reactive!(|id| ...)`，置于 `SuspenseBoundary`（fallback=spinner）内
+- [x] base_url 也改 `use_server_future`；错误/空分支 fail-safe（`unwrap_or_default`，无 `unwrap()/expect()`）
+- [x] 双编译目标验证：app `--features server`（SSR）构建通过 + `cargo check -p app`（默认 web cfg）通过；clippy `-D warnings` 零告警
+- [x] 【运行时已验证 2026-06-26】`dx serve` + `curl -s /blog/welcome` → http=200、含正文、`spinnerOnly=0`
 
-### 2.2 ComponentRegistry
-- [x] `MdxComponent` trait：`name() -> &'static str` + `render(attrs: &HashMap<String, String>) -> Element`（在 widgets crate 中定义，与 core engines 的 String-返回型互补）
-- [x] `ComponentRegistry`：`register / lookup / list / clear`，全局单例 `OnceLock<RwLock<…>>` 包装
-- [x] `render_mdx_registry()` if-else 链改为纯 registry 查询（仅 5 行：提取标签名 → 解析 attrs → 查表）
-- [x] 现有 9 个嵌入组件作为默认注册项：YouTube / Bilibili / Yellow|Green|Blue|Pink|Purple / Underline / Strikethrough（`crates/widgets/src/components.rs`）
-- [x] 各模块 `register_components()`：podcast 已提供（在 Phase 2.1 已接入）。Discussion / Annotation 仍是 Dioxus 组件未以 MDX 标签形式使用，后续需要时可按同样模式补充
-- [x] 单测：3 个 components::tests （default_components_register_all_expected_names / register_default_components_is_idempotent / unknown_component_lookup_returns_none）。widgets crate 总计 22 tests，全部通过
+> 迁移配方（后续 B 任务复用）：把取数部分抽成子组件，子组件内 `let x = use_server_future(use_reactive!(|dep| async move { server_fn(dep).await }))?;`（无参数用 `|| async move {...}`），父组件用 `SuspenseBoundary { fallback: |_| rsx!{...}, Child {} }` 包裹；读取 `res()` 得 `Option<T>`，`match` 处理 Some(Ok/Err)/None。
 
-### 2.3 SEO 注入
-- [x] `PostMetadata` 扩展：image / author / canonical / date / tags（全部 `Optional` + `#[serde(default)]`，保证存量 MDX frontmatter 反序列化不报错）
-- [x] `inject_seo(meta, path, base_url) -> Element`：title / description / keywords / og:* / twitter:* / canonical / JSON-LD Article schema。加 `build_canonical` 助手 + `build_json_ld` 助手。空字段不注入。`crates/widgets/src/seo.rs`
-- [x] 内容页调用：Blog 已接入（routes/mod.rs Blog 组件）。Lesson / DocPage / CaseDetail / TopicDetail / PodcastPage 由 widgets API 提供同样 inject_seo 接口，后续可按同模式补充（各页优先级不高，未阐明是否有 frontmatter 呈现）
-- [x] `get_seo_base_url` server fn 加到 `crates/app/src/server/mod.rs`，读 `BASE_URL` env；未设置返回空串，`inject_seo` 降级为相对路径
-- [x] 单测：11 个 seo::tests （5 build_canonical / 4 json_ld / 2 inject_seo Element 返回 Ok）。覆盖：缺失字段不注入空 meta / 空字符串字段不注入 / canonical 自动生成 / canonical 显式覆盖。widgets crate 现有 33 tests、全 workspace 292 tests passed; 0 failed
+### B2 — 迁移 blog 列表页 ✅
+- [x] `BlogIndexInner` 拆为标题外壳 + `SuspenseBoundary{ BlogList }`；`BlogList`（`routes/mod.rs:252`）用 `use_server_future` 取 `list_blog_posts`，标签筛选/分页保留为客户端 signal
+- [x] 双编译目标（server + 默认 web）通过，clippy `-D warnings` 零告警
+- [x] 【运行时已验证 2026-06-26】`curl -s /blog` → http=200、含文章列表、`spinnerOnly=0`
 
-### 2.4 Sitemap & Feed
-- [x] `GET /sitemap.xml`：作为 Axum 自定义路由接入 (`crates/app/src/main.rs`)，在 server fn `list_blog_posts` 拿到文章列表后调 `build_sitemap_xml` 拼接（静态路径默认 7 项：/ /blog /podcast /course /case /docs /topics；内容路径仅博客 — doc / lesson / case / topic 等后续在 Phase 3.4 接 ModuleEngine 后补全）
-- [x] `GET /feed.xml`：博客 Atom feed（`list_blog_posts` 默认按 date desc，truncate(50) 后调 `build_atom_feed`）。读 `site.json` 拿 site_name / site_description 作为 feed 元数据
-- [x] `/robots.txt` 指向 `<base_url>/sitemap.xml`（`build_robots_txt`）
-- [x] 单测：7 个 feed::tests 覆盖 xml_escape / join_url 尾斜杠归一 / sitemap basic shape / sitemap special chars / atom feed basic / atom feed empty fields / robots.txt format。widgets crate 现 40 tests，全 workspace 299 tests passed; 0 failed
+### B3 — 迁移 5 个内容板块页 ✅
+- [x] `ai/web3/wasm/cli/embedded` 统一重写：`*IndexPage` 拆为标题外壳 + `SuspenseBoundary{ *IndexList }`（`use_server_future` 取 `list_*_articles`，筛选/搜索保留客户端 signal）；`*ArticlePage` 拆为外壳 + `*ArticleContent`（`use_server_future` + `use_reactive!(|slug|)` 取 `get_*_article`）
+- [x] app `--features server` 构建 + 默认 web check 通过；clippy `-D warnings` 零告警（5 板块 + app）
+- [x] 【运行时已验证 2026-06-26】`curl -s /ai` → http=200、含内容、`spinnerOnly=0`；web3/wasm/cli/embedded 为同一模板生成，待服务器再次运行时补 curl
 
-### 2.5 文档
-- [x] `docs/MDX_SPEC.md`：架构图 / frontmatter / GFM 语法 / 注册表机制 / 编写新组件 ≤ 30 行示例 / data-block-id / 测试概述
-- [x] `docs/SEO_SPEC.md`：inject_seo 字段表 / canonical / JSON-LD / sitemap / atom / robots
-- [x] `docs/components/<Component>.md`：10 个（README 索引 + 9 个内置 + 1 个 PodcastCard）。每个含用法 / 属性表 / 输出 HTML / 代码入口
+### B4 — 迁移 course 与 docs 页（须在 A2 之后）✅
+- [x] `course.rs`：`CoursesIndexPage`→`CoursesList`、`CourseDetailPage`→`CourseDetailLoaded`（get_course）、`LessonPage`→`LessonLoaded`（get_lesson）均走 `use_server_future`；进度/上次学习/标注层等每用户 DB交互保留 use_resource
+- [x] `docs.rs`：`Docs`→`DocsIndexInner`（list_doc_tree）、`DocPage`→`DocPageInner`（get_doc_content 走 server_future；树形导航保留 use_resource）
+- [x] 本任务不需 DB（内容均读磁盘）；app `--features server` + 默认 web check 通过，clippy `-D warnings` 零告警
+- [x] 【运行时已验证 2026-06-26】`curl -s /course`、`/docs` → http=200、含内容、`spinnerOnly=0`
 
-### 2.6 验收门禁
-- [x] `cargo test -p rustineverything-widgets --features server` 全绿：40 passed; 0 failed。2 doc-tests 标为 ignored（仅是示例代码块，正常现象）
-- [x] welcome 示例渲染一致：渲染路径未变（`render_stream` / `render_tag` 逻辑与 Phase 0 一致）。`<PodcastCard id="…" />` 从直接引用改为注册表查表，渲染出口 RSX 未变。`cargo test --features server --workspace` 299 passed，未出现回归
-- [-] Lighthouse SEO ≥ 95：需要上线部署后实测（当前本地 dev 环境不足以跨 hostname）。本地验证：inject_seo 输出调用点 + 全部 11 个 seo 单测 + 7 个 feed 单测覆盖主要路径
-- [x] 新增 MDX 组件 ≤ 50 行：`crates/widgets/src/components.rs` 中 9 个默认组件每个实现 ≤ 25 行（带文档注释）。外部模块贡献示例：`crates/modules/podcast/src/lib.rs::PodcastCardComponent` 含 register 也只 ≤ 30 行
+### B5 — 迁移 cases 页 ✅
+- [x] `CaseDetailPage`→`CaseDetailLoaded`（get_case 走 `use_server_future`）；`CasesIndexPage` 结果网格抽为 `CasesGrid`（`use_server_future` + `use_reactive!(|query,category,tag|)`，筛选 signal 作 prop），搜索/标签/分类 UI chrome 保留客户端
+- [x] app `--features server` + 默认 web check 通过，clippy `-D warnings` 零告警
+- [x] 【运行时已验证 2026-06-26】`curl -s /case` → http=200、含列表、`spinnerOnly=0`
+
+### B6 — 评估 App 级与非内容页 ✅
+- [x] 结论：`get_aggregated_theme_css` 与 `get_current_user` 均保留 `use_resource`（App 根不宜整体挂起；登录态不宜烘进可缓存 HTML），已在 `main.rs` 加详细理由注释
+- [x] forum (`TopicsIndexPage`) / admin (`AdminDashboardPage`) 加保留 `use_resource` 的理由注释（强交互/鉴权、非 SEO）
+- [x] app `--features server` 构建 + clippy `-D warnings` 零告警；全工作区 `cargo test --features server --workspace` 全部通过（0 failed）
 
 ---
 
-## Phase 3 — 主题 / 模块开关配置化
+## 验收状态（2026-06-26）
+所有任务（P0 / A1–A4 / B1–B6）已完成并逐个提交（无共同作者行）。
+- 模块解耦：forum 不再依赖 blog/course；docs 不再依赖 course/forum/blog；search 经 core IoC 注册表解耦 cases；策略写入 `MODULE_SPEC.md` §11。
+- SSR：blog（列表+详情）、5 内容板块、course（列表/详情/课时）、docs（首页+详情）、cases（列表+详情）均迁到 `use_server_future` + `SuspenseBoundary`；鉴权/强交互页保留 use_resource 并注释理由。
+- 验证：双编译目标（server + 默认 web）构建、clippy `-D warnings` 零告警、全量测试 0 failed。
 
-> 目标：站点形态完全由 site.json 决定。Layout 简化为 1 默认 + 1 备选。
-
-### 3.1 ThemeEngine 完整实现
-- [x] 主题栈 `themes: ["base", "ocean"]`，后者覆盖前者：`SiteConfig.themes` 新字段 + `theme_stack()` 语义函数（`active_theme` 作为单层 fallback），`ThemeEngine::apply_site_config` 按栈装填插件路径
-- [x] 用户 navbar 切换主题 + cookie 持久：`set_user_theme` / `list_available_themes` server fn（写 `Set-Cookie: site_theme=...`）+ `theme_with_override` 纯函数覆盖栈最后一项，`ThemePicker` 组件振插到 Navbar，`ThemeVersion` Signal 迫上层 `use_resource` 重拼 CSS
-- [x] 单测 16 个：`SiteConfig` (5) + `ThemeEngine::apply_site_config/theme_with_override` (11)。`cargo test --features server --workspace` 311 passed; 0 failed
-
-### 3.2 新主题插件（2 个即可）
-- [x] `theme-sunset`（暖色调，dark + light）：`crates/plugins/theme-sunset/` cdylib，导出 `get_manifest`(capability=THEME) + `get_theme_css`，提供 6 个 CSS 变量的 light + dark 双模
-- [x] `theme-catppuccin`（Catppuccin Macchiato，dark + light）：Latte (light) + Macchiato (dark) 调色板，同样 6 变量输出
-- [x] `scripts/build_themes.sh` 一键构建：默认全量构建三主题，可传参选量构建（`./scripts/build_themes.sh sunset`）；`CARGO_TARGET_DIR=/Users/hal/.target` + 自动检测/安装 `wasm32-unknown-unknown` target；产物拷到 `assets/plugins/theme_*_plugin.wasm`（验证：3 个 wasm 文件输出 ≈ 26 KB）
-
-### 3.3 Layout 精简
-- [x] 从现有 Navbar/Footer 抽出 `ClassicLayout`（默认）：`crates/app/src/components/layouts/classic.rs::ClassicShell`，完整保留原有 Logo+主导航+右侧工具+Footer，嵌入 `Outlet::<Route>`
-- [x] `MinimalLayout`（极简，无 Footer / 单层 Navbar）：`crates/app/src/components/layouts/minimal.rs::MinimalShell`，仅顶部紧凑条 (Logo + 搜索 + ThemePicker + 语言 + 暗色 + 用户菜单)，不渲染主导航与 Footer
-- [x] LayoutEngine 切换：`LayoutEngine::init` 读 `SiteConfig.active_layout_or_default()`；new server fn `get_active_layout` 返回 site.json 该字段；`Navbar`(Routable layout 入口) 重写为分发组件，use_resource 拉实际布局名后选染 `ClassicShell` / `MinimalShell`。admin 设置页 UI 推迟到 Phase 5 (不阻塞)
-
-### 3.4 模块开关
-- [x] `site.json::modules.{blog,podcast,course,forum,cases,docs,...}.enabled`：6 个内置模块通过 `default_module_specs` 注册，`default_module_engine()` 读取 `SiteConfig.modules` 覆盖 enabled
-- [x] 关闭后：导航隐藏（`ClassicShell` 按 `enabled_module_ids` 拼接 nav）/ 搜索源剔除（`collect_documents` + 纯函数 `filter_documents_by_enabled`）/ sitemap 不收录（静态路径与 blog 条目均按开关拼接）/ 路由门禁（`ModuleGate` 组件渲染「模块已停用」占位，替代 404）
-- [x] 单测：3 个 default specs 测试 + 3 个 search filter 测试 + 1 个 forum-disabled 全消费者一致性测试
-
-### 3.5 文档
-- [x] `docs/THEME_SPEC.md`（架构图 / 主题栈 / cookie 覆盖 / ThemePicker / 主题插件 ABI / 构建脚本 / 布局 / site.json 集成 / 测试覆盖）
-- [x] `docs/MODULE_SPEC.md`（ModuleSpec / ModuleEngine / 6 内置模块清单 / site.json 控制 / 与 nav/search/sitemap 集成 / 关闭示例 / 测试覆盖）
-
-### 3.6 验收门禁
-- [x] 关闭 forum 编译通过、路由不漏：`assets/site.json` 注入 `modules.forum.enabled = false` 后 `cargo check --features server -p rustineverything-app` 成功；`disabling_forum_propagates_to_all_consumer_views` 单测验证 is_enabled / navigation / enabled_ids / enabled_modules 一致
-- [x] 2 主题 + 2 布局切换正常 + 持久：Phase 3.1-3.3 已在 `theme_with_override` (11 单测) + `LayoutEngine` (4 单测) + 主题栈 (5 SiteConfig 单测) 覆盖；3 个主题 wasm 已构建到 `assets/plugins/`，2 个 layout shells 已实现并由 `Navbar` 分发；cookie 覆盖路径在 server fn `set_user_theme` + 单测中验证
+## 运行时验证补充（2026-06-27）
+- DB 环境：`apple container` 起 `rie-postgres`（凭据解自 `.env::DATABASE_URL`），`dx serve` 启动迁移成功（9 表）。
+- SSR 首屏：`/blog`、`/blog/welcome`、`/ai`、`/case`、`/docs`、`/course` 均 http=200、含正文、`spinnerOnly=0`。
+- DB 功能（评论/标注读取路径）：插入样本后 `POST /api/comments/list`、`/api/annotations/list`、`/api/annotations/config` 均返回 200 + 正确数据（含 users 关联解析的作者名）。
+- 残留（可选，需重启 dx serve）：web3/wasm/cli/embedded 单独 curl；浏览器 Console 确认无 hydration mismatch 警告。
 
 ---
 
-## Phase 4 — 内容审核（LLM/VLM）
+## 依赖与排序
 
-> 目标：评论/话题/上传走统一审核流水线。全部走模型，不用规则关键词。
-
-### 4.1 ModerationEngine 实现
-- [x] `ModerationStage` trait：`evaluate(submission) -> StageVerdict`（Phase 1C.4）
-- [x] `Verdict { score, label: Allow|Flag|Block, reason }`（Phase 1C.4）
-- [x] Pipeline 串行 + 早停（Phase 1C.4）
-- [x] 阈值配置：`block_above` / `flag_above`（`ModerationThresholds`，默认 0.9 / 0.5；pipeline 输出后统一升级 Verdict label；7 个新单测覆盖 default / 各方向升级 / 不降级 Block / engine 自定义阈值）
-- [x] **阈值 schema 校验**：`ModerationThresholds::validate()` 校验 `[0,1]` 范围、非 NaN、`block_above >= flag_above`；`ModerationPipeline::from_site_config` 装载 site.json 阈值时调用，非法值回退默认 + warn 日志（4 个新单测：合法 / 越界 / block<flag / NaN）
-
-### 4.1.5 LLM 双模式客户端（Phase 4 / 5 前置）
-- [x] `crates/llm/`（**独立 crate**，不在 core）：OpenAI 兼容 + Anthropic 兼容双协议，配置驱动选择（无运行时 failover）。四个独立 env：`OPENAI_LLM_BASE_URL` + `OPENAI_LLM_API_KEY`、`ANTHROPIC_LLM_BASE_URL` + `ANTHROPIC_LLM_API_KEY`，可选 `OPENAI_LLM_MODEL` / `ANTHROPIC_LLM_MODEL`（默认 `deepseek-chat`）。Anthropic 客户端自动把 `system` 角色抽取到顶层 + 校验 conv 以 user 起始 + 处理 `max_tokens` 必填语义。**架构**：core 保持精简，不再背 `reqwest` / `async-trait` / `mockito` / `dotenvy`；纯静态部署不依赖本 crate
-- [x] 测试：46 个 mockito 单测（含多模态 wire format 验证）+ live 集成测试（实测 OpenAI gpt-4o-mini + DeepSeek anthropic 兼容均通过）。Mock 客户端用 `.no_proxy()` 遵循项目约定
-- [x] **多模态扩展**：`LlmMessage.content` 改为 `Vec<LlmContentBlock>`（Text / ImageUrl / ImageBase64）。OpenAI 客户端单 Text → 字符串形态（兼容老 provider）/ 含图 → 数组形态；Anthropic 始终数组形态 + 自动 data URL → base64 source 拆分。**反序列化兼容**：自定义 `Deserialize` 接受字符串或数组，老插件 wasm 不用重建
-- [x] **base_url 智能 endpoint**：容忍 `https://api.openai.com` 和 `https://api.openai.com/v1` 两种写法，不重复拼 `/v1`
-- [x] 文档：`docs/LLM_SPEC.md` + `.env.example` 4 个新变量段落
-
-### 4.2 模块接入
-- [x] 评论 → ModerationEngine hook：`crates/modules/comments/src/server.rs::post_comment` 在 DB 写入前调 `evaluate_submission`，Block → ServerFnError，Flag → warn log + 继续，Allow → 正常。markdown 图片自动抽取（`![alt](url)`）→ `ModerationSubmission.images`，相对路径 `/uploads/x` 自动 absolutize 为 `<BASE_URL>/uploads/x` 给 vision LLM
-- [x] 话题 / 回复 → ModerationEngine hook：`forum/src/server.rs::create_topic` 把标题 + 正文合并审核；`post_reply` 仅审正文。共用 `moderate_or_reject` helper
-- [x] 超时/失败 = fail-open：pipeline 每个 stage 内部 fail-open（已在 `PluginModerationStage` 落地）。默认 `site.json::moderation.enabled = false` → pipeline empty → 零开销 Allow
-- [x] 标注 hook：`course/server.rs::create_annotation` 在写库前评估 `note` 字段（只对非空 note 调审核；`exact_text` 是被引用原文，不审）。Block → ServerFnError；Flag → 业务行入库后入审核队列（annotation.id 是 i64 BIGSERIAL，原生匹配 queue.ref_id）。ref_path = `{resource_kind}:{resource_path}`，方便 admin 跳回原文
-- [x] 上传 hook：`uploads/server.rs::upload_image` 在 **写盘前** 用 base64 data URL 调 vision LLM。Block → 直接返回错误，**文件不落盘**（最严格的零驻留语义）；Flag → 写盘后入审核队列，admin 看到保存后的 `/uploads/...` URL 可直接预览图。ref_id = None（upload 无独立业务表，admin 通过 ref_path 找文件 → 拒绝时手动删 + DB queue 标记）
-- [x] **XSS 防护**：`crates/widgets/src/sanitize.rs::sanitize_user_html` 在 cmark 解析前剥离 `<script>` / `<iframe>` / `<object>` / `<embed>` / `<style>` 块 + `on*=` 内联事件 + `javascript:` / `data:text/html` 协议；`Markdown` 组件新增 `untrusted: bool` prop，已在评论 + 论坛话题/回复/预览 5 个站点开启；UTF-8 安全，15 个单测覆盖（含大小写变体、polyglot payload、误伤防护）
-- [x] **MDX `dangerous_inner_html` 审计**：全工作区仅 2 处（`crates/widgets/src/mdx.rs:184, 190`），数据来源均为 `latex_to_mathml_string`（pulldown-latex 库结构化输出），不含用户字面回显；用户内容 **不会**走该路径。审计结论与升级注意事项记录到 `docs/MODERATION_SPEC.md §1.4`
-
-### 4.3 ModerationProvider WASM ABI
-- [x] ABI 落地为两个函数（与 Todos.old 设计微调）：`moderation_build_prompt(submission_json) -> Vec<LlmMessage>` + `moderation_parse_verdict(llm_text) -> Verdict`。插件管 policy（prompt + 解析），宿主管 transport（HTTP/超时/鉴权/协议）。SDK 加 `ModerationSubmission` / `ModerationVerdict` 类型 + fn name 常量 + `MODERATION_PROVIDER` capability。`crates/modules/moderation/` 新 crate 实现 `AsyncModerationStage` + `PluginModerationStage` + `ModerationPipeline`，复用 `crates/llm/` 做 HTTP（统一 OpenAI / Anthropic 双协议）
-- [x] 宿主负责 HTTP + 超时 + 重试：通过 `crates/llm::LlmClient`，默认 timeout 30s。fail-open 策略：插件加载失败 / LLM 失败 / JSON 解析失败 → 当前 stage 返回 Allow + 写 warning 日志，不阻塞用户提交
-
-### 4.4 内置审核插件
-- [x] `examples/plugin-moderation-deepseek`：示例审核插件（适配任意 OpenAI / Anthropic 兼容 LLM）。系统 prompt 让模型输出 `{score, label, reason}` JSON；带 markdown 围栏抽取容错；9 个 host 端单测；wasm 产物 158 KB。**多模态升级**：消费 `ModerationSubmission.images`，把 URL 块追加到 user message，prompt 加入图像审核维度。**URL 上下文增强**：扫描评论文本中的链接，作为 `[包含链接: ...]` 注入 user message，system prompt 加入「域名仿冒 / 短链诱导 / 上下文与链接目的不符」判定维度。**已实测端到端**（OpenAI gpt-4o-mini）：纯文本 benign → Allow(0)，纯文本 abusive → Block(1.0)，带图（Rust logo）→ Allow(0)，仿冒 PayPal 链接 `paypa1-security.com` → Block(1.0, "域名拼写仿冒知名品牌")
-
-### 4.4.5 链接检测（两层方案）
-- [x] **Layer 1** `UrlBlocklistStage`（host-native sync stage，不是 wasm）：手写 URL 扫描（不引 regex 依赖）+ host 提取 + 模式匹配（精确 / `*.wildcard.com`），命中即 Block(1.0)，不烧 token。`site.json::moderation.url_blocklist` 配置；默认空 → 不注册 stage 零开销。实测：`scam.example` 精确 + `*.phishing.example` 通配均正确 Block
-- [x] **Layer 2** 插件 prompt 升级：plugin 内独立 URL 扫描（与 host 同算法但不依赖该 crate），把 URL 列表作为上下文注入 user message；system prompt 增加 6 类「链接风险」判定维度。实测仿冒 PayPal 域名 → Block
-- [x] 测试：18 个 host 单测（URL 扫描 / host 提取 / pattern 匹配 / stage 集成 / pipeline 集成）+ 4 个插件单测（URL 扫描）+ 2 个 live 测试
-- [ ] 后续：`moderation-anthropic`（Claude 视觉）/ `moderation-llamaguard`（本地 ollama fallback）— 待按需追加，ABI 已稳定
-
-### 4.5 数据库 + Admin
-- [x] `moderation_queue` 表（一表多用，覆盖 log + queue 两个用例）：14 列含 kind / ref_id / ref_path / user_id / content 快照 / images JSON / score / label / reason / status / reviewer / created_at / reviewed_at；两个索引（status+created_at、kind）；外键 ON DELETE SET NULL。新 SeaORM 实体 + sea-orm-migration `m20260530_000002_moderation_queue`。`scripts/repair_seaql_migrations.sh` 给已有 init.sql 部署一键补齐迁移记录
-- [x] Admin 复核页 `/admin/moderation`：列表（Tab: 待复核/已通过/已拒绝/全部）+ 每行展示状态徽章 / 类型 / 路径 / 作者 / 评分百分比 / 理由 / 内容快照 / 图片缩略图；待复核行带「通过」「拒绝（删除内容）」两个操作。Dashboard 概览新增 `moderation_pending_count` 统计
-- [x] Hook 升级：comment / topic / reply 业务行落库后调 `enqueue_if_flagged`；Block 仍在前置拒绝，Flag 入队 pending；Allow no-op。3 个 server fn：`admin_list_moderation_queue` / `admin_approve_moderation` / `admin_reject_moderation`（reject 同时按 kind+ref_id 删除业务记录）
-- [x] 测试：3 个 live DB 测试验证 Allow no-op / Flag 入队 +1 / Block no-op（实跑 postgres，自带 schema bootstrap fallback）。workspace 全测 470+ passed
-- [x] **批量复核**：`admin_bulk_approve_moderation(ids)`（单条 UPDATE…WHERE id IN）+ `admin_bulk_reject_moderation(ids)`（逐条删业务内容 + 标 rejected，复用 `reject_one` helper）；`/admin/moderation` 加全选/单选 checkbox + 「批量通过」「批量拒绝（删除内容）」操作栏
-- [x] **作者违规历史聚合**：`admin_list_moderation_queue` 对本页内容作者聚合其队列累计命中数 + 已拒绝（确认违规）数，行内以徽章展示「历史 N 次命中 / M 次确认违规」，便于识别惯犯
-- [x] 阈值配置 admin UI 在线编辑：`AdminModerationSettingsPage`（路由 `/admin/moderation/settings`）+ 2 个 server fn `admin_get_moderation_settings` / `admin_set_moderation_settings`。表单含 enabled 总开关 / flag_above + block_above 数值输入（带客户端 + 服务端双重校验：0–1 范围、flag ≤ block）/ plugins textarea（一行一个 wasm 文件名）/ url_blocklist textarea（host 模式 + 拒 scheme + 拒空白）。写盘走「read full site.json 为 serde_json::Value → 仅替换 moderation 子树 → tmp+rename」保留 SiteConfig struct 未声明的人工字段；保存后自动 `shared_plugin_manager().invalidate_all()` + `module_moderation::reload_pipeline()` 即时生效，无需重启。10 个 server 校验/写盘单测 + 6 个 admin 表单 helper 单测；clippy `-D warnings` 全绿
-
-### 4.6 文档
-- [x] `docs/MODERATION_SPEC.md`：XSS 攻击面审计 / sanitize_user_html / dangerous_inner_html 审计 / ModerationEngine 骨架 / Phase 4.3-4.5 路线图 / 安全清单
-
-### 4.7 验收门禁
-> 用 `.env` 的 OpenAI 配置(gpt-4o-mini)实跑 `crates/modules/moderation/tests/{live_pipeline,hook_e2e}.rs` 的 7 个 `#[ignore]` live 用例,全过。
-- [-] 审核 P95 ≤ 1.5s：实测 gpt-4o-mini 纯文本调用 ≈1.4–1.8s/次(live_pipeline 5 例含纯文本+视觉+黑名单 7.25s);纯文本基本达标,视觉略高。数值随 provider/model 浮动,正式 P95 需在目标部署模型上测
-- [x] 模拟违规 → Block/Flag 正确：benign 文本→Allow、abusive 文本→Block/Flag、benign 图片(视觉)→Allow、钓鱼链接→Block/Flag、URL 黑名单→Block、full-pipeline hook abusive→Block —— 7 例全过(实跑 OpenAI)
-- [x] LLM 失败不阻塞用户：fail-open 由离线用例 `disabled_pipeline_allows_anything_including_abusive` + 各 stage 内部 fail-open 覆盖(默认 `moderation.enabled=false` → 空流水线 → 零开销 Allow)
+- P0 最先；P1 在首个需要 DB 的任务前按需执行。
+- **A2 必须在 B4 之前**（docs 插槽改造影响其 SSR 迁移）。
+- 建议顺序：P0 → A1 → A2 → A3 → A4 → B1 → B2 → B3 → B4 →（按需 P1）→ B5 → B6。
 
 ---
 
-## Phase 5 — 插件生态
+# 新阶段 — 站点重设计：双生态首页 + 导航 + 付费课程
 
-### 5.1 Hot Reload
-- [x] admin 上传 wasm → 沙箱校验 → 替换 → PluginEngine reload：`admin_upload_plugin` server fn。流程：`safe_plugin_filename` 清洗（杜绝路径穿越/强制 `.wasm`/小写）→ base64 解码 + 16MB 上限 → `PluginManager::validate_plugin_bytes`（临时 wasmi Store 编译 + 实例化 + 校验 `memory`/`alloc`/`dealloc` 导出）→ 读 `get_manifest` 校验 ABI 版本 → 备份旧文件 `<name>.bak` → 写 `<name>.tmp` 后 `rename` 原子替换 → `shared_plugin_manager().invalidate(path)`。主题/i18n/auth 经 mtime 缓存 + invalidate 下次调用即重载；审核插件额外触发 `reload_pipeline()`
-- [x] 失败回滚到上一版本：校验失败时文件未落盘（隐式回滚）；写盘/rename IO 失败时清理 tmp + 从 `.bak` 恢复原文件
-- [x] **验证 Hot Reload 时的内存回收**：`reload_pipeline()` 把 `OnceLock<Arc<Pipeline>>` 改为 `OnceLock<RwLock<Arc<Pipeline>>>`，替换后旧 pipeline（连同其 `PluginManager` 缓存的 wasmi `Module`）引用归零即 Drop。`PluginManager::invalidate` 从 HashMap 移除条目 → 旧 `Module` 句柄 Drop。`test_reload_evicts_old_module_cache_stays_bounded`：50 次 reload 后缓存条目恒为 1（不累积）
-- [-] 测试：连续 1000 次 reload 后 RSS 涨幅 ≤ 50MB：单测用 50 次循环 + 缓存边界断言作代理（确认 Module 不在缓存层累积）；完整 RSS 长跑监测属运维验证，记录在 `docs/OPERATIONS.md`
+> 设计文档：[`docs/SITE_REDESIGN_SPEC.md`](docs/SITE_REDESIGN_SPEC.md)。
+> 定位：Rust 工业用途社区，围绕 **Rust 生态 + AI 生态** 两大支柱；案例为差异化核心，课程为变现核心。
+> 已完成（前置 UI 修复）：导航断点回退 lg + 首页模块卡网格（提交 `fix(ui): restore desktop nav...`）。
 
-### 5.2 示例插件（3 个核心）
-- [x] `examples/plugin-theme-purple`：自定义主题 demo（~30 行 + 4 host 端单测；wasm 产物 26 KB，与内置主题一致；workspace 已注册）
-- [ ] `examples/plugin-auth-feishu`：飞书登录（需要飞书 OAuth 真实凭据，留待后续）
-- [ ] `examples/plugin-moderation-haiku`：Claude Haiku 轻量审核（待 Phase 4.3 ABI 落地 + API key 配置后实现）
+## M1 — 导航重构：双生态 mega 菜单 ✅
+- [x] taxonomy 单一源 `crates/app/src/taxonomy.rs`（rust={embedded,web3,wasm,cli}，ai={llm,inference,agent,rust-ai}；backend 与 AI 子领域筛选留 M3）
+- [x] `classic.rs` 顶层改为 `Rust 生态▾  AI 生态▾  案例  课程  博客  论坛`；播客并入移动抽屉；保留右侧控件；新增 on_course gating
+- [x] `EcosystemMenu` 组件（`components/ecosystem_menu.rs`）：三栏（应用领域 / 学习资源 / 生态简介+精选案例 CTA），纯 CSS group-hover + group-focus-within 展开
+- [x] 响应式：<lg hamburger 抽屉内按生态分组（标题+领域）+ 内容入口；桌面/移动均浏览器验证（M1 用分组列表，accordion 折叠 + Esc 关闭留作打磨）
+- [x] i18n 新键 `nav.eco.*` / `mega.*` / `nav.ai.*` / `nav.course/web3/wasm/cli`（zh/en parity 通过）；重建 minified CSS（root==crate）；clippy 新代码零告警
+- 备注：精选案例列 M1 用静态 CTA，M2/M3 接 `cases.favorite` 实时数据。
 
-### 5.3 文档
-- [x] `docs/PLUGIN_DEV.md`：从零开发插件（30 分钟上手 / 主题 i18n auth 模板 / 调试技巧 / 体积建议 / 发布清单 / 后续路线图）
-- [x] `docs/PLUGIN_ABI.md`：ABI 规范 + 版本兼容性（导出函数 / 数据打包 / 能力路由 / 错误处理 / 安全模型 / 当前内置插件清单）
+## M2 — 首页重排
+- [x] Hero 文案/CTA 更新（查看案例 + 查看课程 + 进入文档）— 提交 `feat(home): hero CTAs + dual-ecosystem pillars`
+- [x] `EcosystemPillars`（Rust 生态 | AI 生态 两张大卡 + 子领域 chips，链接领域路由）
+- [x] 现有 11 卡模块网格下移为「按领域浏览」（home.browse.*）
+- [x] `FeaturedCases`（`list_cases` + `favorite` 取 6，CaseCard 含封面/分类徽章/stars/描述）— 提交 `feat(home): featured cases + course showcase`
+- [x] `CourseShowcase`/`CourseCard`（cover/级别/课时数；资源徽章 🎬📄🎧💻 + 价格/层级留 M4）
+- [x] `CommunityFeed`（最新博客 use_server_future + 论坛热帖 use_resource，2 列）— 提交 `feat(home): community feed + richer footer`
+- [x] footer 加厚（品牌简介 + 内容 / 社区 分栏 + 底部版权条）
+- M2 完成：首页 Hero → 两大生态 → 精选案例 → 课程 → 社区动态 → 按领域浏览 → 加厚 footer，全部浏览器验证。
 
-### 5.4 验收门禁
-- [ ] 自测 30 分钟内做出新主题
-- [x] admin 上传 wasm 不需重启：`admin_upload_plugin` 原子替换 + 失效缓存，主题/i18n/auth 下次调用重载，审核插件触发 `reload_pipeline()`；`admin_reload_plugins` 一键清空全部缓存 + 重建审核流水线
-- [x] ABI 不兼容被拒绝并提示升级：上传时读 `get_manifest`，`!manifest.is_compatible()` → 返回「ABI 版本不兼容：期望 N，得到 M。请用最新 SDK 重新构建。」
+## M3 — 分类法统一（部分完成）
+- [x] `cases.category` → 生态派生映射（taxonomy::ecosystem_of_case_category，单一来源）— 提交 `feat(taxonomy): ecosystem landing pages`
+- [x] 生态落地页 `/ecosystem/:id`（生态简介 + 领域入口 + 该生态精选案例过滤）；pillars 加「进入生态」入口
+- [x] 领域 board（/embedded /ai /web3 /wasm /cli）保留为领域落地页（M1 起即由导航/pillars 指向）
+- [ ] 延后（内容相关）：`ecosystem/domain` 标签贯通 docs/blog/course；`/ai` 子领域 tag 化筛选（需先给 ai 文章打 llm/inference/agent/rust-ai 标签）
 
-### 5.5 插件市场（开源后启用，优先级低）
-- [ ] `assets/plugins/registry.json` 已审核插件清单（外部插件市场清单，开源后做）
-- [x] `/plugins` 前端浏览页：公开页，列出已安装且声明 manifest 的插件（name / id / version / description + 能力徽章 + ABI 兼容标识）。`list_public_plugins` server fn 扫 `assets/plugins/*.wasm` 读 manifest（无 manifest 老插件跳过，无需登录）。已浏览器实测：9 个插件正确分组展示（4 登录 / 多语言 / 审核 / 3 主题），0 console error
-- [ ] 提交审核流程文档（开源后做）
+## M4 — 课程付费地基（不接网关也能线下售卖）
+- [x] `course.yaml` 加 `access_tier`(free|paid|pro)/`price`/`currency`；Lesson frontmatter 加 `preview`（首页 CourseCard 显价格徽章；rust-basics 示例 paid）— 提交 `feat(course): access tier + preview metadata`
+- [x] Entitlement 表（SeaORM 实体 + 迁移）+ server fns（mine/list/grant/revoke）— 提交 `feat(course): entitlements table + server fns`
+- [x] 访问控制：get_lesson 服务端校验 `free || preview || has_entitlement || admin`，锁定时清空内容 — 提交 `feat(course): access control + paywall`
+- [x] Paywall 组件（锁定课节）+ 课程目录 试看/🔒 标记
+- [x] Admin 手动授权页 `/admin/entitlements`（列表 + 授予 + 撤销）— 提交 `feat(admin): manual course entitlement grant page`
+- M4 完成：付费课程内容模型（已有）+ access_tier/preview + entitlements 表 + get_lesson 服务端鉴权 + Paywall + Admin 授权。线上支付留 M5。
 
----
+## M5 — 支付集成（微信支付 + 支付宝，国内）
+> 设计：[`docs/PAYMENT_SPEC.md`](docs/PAYMENT_SPEC.md)。前置：两网关企业商户号 + 备案 HTTPS 域名。
+- [x] **M5a** `orders` 实体 + 迁移；`create_order` / `query_order` server fn（建单 + 状态机；网关 stub）— 提交 `feat(course): orders table + create/query order`
+- [x] **M5b** 支付宝接入（page/wap/precreate + `/api/pay/alipay/notify` 验签发货，Axum 原生路由；RSA2 签名/验签单测）— 提交 `feat(pay): Alipay integration`。⚠️ 待沙箱+真实密钥端到端验证
+- [x] **M5c** 微信支付 v3 接入（native/h5 + `/api/pay/wechat/notify` 验签+AES-256-GCM 解密；回调用公钥模式）— 提交 `feat(pay): WeChat Pay v3`。⚠️ 待真实商户号端到端验证；平台证书轮换模式可后续扩展
+- [x] **M5d** PurchaseModal（选网关 + 跳转/二维码 + 手动刷新解锁）接到 Paywall — 提交 `feat(pay): PurchaseModal`。happy path 待登录+网关凭据
+- [x] **M5e** 我的订单页（/me/orders）+ 课程详情购买入口（含已拥有判断）+ 用户菜单入口 — 提交 `feat(pay): my-orders page + course-detail buy entry`
+- [x] **M5e-对账（payment 侧，2026-08-04）** 查单能力：alipay `alipay.trade.query`（ACQ.TRADE_NOT_EXIST → 非成功事件供安全关单）+ wechat `GET /v3/pay/transactions/out-trade-no`（GET 空体签名）落在 trait 预留的 `build_query/parse_query` 上；`host::execute_query`；`OrderStore` 扩 `list_stale_pending`/`close_order`；`reconcile.rs`（成功→统一流水线回填；未支付超窗→条件关单，竞态让位回调；查单错误绝不误关）；payment 33 测（+9：查单解析×2 + 对账决策/回填/关单/竞态/金额拒/otn 防御）
+- [x] **M5e-对账（接线，2026-08-04）** course `reconcile_pending_orders_once`（`server.rs:1845`：单轮≤50 单，逐单查网关→回填/关单；Unconfigured 静默跳过，查询失败绝不误关）+ app main.rs 启动期 tokio 定时器（server+payments 门控；PAY_RECONCILE_INTERVAL_SECS 默认 300s 下限 60s，MIN_AGE 300s，CLOSE_AFTER 7200s，PAY_RECONCILE_DISABLED=1 关）；.env.example 补支付对账开关段；双组合（含 no-payments server）编译 + clippy 零告警
+- [x] **M5e-退款（2026-08-04）** trait 新增 `build_refund/parse_refund`（默认 Unsupported）+ 中立 `RefundRequest/RefundResult`（success|processing 受理）；alipay `alipay.trade.refund`（同步到账，fund_change Y/N 均幂等视为已退）+ wechat `/v3/refund/domestic/refunds`（PROCESSING 即受理，异步到账）；`host::execute_refund`；course `admin_list_orders`（最近 100 条含昵称）+ `admin_refund_order`（仅 paid；退款单号 `{otn}R1` 网关幂等；受理后条件 UPDATE paid→refunded + 撤销 source=purchase 权益，admin_grant 不动；pay_audit 留痕含操作人）；/admin/entitlements 新增「订单/退款」区块（payments 门控）；payment 36 测（+3 退款）；⚠️ 真实网关端到端验证仍待商户凭据
+- 约定：验签是发货前提；金额核验；以 out_trade_no 幂等；回调可重入；密钥经 .env 校验不回显。
+- M5 核心完成（M5a–M5d）：双网关下单 + 回调发货 + 购买 UI 全链路打通（服务端单测覆盖签名/验签/解密）。⚠️ 上线需真实商户号 + 公网 HTTPS 回调端到端验证。
 
-## Phase 6 — 内容板块扩展
+## M6 — Pro 订阅会员 ✅
+- [x] **M6a** memberships 表 + 实体 + 迁移；is_pro_member；纯函数 can_access_lesson（pro 课程允许有效会员）接入 get_lesson；单测 — 提交 `feat(course): Pro membership model + access control`
+- [x] **M6b** my_membership + admin 授予/续期/撤销/列表 + Admin「Pro 会员」区块 + 我的订单页会员横幅 — 提交 `feat(pay): Pro membership management + display`
+- [ ] 余项（需网关/订阅模型）：会员**自助购买**（订阅下单，扩展 order 产品类型）+ 自动续费
+- 当前可用：运营在 /admin/entitlements 手动开通 Pro 会员（解锁全部 pro 课程）。
 
-> 每模块遵循 `lib.rs + <name>.rs(UI) + server.rs + text.rs` + 单测 ≥ 12。
-
-### 6.1 ~ 6.5 新模块
-> 5 个**独立 crate**（用户选定，接受结构重复），统一形态：`lib.rs + <board>.rs(UI) +
-> server.rs(扫 `assets/topics/<board>/*/index.md`) + text.rs(子主题/精选 crate/搜索/排序 +
-> 15 单测)`。落地页 = 子主题筛选 chip + 搜索 + 文章卡片 + 精选 crate 侧栏；详情页复用
-> `widgets::Markdown` 渲染。导航用 `<a href>` 避免对 app `Route` 循环依赖。
-- [x] `modules/embedded`：嵌入式（no_std / Embassy / RTIC / HAL / defmt / 平台）；2 篇真实长文（no_std 入门、Embassy 异步固件）
-- [x] `modules/ai`：AI（张量 / 推理 / LLM / tokenizers / 训练 / 向量）；真实长文（candle 本地 LLM）
-- [x] `modules/web3`：Web3（EVM / Solana / Substrate / 合约 / 钱包 / 索引）；真实长文（alloy 读链上状态）
-- [x] `modules/wasm`：WASM（wasm-bindgen / WASI / 组件模型 / 运行时 / 前端 / 插件）；真实长文（wasmtime 插件沙箱）
-- [x] `modules/cli`：CLI（参数 / TUI / 输出 / 配置 / 测试 / 分发）；真实长文（clap derive 子命令）
-- [x] 接线：workspace + app Cargo.toml、`default_module_specs`（nav 50–90）、app routes（落地 + `/<board>/:slug` 详情，复用原 `/ai` `/web3` 占位）、ClassicShell nav、sitemap + feed
-
-### 6.6 Cases 联动
-- [x] 按 module 自动归类：cases 用 `category`（embedded/ai/web3/cli）+ tag（wasm）归类，`list_cases(tags, category, q)` 过滤；按板块筛选即得该域案例
-- [x] 每板块至少 3 个真实案例（2026-05-29 补 15 个真实 Rust 项目 case：embedded=Embassy/RTIC/probe-rs，ai=Candle/Burn/tch-rs，web3=Foundry/Reth/Alloy，cli=ripgrep/bat/Starship，wasm=wasm-bindgen/Yew/Wasmtime；各域 ≥3，含真实 repo/作者元数据 + 中文 README）
-
-### 6.7 验收门禁
-- [x] 5 模块 `cargo test -p` 通过：每个 15 单测（13 text + 2 server）全绿
-- [x] ModuleEngine 一键开关：`site.json::modules.<board>.enabled` 控制 nav / 路由 gate / sitemap / feed
-- [x] sitemap / feed 包含新模块内容：`/sitemap.xml` 与 `/feed.xml` 均按开关收录 5 板块静态路径 + 文章条目（feed 全站按日期降序取最近 50）
-- [x] 搜索源接入：`indexer.rs::collect_boards()` 扫 `assets/topics/<board>/*/index.md`，5 板块文章进 Tantivy 索引（kind = 板块 id，url `/<board>/<slug>`）；`collect_documents` / `filter_documents_by_enabled` 按模块开关门禁（关板块即从搜索剔除）；搜索结果加靛蓝板块徽章 + 占位符提示「专题」。1 个新单测覆盖板块门禁
-
----
-
-## Phase 7 — 可部署上线
-
-### 7.1 数据库 Migration
-- [x] `crates/migration`（sea-orm-migration 1.1），替代 `init.sql`：单 migration `m20260527_000001_initial_schema` 覆盖 users / comments / user_identities / course_progress / annotations / topics / topic_replies 共 7 张表 + 全部索引 + 外键 ON DELETE CASCADE，列名/类型与 `crates/core/src/entities/*` 实体严格对齐。后续 schema 变更按 `m<YYYYMMDD>_<seq>_<slug>.rs` 追加；`Migrator` trait 在 `seaql_migrations` 表中追踪已应用迁移
-- [x] 启动时自动迁移：`crates/app/src/main.rs` 在 `init_pool` 成功后调 `rustineverything_migration::Migrator::up(&db, None)`，失败仅日志不退出（便于 schema 已存在场景）；root `init.sql` 加 DEPRECATED 警示但保留作参考。2 个单测：migrations_have_expected_names + migrator_can_be_constructed
-
-### 7.2 Auth 进一步加固
-- [x] PKCE 持久化：加密 cookie 替代进程内 HashMap。`PkceCookiePayload { provider, state, verifier_opt, issued_at_secs }` JSON → AES-256-GCM（复用 `auth/crypto.rs`，密钥从 `JWT_SECRET` 派生）→ base64url。`Set-Cookie: oauth_pkce=…; HttpOnly; Path=/api/auth; SameSite=Lax; Max-Age=300`（HTTPS 自动加 `Secure`）。`AuthService::prepare_login` 返回 `(url, payload)`、`handle_callback` 接收 payload 做 CSRF/provider/TTL 三重校验；axum `/api/auth/login/{provider}` 在 302 时下发 cookie，`/api/auth/callback/{provider}` 通过 `HeaderMap` 读 + 解密 cookie + 成功/失败都清空 cookie；auth_modal 改为直跳 `/api/auth/login/{provider}`（避免先取 URL 再跳的 race）。删除 `STATE_STORE` / `PKCE_STORE` / `validate_state` / `PkceEntry` / `StateEntry`。新增 11 个 cookie 单测（round-trip / 无 verifier / 篡改拒绝 / 乱码拒绝 / TTL 边界 / set-cookie 属性 secure / set-cookie 属性 http / 清空 cookie / extract 多 cookie / extract 缺失 / extract 容忍空白）。全 591 个 workspace 单测通过，clippy `-D warnings` 全绿
-- [x] state CSRF 短 TTL（5 分钟）— Phase 7.2 起由 `PkceCookiePayload::is_expired` 在 callback 端兜底（与 cookie `Max-Age=300` 双保险）；原 `validate_state` / `STATE_STORE` 随 HashMap 一同删除
-
-### 7.3 搜索持久化
-- [x] `MmapDirectory` 替代 `RAMDirectory`：`engine.rs` 改为 `Index::open_or_create(MmapDirectory::open(dir), schema)`；`SEARCH_INDEX_DIR` 环境变量控制路径（默认 `data/search-index`），目录不存在自动 `create_dir_all`；schema 不匹配（旧索引残留）自动清空目录重建（schema 迁移）；`init_or_load()` 启动期入口：非空 → 复用，空 → 全量填充；新增 6 个单测覆盖持久化（drop+reopen 数据保留 / 空目录初始化 / schema 不匹配清空重建 / 自定义路径解析 / 默认路径 / replace_all 全量替换）。全 45 个 module-search 单测通过
-- [x] 增量索引：分两步落地——(7.3.2) schema 加 `doc_uid` 字段 `{kind}:{ref_id}` + engine `upsert_document` / `upsert_documents` / `delete_documents`（`delete_term + add_document`，单 writer/单 commit/单 reader reload；同 uid 原地替换；不同 kind 同 ref_id 互不干扰；8 单测）；(7.3.3) `IndexManifest`（持久化到 `manifest.json`，`files: BTreeMap<uid, mtime_secs>` + `dyn_uids: BTreeSet<uid>`）+ `diff_for_reindex` 纯函数（mtime 跳过未变 / 修改时 upsert / 缺失时 delete；动态来源全量 upsert + 上次 uid 集合差分检测删除）+ `engine::reindex_incremental` 接入模块开关过滤；`init_or_load` / `rebuild` 共用 `full_populate_with_manifest` 保证 manifest 与索引状态一致；server fn `search_reindex(mode)` 默认 `incremental`，`mode="full"` 强制全量；返回结构化 `ReindexReport`（mode/upserts/deletes/elapsed_ms）。全 64 个 module-search 单测通过，clippy `-D warnings` 全绿
-
-### 7.4 部署
-- [x] `Dockerfile`（多阶段 Debian/glibc）：builder = `rust:1-trixie` + node 20/npm + dx CLI(`=0.7.5`) + wasm32 target，串接 Tailwind v4 编译 → `scripts/build_themes.sh` 主题构建 → `dx bundle --platform web --release` 全栈打包；runtime = `debian:trixie-slim` + `ca-certificates` + `tini`，非 root 用户 `app` 运行 `dx bundle` 产物。**改用 Debian 而非 Alpine**：`dx bundle` release 下载 GitHub 预编译 glibc wasm-bindgen/wasm-opt，musl(Alpine) 上因缺 ld-linux 解释器 ENOENT 失败；builder/runtime 同为 trixie 保证 glibc 对齐。通过 `CARGO_TARGET_DIR=/tmp/target` 覆盖 `.cargo/config.toml` 开发者本地路径。配套 `.dockerignore` 排除 target/node_modules/.git/docs 等大目录，控制构建上下文体积
-- [x] `docker-compose.yml`：app + postgres（**已移除 ollama** —— 小站无需自托管 GPU 视觉模型；审核走托管 LLM API，ollama 想用也是经其 `/v1` OpenAI 兼容端点由 `OPENAI_LLM_BASE_URL` 接入，无需单独服务）。postgres 16-alpine 持久卷 + 健康检查 (`pg_isready`) gate app 启动；app 经 `service_healthy` 等 postgres 后 sea-orm-migration 自动迁移。app 环境透传可选 `OPENAI_LLM_*` / `ANTHROPIC_LLM_*`（审核默认关 → 零开销）。`.env.example` 文档化所有变量。`docker compose config` 验证 0 错误
-- [x] `.github/workflows/ci.yml`：fmt + clippy + test + build。5 jobs：fmt（report-only，待全量 reformat 后切强校验）/ clippy（report-only，~130 warnings 收敛中）/ test（强校验 `--features server --workspace --test-threads=1`）/ build-server（`cargo check`）/ build-wasm-plugins（`scripts/build_themes.sh` + plugin-theme-purple）。提交 `rustfmt.toml` 作为团队 2-space 缩进声明配置；CI 通过 `CARGO_TARGET_DIR: target` env 覆盖 `.cargo/config.toml` 中的开发者本地路径
-
-### 7.5 日志
-- [x] `tracing` + `tracing-subscriber`：workspace 依赖；`crates/app/src/main.rs` 启动期初始化 `tracing_subscriber::fmt()` + `EnvFilter`（默认 info，可由 `RUST_LOG` 覆盖）+ `with_target(true)`；client 端 tracing 调用无 subscriber 时为 no-op
-- [x] 删除全部 `println!` 调试输出：33 个调用点迁移到 `tracing::{info,warn,error,debug}`，按消息语义选级别（启动成功/审计=info / 跳过/降级=warn / 调用失败=error / OAuth 步骤=debug）。保留：`build.rs` 中 cargo 指令、`#[cfg(test)]` 块中的 println、`crates/app/assets/` 下课程代码示例（内容资产）。涉及 12 个文件：core 4 / app 4 / widgets 1 / modules/{admin,cases,search,search} 3。
-
-### 7.6 文档
-- [x] `docs/DEPLOY_GUIDE.md`：从零部署 runbook — 部署方式概览 / 前置条件 / `.env` 准备 / docker compose 一键起 / 烟测端点 / admin 升级 / 单 Docker 镜像 / OAuth 凭据申请 / HTTPS 反代（Caddy + nginx + Traefik）/ `site.json` 配置示例 / 内容资产 / 升级流程 / 上线 checklist / 已知限制
-- [x] `docs/OPERATIONS.md`：day-2 运维 — 日志（tracing + RUST_LOG + 关键事件表）/ 数据库 + uploads 备份与恢复 / 迁移管理（自动 + 手动 sea-orm-cli + 新增模板）/ 监控指标 / 6 类故障排查 / 应用 + schema + 完整回滚 / 性能调优（连接池、镜像缓存、wasm 冷启动）/ 安全运维任务表
-
-### 7.7 验收门禁
-- [x] CI 全绿：fmt + clippy 从 report-only 切换为强校验。`cargo fmt --all` 全量格式化（120 文件，2-space/max_width=100）；clippy 收敛到 **0 warning**（`cargo clippy --features server --workspace --all-targets -- -D warnings` 通过）。收敛手段：`cargo clippy --fix` 自动修 + 插件/SDK 的 WASM-ABI unsafe 导出加 crate 级 `#![allow(clippy::missing_safety_doc)]`（契约见 PLUGIN_ABI.md）+ 测试 setup 的 `field_reassign_with_default` 就地 allow + 手工修若干 `matches!`/`unwrap_or_default`/`while let`/`enumerate`/`checked_div`/doc-list。`.github/workflows/ci.yml` 去掉 fmt/clippy 的 `continue-on-error`。559 测试全绿（0 failed / 18 ignored）
-- [x] `docker compose up` 一键启动 + 自动迁移（2026-05-29 实跑验证：Debian trixie 多阶段镜像构建成功 → postgres healthy → app 启动，两条迁移 `initial_schema`+`moderation_queue`（8 表）在全新库上干净应用，`startup: schema migrations applied`，`curl :8080` → 200。修复链：Alpine→Debian glibc（绕开 `dx bundle` 下载的 glibc wasm-bindgen/wasm-opt 在 musl 上 ENOENT）；补 `crates/llm` COPY；dx CLI 锁 `=0.7.5` 与库版本一致）
+### 依赖与排序
+- M1/M2 不依赖付费，先上线见效；M3 为 M2 的筛选/精选提供数据；M4 起才动 DB 与鉴权；M5 依赖 M4。
+- 顺序：M1 → M2 →（M3 穿插）→ M4 → M5 →（M6 可选）。
 
 ---
 
-## 跨阶段持续任务
+# 新阶段 — 架构风险治理（2026-07-21 评估落地）
 
-- [-] **代码规范**：消除非测试代码中的 `unwrap` / `expect`。全量扫描后实际仅 ~5 处：已修 `app/server/mod.rs` 的 `.to_str().unwrap()`（→ `.and_then(to_str).ok().unwrap_or_default()`）+ i18n 插件 2 处 `expect`（→ `FluentResource::try_new(...).unwrap_or_else(|(r,_)| r)` + 忽略 add_resource 错误，已重建 wasm）。**剩余 2 处为有意为之的启动 fail-fast**：`main.rs` / `build_auth_service` 的 `std::env::var("BASE_URL").expect(...)`（与 `get_jwt_secret()` panic 同属 1A.1「缺配置即硬失败」设计，保留）。examples / tests / build.rs 按约定豁免
-- [x] **Rust target dir**：构建产物路径 `/Users/hal/.target` —— 文档化到 `docs/DEVELOPER.md §2.4`（机制 / 为什么共享 / 新机器 setup 步骤 / CI + Docker 通过 `CARGO_TARGET_DIR` env 覆盖的机制）；仓库根 `.cargo/config.toml` + `~/.target/` 已实际存在
-- [x] **debug 习惯**：新增 server fn 打印请求/响应/DB 查询便于联调 —— 落地为「`#[tracing::instrument]` + 字段约定」规范，写进 `docs/DEVELOPER.md §3.4 server fn 联调日志规范`：命名 `server::<fn-name>`、PII 走 `skip` + 单独 `_len` 字段、`err` 自动错误日志、`tracing::field::Empty` 占位 + `Span::current().record` 函数体内补字段；DB 查询通过 `RUST_LOG="info,sea_orm=debug,sqlx=debug"` 打开。3 个 exemplar 已落：`module_search::server::search_query`（高 QPS）/ `app::server::auth_callback_internal`（多阶段流程）/ `module_comments::server::post_comment`（审核+权限+DB 三联）。后续新 fn 按模板加
-- [x] **每个模块完成后**：更新本 Todos.md + 写 `docs/<MODULE>_SPEC.md` —— 2026-05-31 一次性补齐缺口：5 个 Phase 6 板块同构合并写 `docs/BOARDS_SPEC.md`；文件 markdown 集合 `docs/BLOG_SPEC.md` + `docs/DOCS_MODULE_SPEC.md`（与仓库 `docs/` 工程目录区分）；DB-backed UGC `docs/COMMENTS_SPEC.md` + `docs/UPLOADS_SPEC.md`。各 SPEC 覆盖：scope / 数据结构 / server fn 契约 / 路由 / ModuleEngine 集成 / 搜索集成 / 测试覆盖 / out-of-scope。后续新模块按此模板维护
-- [ ] **测试 + 编译通过**才允许 commit；commit 附 `Co-Authored-By: Oz <oz-agent@warp.dev>`
+> 来源：2026-07-21 全面架构评估（架构分层 / 可扩展性 / 安全性 / 性能）。
+> 原则：增量治理，不推倒现有架构；每任务一提交（无共同作者行）；提交后同步本文档。
+> 校验命令沿用「持续约定」章节；涉及 DB 的任务先确认迁移向后兼容（不破坏现有登录用户与已加密 token）。
+
+## 任务清单（按优先级）
+
+### S1 — 安全响应头中间件（风险 R6）✅
+- [x] 新增 `crates/app/src/server/security.rs`：`security_headers_mw` 挂在 router 最外层（`main.rs:551`），注入 CSP（保守策略，兼容内联 style/script + WASM + YouTube/Bilibili 嵌入）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: strict-origin-when-cross-origin`、`X-Frame-Options: DENY`；已存在同名头不覆盖
+- [x] 运维开关：`CSP_POLICY` 覆盖/置空禁发；`SECURITY_HEADERS_DISABLED=1` 整体禁用；nonce 化方向写入模块注释
+- [x] 4 个单测通过（指令存在性 / 无 CSP 基线 / 非法值不 panic）；server + 默认 web 双目标编译通过
+
+### S2 — 应用层限流中间件（风险 R4）✅
+- [x] 新增 `crates/app/src/server/rate_limit.rs`：手写 token-bucket per-IP 限流（无新依赖），仅作用于 `/api/*`；`/api/auth/*`、`/api/pay/*` 用更严 sensitive 桶（5 rps/15），其余 20 rps/60；key 取 XFF 首 IP → x-real-ip → global 共享桶
+- [x] 容量防御：桶表上限 50k + 10min 过期剪枝 + overflow 折叠桶（防伪造海量 IP 内存放大）；超限 429 + Retry-After
+- [x] env 可调：`RATE_LIMIT_{API,SENSITIVE}_{RPS,BURST}`、`RATE_LIMIT_DISABLED=1`；7 个单测通过（burst/回填/隔离/分类/key 提取/非法配置 clamp）
+
+### S3 — 迁移失败降级/严格模式 + 健康检查（风险 R3）✅
+- [x] 新增 `crates/app/src/server/health.rs`：启动期记录 `StartupHealth`（db_configured/db_connected/migrations）；`/healthz` 返回 `200 ok` / `503 degraded`（JSON，no-store）；未配置 DATABASE_URL 的纯静态站不算降级
+- [x] `STRICT_MIGRATION=1` 时 DB 连接失败 / 迁移失败直接 panic 拒绝启动（生产推荐）；默认保持可用性优先但 /healthz 可观测（`main.rs:161-225`）
+- [x] 2 个单测通过（降级矩阵 / 快照语义）
+
+### S4 — JWT 撤销基础 token_version（风险 R1）✅
+- [x] 迁移 `m20260721_000008_users_token_version`：`users.token_version int not null default 0`；实体同步加字段（serde default，存量用户/旧 JSON 兼容）
+- [x] JWT claims 携带 `tv`（serde default，旧 token → 0 与 DB 默认 0 匹配，存量登录不受影响）；`create_jwt`/`verify_jwt` 贯通；`SessionUser.token_version` 新增（向后兼容单测覆盖）
+- [x] 新增 `require_session_verified()`（`session.rs:197`，fail-closed）；写路径接入：forum create_topic/post_reply、comments post_comment、uploads upload_image；`require_admin` 复用同次 DB 查询加版本比对
+- [x] `admin_set_user_role` 角色变更时 bump token_version（同角色重复提交不 bump）；全工作区测试 0 失败
+- 备注：course 模块的进度写入仍用轻量 `current_session_user`（低风险，后续可按需升级）；登出仍为清 cookie，全局吊销需 bump 版本
+
+### S5 — 独立数据加密密钥 + key-id 密文格式（风险 R2）✅
+- [x] `crypto.rs` 重构：`DATA_ENCRYPTION_KEY` 优先（域 tag `data-encryption-v2` 派生），缺省回退 JWT_SECRET 派生并 warn（仅首次）；启动期 + 加密路径均做 placeholder 校验；`.env.example` 补说明
+- [x] 新密文格式 `v2:<base64url>`（key-id 前缀，为 v3/多密钥渐进轮换预留）；解密按前缀选密钥，无前缀回退 v1（JWT_SECRET 派生）兼容在途 cookie；新密文不再产出 v1
+- [x] 7 个 crypto 单测（含 v1 兼容 / 独立密钥轮换语义）+ 11 个 PKCE cookie 测试全部通过
+- 备注：当前 crypto 唯一调用点是短生命周期 PKCE cookie（无长期存量密文），v1 回退路径可在下个版本安全移除
+
+### S6 — 支付回调专项加固审计（风险 R7）✅
+- [x] 审计结论：验签/金额核验/幂等快路径已具备；发现 3 个可加固点并全部修复（`course/src/server.rs` notify 两处）
+- [x] 原子认领：条件 `UPDATE … WHERE out_trade_no=? AND status!='paid'` 取代「读-判-写」，rows_affected=0 视为已处理——消除并发回调双发货竞态（alipay + wechat）
+- [x] alipay：新增 `app_id` 比对（防跨商户应用合法签名串单）；wechat：时间戳 ±5min 新鲜度（缩小重放窗口）+ 解密后 appid/mchid 交叉校验
+- [x] 入口审计日志 `target=pay_audit`（关键字段留痕，不含买家敏感信息）；module-course 45 测试全部通过
+
+### S7 — 拆分 app/main.rs router 组装（风险 R8）✅
+- [x] 新增 4 个 server 子模块：`seo.rs`（sitemap/feed/robots，`collect_content_entries` 统一条目收集，`collect_board!` 宏只剩一份）、`auth_routes.rs`、`pay_routes.rs`、`static_assets.rs`，各提供 `mount(router, …)` 函数
+- [x] `main.rs` 从 737 行减到 ~370 行，router 组装段只剩 9 行引导；新增内容板块只需改 seo.rs 一处，消除 sitemap/feed 漏改不一致风险
+- [x] 行为不变：server 构建 + 默认 web check 双目标通过，app 13 测试全过
+
+### S8 — 主题 CSS 防护强化（风险 R5）✅
+- [x] 新增 `normalize_css_for_scan`（`plugin_security.rs`）：扫描前解码 CSS hex/字面转义 + 去注释 + 去全部空白 + 小写——封堵 `\75 rl(`、`url( http://`、`url(/**/http://`、`@\69mport` 等混淆绕过（@import/expression 本身已在旧黑名单中）
+- [x] 黑名单补 `-moz-binding:`、`url('//`、`url(\"//`；修正 lib.rs / 模块注释的 "allowlist" 误导措辞（明确为 blacklist + fail-closed，白名单解析器列为后续升级方向）
+- [x] 新增 8 个测试（7 混淆绕过 + 1 合法 CSS 不误拒），css_sanitize 共 19 测试全部通过
+
+### S9 — 生产路径 unwrap/expect 收敛（风险 R12）✅
+- [x] 审计结果：core/app/migration 生产路径仅 2 处 `expect`（BASE_URL 启动门禁，有意 fail-fast），均加 `#[allow]` + 理由注释保留；build.rs 整文件豁免（构建期 panic 是惯例）
+- [x] workspace lints：`[workspace.lints.clippy] unwrap_used/expect_used = "warn"`（配合 -D warnings 即拒绝）；app-core / app / migration 三 crate 接入 `[lints] workspace = true`，其余 crate 渐进；测试代码 crate 根 `#![cfg_attr(test, allow(...))]` 豁免
+- [x] 顺带清理 S4 遗留死代码（forum 本地 require_session 包装）；clippy 零警告，三 crate 188 测试全过
+
+### S10 — site.json 读取缓存（风险 R11）✅
+- [x] 新增 `SiteConfig::load_cached(path) -> AppResult<Arc<SiteConfig>>`（`settings.rs`）：按 (path, mtime) 缓存，mtime 未变只走一次 metadata 系统调用；mtime 变化（admin 保存/手改）自动重读，无需显式失效
+- [x] 热路径接入：主题 CSS、布局、主题列表、站点配置、auth service、feed、module/content-transformer 引擎慢路径、启动 plugins_lock 共 9 处直读点改用 load_cached；`from_file` 保留给写后重读场景（admin/moderation hook 未动）
+- [x] 3 个新单测（同 mtime 命中 Arc::ptr_eq / mtime 变化重读 / 缺文件报错）；settings 19 测试全过
+
+### 依赖与排序
+- S1/S2/S3 为低冲突基础设施，先行；S4/S5 触及 DB 与密钥，居中单独提交；S6 审计后按需改动；S7 结构重构放在安全项之后避免冲突；S8–S10 收尾。
+- 顺序：S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9 → S10。
+
+## 阶段验收（2026-07-21）
+全部任务 S1–S10 已完成并逐个提交（无共同作者行）。
+- 最终验证：全工作区 `cargo test --features server` **693 通过 / 0 失败**；`cargo clippy --workspace --features server --all-targets` 零警告；app 默认 web 目标 check 通过。
+- 安全：安全头（S1）+ 限流（S2）+ JWT 即时吊销（S4）+ 独立加密密钥/密文版本化（S5）+ 支付回调加固（S6）+ CSS 反混淆（S8）。
+- 运维：/healthz + STRICT_MIGRATION（S3）；结构：main.rs 组装拆分（S7）；质量：unwrap/expect lint（S9）；性能：site.json mtime 缓存（S10）。
+- 遗留可选项：course 进度写入升级 verified 会话；admin/moderation 的 site.json 读取接入 load_cached；CSS 白名单解析器；CSP nonce 化；其余 crate 接入 unwrap lint。均非阻塞。
+
+## 运行时验证与配置收尾（2026-07-24）
+环境：apple container `rie-postgres`（postgres:16-alpine）+ `dx serve` 编译产物直跑 server 二进制。全部项目通过：
+- **迁移（S4）**：启动日志 `Applying migration 'm20260721_000008_users_token_version'` → `schema migrations applied`；psql 确认 `users.token_version` 列存在、default 0。
+- **/healthz（S3）**：`{"status":"ok","db":"connected","migrations":"applied"}`。
+- **安全头（S1）**：`curl -I /` 四个头全部在线（CSP 完整策略 / nosniff / strict-origin-when-cross-origin / DENY）。
+- **限流（S2）**：`/api/auth/login/github` 连发 20 次 → 前 15 个放行（= sensitive burst），第 16 起精确 429。
+- **SSR**：`/blog` 首屏含正文。
+- **密钥（S5）**：本地 `.env` 已注入 `DATA_ENCRYPTION_KEY`（openssl 生成，未入库）；重启后触发 PKCE 加密，日志无回退 warn = 独立密钥生效。
+- **配置收尾**（本次提交）：docker-compose.yml app 环境新增 DATA_ENCRYPTION_KEY / STRICT_MIGRATION（compose 默认 1）/ RATE_LIMIT_* / CSP_POLICY 透传；`.env.example` 补运维开关文档。
+- 待办（需公网环境）：浏览器 Console 确认无 CSP violation；gateway 反代环境下确认 /healthz 放行与 XFF 链。
 
 ---
 
-## 进度跟踪
+# 新阶段 — 支付模块抽取为可选 crate（2026-07-27 评审结论）
 
-| Phase | 状态 | 关键能力解锁 |
-|---|---|---|
-| 0 | ✅ 完成 | 基线（7 模块 + 6 插件 + MDX 稳定） |
-| 1A | ✅ 主体完成 (仅留 P95 bench / 文档) | 安全加固 + DB 池 + 插件缓存 + Dioxus 原生化 + 安全补遗 |
-| 1B | ✅ 主体完成 (server/mod.rs 930→162; AppError 已落地 1 处) | App crate 拆分（758行→≤200行）+ 统一错误类型 |
-| 1C | ✅ 主体完成 (1C.1–1C.5 均 ✅) | 8 引擎 + WASM ABI 修正 + ENGINES_SPEC 文档。Phase 3.4 会接入现有 indexer/路由层 |
-| 2 | ✅ 主体完成 (2.1–2.6 ✅ / Lighthouse 需上线后实测) | MDX 组件开放注册 + SEO 到位 |
-| 3 | ✅ 主体完成 (3.1–3.6 ✅) | 站点形态配置化（主题栈 + 2 布局 + 模块开关） |
-| 4 | ✅ 主体完成 (4.1 阈值+校验 / 4.2 XSS / 4.3 ABI / 4.4 插件+链接检测 / 4.5 队列+Admin批量+作者历史 / 4.6 文档 ✅；4.7 验收 7 个 live 用例实跑 OpenAI 全过,P95 视觉略高) | LLM/VLM 审核 + XSS 防护 |
-| 5 | 🔄 主体完成 (5.1 Hot Reload ✅ / 5.2.1 示例主题 ✅ / 5.3 文档 ✅；5.2.2-5.2.3 示例插件、5.5 插件市场待开源后) | 插件生态（Hot Reload + 内存回收验证 + 示例） |
-| 6 | ✅ 主体完成 (6.1–6.5 ✅ 5 板块 crate + 真实长文 / 6.7 ✅ 测试+开关+sitemap+feed + 板块文章已接入 Tantivy 搜索；6.6 仅 cases≥3 案例内容待补) | 5 新内容板块（embedded/ai/web3/wasm/cli） |
-| 7 | 🔄 主体完成 (7.1 migration / 7.2 PKCE 加密 cookie / 7.3 搜索持久化+增量 / 7.4 Docker+compose / 7.5 tracing / 7.6 docs / 7.7 CI fmt+clippy 强校验 0-warning ✅；docker 实跑待补) | Docker + CI + 可部署 |
+> 背景：支付代码目前内嵌在 `module-course`（alipay.rs / wechat.rs / notify 两处 ~90% 重复）。
+> 形态评审结论：**可选 crate（feature 门控）优于 WASM 插件**——支付是第一方代码，
+> 沙箱收益用不上；trait 边界提供编译期安全，且与 `module-moderation` 可选基设模式同构
+> （MODULE_SPEC §11.3 已合规）。trait 边界 = 未来 WASM ABI 边界，两路线不冲突。
+> 原则：每任务一提交（无共同作者行）；提交后同步本文档；行为不变（纯结构重构，
+> 不改支付语义）；S6 加固成果（原子认领/金额核验/pay_audit）必须完整保留并收敛进公共流水线。
+> 校验命令沿用「持续约定」；额外要求：启用/禁用 payments feature 两种组合均须编译通过。
 
-## v2.1 变更记录（2026-05-09）
+## 任务清单
 
-### 新增任务
-- **Phase 1A.4**：高优先级安全补遗（OAuth state CSRF / DB 事务 / 上传校验 / token 加密 / dead code 清理）
-- **Phase 1A.5**：Dioxus 渲染原生化（去 `eval(...)` JS 注入）
-- **Phase 1B.5**：统一错误类型 `AppError`
-- **Phase 1C.2**：WASM 通信重构（Extism 或 wit-bindgen）+ 移除 `unsafe extern "C"` + 输出大小限制
-- **Phase 4.2**：用户内容 XSS 防护 + `dangerous_inner_html` 审计
-- **Phase 5.1**：Hot Reload 内存回收验证（防止 Module/Instance/Memory 泄漏）
+### PM1 — 新建 `crates/modules/payment`（module-payment）骨架 ✅
+- [x] `PaymentProvider` trait（`payment/src/lib.rs:161`）：`build_order` / `parse_order_response` / `parse_notify` + `build_query` / `parse_query`（默认 `Unsupported`，对账预留）；签名、验签、解密不入 trait（宿主 `crypto` 模块承担，WASM 化红线预留）
+- [x] 中立类型：`OrderRequest` / `PayRequest`（url/method/headers/body/sign_payload）/ `PayAction`（PayUrl | QrCode）/ `OrderCall`（Direct | Http）/ `NotifyPayload`（Form | Json）/ `PaymentEvent`（out_trade_no/amount_cents/status/txn_id）/ `PayError`（5 类语义错误）
+- [x] features：`alipay`、`wechat`（默认全开）+ `server`（重依赖门控，web 目标只编译类型与 trait）；`[lints] workspace = true`；登记 workspace members；crypto/alipay/wechat/pipeline 占位模块待 PM2/PM3 填充；3 单测 + clippy --all-features -D warnings 零告警
 
-### 设计权衡
-- **WASM ABI 重构放在 Phase 1C 而非 1A**：1A 先用最小改动（缓存）止血，1C 做深层 ABI 替换；这样 1A 可立刻交付不阻塞其他工作
-- **Dioxus 原生化放在 1A 而非延后**：成本低（约 30 行 RSX 改写），收益是恢复 desktop/mobile 跨平台承诺，应尽早还
-- **WASM 内存上限默认 8MB**：覆盖 Theme CSS（数 KB）/ i18n 翻译（数 KB）/ Auth profile（数 KB）/ Moderation response（最大 ~MB），充足且足够防御
+### PM2 — 迁移网关实现 ✅
+- [x] `course/src/alipay.rs` → `payment/src/alipay.rs`（`AlipayProvider`：page/wap 签名直跳 = Direct，qr precreate = Http），`course/src/wechat.rs` → `payment/src/wechat.rs`（`WechatProvider`：native/h5 = Http + Authorization 头）；纯搬移 + 适配，协议逻辑不变；course 调用点机械替换 `crate::alipay/wechat` → `module_payment::alipay/wechat`（行为不变，PM4 再改 provider+pipeline）
+- [x] crypto 工具迁入 `payment/src/crypto.rs`（decode_key / rsa2_sign / rsa2_verify / aes256_gcm_decrypt）；旧 5 个签名/验签/解密单测全部随迁通过，另补 7 个 Provider 适配单测（build_order 场景分派 / 响应解析 / notify 中立化 + 严格 yuan_to_cents），payment 共 15 测
+- [x] 配置加载（env 读取 + 缺项降级 None）随迁；密钥仍经 .env 不回显；course 剔除 rsa/sha2/base64/reqwest/url/aes-gcm 依赖（server feature 改级联 `module-payment/server`）；course 40 测 + app server 构建 + 默认 web check 通过，clippy -D warnings 零告警
+
+### PM3 — 统一 notify 流水线 `payment/src/pipeline.rs` ✅
+- [x] `process_event`：验签/解密留在宿主侧 → 非成功状态查单前确认 → 查单 → 金额核验（DB 快照为准，`decide` 纯函数）→ 幂等快路径 → 原子认领（条件 UPDATE，rows_affected=0 确认不发货）→ 发货 → pay_audit 日志（S6 成果完整收敛，失败原因串与旧 wechat 应答一致）
+- [x] 发货用注入回调 `on_paid(user_id, course_slug)`，不反向依赖 course entitlement；存储经 `OrderStore` trait（find_order / claim_paid）抽象，`sea_orm::DatabaseConnection` 自带实现（订单实体已下沉 app-core）。注：故意不用 sea-orm mock feature（会经 feature 统一禁用 `DatabaseConnection: Clone` 破坏 app-core 连接池）
+- [x] 9 个流水线单测（纯 mock store + mock 发货回调）：decide 矩阵 / happy path / 幂等重放不二次发货 / 金额不匹配拒 / 并发认领败方不发货 / 非成功零 DB / 查无此单 / UPDATE 失败 / 发货失败；payment 共 24 测 + clippy -D warnings 零告警
+
+### PM4 — course/app 接线（feature 门控）✅
+- [x] `module-course` 改 `optional = true` 依赖 module-payment + fast_qr；新增 `payments = ["dep:module-payment", "dep:fast_qr"]`，server 改弱依赖 `module-payment?/server`；订单类型/订单 fns/notify 整区 payments 门控；`create_order` 改走 `PaymentProvider::from_env` + `host::execute_order`（payment 新增 host 执行器发送 PayRequest；kind 标签 qrcode/h5/redirect 保持旧协议；pay_err 展开内层文案保响应一致）；两个 notify handler 保留宿主侧验签/app_id/时间戳/解密/appid+mchid 校验后，`parse_notify` 中立化 → `pipeline::process_event`（发货回调 = grant_entitlement_internal）；课程详情/Paywall 购买入口收敛为 `PurchaseEntry` shim（关闭时退化「联系管理员开通」）；wechat `parse_order_response` 透传网关 message（与旧 post_v3 错误文案一致）
+- [x] app 新增 `payments` feature（default = ["web", "payments"]）级联 `module-course/payments`；`pay_routes::mount` 条件编译（关闭时恒等，/api/pay/* 不注册）；/me/orders 路由保留但页面退化占位；classic/minimal 用户菜单「我的订单」`cfg!` 隐藏
+- [x] 行为基线：默认组合路由/响应/日志 target（pay_audit）不变；双组合验证：默认（payments 开）clippy -D warnings 零告警 + course 40 测/payment 24 测 + app server 构建 + web check；禁用 payments（course server-only / app --no-default-features 的 server 与 web）均编译通过
+
+### PM5 — 验证与文档 ✅
+- [x] 双 feature 组合验证：默认（含 payments）app server 构建 + web check；禁用 payments（app --no-default-features 的 server / web + course server-only）均编译通过；全量 `cargo test --features server --workspace`（含 payment 24 / course 40）**0 失败**；`cargo clippy --workspace --features server --all-targets -- -D warnings` 零警告；ci.yml build-server 补 no-payments 双目标 check（server + web）
+- [x] 文档：PAYMENT_SPEC.md 新增 §14「架构：PaymentProvider trait + 可选 crate」（分层职责 / feature 矩阵 / WASM 化 5 条安全红线：密钥不进沙箱、验签解密在宿主、收款方字段宿主注入、金额核验/认领/发货不下沉、强制 SHA256 lock）；MODULE_SPEC.md §11.1/§11.3 补 module-payment 可选基设例外
+
+### 依赖与排序
+- PM1 → PM2 → PM3 → PM4 → PM5 严格串行（同一批文件连续改动，不并行）。
+- 风险提示（已落地 2026-08-04）：M5e 余项（对账/退款）已按计划直接写在 PaymentProvider trait 上（build_query/parse_query + build_refund/parse_refund），见下方阶段验收；WASM 化（Step 2）仅在出现第三网关/社区贡献需求时启动。
+
+## 阶段验收（2026-08-04）
+全部任务 PM1–PM5 已完成并逐个提交（无共同作者行）。
+
+### M5e 余项补完（2026-08-04，同日三提交）
+对账 + 退款代码落地（均写在 PaymentProvider trait 预留方法上，验证 trait 边界可扩展性）：
+- 对账：双网关 build_query/parse_query + host::execute_query + reconcile 决策（回填走同一 notify 流水线，S6 语义在对账路径同样生效；关单只覆盖 pending，误关也可被迟到合法回调原子认领救回）+ app 启动期定时器（PAY_RECONCILE_* 可调）。
+- 退款：双网关 build_refund/parse_refund + admin_refund_order（网关幂等退款单号 / 条件 UPDATE / 仅撤销 purchase 权益）+ /admin/entitlements 订单区块。
+- 验证：payment 36 测；全工作区测试 0 失败；workspace clippy -D warnings 零警告；启用/禁用 payments 组合编译通过；PAYMENT_SPEC §9/§12/§13/§14 同步。
+- ⚠️ 仍待商户凭据：对账/退款/下单/回调的真实网关端到端验证。
+- 结构：支付从 module-course 抽为可选 crate module-payment（trait + 中立类型 + crypto/host 宿主工具 + 统一 notify 流水线）；两处 ~90% 重复的 notify 处理收敛为 `pipeline::process_event`，S6 成果（验签前提/金额核验/原子认领/pay_audit）完整保留。
+- 门控：course `payments` feature + app 默认开；关闭时 /api/pay/* 不注册、购买 UI 退化「联系管理员开通」，admin 手动授权链路不受影响。
+- 验证：全工作区测试 0 失败；clippy -D warnings 零警告；启用/禁用 payments × server/web 四组合编译通过；CI 新增 no-payments 门禁。
+- 行为基线：路由/响应文案/日志 target 与重构前一致（纯结构重构）。⚠️ 网关端到端（沙箱/真实商户号）验证仍待 M5b/M5c 标注的前置条件具备后进行。
+
+---
+
+# 新阶段 — 迁移到自研组件库 dioxus-ui（2026-10-08）
+
+> 分支 `feat/dioxus-ui-migration`。详细计划与决策（D1–D6）见 [`docs/DIOXUS_UI_MIGRATION.md`](docs/DIOXUS_UI_MIGRATION.md)；
+> 组件库问题记入 [`docs/DIOXUS_UI_FEEDBACK.md`](docs/DIOXUS_UI_FEEDBACK.md)（FB-NN 编号，临时处理在代码注释里标注编号）。
+> 每任务一提交；验收含亮/暗截图对比、无 hydration 警告、SSR 首屏烟测。
+
+- [x] U0 — 迁移计划 + 反馈记录 + 本清单
+- [x] U1 — 接入 `dioxus-shadcn` 0.6 依赖、shadcn token（默认值 = 站点现有 stone/orange 配色）、构建时生成 `@source`；外观不变
+  - 落点：`Cargo.toml` workspace dep（dioxus 仍 0.7.9）；`crates/app/tailwind-input.css` token + `@theme inline`；`scripts/tw-sources.mjs` → `crates/app/tailwind-sources.css`（gitignore）；`package.json` build/dev 先跑脚本，build 加 `--minify`（与已提交产物格式一致）
+  - 验证：9 个页面 × 亮/暗 像素对比，差异全部是动画帧（流光按钮、spinner、渐变字）；生成脚本反向检查两条均退出 1；clippy 除既有 `llm` lint 外零警告
+  - 旧变量别名未在 U1 切换（实验结论见计划 D2），随 U2 做
+  - 顺带发现的既有问题（不在本任务范围）：
+    - CSP 无 `'unsafe-eval'` → 全站 `document::eval` 失效且 panic，暗色切换在生产不可用（自 S1 起）；组件库同样受影响，见 FB-02，**阻塞 U4/U8**
+    - Dockerfile 未 COPY `crates/sdk-macros`、`crates/gateway`（2026-06-01 后新增），镜像构建应已失败
+    - `crates/app/build.rs` 先把 root `assets/` 正向同步到 `crates/app/assets/`，任何 cargo 构建都会用旧的 `assets/tailwind.css` 覆盖刚编译的产物；`npm run build` 后需手动 `cp crates/app/assets/tailwind.css assets/`
+    - rustc 1.99 的 clippy 对 `crates/llm/src/lib.rs:184`（`async_trait` 展开）报 `double_must_use`
+- [x] U2 — 三个主题插件改输出 shadcn token，旧 `--color-*` 改为 token 别名，重编 wasm，THEME_SPEC 更新
+  - 决定（2026-10-08）：ocean 主色保持品牌橙（不再用 hue 250 蓝），sunset / catppuccin 保留各自主色
+  - 落点：`crates/plugins/theme-{ocean,sunset,catppuccin}/src/lib.rs` 输出 17 个 token（亮/暗各一套）；`assets/css/main.css` 旧变量改为别名；`tailwind-input.css` 删旧 `@theme` 默认值；`examples/plugin-theme-purple`、`docs/PLUGIN_DEV.md`、`docs/THEME_SPEC.md` §12「Token 契约」同步；`app-core` 主题测试断言 `--primary:`
+  - 验证：3 主题 × 亮/暗，`--primary`、`--background`、别名 `--color-bg`、body 底色均取插件值（**需绕过 CSP 验证**，见下）；app-core plugin/theme 66 测通过；clippy 同 U1
+  - ⚠️ 发现：CSP 下 App 根组件的 `document::eval` 在页面加载时即 panic，wasm 运行时失效，主题 CSS 根本不注入、ThemePicker 不显示——**自 S1 起站点一直没有应用任何主题插件**（`bypassCSP` 对照实验确认；站点尚未上线）。见 E1
+- [x] E1 — 站点自身的 `document::eval` 改为 web-sys 直接调用，CSP 保持不含 `'unsafe-eval'`（2026-10-08 决定）。归入下方安全整改阶段 B1
+- [x] U3 — admin（`admin.rs` + `admin_entitlements.rs`）：Button / Input / Textarea / NativeSelect / Tabs / Table / Spinner / Badge
+  - 落点：admin 内容区包 `DensityProvider(Compact)`（否则 `Sm` 按钮被 `min-h-10` 撑高）；页签只用 `tabs_list_class` / `tabs_trigger_class`（Tabs 组件挂载即 eval，FB-14）；复选框保留原生（Checkbox 走 eval，FB-02）；状态标签改 Badge 语义色；表格行显式 `border-border`（FB-15）
+  - 验证：8 个 admin 页面在严格 CSP 下无 pageerror（仅既有 SEC-23 字体报错）；审核页签切换、全选启用批量按钮、单条「通过」、角色修改并刷新后保持、阈值输入均可用；亮 / 暗截图检查。测试数据（2 条审核记录、临时 admin 角色）已清理
+- [x] U4 — course + 支付（`course.rs` + `pay_ui.rs`）：Card / Button / Badge / Table / Dialog
+  - 落点：课程卡片 / 付费墙 / 下载列表 / 标注分组用 `card_class`；按钮、徽章、加载圈、进度条（`Progress`，轨道用 `bg-border`，ocean 的 `--muted` 近白）、订单表换组件；支付方式二选一用 Outline 按钮 + `aria-pressed`（ToggleGroup 走 eval）；章节折叠、代码页签保持手写（Accordion / Tabs 走 eval）
+  - 验证：严格 CSP 下课程列表、详情、付费墙、试看课节、我的订单无 pageerror；购买弹窗打开、切换渠道、关闭按钮可用；亮 / 暗截图；SSR 首屏含正文；`--no-default-features` 编译通过
+  - 未做：支付模态改 Dialog（Escape 关闭、焦点管理）——待上游 FB-02 发版，记为 U4b
+- [x] U-0.6.2 — dioxus-shadcn 升级到 0.6.2（FB-02 已修，解除 U4b/U8/U9 阻塞；删除 FB-15 的逐行 `border-border`；严格 CSP 下 /admin/entitlements 无新报错）
+- [x] U-0.6.3 — dioxus-shadcn 升级到 0.6.3（上游修复 FB-17/18/19/21，FB-13 已修、FB-20 改为文档说明）。删除本站的临时处理：Dropdown 的 `fixed`、搜索 Command 只在打开时挂载、导航栏按钮的 `min-h-*`。浏览器验证：菜单与触发器对齐；⌘K 异步结果自动高亮第一项，↓ 和回车正常，关闭后再打开也正常；导航栏按钮高度不变。`Sm` 按钮在默认密度下变为 32px
+- [x] U3b — admin 审核页签 → Tabs（FB-14 已修；「全部」的值改为 `all`；严格 CSP 下点击与方向键切换、请求参数验证通过）
+- [x] U4b — 支付模态 → Dialog，支付方式选择 → ToggleGroup
+  - 落点：`pay_ui.rs`；表单只在打开时挂载（重开即重置）；ToggleGroup 受控、忽略空值，保证总有一个网关
+  - 验证：严格 CSP 下 Escape 关闭、焦点回到购买按钮、Tab 限制在弹窗内、方向键切换焦点；亮 / 暗截图
+  - 行为变化：点遮罩不再关闭（Dialog 默认，避免扫码时误关）
+- [x] U5 — forum + 评论：Button / Input / Textarea / Card / Empty / Alert
+  - 落点：话题卡片 / 引用卡片 / 回复框 / 评论框用 `card_class`；标签与标签云用 `badge_class`（链接）；输入框、文本域、登录按钮、加载圈、空状态、错误提示（`Alert` Destructive）换组件；`btn-flow` 特效按钮保留；编辑 / 预览切换保留下划线样式，颜色改 token
+  - 验证：严格 CSP 下发帖（含标签与预览）、回复、博客评论（预览 + 发布）均可用，失败时 Alert 显示错误；亮 / 暗截图；测试话题、回复、评论已删除
+  - 发现：ocean 暗色的 `--card`（slate-900 藏青）与页面 stone 底色不协调——插件 token 与 slate→stone 色阶映射混用，留给 U10 评估；debug 构建类名覆盖日志过多（FB-16）
+  - 副作用：U3 测试改角色使本地 user 2 的 `token_version` 变为 2，该账号本地已有会话需重新登录
+- [x] U6 — cases / docs / podcast / search 列表部分
+  - 落点：案例 / 文档 / 播客卡片用 `card_class`；计数与标签 chip 用 `badge_class`；加载圈、空状态（`Empty`）、错误（`Alert`）、案例搜索框（`Input`）、播客翻页（Ghost `Button`）、搜索 kind 过滤（`aria-pressed`）换组件；蓝色强调改 `primary`；案例分类配色、播客播放器深色卡片保留
+  - 验证：严格 CSP 下案例搜索 / 空状态 / 标签筛选、文档首页与详情、播客标签筛选、搜索过滤与结果均可用，无 pageerror；SSR 首屏含案例与文档卡片
+- [x] U7 — 5 个内容板块（先 ai，再套用其余 4 个）
+  - 落点：搜索框 `Input`、子主题 chip（`badge_class` + `aria-pressed`）、文章卡片 `card_class`、标签 / 子主题徽章、加载圈、空状态、加载失败 `Alert`；先改 ai 验收，再用同一脚本套用到 cli / embedded / wasm / web3
+  - 验证：严格 CSP 下 5 个板块的筛选、搜索、空状态、文章详情、未找到文章的错误提示均可用，无 pageerror；SSR 首屏含卡片
+  - 发现（既有，未修）：`/wasm` 整页请求返回 404——路由与 Dioxus 静态目录 `/wasm/`（wasm 产物）冲突，只能经客户端路由进入；生产环境未验证。板块 crate 单独 `cargo test --features server` 编译失败（其 server feature 未开 `app-core/server`），不带 feature 时 13 测通过
+  - 复查（2026-10-08）：`/wasm` 404 只在 debug（`dx serve` 把 `public/wasm/` 整个挂在 `/wasm`）；release 无该目录，`/wasm`、`/wasm/:slug` 均 200 且 SSR 含正文，记入 DEVELOPER.md 2.3。5 个板块 crate 单独 `--features server` 测试现均通过（各 15 测）
+- [x] U8 — 全局弹层：auth_modal / search 模态 → Dialog(+Command)；主题/语言/用户菜单 → Dropdown；移动端菜单 → Sheet
+  - [x] U8a — auth_modal → Dialog（新增 `auth.close` 文案；Escape、焦点限制与回位验证通过）
+  - [x] U8b — search 模态 → Dialog + Command + ToggleGroup（回车只跳站内路径，`is_site_path` 带测试；发现 FB-17 Command 在关闭的 Dialog 里键盘失效 → 只在打开时挂载；FB-18 异步结果不自动高亮）
+  - 顺带修复：`tailwind-input.css` 只扫了 6 个 module crate，docs/search/5 个板块独有的 16 个类此前没有生成（ffaaf91）
+  - [x] U8c — theme_picker / lang_picker / 用户菜单 → Dropdown（两个布局的用户菜单合并为 `UserMenu`；主题、语言为受控单选组；键盘、Escape、外部点击、跳转验证通过；发现 FB-19 菜单在 flex 行里定位偏移 → 内容加 `fixed`）
+  - [x] U8d — 移动端菜单 → Sheet（右侧抽屉，放在 header 之外以免被 backdrop-filter 限制；新增 `nav.menu`；375px 下 Escape、焦点回位、点链接跳转并关闭验证通过，无横向滚动）
+- [x] U9 — 生态 mega 菜单：评估 NavigationMenu 与现有纯 CSS 方案（D5），不劣于现状才替换（结论：保留 CSS 方案——关闭 JS 时 CSS 菜单可悬停 / 聚焦展开，NavigationMenu hydration 前打不开；重估条件写入 D5；上游建议 FB-20）
+- [x] U10 — 收尾：清理无用类名与 CSS、评估移除色阶映射、更新 TAILWIND_GUIDE、反馈汇总
+  - 无用 CSS：`main.css` 的 `btn-flow` / `text-flow*` 仍在用；`--color-*` 别名是 THEME_SPEC 写明的第三方插件兼容接口，保留
+  - 色阶映射：保留。存量 `slate-*` 约 1100 处 / 25 个文件，删除即全量改写；新代码改用 token（写入 TAILWIND_GUIDE 2.1/2.2）。副作用：主题 token 为冷色时组件与手写 stone 区域冷暖不一——2026-10-08 决定统一为暖色：ocean 的亮 / 暗中性色 token 改为 stone 色阶（主色不变），带测试
+  - TAILWIND_GUIDE：token 优先、扫描范围、组件用法与 FB 绕法
+  - FB 汇总表：DIOXUS_UI_FEEDBACK.md 开头；待上游 FB-17/18/19/20、FB-13 部分修复
+  - 全量校验：fmt、workspace clippy（`-A clippy::double_must_use`，llm 既有）、workspace 测试 738 通过（修复了 U2 遗留的示例插件测试）、wasm / 无 payments 构建；严格 CSP 下 14 个页面无新报错
+- [x] U10+ — 复查遗漏（2026-10-08）：4 处手写加载圈改为 `Spinner`（3917978）；`/wasm` 404 确认只在 debug（66280e7）；TAILWIND_GUIDE / THEME_SPEC 去掉「主题插件」说法
+- U11 — 剩余原生控件（去留表见 DIOXUS_UI_MIGRATION.md §4 U11）
+  - [x] U11a — admin 复选框 / 设置开关 → Checkbox / Switch（e2b264a：全选在部分选中时显示半选；设置开关拿 `bool`，去掉字符串猜值；workspace 639 测通过、clippy 无告警、CSS 含组件类名。⚠️ admin 页浏览器验证待做——需本地管理员会话）
+  - [x] U11b — forum 提交、博客翻页、搜索入口 → Button（53a57c0：提交保留 `btn-flow`；翻页加 aria-label + i18n；搜索入口 32px 不撑高导航栏，点击打开搜索框、焦点进入输入框。发现 FB-21：默认密度下 `Sm` 实际 40px。论坛提交按钮需登录，浏览器未验）
+  - [x] U11c — classic / minimal 导航栏按钮 → Button（ghost / icon）（4569177：尺寸保持原 36/32px（classic）与 28px（minimal），用 `min-h-*` 覆盖密度最小高度（FB-21）；暗色开关补 aria-label + aria-pressed（新 key `nav.toggle_dark`）。浏览器验证两种布局：导航栏高度不变，暗色切换、移动端菜单、登录弹窗均正常）
+  - [x] U11d — 博客 / podcast / cases 标签筛选 → `badge_class` + `aria-pressed`（与 U7 一致）（6551fb7：博客去掉硬编码 `bg-blue-600`，改用与 podcast 相同的 chip 样式；cases 分类选中保留 `btn-flow`，标签未选中保留各自配色；三处均补 `type=button` + `aria-pressed`。浏览器验证三页点击后 aria-pressed 正确切换、cases 标签再点取消。附带发现：`dx serve` 下 podcast 音频 404——build.rs 不同步 `audio/` 到 crates/app/assets，只影响开发态，Docker 用完整 assets 不受影响）
+  - [x] U11e — 编辑 / 预览切换、课程代码页签 → Tabs（54e3853：评论、论坛发帖的编辑 / 预览与课程代码文件条改为 Tabs，带 role=tab / aria-selected / 方向键；只挂当前面板。浏览器验证代码页签（临时把付费课节设为试看，已还原）时发现：切换文件后代码不变、控制台 wasm-bindgen 报错——Prism 换掉了 <code> 的文本节点，原地更新写空；CodePanel 按文件加 key 重挂后修复，点击与方向键均切换且高亮。评论 / 论坛编辑器需登录，浏览器未验）
+  - [x] U11f — 课程章节折叠 → Collapsible；课程标注开关 → Button（修暗色）（763e9b7：章节与课节视频块改 Collapsible，箭头由 data-state 驱动；标注眼睛按钮改 Outline/Icon Button 走主题变量，暗色不再白底。顺带修 build.rs 正向同步用 root 旧 tailwind.css 覆盖新编译产物的问题 59c3e5b。课节视频块无现成内容，未浏览器验证）
+  - [x] 课节页标题重复显示两次（9dd54cf：读课节时拆掉正文开头的 `# 标题`；frontmatter 标题优先，缺失时用该 H1，再退到 slug。注意标注 block id 按顶层块序号分配，正文增删块会让已有标注错位）
+  - [x] 标注错位（abf2617：annotations.js 先核对 exact_text，对不上按原文 + 前后文在全部块里重找，原文已删则不画；浏览器内 5 种情形前后对比验证）
+  - [x] 我的标注跳回原文不准（2c2a0cf：链接改 `#anno-{id}`，闪烁重新定位后的标注本身；原文已删不闪；旧 `#b{n}` 仍兼容）
+  - [x] 静态资源缓存头（e997ff6：`/js` → `no-cache`（未变 304）；`/courses` 按用户鉴权 → `private, no-cache`，防 CDN / 反代缓存付费课时发给未购用户；其他目录保持默认）
+
+
+---
+
+# 新阶段 — 安全整改（2026-10-08，上线前完成）
+
+> 详细发现（SEC-01 ~ SEC-22，含核实状态）与做法见 [`docs/SECURITY_REMEDIATION.md`](docs/SECURITY_REMEDIATION.md)；dioxus-ui 的问题见 `docs/DIOXUS_UI_FEEDBACK.md` FB-02 ~ FB-12。
+> 每项一提交；每个修复附「修复前失败」的测试，先确认红再修到绿。
+
+### 阶段 A — 可被直接利用的漏洞（最先做）
+- [x] A1 — SEC-01 LaTeX `\text{}` 存储型 XSS：MathML 白名单过滤后再输出（829ffa3：改为渲染前转义文本类事件与错误信息，6 条单测）
+- [x] A2 — SEC-02 `/courses` 静态目录绕过付费墙（课时目录文件按 get_lesson 规则鉴权，无权 404；另修课程测试改 cwd 的竞争）
+- [x] A3 — SEC-03 `get_doc_content` 路径穿越（复用 safe_join_under，移入 app_core::utils）
+- [x] A4 — SEC-04 OAuth profile 不查状态 / `external_id` 回退 `"0"`（宿主侧修复；插件未改，见计划 A4 说明）
+
+### 阶段 B — 站点加固
+- [x] B1 — SEC-07 / SEC-18 站点 `document::eval` → web-sys（即 E1）（另替换 `document::Title`；`widgets::browser` + 源码扫描测试 `csp_no_eval`；严格 CSP 下浏览器验收）
+- [x] B2 — SEC-09 登出改 POST；不可信内容图片只允许 `/uploads/`（3ccb475：只收 POST，303 回首页，GET 405、`Sec-Fetch-Site: cross-site` 403，菜单经 `browser::post_navigate` 提交表单；ee19c46：不可信图片必须是 uploads 生成的文件名形状，外部 / data / 其他站内路径一律拒绝；路由与 URL 单测先红后绿，浏览器验收登出）
+- [x] B3 — SEC-08 主题 CSS 白名单化；收紧 `img-src`（28ed724：cssparser 分词的白名单 `check_theme_css` 替换黑名单，at-rule / 函数 / `url()` 目标均白名单，拒 `<` / bad token / 深嵌套，字节聚合路径补检查，内置三主题过检测试且反向验证；2b9ed37：`img-src` 只留 self、data: 与四个 OAuth 头像 CDN；浏览器验收三主题生效）
+- [x] B4 — SEC-11 `site_theme` cookie 读取侧校验（99deeb3：`engines::theme::is_theme_filename`（`[A-Za-z0-9_-]+\.wasm`）同时用于 `theme_with_override` 与 `/api/theme/set`，非法 cookie 忽略并 warn；单测先红后绿，curl 验收 `../`、`.wasm.bak` 回落默认主题。未做「在主题列表内」：指向非主题插件只会让该用户自己的主题 CSS 为空，缓存键数量受 plugins 目录文件数约束）
+- [x] B5 — SEC-10 gateway 不覆盖应用 CSP（1fef74c：删除 gateway 的 CSP 定义与 `CSP_POLICY` 读取，CSP 原样转发；通用安全头仅在应用未下发时补，HSTS 仍由 gateway 设；`apply_security_headers` 两条单测先红后绿；DEPLOY_GUIDE 表格更新。未起真实 Pingora + TLS 做端到端）
+- [x] B6 — SEC-13 `require_writer` 回查数据库（dbc9a2b：`require_writer` 改走 `require_session_verified`；同文件的 `require_admin_user`（授予 / 撤销权益、订单管理）同样只信 JWT，换成 `session::require_admin`（回查 role + token_version）；`create_order` 写路径也改为 verified。无现成请求上下文 + DB 的测试设施，红绿用真实服务 + Postgres 验证：u2 旧 tv token 写入、u1 自称 admin 读权益列表，修前均通过，修后分别被拒；有效 token 仍可写）
+- [x] B7 — SEC-17 不可信内容的 mermaid 按代码显示（cd81f5f：`renders_as_diagram(lang, untrusted)`，用户内容的 mermaid 走 `CodeBlock`（`language-mermaid`，引导脚本只扫 `.mermaid`）；单测先红后绿；浏览器验收：论坛帖显示为代码、无 SVG，welcome 文章两张图照常渲染；用户内容的原始 HTML 本就按文本输出，无法注入 `class="mermaid"`）
+- [x] B8 — SEC-19 / SEC-20 HSTS、Permissions-Policy、`ws:` 仅开发；删 `/api/echo`；裁剪公开配置（ca5307c：应用侧补 HSTS（与 gateway 同值）与 Permissions-Policy（关 camera / microphone / geolocation / payment / usb / browsing-topics，不动 fullscreen）；`connect-src` 仅 debug 构建放行 `ws: wss:`；删 `/api/echo` 与 Echo 组件；`/api/site/config` 无调用方且返回整份 site.json，直接删除而非裁剪 DTO；头部单测先红后绿，curl 验收两端点不再可用、新头已下发）
+
+### 待评估 — 插件改为编译期依赖（2026-10-08 提出）
+- [x] P-EVAL — 采纳方案 A：第一方插件全部编译进宿主，移除 WASM 运行时（2026-10-08 决定）。依据：10 个插件全部在本仓库构建、同一作者；认证插件只是端点常量 + 十几行字段映射，主题是 CSS 字符串；i18n 插件生产无调用方（`/api/i18n/translate` 无客户端调用）；content-toc 与审核插件均未启用（`content_transformers: []`、site.json 无 moderation 块）；宿主插件设施 + SDK 约 3,400 行。剩余两个「高」（SEC-05 / SEC-06）只因运行时加载插件而存在，且认证做成插件无法安全：端点收回宿主后插件仍决定 `external_id`。C1 / C2 / C4 / C5 / C6、D1 随之取消，C3 保留。重估条件：`assets/plugins/` 中出现无对应源码 crate（`crates/plugins/` 或 `examples/`）的 wasm，或站点要作为产品给他人部署
+
+### 阶段 R — 插件编译进宿主（P-EVAL 方案 A）
+- [x] R1 — 认证内置：`Provider` 枚举（github / google / discord / twitter）给出固定 https 端点、展示信息与 `map_profile`（缺 uid 报错，不再 `unwrap_or(0)`）；`AuthService` 改用枚举，按凭据配置启用；删 4 个 auth 插件 crate 与 wasm（SEC-05）（a18de30：`core::auth::provider` 内置四份 `ProviderSpec` 常量与字段映射，`map_profile` 取不到可用 uid 返回 `None`；登录 / 回调只接受 site.json 启用的 provider，`auth.providers` 改为 id 列表；顺带删掉无调用方的 `AuthEngine` 与 sdk 的 auth 插件类型；AUTH_GUIDE 重写。provider 映射与启用规则 6 条新单测；live 验收：四个按钮、github / twitter（含 S256 challenge）跳转到固定端点、未知 provider 与缺 PKCE cookie 的回调被拒。未做真实第三方账号的完整登录往返）
+- [x] R2 — 主题内置：内置主题表（ocean / sunset / catppuccin），site.json、管理端设置与 `site_theme` cookie 改用主题 id，只接受表内 id；删 3 个主题插件 crate、`examples/plugin-theme-purple` 与 wasm（d2a8ad7：CSS 移到 `engines/themes/*.css` 经 `include_str!` 嵌入 `THEMES` 表；`resolve_theme` 只认表内 id，cookie 为旧 wasm 文件名 / 路径 / 其他插件时 warn 并回退；site.json 的 `themes` / `active_theme` 合为单个 `theme`（每个主题都给全套 token，栈无意义）；删 PluginManager 的主题 CSS 函数与缓存、admin 主题行；构建脚本 / CI / Dockerfile 不再构建主题；THEME_SPEC 重写，顺带修正 ENGINES_SPEC 中 R1 漏改的 AuthEngine。新单测 5 条（含 cookie 表外值回退）；live 验收：三主题 CSS、旧文件名与路径 cookie 回退 ocean、`/api/theme/set` 拒绝表外值、浏览器 picker 切到 Sunset 后 `--primary` 与 cookie 生效）
+- [x] R3 — 删除未使用的插件能力：i18n 插件与 `/api/i18n/translate`；content-transformer 引擎、`content_transformers` 配置、各模块 `apply_default_pre` 调用与 content-toc 插件（c6a495f：删 i18n-fluent / content-toc 两个 crate 与 wasm、`/api/i18n/translate`（gateway 写路径表同步去掉）、`ContentTransformerEngine`、`content_transformers` 配置与 8 个内容模块的调用、SDK 的 transformer ABI 与 i18n / content-transformer 能力；`build_themes.sh` 已无可构建的插件，连同 Dockerfile 步骤与 CI `build-wasm-plugins` job 一并删除；删 CONTENT_TRANSFORMER_SPEC。插件运行时测试改用审核 wasm 作夹具（故意改错期望值确认真的执行而非跳过）；697 通过（减少的是被删代码的测试），web 警告 12；live：translate 返回 405，blog / docs / course 正文照常渲染）
+- [x] R4 — 审核内置：deepseek 的提示词构造 / 结论解析移入 moderation crate，经 `crates/llm` 调用，替换 `plugin_stage`；删 `examples/plugin-moderation-deepseek`（c48264d：新增 `LlmModerationStage`（`build_messages` / `parse_verdict`），链接提示复用宿主 `extract_urls`；用原 wasm 对同一批 4 条提交 + 6 条模型回复逐条对比输出一致后删除插件源码；site.json `moderation.plugins` 改为 `llm_review` 开关（旧字段忽略、不会开启 LLM），管理端表单改为勾选框；删 `PluginModerationStage`、SDK 审核 ABI 常量与 `ModerationVerdict`；失败仍 fail open（C3 处理）。wasm 移到 `crates/core/tests/fixtures` 供运行时测试用到 R5。新单测 11 条，693 通过；live LLM 测试 7 条通过（辱骂 / 仿冒链接 Block，正常文本 / 图片 Allow）；管理端表单未在浏览器验收）
+- [x] C3 — SEC-12 审核失败默认 fail closed（送人工复核）（在 R4 的内置 stage 上做）（a7a9f89：LLM 调用失败 / 回复读不出结论时按 `site.json::moderation.on_llm_failure` 处理——`review`（默认）记 Flag 照常发布并进审核队列，`reject` 记 Block 拒绝提交，不提供放行；warning 带原因与进程内累计失败次数；管理端表单加下拉。修流水线选结论：先比 label 再比分数，分数 0 的失败 Flag 不再被黑名单 stage 的 Allow(0) 盖掉。live 图片测试原先靠 fail-open 通过（模型服务下载不了 Wikimedia 图，`invalid_image_url`），改用内联 PNG data URL 后得到真实 Allow。新单测 4 条，697 通过；live LLM 测试 7 条通过；管理端表单未在浏览器验收）
+- [x] R5 — 移除插件运行时：`PluginManager` / 插件引擎 / `plugin_security` / wasmi 依赖、SDK 的 ABI 部分与 `sdk-macros`（共享类型留在 `sdk`）、管理端插件上传 / 重载 / 列表、`/plugins` 公开页、`plugins_lock` 与 `lock_plugins`；删 `PLUGIN_DEV.md` / `PLUGIN_ABI.md`，README 与架构文档改写（SEC-06 / 14 / 15 / 16 / 22 的攻击面随之消失）（6bf761c：删 `PluginManager` / `engines::plugin` / `plugin_security` / 夹具 wasm、wasmi / cssparser / wat 依赖、`AppError::Plugin`；settings 删 `plugins_lock` 与无读取方的 `paths`（旧 site.json 仍可解析）；sdk 只留 `ModerationSubmission` / `ImageRef` / `AppModule`，删 `sdk-macros`；删 `/plugins`、`/api/plugins/public-list`、管理端插件页与 list / reload / upload；`lock_plugins` 本就不存在，只删了文档引用；顺带删 llm 里只为老插件存在的字符串 content 反序列化。docs：删 PLUGIN_DEV / PLUGIN_ABI，改写 README、DEVELOPER、AUTH_SPEC、ADMIN_SPEC、OPERATIONS 等。+4,042 行删除；639 通过，web 告警 12→5，gateway 5 通过；live：`/plugins`、`/admin/plugins` 404，插件 API 405，首页 / 博客 / 文档 / 论坛 / 管理端正常）
+
+### 阶段 E — dioxus-ui（在 dioxus-ui 仓库修复）
+- [x] E-1 — 把 FB-02 ~ FB-12 同步到 dioxus-ui 的待办 / RFC，按其流程修复发版（上游 0.6.1 去除 eval、0.6.2 安全加固；FB-09/12/16 上游 wontfix 并给出理由；本站升级到 0.6.2，各条状态见 DIOXUS_UI_FEEDBACK.md）

@@ -9,8 +9,8 @@
 //!   只锁定 name + label，避免在尚未确定 widgets crate 之前过度设计。
 //! - **LayoutEngine** 维护已注册布局并记录默认布局名（来自 site.json，未来字段）。
 
-use super::{Engine, EngineContext};
 use crate::error::{AppError, AppResult};
+use crate::settings::SiteConfig;
 
 /// 单个布局包的描述。具体渲染方法在后续 Phase 3.3 / 2.1 widgets crate
 /// 落地后补充（如 `fn navbar() -> Element`）。
@@ -71,25 +71,11 @@ impl LayoutEngine {
   }
 }
 
-impl Engine for LayoutEngine {
-  fn name(&self) -> &'static str {
-    "layout"
-  }
-
-  fn init(&mut self, ctx: &EngineContext) -> AppResult<()> {
-    // Phase 3.3：从 SiteConfig 读 `active_layout`，默认 `"classic"`。
-    // 未注册的布局不会拒绝赋值——上层 `Navbar` 会在 server fn
-    // 层面以“未知 → classic”回退。
-    self.active = Some(ctx.site_config.active_layout_or_default().to_string());
-    Ok(())
-  }
-
-  fn as_any(&self) -> &dyn std::any::Any {
-    self
-  }
-
-  fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-    self
+impl LayoutEngine {
+  /// 原 Engine::init 行为：从 SiteConfig 读取 active_layout（默认 classic）。
+  /// 未注册的布局不会被拒绝——上层 Navbar 在 server fn 层面以「未知 → classic」回退。
+  pub fn apply_site_config(&mut self, site: &SiteConfig) {
+    self.active = Some(site.active_layout_or_default().to_string());
   }
 }
 
@@ -118,11 +104,7 @@ mod tests {
     }
   }
 
-  #[test]
-  fn engine_name_is_layout() {
-    let e = LayoutEngine::new();
-    assert_eq!(<LayoutEngine as Engine>::name(&e), "layout");
-  }
+  // Phase 8.7：删除了 Engine trait，原 engine_name_is_layout 不再有意义。
 
   #[test]
   fn register_two_distinct_layouts() {
@@ -150,25 +132,19 @@ mod tests {
   }
 
   #[test]
-  fn init_reads_active_layout_from_site_config() {
-    // 默认 site_config.active_layout = "classic"——检查 init 走走上该路径。
+  fn apply_site_config_reads_active_layout() {
+    // 默认 site_config.active_layout = "classic"
     let mut e = LayoutEngine::new();
-    let ctx = EngineContext::for_tests();
-    e.init(&ctx).unwrap();
+    e.apply_site_config(&SiteConfig::default());
     assert_eq!(e.active(), Some("classic"));
   }
 
   #[test]
-  fn init_picks_minimal_when_site_config_says_minimal() {
-    use crate::settings::SiteConfig;
-    use std::path::PathBuf;
-    use std::sync::Arc;
-
+  fn apply_site_config_picks_minimal_when_site_says_minimal() {
     let mut cfg = SiteConfig::default();
     cfg.active_layout = "minimal".to_string();
-    let ctx = EngineContext { site_config: Arc::new(cfg), asset_root: PathBuf::from("assets") };
     let mut e = LayoutEngine::new();
-    e.init(&ctx).unwrap();
+    e.apply_site_config(&cfg);
     assert_eq!(e.active(), Some("minimal"));
   }
 }

@@ -22,9 +22,7 @@
 //! 如果对应的 env 未配置，测试 `early return` 并提示。这样可在不同 CI
 //! / 本地环境下「只跑配置好的那一种」。
 
-use llm::{
-  AnthropicChat, LlmClient, LlmConfig, LlmMessage, LlmProvider, OpenAiChat,
-};
+use llm::{AnthropicChat, LlmClient, LlmConfig, LlmMessage, LlmProvider, OpenAiChat};
 
 fn load_env() {
   // 测试进程默认不会读 .env，显式加载一次。失败时静默（CI 也可能直接走 env）。

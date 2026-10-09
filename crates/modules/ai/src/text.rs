@@ -1,88 +1,51 @@
 //! 板块元数据 + 纯逻辑（无 IO / 无 dioxus），可独立单测。
+//!
+//! 方案 A：展示文案（label / blurb / tagline）统一由 `app_core::i18n` 从
+//! `assets/i18n/{zh,en}.ftl` 提供。这里只保留结构性数据（slug / crate 名 / url）。
 
 pub const BOARD_ID: &str = "ai";
-pub const BOARD_LABEL: &str = "AI";
 pub const BOARD_ROUTE: &str = "/ai";
-pub const BOARD_TAGLINE: &str =
-  "用 Rust 做张量计算、模型推理与 LLM 应用：candle、burn 与 ONNX 生态。";
 
+/// 一个子主题。展示用 label / blurb 经 i18n key `{BOARD_ID}.sub.{slug}.*` 查表。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Subtopic {
   pub slug: &'static str,
-  pub label: &'static str,
-  pub blurb: &'static str,
 }
 
+/// 一个精选 crate。`name` 为品牌名（语言中性），`url` 为外链；blurb 经 i18n key
+/// `{BOARD_ID}.crate.{normalize_tag(name)}.blurb` 查表。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FeaturedCrate {
   pub name: &'static str,
-  pub blurb: &'static str,
   pub url: &'static str,
 }
 
 pub const SUBTOPICS: &[Subtopic] = &[
-  Subtopic {
-    slug: "tensors",
-    label: "张量计算",
-    blurb: "在 CPU / CUDA / Metal 上做张量运算与自动微分。",
-  },
-  Subtopic {
-    slug: "inference",
-    label: "推理引擎",
-    blurb: "加载预训练权重做前向推理，部署到服务端或边缘。",
-  },
-  Subtopic {
-    slug: "llm", label: "大模型", blurb: "本地跑 LLM、量化、KV cache 与流式生成。"
-  },
-  Subtopic {
-    slug: "tokenizers",
-    label: "分词",
-    blurb: "BPE / WordPiece 分词与 HuggingFace tokenizers。",
-  },
-  Subtopic {
-    slug: "training",
-    label: "训练框架",
-    blurb: "用纯 Rust 框架定义网络、反向传播与优化器。",
-  },
-  Subtopic {
-    slug: "embeddings",
-    label: "向量与检索",
-    blurb: "句向量、相似度检索与向量数据库集成。",
-  },
+  Subtopic { slug: "tensors" },
+  Subtopic { slug: "inference" },
+  Subtopic { slug: "llm" },
+  Subtopic { slug: "tokenizers" },
+  Subtopic { slug: "training" },
+  Subtopic { slug: "embeddings" },
 ];
 
 pub const FEATURED_CRATES: &[FeaturedCrate] = &[
-  FeaturedCrate {
-    name: "candle",
-    blurb: "HuggingFace 极简张量与推理框架",
-    url: "https://github.com/huggingface/candle",
-  },
-  FeaturedCrate {
-    name: "burn", blurb: "纯 Rust、多后端深度学习框架", url: "https://burn.dev"
-  },
-  FeaturedCrate {
-    name: "tch",
-    blurb: "libtorch（PyTorch C++）绑定",
-    url: "https://github.com/LaurentMazare/tch-rs",
-  },
-  FeaturedCrate {
-    name: "tokenizers",
-    blurb: "HuggingFace 高性能分词器",
-    url: "https://github.com/huggingface/tokenizers",
-  },
-  FeaturedCrate { name: "ort", blurb: "ONNX Runtime 的 Rust 绑定", url: "https://ort.pyke.io" },
-  FeaturedCrate {
-    name: "safetensors",
-    blurb: "安全、零拷贝的张量序列化格式",
-    url: "https://github.com/huggingface/safetensors",
-  },
+  FeaturedCrate { name: "candle", url: "https://github.com/huggingface/candle" },
+  FeaturedCrate { name: "burn", url: "https://burn.dev" },
+  FeaturedCrate { name: "tch", url: "https://github.com/LaurentMazare/tch-rs" },
+  FeaturedCrate { name: "tokenizers", url: "https://github.com/huggingface/tokenizers" },
+  FeaturedCrate { name: "ort", url: "https://ort.pyke.io" },
+  FeaturedCrate { name: "safetensors", url: "https://github.com/huggingface/safetensors" },
 ];
 
+/// 文章排序所需的最小契约，[`text`] 测试与 [`server`] 列表共用。
 pub trait DatedArticle {
   fn date(&self) -> &str;
   fn title(&self) -> &str;
 }
 
+/// 归一化标签：trim + 小写，仅保留字母数字 / `-` / `_`。
+/// 也用于把 crate `name` 映射为稳定的 i18n key 片段。
 pub fn normalize_tag(raw: &str) -> String {
   raw
     .trim()
@@ -92,6 +55,7 @@ pub fn normalize_tag(raw: &str) -> String {
     .collect()
 }
 
+/// 归一化一组标签：去空、去重、排序。
 pub fn normalize_tags(tags: &[String]) -> Vec<String> {
   let mut out: Vec<String> =
     tags.iter().map(|t| normalize_tag(t)).filter(|t| !t.is_empty()).collect();
@@ -100,10 +64,7 @@ pub fn normalize_tags(tags: &[String]) -> Vec<String> {
   out
 }
 
-pub fn subtopic_label(slug: &str) -> Option<&'static str> {
-  SUBTOPICS.iter().find(|s| s.slug == slug).map(|s| s.label)
-}
-
+/// 全文匹配：标题 / 描述 / 标签任一命中即返回 true。空查询返回 true。
 pub fn matches_query(title: &str, description: &str, tags: &[String], query: &str) -> bool {
   let q = query.trim().to_lowercase();
   if q.is_empty() {
@@ -114,6 +75,7 @@ pub fn matches_query(title: &str, description: &str, tags: &[String], query: &st
     || tags.iter().any(|t| t.to_lowercase().contains(&q))
 }
 
+/// 按日期降序、再按标题升序排序（稳定）。
 pub fn sort_by_date_desc<T: DatedArticle>(items: &mut [T]) {
   items.sort_by(|a, b| {
     b.date().cmp(a.date()).then_with(|| a.title().to_lowercase().cmp(&b.title().to_lowercase()))
@@ -141,8 +103,6 @@ mod tests {
   fn board_constants_well_formed() {
     assert_eq!(BOARD_ID, "ai");
     assert!(BOARD_ROUTE.starts_with('/'));
-    assert!(!BOARD_LABEL.is_empty());
-    assert!(!BOARD_TAGLINE.is_empty());
   }
 
   #[test]
@@ -159,8 +119,6 @@ mod tests {
     assert!(SUBTOPICS.len() >= 4);
     for s in SUBTOPICS {
       assert!(!s.slug.is_empty());
-      assert!(!s.label.is_empty());
-      assert!(!s.blurb.is_empty());
     }
   }
 
@@ -177,7 +135,6 @@ mod tests {
     for c in FEATURED_CRATES {
       assert!(c.url.starts_with("https://"), "{} 应为 https URL", c.name);
       assert!(!c.name.is_empty());
-      assert!(!c.blurb.is_empty());
     }
   }
 
@@ -191,6 +148,15 @@ mod tests {
   }
 
   #[test]
+  fn featured_crate_i18n_keys_unique() {
+    let mut keys: Vec<String> = FEATURED_CRATES.iter().map(|c| normalize_tag(c.name)).collect();
+    let n = keys.len();
+    keys.sort();
+    keys.dedup();
+    assert_eq!(keys.len(), n, "crate 的 i18n key（normalize_tag(name)）应唯一");
+  }
+
+  #[test]
   fn normalize_tag_lowercases_and_strips() {
     assert_eq!(normalize_tag(" Candle!! "), "candle");
     assert_eq!(normalize_tag("safe-tensors"), "safe-tensors");
@@ -201,12 +167,6 @@ mod tests {
     let tags =
       vec!["Candle".to_string(), "candle".to_string(), "   ".to_string(), "Burn".to_string()];
     assert_eq!(normalize_tags(&tags), vec!["burn".to_string(), "candle".to_string()]);
-  }
-
-  #[test]
-  fn subtopic_label_known_and_unknown() {
-    assert_eq!(subtopic_label("llm"), Some("大模型"));
-    assert_eq!(subtopic_label("does-not-exist"), None);
   }
 
   #[test]

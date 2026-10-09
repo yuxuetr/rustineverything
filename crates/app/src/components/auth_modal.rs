@@ -1,6 +1,8 @@
-use dioxus::document::eval;
-use dioxus::prelude::*;
 use app_core::AuthProviderDisplay;
+use dioxus::prelude::*;
+use dioxus_shadcn::{
+  Dialog, DialogClose, DialogContent, DialogDescription, DialogOverlay, DialogTitle, Spinner,
+};
 
 use crate::i18n::{t, use_i18n, Language};
 use crate::server::get_auth_providers;
@@ -9,63 +11,33 @@ use crate::server::get_auth_providers;
 pub fn AuthModal(show: Signal<bool>) -> Element {
   let lang = use_i18n();
 
-  // Fetch available providers from server (plugin-driven)
+  // Fetch the configured login providers from the server
   let providers =
     use_resource(move || async move { get_auth_providers().await.unwrap_or_default() });
-
-  let close_modal = move |_| {
-    show.set(false);
-  };
-
-  let stop_propagation = move |e: Event<MouseData>| {
-    e.stop_propagation();
-  };
-
-  if !show() {
-    return rsx! {};
-  }
 
   let provider_list = providers.read();
   let provider_list = provider_list.as_ref().cloned().unwrap_or_default();
 
   rsx! {
-      // Full-screen overlay: backdrop + centered flex container
-      div {
-          class: "fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4",
-          style: "margin:0; top:0; left:0; width:100vw; height:100vh;",
-          onclick: close_modal,
-
-          // Modal panel
-          div {
-              class: "relative w-full rounded-2xl bg-white dark:bg-slate-900 shadow-2xl p-8 animate-[fadeInUp_0.2s_ease-out]",
-              style: "max-width: 28rem;",
-              onclick: stop_propagation,
-
-              // Close button
-              button {
-                  class: "absolute top-4 right-4 p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors",
-                  onclick: close_modal,
-                  svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
+      Dialog { open: show(), on_open_change: move |v| show.set(v),
+          DialogOverlay { class: "z-[100] backdrop-blur-sm" }
+          DialogContent { class: "z-[100] max-w-md gap-0 rounded-2xl p-8 shadow-2xl",
+              DialogClose { class: "p-1",
+                  svg { class: "w-5 h-5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", "aria-hidden": "true",
                       path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M6 18L18 6M6 6l12 12" }
                   }
+                  span { class: "sr-only", "{t(lang(), \"auth.close\")}" }
               }
 
-              // Header
               div { class: "text-center mb-8",
-                  h2 { class: "text-2xl font-bold text-slate-900 dark:text-white mb-2",
-                      "{t(lang(), \"auth.sign_in\")}"
-                  }
-                  p { class: "text-sm text-slate-500 dark:text-slate-400",
-                      "{t(lang(), \"auth.sign_in_desc\")}"
-                  }
+                  DialogTitle { class: "text-2xl font-bold mb-2", "{t(lang(), \"auth.sign_in\")}" }
+                  DialogDescription { "{t(lang(), \"auth.sign_in_desc\")}" }
               }
 
-              // Provider buttons (dynamic from plugins)
+              // Provider buttons (one per configured provider)
               div { class: "flex flex-col gap-3",
                   if provider_list.is_empty() {
-                      p { class: "text-center text-sm text-slate-400 py-4",
-                          "Loading..."
-                      }
+                      Spinner { class: "mx-auto my-4 border-t-primary" }
                   }
 
                   for provider in provider_list.iter() {
@@ -73,25 +45,13 @@ pub fn AuthModal(show: Signal<bool>) -> Element {
                   }
               }
 
-              // Divider
-              div { class: "flex items-center gap-3 my-6",
-                  div { class: "flex-1 h-px bg-slate-200 dark:bg-slate-700" }
-              }
+              div { class: "my-6 h-px bg-border" }
 
-              // Terms
-              p { class: "text-center text-xs text-slate-400 dark:text-slate-500",
+              p { class: "text-center text-xs text-muted-foreground",
                   "{t(lang(), \"auth.terms\")}"
               }
           }
       }
-
-      // Animation keyframes
-      document::Style { "
-            @keyframes fadeInUp {{
-                from {{ opacity: 0; transform: translateY(16px) scale(0.98); }}
-                to {{ opacity: 1; transform: translateY(0) scale(1); }}
-            }}
-        " }
   }
 }
 
@@ -121,13 +81,14 @@ fn render_provider_button(provider: &AuthProviderDisplay, lang: Language) -> Ele
   rsx! {
       button {
           key: "{provider_id}",
+          r#type: "button",
           class: "flex items-center justify-center gap-3 w-full px-4 py-3 rounded-xl text-sm font-semibold transition-all duration-150 cursor-pointer hover:opacity-90",
           style: "{btn_style}",
           onclick: move |_| {
               // Phase 7.2：直接跳转到 server 路由，由服务端在重定向响应里下发
               // 加密的 oauth_pkce cookie（state + verifier）。不再走 server fn
               // 取 URL，避免 PKCE 状态丢失的 race。
-              let _ = eval(&format!("window.location.href = '/api/auth/login/{}'", provider_id));
+              widgets::browser::navigate(&format!("/api/auth/login/{}", provider_id));
           },
 
           svg {
@@ -144,13 +105,34 @@ fn render_provider_button(provider: &AuthProviderDisplay, lang: Language) -> Ele
 
 /// Simple heuristic to determine if a hex color is "light"
 fn is_light_color(hex: &str) -> bool {
-  let hex = hex.trim_start_matches('#');
-  if hex.len() < 6 {
+  // 先确认是 ASCII 十六进制，再按字节切片（防多字节字符让切片 panic）。
+  let Some(hex) =
+    hex.trim_start_matches('#').get(..6).filter(|h| h.bytes().all(|b| b.is_ascii_hexdigit()))
+  else {
     return false;
-  }
-  let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f32;
-  let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f32;
-  let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f32;
+  };
+  let channel = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).unwrap_or(0) as f32;
+  let (r, g, b) = (channel(0), channel(2), channel(4));
   // Relative luminance
   (0.299 * r + 0.587 * g + 0.114 * b) > 186.0
+}
+
+#[cfg(test)]
+mod tests {
+  use super::is_light_color;
+
+  #[test]
+  fn reads_hex_brightness() {
+    assert!(is_light_color("#ffffff"));
+    assert!(!is_light_color("#24292f"));
+    assert!(!is_light_color("#fff"));
+  }
+
+  #[test]
+  fn non_hex_brand_color_is_not_light_and_does_not_panic() {
+    // 多字节字符曾让字节切片 panic（brand_color 曾来自插件 manifest）。
+    assert!(!is_light_color("#aé1234"));
+    assert!(!is_light_color("#ééééé"));
+    assert!(!is_light_color("red"));
+  }
 }

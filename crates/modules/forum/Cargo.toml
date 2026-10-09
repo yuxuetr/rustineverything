@@ -5,14 +5,13 @@ edition = "2021"
 
 [dependencies]
 dioxus = { workspace = true, features = ["fullstack", "router"] }
+dioxus-shadcn = { workspace = true, features = ["alert", "badge", "button", "card", "empty", "input", "spinner", "tabs", "textarea"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
 sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
-module-blog = { path = "../blog" }
-module-course = { path = "../course" }
 app-core = { path = "../../core" }
 module-moderation = { path = "../moderation", optional = true }
 sea-orm = { workspace = true, optional = true }
@@ -24,8 +23,9 @@ server = [
     "dep:tokio",
     "dep:sea-orm",
     "widgets/server",
-    "module-blog/server",
-    "module-course/server",
     "app-core/server",
     "dep:module-moderation",
 ]
+
+[dev-dependencies]
+tempfile = "3"

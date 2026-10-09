@@ -1,5 +1,5 @@
 #![allow(clippy::field_reassign_with_default)] // 测试里 Default + 逐字段赋值更易读
-//! 端到端集成测试：真实 wasm 插件 + 真实 LLM 端点（DeepSeek）。
+//! 端到端集成测试：内置 LLM 审核 stage + 真实 LLM 端点（如 DeepSeek）。
 //!
 //! 默认 `#[ignore]`，仅当显式指定 `--ignored` 时运行：
 //! ```sh
@@ -9,20 +9,22 @@
 //!
 //! 要求：
 //! - `.env` 已配 `OPENAI_LLM_BASE_URL` / `OPENAI_LLM_API_KEY`（或 Anthropic 那一对）
-//! - `assets/plugins/plugin_moderation_deepseek.wasm` 已构建（见
-//!   `examples/plugin-moderation-deepseek/src/lib.rs` 顶部构建命令）
 //!
-//! 失败任一前置条件 → 测试 early return 跳过。
+//! 未配置 → 测试 early return 跳过。
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use app_core::settings::{ModerationSettings, SiteConfig};
+use app_core::settings::{LlmFailureAction, ModerationSettings, SiteConfig};
 use llm::{default_client_from_env, LlmConfig};
 use module_moderation::{
-  AsyncModerationStage, ModerationLabel, ModerationPipeline, PluginModerationStage,
+  AsyncModerationStage, LlmModerationStage, ModerationLabel, ModerationPipeline,
 };
 use sdk::{ImageRef, ModerationSubmission};
+
+/// 64×64 纯色 PNG（中立内容）。内联成 data URL：模型服务下载不了 Wikimedia 的图
+/// （`invalid_image_url`），以前 fail-open 把这个错误当成了 Allow。
+const NEUTRAL_PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAT0lEQVR42u3PQQkAAAgEsAtvFWuZxQi+hcEKLNP1WgQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQELgutj3HhYLf1FgAAAABJRU5ErkJggg==";
 
 fn workspace_root() -> PathBuf {
   // crates/modules/moderation/ → 上溯 3 级
@@ -34,25 +36,12 @@ fn workspace_root() -> PathBuf {
     .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn plugin_path() -> PathBuf {
-  workspace_root().join("assets/plugins/plugin_moderation_deepseek.wasm")
-}
-
 fn load_env() {
   let _ = dotenvy::from_path(workspace_root().join(".env"));
 }
 
 fn check_prereqs() -> Option<Arc<dyn llm::LlmClient>> {
   load_env();
-  if !plugin_path().exists() {
-    eprintln!(
-      "跳过：插件 wasm 未构建。请先 `cargo build -p plugin-moderation-deepseek \
-       --target wasm32-unknown-unknown --release && cp /Users/hal/.target/\
-       wasm32-unknown-unknown/release/plugin_moderation_deepseek.wasm \
-       assets/plugins/`"
-    );
-    return None;
-  }
   let cfg = LlmConfig::from_env();
   if cfg.resolved_provider().is_none() {
     eprintln!("跳过：未配置任一 LLM provider（OPENAI_LLM_* 或 ANTHROPIC_LLM_*）");
@@ -68,7 +57,7 @@ async fn benign_comment_returns_allow() {
   let Some(llm) = check_prereqs() else {
     return;
   };
-  let stage = PluginModerationStage::new("moderation-deepseek", plugin_path(), llm);
+  let stage = LlmModerationStage::new(llm, LlmFailureAction::Review);
   let v = stage
     .evaluate(
       &ModerationSubmission::new("感谢分享，这篇博客写得很清晰，期待下一篇。")
@@ -88,7 +77,7 @@ async fn abusive_comment_is_flagged_or_blocked() {
   let Some(llm) = check_prereqs() else {
     return;
   };
-  let stage = PluginModerationStage::new("moderation-deepseek", plugin_path(), llm);
+  let stage = LlmModerationStage::new(llm, LlmFailureAction::Review);
 
   // 明显的辱骂内容
   let v = stage
@@ -111,15 +100,10 @@ async fn url_blocklist_pipeline_blocks_scam_link() {
   let mut site = SiteConfig::default();
   site.moderation = ModerationSettings {
     enabled: true,
-    plugins: vec![],
     url_blocklist: vec!["scam.example".to_string(), "*.phishing.example".to_string()],
     ..Default::default()
   };
-  let pipeline = ModerationPipeline::from_site_config(
-    &site,
-    workspace_root().join("assets/plugins").as_path(),
-    None,
-  );
+  let pipeline = ModerationPipeline::from_site_config(&site, None);
 
   // 命中精确域名
   let v = pipeline.evaluate(ModerationSubmission::new("点 https://scam.example/x 领奖")).await;
@@ -146,17 +130,15 @@ async fn comment_with_benign_image_returns_allow() {
   let Some(llm) = check_prereqs() else {
     return;
   };
-  let stage = PluginModerationStage::new("moderation-deepseek", plugin_path(), llm);
+  let stage = LlmModerationStage::new(llm, LlmFailureAction::Review);
 
-  // 用 Wikipedia 公开 logo（中立内容）。LLM provider 服务器侧 fetch。
-  // 若用 DeepSeek 之类不带视觉的端点，会返回错误 → stage fail-open 为 Allow。
-  let url = "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/Rust_programming_language_black_logo.svg/240px-Rust_programming_language_black_logo.svg.png";
+  // 若用 DeepSeek 之类不带视觉的端点，会返回错误 → stage 记为 Flag（送人工复核），本测试会失败。
 
   let v = stage
     .evaluate(
-      &ModerationSubmission::new("分享一张 Rust 的 logo")
+      &ModerationSubmission::new("分享一张配色参考图")
         .with_kind("comment")
-        .push_image(ImageRef::url(url).with_media_type("image/png")),
+        .push_image(ImageRef::url(NEUTRAL_PNG).with_media_type("image/png")),
     )
     .await;
 
@@ -188,7 +170,7 @@ async fn phishing_link_context_flags_or_blocks_via_llm() {
   let Some(llm) = check_prereqs() else {
     return;
   };
-  let stage = PluginModerationStage::new("moderation-deepseek", plugin_path(), llm);
+  let stage = LlmModerationStage::new(llm, LlmFailureAction::Review);
 
   // 仿冒 PayPal：domain 拼写仿冒 + 诱导话术
   let v = stage

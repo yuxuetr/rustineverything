@@ -8,7 +8,7 @@
 - ✅ Dioxus 0.7 全栈（SSR + hydration）+ Axum 自定义路由
 - ✅ SeaORM + PostgreSQL，启动期 `sea-orm-migration` 自动迁移（8 张表：initial_schema 7 + moderation_queue 1）
 - ✅ 全局 DB 连接池单例（`init_pool` / `get_or_init_pool`）
-- ✅ 8 引擎架构（plugin/module/auth/theme/layout/content/moderation/search）
+- ✅ 引擎层（module/theme/layout/moderation/search；plugin/auth/content 引擎已删除，主题 / 登录内置）
 - ✅ 测试：`cargo test --features server --workspace -- --test-threads=1` → **559 passed / 0 failed / 18 ignored**（ignored 为 live-LLM + live-DB 集成测试，分别需 API key / `DATABASE_URL`）
 
 ## 2. 安全（Phase 1A）
@@ -32,19 +32,16 @@
 
 - ✅ 统一 ModerationPipeline，默认 `enabled=false` → 零开销 Allow
 - ✅ 5 条提交路径全部接入（评论/话题/回复/标注/上传）
-- ✅ 两层链接检测（host 黑名单 sync stage + 插件 prompt）
+- ✅ 两层链接检测（host 黑名单 stage + LLM prompt 链接上下文）
+- ✅ LLM 审核失败不放行：默认送人工复核，可配为拒绝（`on_llm_failure`）
 - ✅ 阈值 schema 校验（范围/NaN/block≥flag，装载时校验回退）
 - ✅ Admin 复核页：Tab 过滤 + 单条/批量 approve/reject + 作者历史违规徽章
 - ✅ 多模态视觉审核（已对 gpt-4o-mini 实测）
 - 🟡 审核 P95 ≤ 1.5s — 取决于所选 LLM provider，需真实部署压测
 
-## 5. 插件生态（Phase 5）
+## 5. 插件生态（Phase 5，已移除）
 
-- ✅ wasmi 插件运行时 + ABI 版本协商 + 输出大小上限（8MB）
-- ✅ Hot reload：admin 上传 wasm（沙箱校验 + ABI 校验 + 备份 + 原子替换 + 回滚）→ 失效缓存 / 重建审核流水线，无需重启
-- ✅ 内存回收：invalidate 即 Drop 旧 Module（单测验证缓存恒为 1）
-- ✅ `/plugins` 公开浏览页：扫 `assets/plugins/*.wasm` 读 manifest 展示（已浏览器实测 9 插件，0 console error）
-- ⏳ 插件市场 `registry.json` 已审核清单 + 提交流程文档（开源后做）
+- 2026-10 起第一方插件全部编译进宿主，wasmi 运行时、插件上传 / 热更新、`/plugins` 公开页随之移除（R1–R5，见 `SECURITY_REMEDIATION.md`）。
 
 ## 6. SEO / 内容分发
 
@@ -55,9 +52,9 @@
 ## 7. 部署 / CI / 运维（Phase 7）
 
 - ✅ 多阶段 Debian (trixie/glibc) Dockerfile + `docker-compose.yml`（app + postgres；审核走托管 LLM API，无 ollama/GPU 依赖）
-- ✅ CI：fmt + clippy **强校验**（clippy `-D warnings` 零告警）+ test + build + wasm 插件构建
+- ✅ CI：fmt + clippy **强校验**（clippy `-D warnings` 零告警）+ test + build
 - ✅ tracing 日志（`RUST_LOG`），全工作区无 `println!` 调试输出
-- ✅ runbook：`DEPLOY_GUIDE.md`（部署）+ `OPERATIONS.md`（day-2 运维，含 hot reload §2.4）
+- ✅ runbook：`DEPLOY_GUIDE.md`（部署）+ `OPERATIONS.md`（day-2 运维）
 - ✅ `docker compose up` 一键起 + 自动迁移 — 2026-05-29 干净环境实跑通过（Debian trixie 镜像；postgres healthy → app 启动 → 8 表迁移干净应用 → `curl :8080` 200）
 - ⏳ 7.2 PKCE 持久化（加密 cookie）/ 7.3 搜索 `MmapDirectory` 持久化 — v1 可选
 
@@ -72,7 +69,6 @@
 
 ## 9. 已知限制（v1 可接受）
 
-- 审核阈值在线图形编辑器未做（改 site.json + 「重新载入」生效）。
+- 审核设置在 `/admin/moderation/settings` 修改，写回运行中容器的 site.json（容器重建后需以仓库版本为准）。
 - cases 案例的 star 数统一为 0（不抓取实时 GitHub 数据，避免展示陈旧/虚假计数）。
 - 评论硬删除，无软删除 / 操作审计。
-- hot reload 写入运行中容器的 `assets/plugins/`，容器重建会回到镜像版本（除非挂卷）。

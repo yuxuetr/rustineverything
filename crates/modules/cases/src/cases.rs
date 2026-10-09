@@ -1,9 +1,13 @@
 use crate::server::{
   get_case, list_case_categories, list_case_tags, list_cases, Case, CaseSummary, TagSummary,
 };
+use app_core::i18n::Language;
 use dioxus::prelude::try_use_context;
 use dioxus::prelude::*;
-use app_core::i18n::Language;
+use dioxus_shadcn::{
+  badge_class, button_class, card_class, BadgeVariant, Button, ButtonSize, ButtonVariant, Empty,
+  EmptyDescription, Input, Spinner, SpinnerSize, UiDensity,
+};
 use module_forum::forum::DiscussionPanel;
 use widgets::Markdown;
 
@@ -99,10 +103,10 @@ fn LocalContainer(children: Element) -> Element {
 }
 
 #[component]
-fn Spinner() -> Element {
+fn Loading() -> Element {
   rsx! {
       div { class: "flex items-center justify-center py-20",
-          div { class: "animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" }
+          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
       }
   }
 }
@@ -167,20 +171,11 @@ pub fn CasesIndexPage() -> Element {
   let mut selected_category = use_signal::<Option<String>>(|| None);
   let mut selected_tag = use_signal::<Option<String>>(|| None);
 
-  let cases_res = use_resource(move || {
-    let q = query();
-    let category = selected_category();
-    let tag = selected_tag();
-    async move {
-      let tags = tag.map(|value| vec![value]);
-      list_cases(tags, category, Some(q)).await.unwrap_or_default()
-    }
-  });
+  // 标签 / 分类是筛选 UI chrome（非 SEO 关键），保留客户端 use_resource。
   let tags_res = use_resource(|| async move { list_case_tags().await.unwrap_or_default() });
   let categories_res =
     use_resource(|| async move { list_case_categories().await.unwrap_or_default() });
 
-  let cases = cases_res.read().as_ref().cloned();
   let tags = tags_res.read().as_ref().cloned();
   let categories = categories_res.read().as_ref().cloned();
   let submit_url = submit_case_url();
@@ -209,12 +204,13 @@ pub fn CasesIndexPage() -> Element {
               }
 
               div { class: "mb-6",
-                  input {
+                  Input {
                       r#type: "search",
-                      value: "{query}",
-                      placeholder: "{tc(lang, \"case.search\")}",
-                      class: "w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm text-slate-900 dark:text-slate-100 outline-hidden focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20",
-                      oninput: move |e| query.set(e.value()),
+                      value: query(),
+                      placeholder: tc(lang, "case.search"),
+                      "aria-label": tc(lang, "case.search"),
+                      class: "h-12 rounded-xl px-4",
+                      on_value_change: move |v: String| query.set(v),
                   }
               }
 
@@ -262,31 +258,56 @@ pub fn CasesIndexPage() -> Element {
                       None => rsx! { p { class: "text-sm text-slate-400", "{tc(lang, \"case.loading\")}" } },
                   }
                   if selected_tag().is_some() {
-                      button {
-                          class: "text-xs text-blue-600 dark:text-blue-400 hover:underline ml-1",
+                      Button {
+                          variant: ButtonVariant::Link,
+                          size: ButtonSize::Sm,
+                          class: "h-auto min-h-0 px-1 text-xs text-primary",
                           onclick: move |_| selected_tag.set(None),
                           "{tc(lang, \"case.clear\")}"
                       }
                   }
               }
 
-              match cases {
-                  None => rsx! { Spinner {} },
-                  Some(list) if list.is_empty() => rsx! {
-                      div { class: "rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 py-20 text-center text-slate-500 dark:text-slate-400",
-                          "{tc(lang, \"case.empty\")}"
-                      }
-                  },
-                  Some(list) => rsx! {
-                      div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6",
-                          for case in list.iter() {
-                              CaseCard { key: "{case.slug}", case: case.clone() }
-                          }
-                      }
-                  },
+              // 重构 B5：结果网格改由 `CasesGrid` 用 use_server_future 服务端预取（首屏随 SSR
+              // 下发）；筛选 signal 作为 prop 传入，变化时 use_reactive 重取。搜索 UI 始终可见。
+              SuspenseBoundary {
+                  fallback: |_| rsx! { Loading {} },
+                  CasesGrid {
+                      query: query(),
+                      category: selected_category(),
+                      tag: selected_tag(),
+                  }
               }
           }
       }
+  }
+}
+
+/// 结果网格（重构 B5）：`list_cases` 经 `use_server_future` + `use_reactive!` 服务端预取，
+/// 筛选条件（query / category / tag）作为 prop，变化时重取。置于 SuspenseBoundary 内。
+#[component]
+fn CasesGrid(query: String, category: Option<String>, tag: Option<String>) -> Element {
+  let lang = use_language_ctx();
+  let cases_res = use_server_future(use_reactive!(|query, category, tag| async move {
+    let tags = tag.map(|value| vec![value]);
+    list_cases(tags, category, Some(query)).await.unwrap_or_default()
+  }))?;
+  let list = cases_res().unwrap_or_default();
+
+  if list.is_empty() {
+    rsx! {
+        Empty { class: "rounded-2xl py-20",
+            EmptyDescription { "{tc(lang, \"case.empty\")}" }
+        }
+    }
+  } else {
+    rsx! {
+        div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6",
+            for case in list.iter() {
+                CaseCard { key: "{case.slug}", case: case.clone() }
+            }
+        }
+    }
   }
 }
 
@@ -300,24 +321,34 @@ fn CategoryChip(
 ) -> Element {
   let active = current == value;
   let emoji = value.as_deref().map(category_emoji).unwrap_or("🌐");
+  // 选中保留品牌渐变 `btn-flow`（main.css 无 layer，盖过 bg-primary）。
   let cls = if active {
-    "inline-flex items-center gap-1.5 rounded-full btn-flow px-4 py-2 text-xs font-bold shadow-md shadow-slate-500/20 transition-all"
+    badge_class(
+      BadgeVariant::Default,
+      "gap-1.5 rounded-full btn-flow px-4 py-2 font-bold shadow-md shadow-slate-500/20",
+    )
   } else {
-    "inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:border-blue-400 hover:text-blue-600 hover:shadow-sm transition-all"
+    badge_class(
+      BadgeVariant::Outline,
+      "gap-1.5 rounded-full bg-background px-4 py-2 text-muted-foreground hover:border-primary hover:text-primary",
+    )
   };
   rsx! {
       button {
-          class: "{cls}",
+          r#type: "button",
+          "aria-pressed": active.to_string(),
+          class: cls,
           onclick: move |_| on_select.call(value.clone()),
           span { "{emoji}" }
           span { "{label}" }
           if let Some(n) = count {
-              span { class: if active { "bg-white/20 px-1.5 py-0.5 rounded-full text-[10px]" } else { "bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-full text-[10px]" }, "{n}" }
+              span { class: if active { "bg-white/20 px-1.5 py-0.5 rounded-full text-[10px]" } else { "bg-muted px-1.5 py-0.5 rounded-full text-[10px]" }, "{n}" }
           }
       }
   }
 }
 
+/// 再点一次已选标签即取消筛选，`aria-pressed` 表达这种开关语义。
 #[component]
 fn TagChip(
   tag: TagSummary,
@@ -325,26 +356,28 @@ fn TagChip(
   on_select: EventHandler<Option<String>>,
 ) -> Element {
   let active = current.as_deref() == Some(tag.tag.as_str());
-  let base = tag_color_class(&tag.tag);
   let selected = if active { None } else { Some(tag.tag.clone()) };
-  if active {
-    rsx! {
-        button {
-            class: "inline-flex items-center gap-1 rounded-lg bg-linear-to-r from-slate-800 to-slate-900 dark:from-slate-100 dark:to-slate-200 px-3 py-1.5 text-xs font-bold text-white dark:text-slate-900 shadow-md transition-all",
-            onclick: move |_| on_select.call(selected.clone()),
-            "#{tag.tag}"
-            span { class: "bg-white/20 px-1 py-0.5 rounded text-[10px]", "{tag.count}" }
-        }
-    }
+  // 未选中沿用每个标签自己的配色（tag_color_class 已含暗色）。
+  let cls = if active {
+    badge_class(BadgeVariant::Default, "gap-1 rounded-lg px-3 py-1.5 font-bold shadow-md")
   } else {
-    rsx! {
-        button {
-            class: "inline-flex items-center gap-1 rounded-lg {base} px-3 py-1.5 text-xs font-medium hover:brightness-95 hover:shadow-sm transition-all",
-            onclick: move |_| on_select.call(selected.clone()),
-            "#{tag.tag}"
-            span { class: "opacity-50 text-[10px]", "{tag.count}" }
-        }
-    }
+    badge_class(
+      BadgeVariant::Secondary,
+      &format!(
+        "gap-1 {} rounded-lg px-3 py-1.5 font-medium hover:brightness-95",
+        tag_color_class(&tag.tag)
+      ),
+    )
+  };
+  rsx! {
+      button {
+          r#type: "button",
+          "aria-pressed": active.to_string(),
+          class: cls,
+          onclick: move |_| on_select.call(selected.clone()),
+          "#{tag.tag}"
+          span { class: if active { "bg-white/20 px-1 py-0.5 rounded text-[10px]" } else { "opacity-50 text-[10px]" }, "{tag.count}" }
+      }
   }
 }
 
@@ -357,7 +390,7 @@ fn CaseCard(case: CaseSummary) -> Element {
   let grad = placeholder_gradient(&case.category);
   let badge = category_badge_class(&case.category);
   rsx! {
-      article { class: "group overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm hover:-translate-y-1 hover:shadow-xl hover:border-blue-300 dark:hover:border-blue-700 transition-all duration-300",
+      article { class: card_class("group overflow-hidden rounded-2xl hover:-translate-y-1 hover:shadow-xl hover:border-primary/50 transition-all duration-300"),
           a { href: "{href}", class: "block",
               div { class: "aspect-[16/9] {grad} overflow-hidden relative",
                   if let Some(cover) = case.cover_url.as_ref() {
@@ -379,7 +412,7 @@ fn CaseCard(case: CaseSummary) -> Element {
                   span { class: "rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider", "{case.language}" }
               }
               a { href: "{href}", class: "block",
-                  h2 { class: "text-lg font-bold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors line-clamp-2", "{case.name}" }
+                  h2 { class: "text-lg font-bold text-slate-900 dark:text-white group-hover:text-primary transition-colors line-clamp-2", "{case.name}" }
               }
               p { class: "mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400 line-clamp-2", "{case.description}" }
               if !case.tags.is_empty() {
@@ -428,34 +461,41 @@ fn CaseCard(case: CaseSummary) -> Element {
   }
 }
 
+/// 重构 B5：案例详情页拆为 SuspenseBoundary 外壳 + `CaseDetailLoaded`；案例内容
+/// （get_case）由 use_server_future 服务端预取（随 SSR HTML 下发，SEO）。
 #[component]
 pub fn CaseDetailPage(slug: String) -> Element {
-  let lang = use_language_ctx();
-  let slug_for_res = slug.clone();
-  let case_res = use_resource(move || {
-    let s = slug_for_res.clone();
-    async move { get_case(s).await.unwrap_or_default() }
-  });
-  let case = case_res.read().as_ref().cloned();
-
   rsx! {
       section { class: "py-12 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
-              match case {
-                  None => rsx! { Spinner {} },
-                  Some(None) => rsx! {
-                      div { class: "py-20 text-center",
-                          h1 { class: "text-2xl font-bold text-slate-900 dark:text-white", "{tc(lang, \"case.not_found\")}" }
-                          p { class: "mt-3 text-slate-500 dark:text-slate-400", "\"{slug}\" " }
-                          a { href: "/case", class: "mt-6 inline-flex rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700",
-                              "{tc(lang, \"case.back\")}"
-                          }
-                      }
-                  },
-                  Some(Some(case)) => rsx! { CaseDetailBody { case } },
+              SuspenseBoundary {
+                  fallback: |_| rsx! { Loading {} },
+                  CaseDetailLoaded { slug: slug.clone() }
               }
           }
       }
+  }
+}
+
+#[component]
+fn CaseDetailLoaded(slug: String) -> Element {
+  let lang = use_language_ctx();
+  let case_res =
+    use_server_future(use_reactive!(
+      |slug| async move { get_case(slug).await.unwrap_or_default() }
+    ))?;
+
+  match case_res() {
+    Some(Some(case)) => rsx! { CaseDetailBody { case } },
+    _ => rsx! {
+        div { class: "py-20 text-center",
+            h1 { class: "text-2xl font-bold text-slate-900 dark:text-white", "{tc(lang, \"case.not_found\")}" }
+            p { class: "mt-3 text-slate-500 dark:text-slate-400", "\"{slug}\" " }
+            a { href: "/case", class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-6 font-semibold"),
+                "{tc(lang, \"case.back\")}"
+            }
+        }
+    },
   }
 }
 
@@ -470,7 +510,7 @@ fn CaseDetailBody(case: Case) -> Element {
   let markdown_id = format!("case:{}", case.slug);
   rsx! {
       div { class: "max-w-5xl mx-auto",
-          a { href: "/case", class: "text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline", "{tc(lang, \"case.back\")}" }
+          a { href: "/case", class: "text-sm font-semibold text-primary hover:underline", "{tc(lang, \"case.back\")}" }
           div { class: "mt-6 overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50",
               div { class: "grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-0",
                   div { class: "p-8 md:p-10",
@@ -509,7 +549,7 @@ fn CaseDetailBody(case: Case) -> Element {
                                   href: "{site}",
                                   target: "_blank",
                                   rel: "noopener noreferrer",
-                                  class: "inline-flex rounded-lg border border-slate-300 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:border-blue-400",
+                                  class: button_class(ButtonVariant::Outline, ButtonSize::Md, UiDensity::Comfortable, "font-semibold hover:border-primary"),
                                   "{tc(lang, \"case.visit_site\")}"
                               }
                           }
@@ -517,7 +557,7 @@ fn CaseDetailBody(case: Case) -> Element {
                       div { class: "mt-5 text-sm text-slate-500 dark:text-slate-400",
                           "{tc(lang, \"case.author_prefix\")}"
                           if let Some(author_url) = case.author_url.as_ref() {
-                              a { href: "{author_url}", target: "_blank", rel: "noopener noreferrer", class: "hover:text-blue-600", "{case.author}" }
+                              a { href: "{author_url}", target: "_blank", rel: "noopener noreferrer", class: "hover:text-primary", "{case.author}" }
                           } else {
                               span { "{case.author}" }
                           }

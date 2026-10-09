@@ -9,15 +9,63 @@
 //! - 测试或直接调用 server fn 的场景下，[`get_or_init_pool`] 会读取
 //!   `DATABASE_URL` 环境变量做兜底初始化。
 
-use sea_orm::{Database, DatabaseConnection, DbErr};
+use std::time::Duration;
+
+use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr};
 use tokio::sync::OnceCell;
 
 static POOL: OnceCell<DatabaseConnection> = OnceCell::const_new();
 
+/// 默认 pool 上限：32 conn 足以撑住小流量公网部署的 5–50 RPS。
+const DEFAULT_MAX_CONNECTIONS: u32 = 32;
+/// 默认 pool 下限：保 2 个常驻连接避免冷启动握手延迟。
+const DEFAULT_MIN_CONNECTIONS: u32 = 2;
+/// 默认建连超时：5s。超过通常说明 DB 不可达，快速 fail 比 hang 更友好。
+const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 5;
+/// 默认 acquire 超时：5s。pool 耗尽时让请求快速失败，避免压住所有 worker。
+const DEFAULT_ACQUIRE_TIMEOUT_SECS: u64 = 5;
+/// 默认 idle 回收：10 分钟。长时间无活动连接释放给数据库，降低连接表压力。
+const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 600;
+
+fn read_env_u32(key: &str, default: u32) -> u32 {
+  std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+fn read_env_secs(key: &str, default: u64) -> u64 {
+  std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+}
+
+/// 构造统一的 ConnectOptions：显式 tuning，避免依赖 SeaORM/sqlx 默认。
+///
+/// env 覆盖：
+/// - `DB_MAX_CONN` / `DB_MIN_CONN`
+/// - `DB_CONNECT_TIMEOUT_SECS` / `DB_ACQUIRE_TIMEOUT_SECS` / `DB_IDLE_TIMEOUT_SECS`
+fn build_connect_options(url: &str) -> ConnectOptions {
+  let mut opt = ConnectOptions::new(url.to_string());
+  opt
+    .max_connections(read_env_u32("DB_MAX_CONN", DEFAULT_MAX_CONNECTIONS))
+    .min_connections(read_env_u32("DB_MIN_CONN", DEFAULT_MIN_CONNECTIONS))
+    .connect_timeout(Duration::from_secs(read_env_secs(
+      "DB_CONNECT_TIMEOUT_SECS",
+      DEFAULT_CONNECT_TIMEOUT_SECS,
+    )))
+    .acquire_timeout(Duration::from_secs(read_env_secs(
+      "DB_ACQUIRE_TIMEOUT_SECS",
+      DEFAULT_ACQUIRE_TIMEOUT_SECS,
+    )))
+    .idle_timeout(Duration::from_secs(read_env_secs(
+      "DB_IDLE_TIMEOUT_SECS",
+      DEFAULT_IDLE_TIMEOUT_SECS,
+    )))
+    // sqlx 默认 INFO 太吵；DEBUG 仍能打开 SQL 语句日志
+    .sqlx_logging_level(tracing::log::LevelFilter::Debug);
+  opt
+}
+
 /// 显式初始化全局数据库连接池。应用启动时调用一次。
 /// 多次调用第二次起会复用已有连接，不会报错也不会重新建立。
 pub async fn init_pool(url: &str) -> Result<(), DbErr> {
-  POOL.get_or_try_init(|| async { Database::connect(url).await }).await?;
+  POOL.get_or_try_init(|| async { Database::connect(build_connect_options(url)).await }).await?;
   Ok(())
 }
 
@@ -32,7 +80,7 @@ pub async fn get_or_init_pool() -> Result<DatabaseConnection, DbErr> {
       let url = std::env::var("DATABASE_URL").map_err(|_| {
         DbErr::Custom("DATABASE_URL 未配置：请设置环境变量或在启动时调用 init_pool".to_string())
       })?;
-      Database::connect(&url).await
+      Database::connect(build_connect_options(&url)).await
     })
     .await?;
   Ok(conn.clone())
@@ -67,5 +115,22 @@ mod tests {
       return;
     };
     assert!(result.is_err());
+  }
+
+  /// Phase 8.4：env override 路径覆盖。这里只验证 reader helper 解析正确，
+  /// 真正连 DB 的行为依旧在 init_pool / get_or_init_pool 集成测试里。
+  #[test]
+  fn env_override_helpers_round_trip() {
+    // 保证从干净的环境读默认
+    assert_eq!(read_env_u32("__NO_SUCH_VAR_FOR_TESTS__", 7), 7);
+    assert_eq!(read_env_secs("__NO_SUCH_VAR_FOR_TESTS__", 13), 13);
+
+    // 设值后读到
+    unsafe { std::env::set_var("APP_CORE_TEST_POOL_U32", "42") };
+    unsafe { std::env::set_var("APP_CORE_TEST_POOL_SECS", "120") };
+    assert_eq!(read_env_u32("APP_CORE_TEST_POOL_U32", 0), 42);
+    assert_eq!(read_env_secs("APP_CORE_TEST_POOL_SECS", 0), 120);
+    unsafe { std::env::remove_var("APP_CORE_TEST_POOL_U32") };
+    unsafe { std::env::remove_var("APP_CORE_TEST_POOL_SECS") };
   }
 }

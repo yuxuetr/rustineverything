@@ -128,8 +128,9 @@ app 自己不终止 TLS。生产部署把 8080 端口放在反向代理后面。
 仓库已自带可用的 gateway 实现：**`crates/gateway/`**（独立 workspace，自带
 `[workspace]` 标签 + `exclude` 进父 workspace，避免 openssl/native deps 拖累
 主构建）。直接 `cd crates/gateway && cargo build --release` 即可拿到
-`target/release/rie-gateway` 二进制；下面的 Cargo.toml + main.rs 是同一份代码
-的展开说明，自行从零搭起也照此即可。
+`target/release/rie-gateway` 二进制；下面的 Cargo.toml + main.rs 摘录了反代
++ 301 跳转的核心骨架，完整版（含 Phase 8.3 安全头 + per-IP 限流）请直接看
+[`crates/gateway/src/main.rs`](../crates/gateway/src/main.rs)。
 
 #### Cargo.toml
 
@@ -290,6 +291,45 @@ sudo -E TLS_CERT_PATH=/etc/letsencrypt/live/example.com/fullchain.pem \
 
 app 已在 server fn 内强制 5 MB 限制（Phase 1A.4）。Pingora 默认对 body 大小无硬上限，依赖上游兜底；若需要在边缘提前丢弃超大请求，可在 `request_filter` 内读 `Content-Length` 头 + 拒绝。
 
+#### 安全响应头 + 限流（Phase 8.3）
+
+`crates/gateway/src/main.rs` 在每个响应上处理安全头；浏览器 devtools 可见：
+
+| Header | gateway 行为 | 值 |
+| --- | --- | --- |
+| `Strict-Transport-Security` | 总是设置（TLS 在 gateway 终止） | `max-age=31536000; includeSubDomains` |
+| `X-Content-Type-Options` | 应用未下发时补 | `nosniff` |
+| `X-Frame-Options` | 应用未下发时补 | `DENY` |
+| `Referrer-Policy` | 应用未下发时补 | `strict-origin-when-cross-origin` |
+| `Content-Security-Policy` | **不碰**，原样转发应用的值 | 见 `crates/app/src/server/security.rs`；在 **app** 进程设 `CSP_POLICY` 覆盖 |
+| `Server` | 总是设置 | `rie-gateway` |
+
+CSP 只有应用这一份定义（SEC-10）：gateway 若另设一份，会覆盖掉应用 CSP 里 hydration 必需的
+`'wasm-unsafe-eval'` 与内联启动脚本许可，页面整体失去交互。
+
+per-IP token-bucket 限流（基于 [`governor`](https://docs.rs/governor)）：
+
+| 路径 | 配额 / IP / 分钟 | env 覆盖 |
+| --- | --- | --- |
+| 写端点（`/api/auth/` `/api/upload` `/api/comments/` `/api/topics/` `/api/admin/` `/api/forum/`） | 10 | `RATE_LIMIT_WRITE_PER_MIN` |
+| 其他读端点 / 静态资源 | 60 | `RATE_LIMIT_READ_PER_MIN` |
+
+触发限流返回 `429 Too Many Requests` + `Retry-After: 60`；开发态 `RATE_LIMIT_DISABLE=true` 全关。
+
+`X-Forwarded-For` 改用 `insert_header` 覆盖客户端伪造，同时 strip 掉 RFC 7239 `Forwarded` 头；下游 app 看到的 XFF 一定是 Pingora 取到的真实 TCP 对端 IP。
+
+边缘验证：
+
+```bash
+# 安全头检查（任意路径）
+curl -kI https://your-domain.com/ | grep -iE 'strict-transport|x-frame|x-content-type|content-security-policy|referrer-policy'
+
+# 限流冒烟（同 IP 11 次写端点，第 11 次预期 429）
+for i in $(seq 1 11); do
+  curl -ks -o /dev/null -w "%{http_code}\n" -X POST https://your-domain.com/api/auth/whatever
+done
+```
+
 #### 与 docker-compose 的关系
 
 `docker-compose.yml` 仍只跑 `app` + `postgres`，并把 8080 绑到 `127.0.0.1:8080`（不暴露公网）。`rie-gateway` 作为**宿主机**进程（或独立容器）监听 443/80 → 转发到 127.0.0.1:8080。这样：
@@ -353,7 +393,7 @@ labels:
 {
   "site_name": "你的站点名",
   "site_description": "副标题",
-  "themes": ["theme_sunset_plugin.wasm"],   // 主题栈
+  "theme": "sunset",                         // 内置主题 id：ocean / sunset / catppuccin
   "active_layout": "classic",                // 或 "minimal"
   "modules": {
     "forum": { "enabled": true },
@@ -361,9 +401,7 @@ labels:
   },
   "auth": {
     "enabled": true,
-    "providers": [
-      { "id": "github", "plugin": "github_auth_plugin.wasm" }
-    ]
+    "providers": ["github"]                  // 内置 provider id，按显示顺序
   }
 }
 ```
@@ -385,7 +423,6 @@ docker compose restart app
 | `courses/` | 课程多媒体 | ✅ |
 | `podcasts/` | 播客音频元数据 | ✅ |
 | `cases/` | 案例展示 | ✅ |
-| `plugins/` | WASM 插件 | ✅ |
 | `audio/` | 大体积音频 | ✅（10MB 以下；超过被 build.rs 跳过） |
 | `uploads/` | **用户上传** | ❌ 走持久卷 |
 

@@ -7,12 +7,11 @@
 //!
 //! ## 默认安全
 //! - `from_site_config` 读 `site.json::moderation`：
-//!   - `enabled = false` 或 `plugins` 为空 → 返回空 pipeline，evaluate 总是 Allow
-//!   - 任一插件文件不存在 → 跳过该 stage，记 warning（不阻塞启动）
-//!   - 没有 LLM 配置（env 未设）→ 跳过全部 plugin stage（无法发请求）
-//! - `evaluate` 上的每个 stage 自己 fail-open；pipeline 也对空 stages 返回 Allow
+//!   - `enabled = false` → 返回空 pipeline，evaluate 总是 Allow
+//!   - `llm_review = true` 但没有 LLM 配置（env 未设）→ 跳过 LLM stage（无法发请求）
+//! - LLM 审核失败按 `on_llm_failure` 记为 Flag（默认，送人工复核）或 Block，
+//!   不放行；空 stages 返回 Allow
 
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use app_core::engines::moderation::{ModerationLabel, ModerationThresholds, Verdict};
@@ -21,7 +20,7 @@ use llm::LlmClient;
 use sdk::ModerationSubmission;
 
 use crate::stage::AsyncModerationStage;
-use crate::{PluginModerationStage, UrlBlocklistStage};
+use crate::{LlmModerationStage, UrlBlocklistStage};
 
 pub struct ModerationPipeline {
   stages: Vec<Box<dyn AsyncModerationStage>>,
@@ -56,13 +55,9 @@ impl ModerationPipeline {
     self.stages.is_empty()
   }
 
-  /// 从 site.json + assets 路径 + 一个共享 LlmClient 构造 pipeline。
-  /// 默认 disabled / 空 plugin 列表 / 文件缺失等场景都安全返回空流水线。
-  pub fn from_site_config(
-    site: &SiteConfig,
-    plugin_dir: &Path,
-    llm: Option<Arc<dyn LlmClient>>,
-  ) -> Self {
+  /// 从 site.json + 一个共享 LlmClient 构造 pipeline。
+  /// 默认 disabled / 未开 LLM 审核 / 缺 LLM 配置都安全返回（可能为空的）流水线。
+  pub fn from_site_config(site: &SiteConfig, llm: Option<Arc<dyn LlmClient>>) -> Self {
     let mut pipeline = Self::new();
 
     // 阈值覆盖（site.json 中可选）。schema 校验失败 → 回退默认 + 告警，
@@ -101,12 +96,12 @@ impl ModerationPipeline {
       pipeline.register(blocklist);
     }
 
-    // ── Layer 2：LLM 插件 stages ──
-    if site.moderation.plugins.is_empty() {
+    // ── Layer 2：LLM 审核 ──
+    if !site.moderation.llm_review {
       if pipeline.is_empty() {
-        tracing::info!("moderation: enabled but no plugins / no URL blocklist → empty pipeline");
+        tracing::info!("moderation: enabled but no LLM review / no URL blocklist → empty pipeline");
       } else {
-        tracing::info!("moderation: enabled with URL blocklist only (no LLM stages)");
+        tracing::info!("moderation: enabled with URL blocklist only (no LLM review)");
       }
       return pipeline;
     }
@@ -116,45 +111,32 @@ impl ModerationPipeline {
           "moderation: enabled but no LLM configured (env OPENAI_LLM_* / ANTHROPIC_LLM_* 都未设) 且无 URL blocklist → empty pipeline"
         );
       } else {
-        tracing::warn!("moderation: LLM 未配置 → 只跑 URL 黑名单，跳过插件 stages");
+        tracing::warn!("moderation: LLM 未配置 → 只跑 URL 黑名单，跳过 LLM 审核");
       }
       return pipeline;
     };
-
-    for plugin_name in &site.moderation.plugins {
-      let path: PathBuf = plugin_dir.join(plugin_name);
-      if !path.exists() {
-        tracing::warn!(plugin = %plugin_name, "moderation: plugin file missing → skipping");
-        continue;
-      }
-      let stage = PluginModerationStage::new(plugin_name.clone(), path, llm.clone());
-      tracing::info!(stage = %plugin_name, "moderation: registered plugin stage");
-      pipeline.register(stage);
-    }
+    tracing::info!(provider = ?llm.provider(), "moderation: registered llm stage");
+    pipeline.register(LlmModerationStage::new(llm, site.moderation.on_llm_failure));
 
     pipeline
   }
 
-  /// 跑流水线。Block 早停；否则返回最高分的非 Allow（或 Allow，如果所有 stage 都 Allow）。
-  /// 最后统一应用阈值。空 stages 总是 Allow。
+  /// 跑流水线。每个 stage 的结论先按阈值升级，Block 早停；否则 Flag 优先于
+  /// Allow，同 label 取最高分。空 stages 总是 Allow。
   pub async fn evaluate(&self, submission: ModerationSubmission) -> Verdict {
-    if self.stages.is_empty() {
-      return Verdict::allow();
-    }
-    let mut best: Option<Verdict> = None;
+    let mut best = Verdict::allow();
     for stage in &self.stages {
-      let v = stage.evaluate(&submission).await;
+      let v = self.thresholds.apply(stage.evaluate(&submission).await);
       if v.label == ModerationLabel::Block {
-        // 阈值升级一遍即返回（Block 不会被降级）
-        return self.thresholds.apply(v);
+        return v;
       }
-      // 取最高 score 的非 Allow
-      let replace = !matches!(&best, Some(b) if b.score >= v.score);
-      if replace {
-        best = Some(v);
+      // 先比 label：审核失败的 Flag 分数为 0，不能输给前面 stage 的 Allow
+      let is_flag = |x: &Verdict| x.label == ModerationLabel::Flag;
+      if (is_flag(&v), v.score) > (is_flag(&best), best.score) {
+        best = v;
       }
     }
-    self.thresholds.apply(best.unwrap_or_else(Verdict::allow))
+    best
   }
 }
 
@@ -162,10 +144,23 @@ impl ModerationPipeline {
 #[allow(clippy::field_reassign_with_default)] // 测试 setup：Default + 逐字段赋值更易读
 mod tests {
   use super::*;
-  use async_trait::async_trait;
   use app_core::settings::{ModerationSettings, ModerationThresholdsConfig};
+  use async_trait::async_trait;
 
   struct StubStage(&'static str, Verdict);
+
+  /// 每次调用都失败的 LLM。
+  struct NoLlm;
+
+  #[async_trait]
+  impl LlmClient for NoLlm {
+    fn provider(&self) -> llm::LlmProvider {
+      llm::LlmProvider::OpenAi
+    }
+    async fn chat(&self, _: Vec<llm::LlmMessage>) -> app_core::error::AppResult<String> {
+      Err(app_core::error::AppError::other("LLM down"))
+    }
+  }
 
   #[async_trait]
   impl AsyncModerationStage for StubStage {
@@ -206,6 +201,16 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn zero_score_flag_beats_earlier_allow() {
+    // 审核失败的 Flag 没有分数；不能因为先跑的 stage 给了 Allow(0.0) 就被吞掉
+    let mut p = ModerationPipeline::new();
+    p.register(StubStage("a", Verdict::allow()));
+    p.register(StubStage("b", Verdict::flag(0.0, "review")));
+    let v = p.evaluate(ModerationSubmission::new("x")).await;
+    assert_eq!((v.label, v.reason.as_str()), (ModerationLabel::Flag, "review"));
+  }
+
+  #[tokio::test]
   async fn thresholds_upgrade_allow_to_block() {
     let mut p = ModerationPipeline::new()
       .with_thresholds(ModerationThresholds { block_above: 0.9, flag_above: 0.5 });
@@ -222,31 +227,25 @@ mod tests {
   #[test]
   fn disabled_in_site_config_yields_empty_pipeline() {
     let mut site = SiteConfig::default();
-    site.moderation = ModerationSettings {
-      enabled: false,
-      plugins: vec!["moderation_llm_default.wasm".into()],
-      ..Default::default()
-    };
-    let plugin_dir = std::path::PathBuf::from("/nonexistent/plugins");
-    let p = ModerationPipeline::from_site_config(&site, &plugin_dir, None);
+    site.moderation = ModerationSettings { enabled: false, llm_review: true, ..Default::default() };
+    let p = ModerationPipeline::from_site_config(&site, None);
     assert!(p.is_empty());
   }
 
   #[test]
-  fn enabled_but_no_plugins_yields_empty_pipeline() {
+  fn enabled_without_llm_review_yields_empty_pipeline() {
     let mut site = SiteConfig::default();
-    site.moderation = ModerationSettings { enabled: true, plugins: vec![], ..Default::default() };
-    let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
+    site.moderation = ModerationSettings { enabled: true, ..Default::default() };
+    let p = ModerationPipeline::from_site_config(&site, None);
     assert!(p.is_empty());
   }
 
   #[test]
-  fn enabled_with_plugins_but_no_llm_yields_empty_pipeline() {
+  fn llm_review_without_llm_client_yields_empty_pipeline() {
     let mut site = SiteConfig::default();
-    site.moderation =
-      ModerationSettings { enabled: true, plugins: vec!["x.wasm".into()], ..Default::default() };
-    // 即使插件存在，没有 LLM 也无法工作 → URL blocklist 也为空 → 整体空 pipeline
-    let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
+    site.moderation = ModerationSettings { enabled: true, llm_review: true, ..Default::default() };
+    // 没有 LLM 客户端就无法审核 → URL blocklist 也为空 → 整体空 pipeline
+    let p = ModerationPipeline::from_site_config(&site, None);
     assert!(p.is_empty());
   }
 
@@ -255,12 +254,11 @@ mod tests {
     let mut site = SiteConfig::default();
     site.moderation = ModerationSettings {
       enabled: true,
-      plugins: vec![],
       url_blocklist: vec!["scam.com".to_string()],
       ..Default::default()
     };
     // 没传 llm，但 URL 黑名单不依赖 LLM
-    let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
+    let p = ModerationPipeline::from_site_config(&site, None);
     assert!(!p.is_empty());
     assert_eq!(p.stage_names(), vec!["url-blocklist".to_string()]);
   }
@@ -273,24 +271,54 @@ mod tests {
       url_blocklist: vec!["scam.com".to_string()],
       ..Default::default()
     };
-    let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
+    let p = ModerationPipeline::from_site_config(&site, None);
     let v = p.evaluate(ModerationSubmission::new("点 https://scam.com/x 拿福利")).await;
     assert_eq!(v.label, ModerationLabel::Block);
   }
 
   #[test]
-  fn url_blocklist_runs_before_plugins() {
+  fn url_blocklist_runs_before_llm() {
     let mut site = SiteConfig::default();
     site.moderation = ModerationSettings {
       enabled: true,
-      plugins: vec!["nonexistent.wasm".into()], // 文件不存在会跳过
+      llm_review: true,
       url_blocklist: vec!["scam.com".to_string()],
       ..Default::default()
     };
-    // 即便 LLM 未配置也无所谓，URL 黑名单照样跑
-    let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
-    let names = p.stage_names();
-    assert!(names.first().map(|s| s.as_str()) == Some("url-blocklist"));
+    // LLM 未配置：URL 黑名单照样跑
+    let p = ModerationPipeline::from_site_config(&site, None);
+    assert_eq!(p.stage_names(), vec!["url-blocklist"]);
+    // LLM 已配置：黑名单在前，LLM 在后
+    let p = ModerationPipeline::from_site_config(&site, Some(Arc::new(NoLlm)));
+    assert_eq!(p.stage_names(), vec!["url-blocklist", "llm"]);
+  }
+
+  #[tokio::test]
+  async fn llm_failure_is_not_allowed_through() {
+    use app_core::settings::LlmFailureAction;
+    let mut site = SiteConfig::default();
+    site.moderation = ModerationSettings {
+      enabled: true,
+      llm_review: true,
+      url_blocklist: vec!["scam.com".to_string()],
+      ..Default::default()
+    };
+    let p = ModerationPipeline::from_site_config(&site, Some(Arc::new(NoLlm)));
+    let v = p.evaluate(ModerationSubmission::new("正常评论")).await;
+    assert_eq!(v.label, ModerationLabel::Flag, "默认送人工复核");
+
+    site.moderation.on_llm_failure = LlmFailureAction::Reject;
+    let p = ModerationPipeline::from_site_config(&site, Some(Arc::new(NoLlm)));
+    let v = p.evaluate(ModerationSubmission::new("正常评论")).await;
+    assert_eq!(v.label, ModerationLabel::Block);
+  }
+
+  #[test]
+  fn llm_stage_needs_llm_review_switch() {
+    let mut site = SiteConfig::default();
+    site.moderation = ModerationSettings { enabled: true, ..Default::default() };
+    let p = ModerationPipeline::from_site_config(&site, Some(Arc::new(NoLlm)));
+    assert!(p.is_empty(), "配了 LLM 但没开 llm_review 不应调用 LLM");
   }
 
   #[test]
@@ -298,14 +326,13 @@ mod tests {
     let mut site = SiteConfig::default();
     site.moderation = ModerationSettings {
       enabled: false,
-      plugins: vec![],
       thresholds: Some(ModerationThresholdsConfig {
         block_above: Some(0.75),
         flag_above: None, // 保留默认 0.5
       }),
       ..Default::default()
     };
-    let p = ModerationPipeline::from_site_config(&site, std::path::Path::new("/tmp"), None);
+    let p = ModerationPipeline::from_site_config(&site, None);
     assert!((p.thresholds.block_above - 0.75).abs() < f32::EPSILON);
     assert!((p.thresholds.flag_above - 0.5).abs() < f32::EPSILON);
   }

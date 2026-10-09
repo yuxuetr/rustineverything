@@ -9,6 +9,11 @@
 
 use crate::server::{search_query, SearchHit};
 use dioxus::prelude::*;
+use dioxus_shadcn::{
+  Alert, AlertDescription, AlertVariant, Button, ButtonSize, ButtonVariant, Command, CommandEmpty,
+  CommandInput, CommandItem, CommandList, CommandStatus, Dialog, DialogClose, DialogContent,
+  DialogOverlay, DialogTitle, ToggleGroup, ToggleGroupItem,
+};
 
 /// 用 wrapper 类型避免与其他全局 `Signal<bool>`(如 auth modal)冲突。
 #[derive(Clone, Copy)]
@@ -34,9 +39,12 @@ pub fn SearchButton() -> Element {
     None => return rsx! {},
   };
   rsx! {
-      button {
+      Button {
+          r#type: "button",
+          variant: ButtonVariant::Outline,
+          size: ButtonSize::Sm,
+          class: "gap-2 px-3 text-xs font-normal text-muted-foreground",
           onclick: move |_| open.set(true),
-          class: "inline-flex items-center gap-2 px-3 h-8 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 text-xs",
           title: "搜索 (⌘K)",
           svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
               path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2",
@@ -44,7 +52,7 @@ pub fn SearchButton() -> Element {
               }
           }
           span { class: "hidden sm:inline", "搜索" }
-          kbd { class: "hidden sm:inline px-1.5 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-mono text-[10px]",
+          kbd { class: "hidden sm:inline px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px]",
               "⌘K"
           }
       }
@@ -65,42 +73,15 @@ pub fn SearchModal() -> Element {
   let mut elapsed = use_signal(|| 0u64);
   let mut error = use_signal::<Option<String>>(|| None);
 
-  // 全局快捷键:Cmd+K / Ctrl+K 切换;Esc 关闭。
-  use_effect(move || {
-    let script = r#"
-            window.__rie_search_listener = window.__rie_search_listener || (function() {
-                document.addEventListener('keydown', (e) => {
-                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-                        e.preventDefault();
-                        window.dispatchEvent(new CustomEvent('rie-search-toggle'));
-                    }
-                    if (e.key === 'Escape') {
-                        window.dispatchEvent(new CustomEvent('rie-search-close'));
-                    }
-                });
-                return true;
-            })();
-        "#;
-    let _ = dioxus::document::eval(script);
-  });
-
-  // 通过 dioxus.recv 拉取浏览器自定义事件
-  use_effect(move || {
-    spawn(async move {
-      let mut e = dioxus::document::eval(
-        r#"
-                window.addEventListener('rie-search-toggle', () => dioxus.send('toggle'));
-                window.addEventListener('rie-search-close', () => dioxus.send('close'));
-                "#,
-      );
-      while let Ok(msg) = e.recv::<String>().await {
-        match msg.as_str() {
-          "toggle" => open.set(!open()),
-          "close" => open.set(false),
-          _ => {}
-        }
+  // 全局快捷键:Cmd+K / Ctrl+K 切换(Esc 由 Dialog 处理)。监听随组件卸载移除。
+  use_hook(|| {
+    std::rc::Rc::new(widgets::browser::on_document_keydown(move |key, ctrl_or_meta| {
+      if ctrl_or_meta && key.eq_ignore_ascii_case("k") {
+        open.set(!open());
+        return true;
       }
-    });
+      false
+    }))
   });
 
   // 输入变化触发搜索(简单 debounce 由前端计数器实现)
@@ -122,7 +103,7 @@ pub fn SearchModal() -> Element {
     let token = debounce_token();
     spawn(async move {
       // 简单 debounce:延迟 200ms,期间若 token 改变则放弃。
-      sleep_ms(200).await;
+      widgets::browser::sleep_ms(200).await;
       if debounce_token() != token {
         return;
       }
@@ -142,68 +123,78 @@ pub fn SearchModal() -> Element {
     });
   });
 
-  if !open() {
-    return rsx! {};
-  }
+  let status = if loading() {
+    "搜索中...".to_string()
+  } else if hits().is_empty() {
+    String::new()
+  } else {
+    format!("{} 条结果 · {} ms", hits().len(), elapsed())
+  };
 
   rsx! {
-      div {
-          class: "fixed inset-0 z-[100] flex items-start justify-center pt-24 px-4 bg-slate-900/50 backdrop-blur-sm",
-          onclick: move |_| open.set(false),
-          div {
-              class: "w-full max-w-2xl rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-2xl overflow-hidden",
-              onclick: move |e| e.stop_propagation(),
-              // 输入栏
-              div { class: "flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-700",
-                  svg { class: "w-5 h-5 text-slate-400", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
-                      path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2",
-                          d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+      Dialog { open: open(), on_open_change: move |v| open.set(v),
+          DialogOverlay { class: "z-[100] bg-slate-900/50 backdrop-blur-sm" }
+          DialogContent { class: "z-[100] top-24 max-w-2xl translate-y-0 gap-0 overflow-hidden rounded-xl p-0 shadow-2xl",
+              DialogTitle { class: "sr-only", "搜索" }
+              Command {
+                  class: "rounded-none",
+                  on_select: move |url: String| {
+                      if is_site_path(&url) {
+                          open.set(false);
+                          widgets::browser::navigate(&url);
+                      }
+                  },
+                  // 输入栏
+                  div { class: "flex items-center gap-2 px-4 border-b border-border",
+                      svg { class: "w-5 h-5 shrink-0 text-muted-foreground", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", "aria-hidden": "true",
+                          path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2",
+                              d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                          }
+                      }
+                      CommandInput {
+                          value: query(),
+                          placeholder: "搜索博客、文档、论坛、案例、专题...",
+                          class: "h-12 px-0 text-base",
+                          oninput: move |e: FormEvent| query.set(e.value()),
+                      }
+                      DialogClose { class: "static shrink-0 px-2 py-1 text-xs text-muted-foreground", "Esc" }
+                  }
+                  // kind 过滤栏:受控单选,再点已选项时的空值忽略,保证总有一项选中。
+                  div { class: "flex items-center gap-1 px-4 py-2 border-b border-border text-xs",
+                      ToggleGroup {
+                          class: "gap-1",
+                          "aria-label": "内容类型",
+                          value: kind_filter().unwrap_or_else(|| "all".to_string()),
+                          on_value_change: move |v: String| match v.as_str() {
+                              "" => {}
+                              "all" => kind_filter.set(None),
+                              _ => kind_filter.set(Some(v)),
+                          },
+                          for (value, label) in KINDS {
+                              ToggleGroupItem { value: *value, class: kind_chip_class(kind_filter().as_deref().unwrap_or("all") == *value), "{label}" }
+                          }
+                      }
+                      span { class: "ml-auto text-muted-foreground", "aria-hidden": "true", "{status}" }
+                  }
+                  CommandStatus { "{status}" }
+                  // 错误
+                  if let Some(err) = error() {
+                      Alert { variant: AlertVariant::Destructive, class: "rounded-none border-x-0 px-4 py-2",
+                          AlertDescription { variant: AlertVariant::Destructive, "{err}" }
                       }
                   }
-                  input {
-                      r#type: "text",
-                      value: "{query}",
-                      autofocus: true,
-                      placeholder: "搜索博客、文档、论坛、案例、专题...",
-                      class: "flex-1 bg-transparent border-0 focus:ring-0 outline-none text-base text-slate-900 dark:text-slate-100 placeholder-slate-400",
-                      oninput: move |e| query.set(e.value()),
-                  }
-                  button {
-                      onclick: move |_| open.set(false),
-                      class: "shrink-0 px-2 py-1 text-xs rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200",
-                      "Esc"
-                  }
-              }
-              // kind 过滤栏
-              div { class: "flex items-center gap-1 px-4 py-2 border-b border-slate-100 dark:border-slate-800 text-xs",
-                  KindChip { label: "全部".to_string(), value: None, current: kind_filter(), on_select: move |v: Option<String>| kind_filter.set(v) }
-                  KindChip { label: "博客".to_string(), value: Some("blog".to_string()), current: kind_filter(), on_select: move |v: Option<String>| kind_filter.set(v) }
-                  KindChip { label: "文档".to_string(), value: Some("doc".to_string()), current: kind_filter(), on_select: move |v: Option<String>| kind_filter.set(v) }
-                  KindChip { label: "话题".to_string(), value: Some("topic".to_string()), current: kind_filter(), on_select: move |v: Option<String>| kind_filter.set(v) }
-                  KindChip { label: "案例".to_string(), value: Some("case".to_string()), current: kind_filter(), on_select: move |v: Option<String>| kind_filter.set(v) }
-                  if loading() {
-                      span { class: "ml-auto text-slate-400", "搜索中..." }
-                  } else if !hits().is_empty() {
-                      span { class: "ml-auto text-slate-400", "{hits().len()} 条结果 · {elapsed} ms" }
-                  }
-              }
-              // 错误
-              if let Some(err) = error() {
-                  div { class: "px-4 py-2 bg-red-50 dark:bg-red-900/20 text-sm text-red-700 dark:text-red-400",
-                      "{err}"
-                  }
-              }
-              // 结果
-              div { class: "max-h-[60vh] overflow-y-auto",
-                  if hits().is_empty() && !query().trim().is_empty() && !loading() {
-                      div { class: "px-4 py-8 text-center text-slate-500", "没有匹配的结果" }
-                  } else if hits().is_empty() {
-                      div { class: "px-4 py-8 text-center text-slate-500",
-                          "输入关键词开始搜索 · 支持中英文 · 按 ⌘K 随时打开"
-                      }
-                  } else {
-                      for h in hits().iter() {
-                          HitRow { hit: h.clone() }
+                  // 结果
+                  CommandList { class: "max-h-[60vh]",
+                      if hits().is_empty() && !query().trim().is_empty() && !loading() {
+                          CommandEmpty { "没有匹配的结果" }
+                      } else if hits().is_empty() {
+                          CommandEmpty { "输入关键词开始搜索 · 支持中英文 · 按 ⌘K 随时打开" }
+                      } else {
+                          for (i, h) in hits().iter().enumerate() {
+                              CommandItem { key: "{h.url}", id: "search-hit-{i}", value: h.url.clone(), class: "block rounded-none border-b border-border px-4 py-3 cursor-pointer",
+                                  HitRow { hit: h.clone() }
+                              }
+                          }
                       }
                   }
               }
@@ -212,32 +203,22 @@ pub fn SearchModal() -> Element {
   }
 }
 
-#[component]
-fn KindChip(
-  label: String,
-  value: Option<String>,
-  current: Option<String>,
-  on_select: EventHandler<Option<String>>,
-) -> Element {
-  let is_active = value == current;
-  let class = if is_active {
-    "px-2 py-0.5 rounded-full bg-blue-600 text-white"
+/// 过滤栏的类型:值 `all` 表示不过滤。
+const KINDS: &[(&str, &str)] =
+  &[("all", "全部"), ("blog", "博客"), ("doc", "文档"), ("topic", "话题"), ("case", "案例")];
+
+fn kind_chip_class(active: bool) -> &'static str {
+  if active {
+    "h-auto rounded-full bg-primary px-2.5 py-0.5 text-xs font-normal text-primary-foreground hover:bg-primary/90"
   } else {
-    "px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-  };
-  rsx! {
-      button {
-          class: "{class}",
-          onclick: move |_| on_select.call(value.clone()),
-          "{label}"
-      }
+    "h-auto rounded-full bg-secondary px-2.5 py-0.5 text-xs font-normal text-secondary-foreground hover:bg-accent"
   }
 }
 
 #[component]
 fn HitRow(hit: SearchHit) -> Element {
   let badge = match hit.kind.as_str() {
-    "blog" => ("BLOG", "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300"),
+    "blog" => ("BLOG", "bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300"),
     "doc" => {
       ("DOC", "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300")
     }
@@ -256,9 +237,7 @@ fn HitRow(hit: SearchHit) -> Element {
     _ => ("?", "bg-slate-100 dark:bg-slate-800 text-slate-500"),
   };
   rsx! {
-      a {
-          href: "{hit.url}",
-          class: "block px-4 py-3 border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors",
+      div {
           div { class: "flex items-center gap-2 mb-1",
               span { class: "text-[10px] px-1.5 py-0.5 rounded font-medium uppercase tracking-wide {badge.1}",
                   "{badge.0}"
@@ -278,9 +257,35 @@ fn HitRow(hit: SearchHit) -> Element {
   }
 }
 
-/// 简单 sleep helper for debouncing(基于 setTimeout)。
-async fn sleep_ms(ms: u32) {
-  let script = format!("setTimeout(() => dioxus.send(true), {});", ms);
-  let mut e = dioxus::document::eval(&script);
-  let _ = e.recv::<bool>().await;
+/// 搜索结果只跳站内路径：以 `/` 开头，且第二个字符不是 `/` 或 `\`
+/// （浏览器把 `//host`、`/\host` 都当作协议相对地址，会跳出站点）。
+fn is_site_path(url: &str) -> bool {
+  let mut chars = url.chars();
+  chars.next() == Some('/') && !matches!(chars.next(), Some('/' | '\\'))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::is_site_path;
+
+  #[test]
+  fn accepts_site_paths() {
+    assert!(is_site_path("/blog/hello"));
+    assert!(is_site_path("/"));
+    assert!(is_site_path("/docs/rust-basics#intro"));
+  }
+
+  #[test]
+  fn rejects_paths_that_leave_the_site() {
+    for url in [
+      "",
+      "//evil.example",
+      "/\\evil.example",
+      "https://evil.example",
+      "javascript:alert(1)",
+      "blog/x",
+    ] {
+      assert!(!is_site_path(url), "{url}");
+    }
+  }
 }

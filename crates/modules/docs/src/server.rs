@@ -219,18 +219,23 @@ pub async fn list_doc_tree() -> Result<Vec<DocTreeNode>, ServerFnError> {
   }
 }
 
+/// 文档路径 `path`（相对 docs 根目录，来自公开接口的请求体）对应的
+/// `index.md` / `index.mdx`。整条文件路径都过 `safe_join_under`，目录或
+/// 文件本身是指向根外的符号链接也会被拒绝（SEC-03）。
+#[cfg(feature = "server")]
+fn resolve_doc_file(docs_root: &std::path::Path, path: &str) -> Option<PathBuf> {
+  let dir = path.trim_end_matches('/');
+  ["index.md", "index.mdx"].into_iter().find_map(|name| {
+    let rel = if dir.is_empty() { name.to_string() } else { format!("{dir}/{name}") };
+    app_core::utils::safe_join_under(docs_root, &rel).filter(|p| p.is_file())
+  })
+}
+
 #[post("/api/docs/content")]
 pub async fn get_doc_content(path: String) -> Result<DocContentResponse, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    let docs_dir = get_asset_root().join("docs").join(&path);
-    let md = docs_dir.join("index.md");
-    let mdx = docs_dir.join("index.mdx");
-    let filepath = if md.exists() {
-      md
-    } else if mdx.exists() {
-      mdx
-    } else {
+    let Some(filepath) = resolve_doc_file(&get_asset_root().join("docs"), &path) else {
       return Err(ServerFnError::new(format!("文档未找到: {}", path)));
     };
     let raw =
@@ -515,5 +520,34 @@ mod tests {
     let tmp = TempDir::new().unwrap();
     let tree = scan_doc_dir(tmp.path(), "", 1);
     assert!(tree.is_empty());
+  }
+
+  #[test]
+  fn resolve_doc_file_stays_inside_docs_root() {
+    // SEC-03：公开接口，path 来自请求体
+    let tmp = TempDir::new().unwrap();
+    let docs = tmp.path().join("docs");
+    write_index(&docs.join("guide/intro"), None, "intro");
+    write_index(&docs.join("mdx-only"), None, "x");
+    std::fs::rename(docs.join("mdx-only/index.md"), docs.join("mdx-only/index.mdx")).unwrap();
+    write_index(&tmp.path().join("courses/paid/lesson"), None, "secret");
+    write_index(&tmp.path().join("outside"), None, "secret");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(tmp.path().join("outside"), docs.join("link")).unwrap();
+
+    assert!(resolve_doc_file(&docs, "guide/intro").is_some());
+    assert!(resolve_doc_file(&docs, "mdx-only").is_some_and(|p| p.ends_with("index.mdx")));
+    let outside = tmp.path().join("outside");
+    for bad in [
+      "../courses/paid/lesson",
+      "guide/../../courses/paid/lesson",
+      outside.to_str().unwrap(),
+      "..\\courses\\paid\\lesson",
+      "link",
+      "%2e%2e/courses/paid/lesson",
+      "guide/missing",
+    ] {
+      assert_eq!(resolve_doc_file(&docs, bad), None, "{bad}");
+    }
   }
 }

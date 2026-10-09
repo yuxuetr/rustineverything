@@ -10,18 +10,17 @@ fn default_layout() -> String {
   DEFAULT_LAYOUT.to_string()
 }
 
+fn default_theme() -> String {
+  "ocean".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SiteConfig {
   pub site_name: String,
   pub site_description: String,
-  /// **单插件主题**（向后兼容）：当 [`SiteConfig::themes`] 为空时回退使用。
-  /// 新代码请通过 [`SiteConfig::theme_stack`] 读取，不要直接读该字段。
-  pub active_theme: String,
-  /// 主题栈（Phase 3.1）：声明顺序 = CSS 输出顺序，后者覆盖前者。
-  /// 元素为插件文件名（如 `theme_ocean_plugin.wasm`）。
-  /// `#[serde(default)]` 保证旧 site.json 不破坏。
-  #[serde(default)]
-  pub themes: Vec<String>,
+  /// 默认主题 id（见 [`crate::engines::theme::THEMES`]）；访客可用 cookie 覆盖。
+  #[serde(default = "default_theme")]
+  pub theme: String,
   /// 当前生效布局（Phase 3.3）：默认 `"classic"`。
   /// 受 [`crate::engines::layout::LayoutEngine`] 注册项约束；不存在时
   /// `LayoutShell` 应回退到 classic。
@@ -29,7 +28,6 @@ pub struct SiteConfig {
   pub active_layout: String,
   pub default_language: String,
   pub author: String,
-  pub paths: HashMap<String, String>,
   pub navigation: Vec<NavItem>,
   #[serde(default)]
   pub auth: AuthSettings,
@@ -37,9 +35,9 @@ pub struct SiteConfig {
   /// `ModuleEngine::init` 读取该字段覆盖默认 enabled 状态。
   #[serde(default)]
   pub modules: HashMap<String, ModuleSettings>,
-  /// Phase 4.3：审核插件配置（独立于通用 `modules` 开关，因为还要装
-  /// 插件清单与阈值）。
-  /// 默认 disabled + 空插件列表 → 整条流水线短路，零开销 fail-open。
+  /// Phase 4.3：审核配置（独立于通用 `modules` 开关，因为还有 LLM 开关、
+  /// 阈值与链接黑名单）。
+  /// 默认 disabled → 整条流水线为空，提交直接通过，不调 LLM。
   /// 由 `crates/modules/moderation::ModerationPipeline::from_site_config`
   /// 读取并装载。
   #[serde(default)]
@@ -53,10 +51,13 @@ pub struct ModerationSettings {
   /// 总开关。默认 `false`。
   #[serde(default)]
   pub enabled: bool,
-  /// 要装载的审核插件文件名列表（相对 `assets/plugins/`）。
-  /// 即使 `enabled = true`，这里为空也等于没有 stage → 全部 Allow。
+  /// 是否让 LLM 审核（内置 stage，见 `module_moderation::LlmModerationStage`）。
+  /// 还需配置 LLM 环境变量（`OPENAI_LLM_*` / `ANTHROPIC_LLM_*`），未配置时跳过。
   #[serde(default)]
-  pub plugins: Vec<String>,
+  pub llm_review: bool,
+  /// LLM 调用失败 / 回复无法解析时怎么处理这条提交。默认送人工复核。
+  #[serde(default)]
+  pub on_llm_failure: LlmFailureAction,
   /// 可选：覆盖默认阈值（block_above = 0.9 / flag_above = 0.5）。
   /// 留空表示用默认。
   #[serde(default)]
@@ -70,6 +71,18 @@ pub struct ModerationSettings {
   /// 默认空 → 该 stage 不注册，零开销。
   #[serde(default)]
   pub url_blocklist: Vec<String>,
+}
+
+/// LLM 审核失败时的处理（SEC-12：不再放行）。没有「放行」选项：
+/// 开了 LLM 审核却在审核失败时放行，等于攻击者把审核打挂就能绕过。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LlmFailureAction {
+  /// 记为 Flag：照常发布，同时进审核队列等管理员复核。
+  #[default]
+  Review,
+  /// 记为 Block：拒绝提交，提示用户稍后再试。
+  Reject,
 }
 
 /// `ModerationSettings::thresholds` 的可选覆盖。字段缺失时不影响其它字段。
@@ -89,18 +102,15 @@ pub struct NavItem {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AuthSettings {
   pub enabled: bool,
-  pub providers: Vec<AuthProviderEntry>,
-}
-
-/// 单个授权提供者配置项
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthProviderEntry {
-  pub id: String,     // provider 标识，如 "github"
-  pub plugin: String, // 插件文件名，如 "github_auth_plugin.wasm"
+  /// 启用的内置 provider id（见 [`crate::auth::Provider`]），按登录弹窗显示顺序。
+  pub providers: Vec<String>,
 }
 
 impl SiteConfig {
-  /// 从路径读取并解析 site.json。
+  /// 从路径读取并解析 site.json（无缓存，每次磁盘 IO）。
+  ///
+  /// 适用于写后立即重读等必须绕过缓存的场景（admin 保存配置）；
+  /// 读多写少的热路径请用 [`SiteConfig::load_cached`]。
   ///
   /// 返回统一的 [`crate::error::AppResult`]，底层 IO 失败会变为
   /// `AppError::Io`，不合法 JSON 会变为 `AppError::Validation`。
@@ -110,20 +120,42 @@ impl SiteConfig {
     Ok(config)
   }
 
-  /// 解析后的主题栈（Phase 3.1）。
+  /// S10（风险 R11）：按 (path, mtime) 缓存的统一读取入口。
   ///
-  /// 优先级：
-  /// 1. 非空 `themes` 直接返回 clone
-  /// 2. 否则若 `active_theme` 非空，返回单元素栈（向后兼容）
-  /// 3. 否则返回空 Vec
-  pub fn theme_stack(&self) -> Vec<String> {
-    if !self.themes.is_empty() {
-      return self.themes.clone();
+  /// 此前多处 server fn（主题 CSS / 布局 / feed / auth）每次请求都
+  /// `from_file` 直读磁盘 + serde 解析。改用本入口后：
+  /// - mtime 未变 → 直接 clone Arc（一次 metadata 系统调用，无读盘/解析）
+  /// - mtime 变化（admin 保存 / 手改文件）→ 自动重读，无需显式失效
+  ///
+  /// 缓存 key 为路径字符串；实际部署只有一个 site.json，表容量恒为 1。
+  pub fn load_cached(path: &str) -> crate::error::AppResult<std::sync::Arc<Self>> {
+    use std::collections::HashMap as Map;
+    use std::sync::{Arc, Mutex, OnceLock};
+    use std::time::SystemTime;
+
+    struct Entry {
+      mtime: SystemTime,
+      cfg: Arc<SiteConfig>,
     }
-    if !self.active_theme.is_empty() {
-      return vec![self.active_theme.clone()];
+    static CACHE: OnceLock<Mutex<Map<String, Entry>>> = OnceLock::new();
+
+    let mtime = std::fs::metadata(path)?.modified()?;
+    let cache = CACHE.get_or_init(|| Mutex::new(Map::new()));
+
+    if let Ok(guard) = cache.lock() {
+      if let Some(entry) = guard.get(path) {
+        if entry.mtime == mtime {
+          return Ok(entry.cfg.clone());
+        }
+      }
     }
-    Vec::new()
+
+    // 未命中 / mtime 变化 → 锁外重读，写回缓存（锁失败仅跳过本次缓存）。
+    let cfg = Arc::new(Self::from_file(path)?);
+    if let Ok(mut guard) = cache.lock() {
+      guard.insert(path.to_string(), Entry { mtime, cfg: cfg.clone() });
+    }
+    Ok(cfg)
   }
 
   /// 当前布局名（空字符串回退到 `"classic"`）。
@@ -138,18 +170,13 @@ impl SiteConfig {
 
 impl Default for SiteConfig {
   fn default() -> Self {
-    let mut paths = HashMap::new();
-    paths.insert("plugins".to_string(), "assets/plugins".to_string());
-
     Self {
       site_name: "Rust in Everything".to_string(),
       site_description: "".to_string(),
-      active_theme: "theme_ocean_plugin.wasm".to_string(),
-      themes: Vec::new(),
+      theme: default_theme(),
       active_layout: DEFAULT_LAYOUT.to_string(),
       default_language: "zh".to_string(),
       author: "".to_string(),
-      paths,
       navigation: vec![],
       auth: AuthSettings::default(),
       modules: HashMap::new(),
@@ -163,28 +190,52 @@ impl Default for SiteConfig {
 mod tests {
   use super::*;
 
+  // ─── S10 load_cached ──────────────────────────────────
+
+  fn minimal_site_json(name: &str) -> String {
+    format!(
+      r#"{{"site_name":"{}","site_description":"","default_language":"zh","author":"","navigation":[]}}"#,
+      name
+    )
+  }
+
+  /// 同 mtime 下重复读取应命中缓存（返回同一个 Arc）。
   #[test]
-  fn theme_stack_prefers_themes_field() {
-    let mut cfg = SiteConfig::default();
-    cfg.themes = vec!["a.wasm".to_string(), "b.wasm".to_string()];
-    cfg.active_theme = "legacy.wasm".to_string();
-    assert_eq!(cfg.theme_stack(), vec!["a.wasm", "b.wasm"]);
+  fn load_cached_hits_on_same_mtime() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("site.json");
+    std::fs::write(&path, minimal_site_json("A")).expect("write");
+    let p = path.to_str().expect("utf8 path");
+
+    let first = SiteConfig::load_cached(p).expect("first load");
+    let second = SiteConfig::load_cached(p).expect("second load");
+    assert!(std::sync::Arc::ptr_eq(&first, &second), "同 mtime 应返回同一 Arc");
+    assert_eq!(first.site_name, "A");
+  }
+
+  /// mtime 变化后应自动重读新内容。
+  #[test]
+  fn load_cached_reloads_on_mtime_change() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("site.json");
+    std::fs::write(&path, minimal_site_json("OLD")).expect("write old");
+    let p = path.to_str().expect("utf8 path");
+    let first = SiteConfig::load_cached(p).expect("first load");
+    assert_eq!(first.site_name, "OLD");
+
+    // 写新内容并显式把 mtime 向后拨 2 秒（避免文件系统 mtime 粒度引发 flaky）
+    std::fs::write(&path, minimal_site_json("NEW")).expect("write new");
+    let f = std::fs::OpenOptions::new().append(true).open(&path).expect("open");
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(2);
+    f.set_modified(later).expect("set mtime");
+
+    let second = SiteConfig::load_cached(p).expect("reload");
+    assert_eq!(second.site_name, "NEW", "mtime 变化应重读");
   }
 
   #[test]
-  fn theme_stack_falls_back_to_active_theme() {
-    let mut cfg = SiteConfig::default();
-    cfg.themes = Vec::new();
-    cfg.active_theme = "legacy.wasm".to_string();
-    assert_eq!(cfg.theme_stack(), vec!["legacy.wasm"]);
-  }
-
-  #[test]
-  fn theme_stack_empty_when_both_empty() {
-    let mut cfg = SiteConfig::default();
-    cfg.themes = Vec::new();
-    cfg.active_theme = String::new();
-    assert!(cfg.theme_stack().is_empty());
+  fn load_cached_missing_file_errors() {
+    assert!(SiteConfig::load_cached("/nonexistent/__site__.json").is_err());
   }
 
   #[test]
@@ -197,21 +248,17 @@ mod tests {
   }
 
   #[test]
-  fn deserialize_missing_themes_and_layout_uses_defaults() {
-    // Phase 3.1 之前的 site.json 不含 themes / active_layout 字段
+  fn deserialize_missing_theme_and_layout_uses_defaults() {
     let json = r#"{
             "site_name": "X",
             "site_description": "",
-            "active_theme": "theme_ocean_plugin.wasm",
             "default_language": "zh",
             "author": "",
-            "paths": {},
             "navigation": []
         }"#;
     let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
-    assert!(cfg.themes.is_empty());
+    assert_eq!(cfg.theme, "ocean");
     assert_eq!(cfg.active_layout, "classic");
-    assert_eq!(cfg.theme_stack(), vec!["theme_ocean_plugin.wasm".to_string()]);
   }
 
   // ─── Phase 4.3 moderation settings ───────────────────────
@@ -220,7 +267,7 @@ mod tests {
   fn moderation_defaults_to_disabled_empty() {
     let cfg = SiteConfig::default();
     assert!(!cfg.moderation.enabled);
-    assert!(cfg.moderation.plugins.is_empty());
+    assert!(!cfg.moderation.llm_review);
     assert!(cfg.moderation.thresholds.is_none());
     assert!(cfg.moderation.url_blocklist.is_empty());
   }
@@ -231,14 +278,28 @@ mod tests {
     let json = r#"{
             "site_name": "X",
             "site_description": "",
-            "active_theme": "t.wasm",
             "default_language": "zh",
             "author": "",
-            "paths": {},
             "navigation": []
         }"#;
     let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
     assert!(!cfg.moderation.enabled);
+  }
+
+  /// 插件运行时移除前的 site.json 带 `paths` / `plugins_lock`，仍应能读。
+  #[test]
+  fn legacy_plugin_fields_are_ignored() {
+    let json = r#"{
+            "site_name": "X",
+            "site_description": "",
+            "default_language": "zh",
+            "author": "",
+            "paths": {"plugins": "assets/plugins"},
+            "navigation": [],
+            "plugins_lock": {"theme_ocean_plugin.wasm": "deadbeef"}
+        }"#;
+    let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
+    assert_eq!(cfg.site_name, "X");
   }
 
   #[test]
@@ -246,22 +307,40 @@ mod tests {
     let json = r#"{
             "site_name": "X",
             "site_description": "",
-            "active_theme": "t.wasm",
             "default_language": "zh",
             "author": "",
-            "paths": {},
             "navigation": [],
             "moderation": {
                 "enabled": true,
-                "plugins": ["moderation_llm_default.wasm"],
+                "llm_review": true,
                 "thresholds": { "block_above": 0.95, "flag_above": 0.6 }
             }
         }"#;
     let cfg: SiteConfig = serde_json::from_str(json).expect("parse");
     assert!(cfg.moderation.enabled);
-    assert_eq!(cfg.moderation.plugins, vec!["moderation_llm_default.wasm"]);
+    assert!(cfg.moderation.llm_review);
     let t = cfg.moderation.thresholds.unwrap();
     assert_eq!(t.block_above, Some(0.95));
     assert_eq!(t.flag_above, Some(0.6));
+  }
+
+  /// R4 之前的配置用 `plugins` 列 wasm 文件；插件已内置，旧字段被忽略，
+  /// LLM 审核需显式 `llm_review: true` 才开启。
+  #[test]
+  fn legacy_moderation_plugins_list_does_not_enable_llm_review() {
+    let json = r#"{"enabled": true, "plugins": ["plugin_moderation_deepseek.wasm"]}"#;
+    let m: ModerationSettings = serde_json::from_str(json).expect("parse");
+    assert!(m.enabled);
+    assert!(!m.llm_review);
+  }
+
+  #[test]
+  fn llm_failure_defaults_to_review() {
+    let m: ModerationSettings = serde_json::from_str(r#"{"enabled": true}"#).expect("parse");
+    assert_eq!(m.on_llm_failure, LlmFailureAction::Review);
+    let m: ModerationSettings =
+      serde_json::from_str(r#"{"on_llm_failure": "reject"}"#).expect("parse");
+    assert_eq!(m.on_llm_failure, LlmFailureAction::Reject);
+    assert!(serde_json::from_str::<ModerationSettings>(r#"{"on_llm_failure": "allow"}"#).is_err());
   }
 }

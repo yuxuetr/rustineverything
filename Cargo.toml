@@ -15,6 +15,7 @@ members = [
     "crates/modules/comments",
     "crates/modules/uploads",
     "crates/modules/moderation",
+    "crates/modules/payment",
     "crates/modules/embedded",
     "crates/modules/ai",
     "crates/modules/web3",
@@ -22,28 +23,28 @@ members = [
     "crates/modules/cli",
     "crates/migration",
     "crates/app",
-    "crates/plugins/i18n-fluent",
-    "crates/plugins/theme-ocean",
-    "crates/plugins/theme-sunset",
-    "crates/plugins/theme-catppuccin",
-    "crates/plugins/github-auth",
-    "crates/plugins/google-auth",
-    "crates/plugins/discord-auth",
-    "crates/plugins/twitter-auth",
-    "examples/plugin-theme-purple",
-    "examples/plugin-moderation-deepseek",
 ]
 # Pingora gateway 是独立部署组件（自带 [workspace]），避免 openssl / native
 # deps 拖累主 workspace 构建；显式 exclude 以防误纳入 default-members。
 exclude = ["crates/gateway"]
 resolver = "2"
 
+# S9（风险 R12）：生产代码禁用 unwrap / expect（配合 clippy -D warnings 即拒绝）。
+# 测试代码在各 crate 根用 `#![cfg_attr(test, allow(...))]` 豁免；有意为之的
+# 启动门禁 panic 用局部 `#[allow]` + 理由注释。
+# 接入方式：crate 的 Cargo.toml 加 `[lints] workspace = true`。
+# 当前已接入：app-core / app / migration；其余 crate 渐进接入。
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
 [workspace.dependencies]
 dioxus = { version = "0.7.1", features = ["router", "fullstack"] }
+# 自研组件库（docs/DIOXUS_UI_MIGRATION.md D1）：这里不开 feature，各 crate 按需开组件。
+dioxus-shadcn = "0.6.3"
 tokio = { version = "1.49.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-wasmi = "0.40.0"
 sea-orm = { version = "1.1.4", features = [ "sqlx-postgres", "runtime-tokio-rustls", "macros" ] }
 oauth2 = { version = "5.0.0", features = ["reqwest"] }
 chrono = { version = "0.4", features = ["serde"] }
