@@ -49,6 +49,8 @@ fn tf(lang: Language, key: &str) -> &'static str {
     (_, "forum.no_topics") => "还没有话题，第一个发表的就是你！",
     (Language::En, "forum.back_all") => "← All Topics",
     (_, "forum.back_all") => "← 全部话题",
+    (Language::En, "forum.not_found") => "Topic not found",
+    (_, "forum.not_found") => "话题不存在或已被删除",
     (Language::En, "forum.my_topics_empty") => "You haven't posted any topics yet",
     (_, "forum.my_topics_empty") => "你还没有发表过话题",
     (Language::En, "forum.post_first") => "Post Your First Topic",
@@ -250,9 +252,9 @@ fn TopicCard(topic: TopicSummary) -> Element {
 
 #[component]
 pub fn TopicsIndexPage() -> Element {
-  // 重构 B6 评估：论坛页（话题列表 / 详情 / 回复）保留 use_resource，**不** 迁移到
-  // use_server_future。理由：论坛是强交互 + 登录态相关（发帖 / 回复 / 实时刷新），
-  // 内容动态且非 SEO 关键；客户端加载更契合其交互模型。
+  // 重构 B6 评估：论坛列表页保留 use_resource，**不** 迁移到 use_server_future。
+  // 理由：论坛是强交互 + 登录态相关（发帖 / 回复 / 实时刷新），内容动态且非 SEO
+  // 关键；客户端加载更契合其交互模型。例外：详情页在服务端取，以便不存在时回 404。
   let topics_res =
     use_resource(|| async move { list_topics(None, Some(0)).await.unwrap_or_default() });
   let tags_res = use_resource(|| async move { list_tags().await.unwrap_or_default() });
@@ -438,18 +440,6 @@ pub fn MyTopicsPage() -> Element {
 
 #[component]
 pub fn TopicDetailPage(id: i32) -> Element {
-  let detail_res = use_resource(move || async move { get_topic(id).await.ok().flatten() });
-  let detail = detail_res.read().as_ref().cloned();
-
-  let mut detail_state = use_signal::<Option<TopicDetail>>(|| None);
-  use_effect(move || {
-    if let Some(Some(d)) = detail_res.read().as_ref().cloned() {
-      detail_state.set(Some(d));
-    }
-  });
-
-  let current = detail_state.read().clone().or_else(|| detail.flatten());
-
   let lang = use_language_ctx();
   rsx! {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
@@ -457,19 +447,44 @@ pub fn TopicDetailPage(id: i32) -> Element {
               div { class: "mb-6",
                   a { href: "/topics", class: "text-sm text-primary hover:underline", "{tf(lang, \"forum.back_all\")}" }
               }
-              match current {
-                  None => rsx! { Loading {} },
-                  Some(d) => rsx! {
-                      TopicDetailBody {
-                          detail: d,
-                          on_replied: move |new_detail: TopicDetail| {
-                              detail_state.set(Some(new_detail));
-                          }
-                      }
-                  },
+              SuspenseBoundary {
+                  fallback: |_| rsx! { Loading {} },
+                  TopicDetailLoaded { id }
               }
           }
       }
+  }
+}
+
+/// 详情在服务端取（列表页仍按 B6 走 use_resource）：SSR 时才知道话题是否存在，
+/// 不存在的话题回 404，而不是 200 + 永远转圈的加载态。
+#[component]
+fn TopicDetailLoaded(id: i32) -> Element {
+  let lang = use_language_ctx();
+  // 回复后由 TopicDetailBody 回传最新详情，覆盖服务端取到的那份
+  let mut replied = use_signal::<Option<TopicDetail>>(|| None);
+  let detail_res =
+    use_server_future(use_reactive!(|id| async move { get_topic(id).await.ok().flatten() }))?;
+
+  match replied().or_else(|| detail_res().flatten()) {
+    Some(d) => rsx! {
+        TopicDetailBody {
+            detail: d,
+            on_replied: move |new_detail: TopicDetail| replied.set(Some(new_detail)),
+        }
+    },
+    None => {
+      #[cfg(feature = "server")]
+      dioxus::fullstack::FullstackContext::commit_http_status(
+        dioxus::fullstack::StatusCode::NOT_FOUND,
+        None,
+      );
+      rsx! {
+          div { class: "py-20 text-center",
+              h1 { class: "text-2xl font-bold text-slate-900 dark:text-white", "{tf(lang, \"forum.not_found\")}" }
+          }
+      }
+    }
   }
 }
 
