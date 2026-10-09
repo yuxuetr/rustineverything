@@ -9,9 +9,12 @@ use app_core::session::{SessionUser, ALL_ROLES};
 use app_core::settings::{LlmFailureAction, ModerationSettings, ModerationThresholdsConfig};
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Checkbox, DensityProvider,
-  Input, NativeSelect, NativeSelectOption, Spinner, SpinnerSize, Switch, Tabs, TabsContent,
-  TabsList, TabsTrigger, Textarea, UiDensity,
+  button_class, use_density, AlertDialog, AlertDialogAction, AlertDialogActionVariant,
+  AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogOverlay, AlertDialogTitle, AlertDialogTrigger, Badge, BadgeVariant,
+  Button, ButtonSize, ButtonVariant, Checkbox, DensityProvider, Input, NativeSelect,
+  NativeSelectOption, Spinner, SpinnerSize, Switch, Tabs, TabsContent, TabsList, TabsTrigger,
+  Textarea, UiDensity,
 };
 
 // =============================================================
@@ -386,12 +389,11 @@ fn CommentRow(comment: AdminCommentRow, on_deleted: EventHandler<Result<(), Stri
               }
           }
           div { class: "shrink-0",
-              Button {
-                  variant: ButtonVariant::Ghost,
-                  size: ButtonSize::Sm,
-                  class: "text-destructive hover:bg-destructive/10",
-                  disabled: submitting(),
-                  onclick: move |_| {
+              ConfirmDelete {
+                  title: "删除这条评论？".to_string(),
+                  description: format!("评论 #{} 将被永久删除，无法恢复。", comment.id),
+                  busy: submitting(),
+                  on_confirm: move |_| {
                       let on_deleted = on_deleted;
                       spawn(async move {
                           submitting.set(true);
@@ -402,7 +404,6 @@ fn CommentRow(comment: AdminCommentRow, on_deleted: EventHandler<Result<(), Stri
                           submitting.set(false);
                       });
                   },
-                  if submitting() { "..." } else { "删除" }
               }
           }
       }
@@ -506,12 +507,11 @@ fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) 
               }
           }
           div { class: "shrink-0",
-              Button {
-                  variant: ButtonVariant::Ghost,
-                  size: ButtonSize::Sm,
-                  class: "text-destructive hover:bg-destructive/10",
-                  disabled: submitting(),
-                  onclick: move |_| {
+              ConfirmDelete {
+                  title: "删除这个话题？".to_string(),
+                  description: format!("「{}」及其 {} 条回复将被永久删除，无法恢复。", topic.title, topic.reply_count),
+                  busy: submitting(),
+                  on_confirm: move |_| {
                       let on_deleted = on_deleted;
                       spawn(async move {
                           submitting.set(true);
@@ -522,7 +522,41 @@ fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) 
                           submitting.set(false);
                       });
                   },
-                  if submitting() { "..." } else { "删除" }
+              }
+          }
+      }
+  }
+}
+
+/// 行内「删除」按钮：先弹确认框，确认后才调用 `on_confirm`。删除不可恢复。
+#[component]
+fn ConfirmDelete(
+  title: String,
+  description: String,
+  busy: bool,
+  on_confirm: EventHandler<()>,
+) -> Element {
+  let density = use_density();
+  rsx! {
+      AlertDialog {
+          AlertDialogTrigger {
+              class: button_class(ButtonVariant::Ghost, ButtonSize::Sm, density, "text-destructive hover:bg-destructive/10"),
+              disabled: busy,
+              if busy { "..." } else { "删除" }
+          }
+          AlertDialogOverlay {}
+          AlertDialogContent {
+              AlertDialogHeader {
+                  AlertDialogTitle { "{title}" }
+                  AlertDialogDescription { "{description}" }
+              }
+              AlertDialogFooter {
+                  AlertDialogCancel { "取消" }
+                  AlertDialogAction {
+                      variant: AlertDialogActionVariant::Destructive,
+                      onclick: move |_| on_confirm.call(()),
+                      "删除"
+                  }
               }
           }
       }
