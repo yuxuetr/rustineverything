@@ -514,16 +514,6 @@ fn BlogInner(id: String) -> Element {
                           BlogArticle { id: id.clone() }
                       }
                   }
-
-                  div { class: "border-t border-slate-200 dark:border-slate-800 pt-8 mt-12",
-                      CommentBox { blog_id: id.clone() }
-                  }
-
-                  // 资源讨论面板：关联论坛话题
-                  DiscussionPanel {
-                      resource_kind: "blog".to_string(),
-                      resource_path: id,
-                  }
               }
           }
       }
@@ -547,7 +537,7 @@ fn BlogArticle(id: String) -> Element {
   let base_url: String = base_url_res().unwrap_or_default();
 
   match blog_content() {
-    Some(Ok(content)) => rsx! {
+    Some(Ok(Some(content))) => rsx! {
         // SEO 注入：inject_seo 从 frontmatter 取 metadata。
         {
             let (meta, _body) = parse_mdx(&content);
@@ -561,10 +551,17 @@ fn BlogArticle(id: String) -> Element {
             resource_kind: "blog".to_string(),
             resource_path: anno_path.clone(),
         }
+        // 评论与关联讨论只挂在存在的文章下
+        div { class: "border-t border-slate-200 dark:border-slate-800 pt-8 mt-12",
+            CommentBox { blog_id: id.clone() }
+        }
+        DiscussionPanel {
+            resource_kind: "blog".to_string(),
+            resource_path: id.clone(),
+        }
     },
-    Some(Err(e)) => rsx! {
-        div { class: "p-4 bg-red-50 text-red-700 rounded-lg", "Error loading post: {e}" }
-    },
+    Some(Ok(None)) => rsx! { widgets::NotFound { message: "文章不存在" } },
+    Some(Err(_)) => rsx! { widgets::LoadFailed {} },
     None => rsx! {
         div { class: "flex items-center justify-center py-20",
             Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }

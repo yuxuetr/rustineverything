@@ -1,7 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  badge_class, card_class, Alert, AlertDescription, AlertVariant, BadgeVariant, Empty,
-  EmptyDescription, Spinner, SpinnerSize,
+  badge_class, card_class, BadgeVariant, Empty, EmptyDescription, Spinner, SpinnerSize,
 };
 
 use crate::server::{get_doc_content, list_doc_tree, DocTreeNode};
@@ -217,7 +216,7 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
               div { class: "flex-1 min-w-0 px-6 lg:px-12 py-8",
                   div { class: "max-w-3xl mx-auto",
                       match content() {
-                          Some(Ok(resp)) => rsx! {
+                          Some(Ok(Some(resp))) => rsx! {
                               // SEO: 注入 title / description / keywords / og:image
                               if !resp.meta.title.is_empty() {
                                   widgets::browser::PageTitle { title: format!("{} - Rust in Everything", resp.meta.title) }
@@ -237,11 +236,8 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
                               // 跨模块组合（标注层 + 讨论面板）由 app 层注入。
                               {footer.clone()}
                           },
-                          Some(Err(e)) => rsx! {
-                              Alert { variant: AlertVariant::Destructive,
-                                  AlertDescription { variant: AlertVariant::Destructive, "加载失败: {e}" }
-                              }
-                          },
+                          Some(Ok(None)) => rsx! { widgets::NotFound { message: "文档不存在" } },
+                          Some(Err(_)) => rsx! { widgets::LoadFailed {} },
                           None => rsx! {
                               div { class: "flex items-center justify-center py-20",
                                   Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }

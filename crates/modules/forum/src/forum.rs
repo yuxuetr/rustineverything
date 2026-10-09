@@ -473,18 +473,7 @@ fn TopicDetailLoaded(id: i32) -> Element {
             on_replied: move |new_detail: TopicDetail| replied.set(Some(new_detail)),
         }
     },
-    None => {
-      #[cfg(feature = "server")]
-      dioxus::fullstack::FullstackContext::commit_http_status(
-        dioxus::fullstack::StatusCode::NOT_FOUND,
-        None,
-      );
-      rsx! {
-          div { class: "py-20 text-center",
-              h1 { class: "text-2xl font-bold text-slate-900 dark:text-white", "{tf(lang, \"forum.not_found\")}" }
-          }
-      }
-    }
+    None => rsx! { widgets::NotFound { message: tf(lang, "forum.not_found") } },
   }
 }
 

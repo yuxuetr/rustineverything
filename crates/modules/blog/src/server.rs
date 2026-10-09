@@ -121,15 +121,16 @@ fn post_file(asset_root: &std::path::Path, id: &str) -> Option<PathBuf> {
   ["index.mdx", "index.md"].into_iter().map(|name| dir.join(name)).find(|p| p.is_file())
 }
 
+/// 文章源文本；`Ok(None)` 表示没有这篇文章（页面据此回 404）。
 #[server]
-pub async fn get_blog_content(id: String) -> Result<String, ServerFnError> {
+pub async fn get_blog_content(id: String) -> Result<Option<String>, ServerFnError> {
   let Some(filepath) = post_file(&get_asset_root(), &id) else {
-    return Err(ServerFnError::new(format!("文章未找到: {}", id)));
+    return Ok(None);
   };
 
   let raw =
     fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
-  Ok(raw)
+  Ok(Some(raw))
 }
 
 #[cfg(test)]

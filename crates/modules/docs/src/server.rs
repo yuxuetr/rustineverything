@@ -231,22 +231,23 @@ fn resolve_doc_file(docs_root: &std::path::Path, path: &str) -> Option<PathBuf> 
   })
 }
 
+/// 文档正文与 frontmatter；`Ok(None)` 表示没有这篇文档（页面据此回 404）。
 #[post("/api/docs/content")]
-pub async fn get_doc_content(path: String) -> Result<DocContentResponse, ServerFnError> {
+pub async fn get_doc_content(path: String) -> Result<Option<DocContentResponse>, ServerFnError> {
   #[cfg(feature = "server")]
   {
     let Some(filepath) = resolve_doc_file(&get_asset_root().join("docs"), &path) else {
-      return Err(ServerFnError::new(format!("文档未找到: {}", path)));
+      return Ok(None);
     };
     let raw =
       fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
     let (meta, content) = parse_doc_frontmatter(&raw);
-    Ok(DocContentResponse { content, meta })
+    Ok(Some(DocContentResponse { content, meta }))
   }
   #[cfg(not(feature = "server"))]
   {
     let _ = path;
-    Ok(DocContentResponse { content: String::new(), meta: DocMeta::default() })
+    Ok(None)
   }
 }
 
