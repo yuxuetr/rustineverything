@@ -436,6 +436,11 @@
 - [x] B7 — SEC-17 不可信内容的 mermaid 按代码显示（cd81f5f：`renders_as_diagram(lang, untrusted)`，用户内容的 mermaid 走 `CodeBlock`（`language-mermaid`，引导脚本只扫 `.mermaid`）；单测先红后绿；浏览器验收：论坛帖显示为代码、无 SVG，welcome 文章两张图照常渲染；用户内容的原始 HTML 本就按文本输出，无法注入 `class="mermaid"`）
 - [x] B8 — SEC-19 / SEC-20 HSTS、Permissions-Policy、`ws:` 仅开发；删 `/api/echo`；裁剪公开配置（ca5307c：应用侧补 HSTS（与 gateway 同值）与 Permissions-Policy（关 camera / microphone / geolocation / payment / usb / browsing-topics，不动 fullscreen）；`connect-src` 仅 debug 构建放行 `ws: wss:`；删 `/api/echo` 与 Echo 组件；`/api/site/config` 无调用方且返回整份 site.json，直接删除而非裁剪 DTO；头部单测先红后绿，curl 验收两端点不再可用、新头已下发）
 
+### 上线前收尾（2026-10-09）
+- [x] SEC-23 核实为开发环境独有：Google Fonts `@import` 来自 `dx serve` 注入的 toast 模板，release 产物无此请求（002cf09，仅文档）
+- [x] B 站嵌入改为 https（d179733：`bilibili_embed_url`，单测先红后绿）
+- [x] 删除 `annotations.js` 中无元素使用的 `.rie-anno-toggle` 样式（6dc48f1）
+
 ### 待评估 — 插件改为编译期依赖（2026-10-08 提出）
 - [x] P-EVAL — 采纳方案 A：第一方插件全部编译进宿主，移除 WASM 运行时（2026-10-08 决定）。依据：10 个插件全部在本仓库构建、同一作者；认证插件只是端点常量 + 十几行字段映射，主题是 CSS 字符串；i18n 插件生产无调用方（`/api/i18n/translate` 无客户端调用）；content-toc 与审核插件均未启用（`content_transformers: []`、site.json 无 moderation 块）；宿主插件设施 + SDK 约 3,400 行。剩余两个「高」（SEC-05 / SEC-06）只因运行时加载插件而存在，且认证做成插件无法安全：端点收回宿主后插件仍决定 `external_id`。C1 / C2 / C4 / C5 / C6、D1 随之取消，C3 保留。重估条件：`assets/plugins/` 中出现无对应源码 crate（`crates/plugins/` 或 `examples/`）的 wasm，或站点要作为产品给他人部署
 
