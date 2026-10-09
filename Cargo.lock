@@ -8737,6 +8737,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "dioxus",
+ "dioxus-ssr",
  "js-sys",
  "pulldown-cmark",
  "pulldown-latex",
