@@ -122,7 +122,7 @@ pub async fn list_embedded_articles() -> Result<Vec<ArticleSummary>, ServerFnErr
 #[server]
 pub async fn get_embedded_article(slug: String) -> Result<String, ServerFnError> {
   // 防御路径穿越：slug 只允许安全字符。
-  if slug.is_empty() || slug.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
+  if !app_core::utils::is_safe_slug(&slug) {
     return Err(ServerFnError::new("无效的文章标识".to_string()));
   }
   let dir = get_asset_root().join("topics").join(BOARD_ID).join(&slug);

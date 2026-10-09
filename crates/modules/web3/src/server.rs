@@ -119,7 +119,7 @@ pub async fn list_web3_articles() -> Result<Vec<ArticleSummary>, ServerFnError> 
 /// 读取单篇文章的原始 markdown（含 frontmatter）。
 #[server]
 pub async fn get_web3_article(slug: String) -> Result<String, ServerFnError> {
-  if slug.is_empty() || slug.chars().any(|c| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
+  if !app_core::utils::is_safe_slug(&slug) {
     return Err(ServerFnError::new("无效的文章标识".to_string()));
   }
   let dir = get_asset_root().join("topics").join(BOARD_ID).join(&slug);
