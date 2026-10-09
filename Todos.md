@@ -1,6 +1,6 @@
 # 开发计划 — 重构冲刺：业务模块解耦 + SSR Hydration 优化
 
-> 上一阶段（Phase 8 安全 & 性能硬化 + Phase 9）归档在 [`Todos.refactor-backup.md`](Todos.refactor-backup.md)。
+> 上一阶段（Phase 8 安全 & 性能硬化 + Phase 9）归档在 [`Todos.refactor-backup.md`](docs/archive/todos/Todos.refactor-backup.md)。
 > 本文档承接 2026-06-26 整体架构评估的两项结论，聚焦 **(A) 业务模块编译期解耦** 与 **(B) SSR hydration 优化**。
 
 ## 本阶段目标
