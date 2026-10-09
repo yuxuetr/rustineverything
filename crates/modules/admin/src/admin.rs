@@ -736,7 +736,7 @@ pub fn AdminModerationPage() -> Element {
                               "批量通过"
                           }
                           ConfirmDelete {
-                              title: "批量拒绝 {selected_count} 条？".to_string(),
+                              title: format!("批量拒绝 {selected_count} 条？"),
                               description: format!("选中的 {selected_count} 条内容将被永久删除，无法恢复。"),
                               label: "批量拒绝（删除内容）".to_string(),
                               variant: ButtonVariant::Destructive,
