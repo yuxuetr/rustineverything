@@ -442,6 +442,8 @@
 - [x] 删除 `annotations.js` 中无元素使用的 `.rie-anno-toggle` 样式（6dc48f1）
 - [x] 粗体 / 斜体 / 删除线全站不生效：`render_tag` 缺 Strong / Emphasis / Strikethrough 分支，落到无样式 `span`（05c4bc8：输出 strong / em / del；widgets 加 dev 依赖 dioxus-ssr，渲染测试先红后绿，可信与不可信内容各测一遍）
 - [x] 登录态浏览器验收（GitHub 登录，2026-10-09）：`/me/annotations` 创建 / 列出 / 删除；论坛发帖（强调样式正确、`<script>` 被剥离）；admin 7 页（概览 / 用户 / 评论 / 话题 / 审核 / 审核设置 / 课程权益）均 200、无新增控制台错误；审核设置表单控件齐全且有 label（未提交，保存会改 `assets/site.json`）；测试帖经 `/admin/topics` 删除
+- [x] 管理端删除话题 / 评论加确认框（AlertDialog，取消在前、删除为危险样式，文案写明删除对象与回复数；浏览器验收：取消后仍在、确认后删除、评论页同样弹框）
+- [x] 不存在的话题回 404：详情页改用 use_server_future + SuspenseBoundary，未找到时提示并 `commit_http_status(404)`（原先 200 + 永久加载态）；列表页仍按 B6 走 use_resource。curl：`/topics/999999` 404、`/topics/1` 200；客户端从列表点进详情正常
 
 ### 待评估 — 插件改为编译期依赖（2026-10-08 提出）
 - [x] P-EVAL — 采纳方案 A：第一方插件全部编译进宿主，移除 WASM 运行时（2026-10-08 决定）。依据：10 个插件全部在本仓库构建、同一作者；认证插件只是端点常量 + 十几行字段映射，主题是 CSS 字符串；i18n 插件生产无调用方（`/api/i18n/translate` 无客户端调用）；content-toc 与审核插件均未启用（`content_transformers: []`、site.json 无 moderation 块）；宿主插件设施 + SDK 约 3,400 行。剩余两个「高」（SEC-05 / SEC-06）只因运行时加载插件而存在，且认证做成插件无法安全：端点收回宿主后插件仍决定 `external_id`。C1 / C2 / C4 / C5 / C6、D1 随之取消，C3 保留。重估条件：`assets/plugins/` 中出现无对应源码 crate（`crates/plugins/` 或 `examples/`）的 wasm，或站点要作为产品给他人部署
