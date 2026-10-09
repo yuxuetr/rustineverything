@@ -352,6 +352,7 @@
     - Dockerfile 未 COPY `crates/sdk-macros`、`crates/gateway`（2026-06-01 后新增），镜像构建应已失败
     - `crates/app/build.rs` 先把 root `assets/` 正向同步到 `crates/app/assets/`，任何 cargo 构建都会用旧的 `assets/tailwind.css` 覆盖刚编译的产物；`npm run build` 后需手动 `cp crates/app/assets/tailwind.css assets/`
     - rustc 1.99 的 clippy 对 `crates/llm/src/lib.rs:184`（`async_trait` 展开）报 `double_must_use`
+      - 已修（2026-10-09，c40c14d）：async-trait 0.1.89 → 0.1.92 后不再触发，CI 的 `-D warnings` 不需要 `-A` 也能通过
 - [x] U2 — 三个主题插件改输出 shadcn token，旧 `--color-*` 改为 token 别名，重编 wasm，THEME_SPEC 更新
   - 决定（2026-10-08）：ocean 主色保持品牌橙（不再用 hue 250 蓝），sunset / catppuccin 保留各自主色
   - 落点：`crates/plugins/theme-{ocean,sunset,catppuccin}/src/lib.rs` 输出 17 个 token（亮/暗各一套）；`assets/css/main.css` 旧变量改为别名；`tailwind-input.css` 删旧 `@theme` 默认值；`examples/plugin-theme-purple`、`docs/PLUGIN_DEV.md`、`docs/THEME_SPEC.md` §12「Token 契约」同步；`app-core` 主题测试断言 `--primary:`
