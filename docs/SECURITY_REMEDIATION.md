@@ -42,7 +42,7 @@
 | SEC-20 | 信息 | `crates/app/src/server/mod.rs:564` | 公开调试端点 `/api/echo`；`get_site_config` 公开审核配置 | 静态审计 |
 | SEC-21 | 信息 | `crates/core/src/engines/content_transformer.rs` | content-transformer 尚无生产调用方；接入时输出必须走 Markdown 安全渲染路径，不得作为原始 HTML | 静态审计 |
 | SEC-22 | 低 | `crates/sdk/src/lib.rs:111` | 插件输出为空时宿主调用 `dealloc(0, 0)`，SDK 里 `Vec::from_raw_parts(null…)` 属未定义行为（被沙箱隔离，但可能 trap）；宏在输入解码失败时静默返回空 | 静态审计 |
-| SEC-23 | 低（可用性） | `crates/app/src/server/security.rs` CSP 与 HeadAssets 的 Google Fonts 链接 | 每个页面都加载 `fonts.googleapis.com` 样式表，而 `style-src` 未放行，字体从未加载（B1 验收时在严格 CSP 下观察到）。二选一：自托管 Inter（与「不依赖外部资源」一致），或在 `style-src` / `font-src` 放行 Google Fonts 两个域 | 已观察（浏览器控制台） |
+| SEC-23 | 无（仅开发环境） | `dx serve` 注入的热重载 toast 模板 | 严格 CSP 下控制台报 `fonts.googleapis.com` 样式表被拦。2026-10-09 核实：这条 `@import`（Inter）来自 dx CLI 在 `dx serve` 时给页面注入的 `#dx-toast-template` 样式，站点源码与 git 历史中从未引用 Google Fonts；`dx build --release` 产物 `public/index.html` 中无 `googleapis`、无 toast 模板。站点字体用系统字体栈（`main.css`），生产无此请求，CSP 不需放行，也不需自托管 | 已核实：非站点问题 |
 
 **审计确认没问题的部分**（不需要改）：Markdown 原始 HTML 输出为转义文本，链接 / 图片协议白名单正确；上传仅允许 png/jpg/gif/webp（魔数校验，无 SVG），带 nosniff；session cookie 为 HttpOnly + SameSite=Lax（https 时 Secure）；所有 server function 为 POST、无 CORS 层；登录 / 回调 / 登出只跳转固定路径（无开放重定向）；admin 与权益相关接口都经 `require_admin` 回查数据库；客户端未编入任何密钥；插件沙箱无宿主导入、有 fuel（1 亿 / 次）、8 MiB 内存与输出上限、5 秒超时、trap 被隔离。
 
