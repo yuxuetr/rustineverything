@@ -528,21 +528,29 @@ fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) 
   }
 }
 
-/// 行内「删除」按钮：先弹确认框，确认后才调用 `on_confirm`。删除不可恢复。
+/// 删除类按钮：先弹确认框，确认后才调用 `on_confirm`。删除不可恢复。
+/// 默认是表格行内的 ghost「删除」；审核队列用实心红色按钮并换文案。
 #[component]
 fn ConfirmDelete(
   title: String,
   description: String,
   busy: bool,
   on_confirm: EventHandler<()>,
+  #[props(default = "删除".to_string())] label: String,
+  #[props(default = ButtonVariant::Ghost)] variant: ButtonVariant,
+  /// 与 `busy` 不同：只禁用、不显示「...」（如批量操作未选中任何行）。
+  #[props(default)]
+  disabled: bool,
 ) -> Element {
   let density = use_density();
+  let extra =
+    if variant == ButtonVariant::Ghost { "text-destructive hover:bg-destructive/10" } else { "" };
   rsx! {
       AlertDialog {
           AlertDialogTrigger {
-              class: button_class(ButtonVariant::Ghost, ButtonSize::Sm, density, "text-destructive hover:bg-destructive/10"),
-              disabled: busy,
-              if busy { "..." } else { "删除" }
+              class: button_class(variant, ButtonSize::Sm, density, extra),
+              disabled: busy || disabled,
+              if busy { "..." } else { "{label}" }
           }
           AlertDialogOverlay {}
           AlertDialogContent {
@@ -555,7 +563,7 @@ fn ConfirmDelete(
                   AlertDialogAction {
                       variant: AlertDialogActionVariant::Destructive,
                       onclick: move |_| on_confirm.call(()),
-                      "删除"
+                      "{label}"
                   }
               }
           }
@@ -727,11 +735,14 @@ pub fn AdminModerationPage() -> Element {
                               },
                               "批量通过"
                           }
-                          Button {
+                          ConfirmDelete {
+                              title: "批量拒绝 {selected_count} 条？".to_string(),
+                              description: format!("选中的 {selected_count} 条内容将被永久删除，无法恢复。"),
+                              label: "批量拒绝（删除内容）".to_string(),
                               variant: ButtonVariant::Destructive,
-                              size: ButtonSize::Sm,
-                              disabled: selected_count == 0 || bulk_busy(),
-                              onclick: move |_| {
+                              busy: bulk_busy(),
+                              disabled: selected_count == 0,
+                              on_confirm: move |_| {
                                   let ids: Vec<i64> = selected().iter().copied().collect();
                                   spawn(async move {
                                       bulk_busy.set(true);
@@ -741,7 +752,6 @@ pub fn AdminModerationPage() -> Element {
                                       }
                                   });
                               },
-                              "批量拒绝（删除内容）"
                           }
                       }
                   }
@@ -903,11 +913,13 @@ fn ModerationQueueRowView(
                           },
                           "通过"
                       }
-                      Button {
+                      ConfirmDelete {
+                          title: "拒绝并删除这条内容？".to_string(),
+                          description: format!("{author} 的这条{kind_label}将被永久删除，无法恢复。"),
+                          label: "拒绝（删除内容）".to_string(),
                           variant: ButtonVariant::Destructive,
-                          size: ButtonSize::Sm,
-                          disabled: submitting(),
-                          onclick: move |_| {
+                          busy: submitting(),
+                          on_confirm: move |_| {
                               let on_done = on_done;
                               spawn(async move {
                                   submitting.set(true);
@@ -918,7 +930,6 @@ fn ModerationQueueRowView(
                                   submitting.set(false);
                               });
                           },
-                          "拒绝（删除内容）"
                       }
                   }
               }
