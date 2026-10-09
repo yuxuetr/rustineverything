@@ -446,6 +446,9 @@
 - [x] 不存在的话题回 404：详情页改用 use_server_future + SuspenseBoundary，未找到时提示并 `commit_http_status(404)`（原先 200 + 永久加载态）；列表页仍按 B6 走 use_resource。curl：`/topics/999999` 404、`/topics/1` 200；客户端从列表点进详情正常
 - [x] SEC-24 路径穿越（排查 404 时发现，高）：博客 `get_blog_content` 的 id 与课程 `get_lesson` 的 slug 未校验，未登录可读付费课时全文（43a35f4：`app_core::utils::is_safe_slug`，博客 `post_file` 与课程三个读取函数入口校验；测试先红后绿；live 复测两种请求均被拒）
 - [x] 博客 / 文档不存在时回 404（原先 200 + 页面显示 server fn 原始报错，博客还挂评论区）：两个 server fn 改返回 `Option`，新增 `widgets::NotFound`（404）/ `LoadFailed`（500，通用提示），论坛详情改用 NotFound；评论与讨论只挂在存在的文章下。curl：缺失 404、正常 200、无原始报错；浏览器：客户端跳转与水合正常
+- [x] 5 个板块模块（ai / embedded / wasm / web3 / cli）的内联 slug 校验改用 `app_core::utils::is_safe_slug`，规则只留一处；行为不变（bebd571）
+- [x] 审核队列「拒绝（删除内容）」与「批量拒绝」加确认框（原先单击即删业务内容）：`ConfirmDelete` 增加 `label` / `variant` / `disabled`，批量确认框写明条数（0c568c9）。本地无审核 stage、队列为空，审核页按钮未在浏览器点验；共用组件在评论页回归通过
+- [x] `docs/RoadMap.md` 仍把 WASM 插件写成现状 → 移到 `docs/archive/` 并加归档说明，指向 ENGINES / MODULE / DEVELOPER 文档；其余文档在 R1–R5 已改过（ac13174）
 
 ### 待评估 — 插件改为编译期依赖（2026-10-08 提出）
 - [x] P-EVAL — 采纳方案 A：第一方插件全部编译进宿主，移除 WASM 运行时（2026-10-08 决定）。依据：10 个插件全部在本仓库构建、同一作者；认证插件只是端点常量 + 十几行字段映射，主题是 CSS 字符串；i18n 插件生产无调用方（`/api/i18n/translate` 无客户端调用）；content-toc 与审核插件均未启用（`content_transformers: []`、site.json 无 moderation 块）；宿主插件设施 + SDK 约 3,400 行。剩余两个「高」（SEC-05 / SEC-06）只因运行时加载插件而存在，且认证做成插件无法安全：端点收回宿主后插件仍决定 `external_id`。C1 / C2 / C4 / C5 / C6、D1 随之取消，C3 保留。重估条件：`assets/plugins/` 中出现无对应源码 crate（`crates/plugins/` 或 `examples/`）的 wasm，或站点要作为产品给他人部署
