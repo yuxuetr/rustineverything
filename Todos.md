@@ -366,6 +366,7 @@
   - 验证：严格 CSP 下课程列表、详情、付费墙、试看课节、我的订单无 pageerror；购买弹窗打开、切换渠道、关闭按钮可用；亮 / 暗截图；SSR 首屏含正文；`--no-default-features` 编译通过
   - 未做：支付模态改 Dialog（Escape 关闭、焦点管理）——待上游 FB-02 发版，记为 U4b
 - [x] U-0.6.2 — dioxus-shadcn 升级到 0.6.2（FB-02 已修，解除 U4b/U8/U9 阻塞；删除 FB-15 的逐行 `border-border`；严格 CSP 下 /admin/entitlements 无新报错）
+- [x] U-0.6.3 — dioxus-shadcn 升级到 0.6.3（上游修复 FB-17/18/19/21，FB-13 已修、FB-20 改为文档说明）。删除本站的临时处理：Dropdown 的 `fixed`、搜索 Command 只在打开时挂载、导航栏按钮的 `min-h-*`。浏览器验证：菜单与触发器对齐；⌘K 异步结果自动高亮第一项，↓ 和回车正常，关闭后再打开也正常；导航栏按钮高度不变。`Sm` 按钮在默认密度下变为 32px
 - [x] U3b — admin 审核页签 → Tabs（FB-14 已修；「全部」的值改为 `all`；严格 CSP 下点击与方向键切换、请求参数验证通过）
 - [x] U4b — 支付模态 → Dialog，支付方式选择 → ToggleGroup
   - 落点：`pay_ui.rs`；表单只在打开时挂载（重开即重置）；ToggleGroup 受控、忽略空值，保证总有一个网关
