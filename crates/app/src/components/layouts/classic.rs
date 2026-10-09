@@ -137,12 +137,11 @@ pub fn ClassicShell() -> Element {
                       div { class: "flex items-center gap-2 sm:gap-3",
                           // Phase 9.4: mobile hamburger（lg:hidden）。点击展开 header
                           // 下方的板块抽屉，让窄屏用户能直接跳到 8 个板块。
-                          // 保持原 36px：Icon 默认 h-10 w-10 + min-h-10（FB-21）
                           Button {
                               r#type: "button",
                               variant: ButtonVariant::Ghost,
                               size: ButtonSize::Icon,
-                              class: "lg:hidden h-9 w-9 min-h-9 text-muted-foreground",
+                              class: "lg:hidden h-9 w-9 text-muted-foreground",
                               onclick: move |_| show_mobile_menu.set(true),
                               "aria-label": "{t(lang(), \"nav.menu\")}",
                               "aria-expanded": show_mobile_menu().to_string(),
@@ -165,7 +164,7 @@ pub fn ClassicShell() -> Element {
                               r#type: "button",
                               variant: ButtonVariant::Ghost,
                               size: ButtonSize::Icon,
-                              class: "h-9 w-9 min-h-9 text-muted-foreground",
+                              class: "h-9 w-9 text-muted-foreground",
                               onclick: toggle_dark,
                               "aria-label": "{t(lang(), \"nav.toggle_dark\")}",
                               "aria-pressed": is_dark().to_string(),
@@ -188,7 +187,7 @@ pub fn ClassicShell() -> Element {
                                   r#type: "button",
                                   variant: ButtonVariant::Ghost,
                                   size: ButtonSize::Sm,
-                                  class: "min-h-8 gap-1.5 whitespace-nowrap",
+                                  class: "gap-1.5 whitespace-nowrap",
                                   onclick: move |_| show_auth_modal.set(true),
                                   svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                                       path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" }

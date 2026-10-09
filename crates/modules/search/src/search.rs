@@ -43,8 +43,7 @@ pub fn SearchButton() -> Element {
           r#type: "button",
           variant: ButtonVariant::Outline,
           size: ButtonSize::Sm,
-          // min-h-8：Comfortable 密度给 Sm 加 min-h-10，导航栏里会撑高（FB-21）
-          class: "min-h-8 gap-2 px-3 text-xs font-normal text-muted-foreground",
+          class: "gap-2 px-3 text-xs font-normal text-muted-foreground",
           onclick: move |_| open.set(true),
           title: "搜索 (⌘K)",
           svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
@@ -137,67 +136,63 @@ pub fn SearchModal() -> Element {
           DialogOverlay { class: "z-[100] bg-slate-900/50 backdrop-blur-sm" }
           DialogContent { class: "z-[100] top-24 max-w-2xl translate-y-0 gap-0 overflow-hidden rounded-xl p-0 shadow-2xl",
               DialogTitle { class: "sr-only", "搜索" }
-              // Command 只在打开时挂载：它的键盘脚本在祖先带 `hidden` 时启动即退出、
-              // 之后不再重启，挂在关闭的 Dialog 里会失去方向键高亮（FB-17）。
-              if open() {
-                  Command {
-                      class: "rounded-none",
-                      on_select: move |url: String| {
-                          if is_site_path(&url) {
-                              open.set(false);
-                              widgets::browser::navigate(&url);
-                          }
-                      },
-                      // 输入栏
-                      div { class: "flex items-center gap-2 px-4 border-b border-border",
-                          svg { class: "w-5 h-5 shrink-0 text-muted-foreground", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", "aria-hidden": "true",
-                              path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2",
-                                  d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                              }
-                          }
-                          CommandInput {
-                              value: query(),
-                              placeholder: "搜索博客、文档、论坛、案例、专题...",
-                              class: "h-12 px-0 text-base",
-                              oninput: move |e: FormEvent| query.set(e.value()),
-                          }
-                          DialogClose { class: "static shrink-0 px-2 py-1 text-xs text-muted-foreground", "Esc" }
+              Command {
+                  class: "rounded-none",
+                  on_select: move |url: String| {
+                      if is_site_path(&url) {
+                          open.set(false);
+                          widgets::browser::navigate(&url);
                       }
-                      // kind 过滤栏:受控单选,再点已选项时的空值忽略,保证总有一项选中。
-                      div { class: "flex items-center gap-1 px-4 py-2 border-b border-border text-xs",
-                          ToggleGroup {
-                              class: "gap-1",
-                              "aria-label": "内容类型",
-                              value: kind_filter().unwrap_or_else(|| "all".to_string()),
-                              on_value_change: move |v: String| match v.as_str() {
-                                  "" => {}
-                                  "all" => kind_filter.set(None),
-                                  _ => kind_filter.set(Some(v)),
-                              },
-                              for (value, label) in KINDS {
-                                  ToggleGroupItem { value: *value, class: kind_chip_class(kind_filter().as_deref().unwrap_or("all") == *value), "{label}" }
-                              }
-                          }
-                          span { class: "ml-auto text-muted-foreground", "aria-hidden": "true", "{status}" }
-                      }
-                      CommandStatus { "{status}" }
-                      // 错误
-                      if let Some(err) = error() {
-                          Alert { variant: AlertVariant::Destructive, class: "rounded-none border-x-0 px-4 py-2",
-                              AlertDescription { variant: AlertVariant::Destructive, "{err}" }
+                  },
+                  // 输入栏
+                  div { class: "flex items-center gap-2 px-4 border-b border-border",
+                      svg { class: "w-5 h-5 shrink-0 text-muted-foreground", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", "aria-hidden": "true",
+                          path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2",
+                              d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                           }
                       }
-                      // 结果
-                      CommandList { class: "max-h-[60vh]",
-                          if hits().is_empty() && !query().trim().is_empty() && !loading() {
-                              CommandEmpty { "没有匹配的结果" }
-                          } else if hits().is_empty() {
-                              CommandEmpty { "输入关键词开始搜索 · 支持中英文 · 按 ⌘K 随时打开" }
-                          } else {
-                              for (i, h) in hits().iter().enumerate() {
-                                  CommandItem { key: "{h.url}", id: "search-hit-{i}", value: h.url.clone(), class: "block rounded-none border-b border-border px-4 py-3 cursor-pointer",
-                                      HitRow { hit: h.clone() }
-                                  }
+                      CommandInput {
+                          value: query(),
+                          placeholder: "搜索博客、文档、论坛、案例、专题...",
+                          class: "h-12 px-0 text-base",
+                          oninput: move |e: FormEvent| query.set(e.value()),
+                      }
+                      DialogClose { class: "static shrink-0 px-2 py-1 text-xs text-muted-foreground", "Esc" }
+                  }
+                  // kind 过滤栏:受控单选,再点已选项时的空值忽略,保证总有一项选中。
+                  div { class: "flex items-center gap-1 px-4 py-2 border-b border-border text-xs",
+                      ToggleGroup {
+                          class: "gap-1",
+                          "aria-label": "内容类型",
+                          value: kind_filter().unwrap_or_else(|| "all".to_string()),
+                          on_value_change: move |v: String| match v.as_str() {
+                              "" => {}
+                              "all" => kind_filter.set(None),
+                              _ => kind_filter.set(Some(v)),
+                          },
+                          for (value, label) in KINDS {
+                              ToggleGroupItem { value: *value, class: kind_chip_class(kind_filter().as_deref().unwrap_or("all") == *value), "{label}" }
+                          }
+                      }
+                      span { class: "ml-auto text-muted-foreground", "aria-hidden": "true", "{status}" }
+                  }
+                  CommandStatus { "{status}" }
+                  // 错误
+                  if let Some(err) = error() {
+                      Alert { variant: AlertVariant::Destructive, class: "rounded-none border-x-0 px-4 py-2",
+                          AlertDescription { variant: AlertVariant::Destructive, "{err}" }
+                      }
+                  }
+                  // 结果
+                  CommandList { class: "max-h-[60vh]",
+                      if hits().is_empty() && !query().trim().is_empty() && !loading() {
+                          CommandEmpty { "没有匹配的结果" }
+                      } else if hits().is_empty() {
+                          CommandEmpty { "输入关键词开始搜索 · 支持中英文 · 按 ⌘K 随时打开" }
+                      } else {
+                          for (i, h) in hits().iter().enumerate() {
+                              CommandItem { key: "{h.url}", id: "search-hit-{i}", value: h.url.clone(), class: "block rounded-none border-b border-border px-4 py-3 cursor-pointer",
+                                  HitRow { hit: h.clone() }
                               }
                           }
                       }

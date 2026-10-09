@@ -42,8 +42,7 @@ pub fn UserMenu(user: SessionUser, compact: bool, show_my_topics: bool) -> Eleme
                   span { class: "hidden sm:inline text-sm font-medium text-foreground", "{user.nickname}" }
               }
           }
-          // `fixed` 见 theme_picker.rs（FB-19）。
-          DropdownContent { class: "fixed w-44",
+          DropdownContent { class: "w-44",
               DropdownLabel { class: "text-xs font-normal", "{user.nickname}" }
               DropdownSeparator {}
               if show_my_topics {

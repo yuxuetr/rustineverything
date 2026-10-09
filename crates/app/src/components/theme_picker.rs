@@ -101,8 +101,7 @@ pub fn ThemePicker() -> Element {
               }
               span { class: "hidden sm:inline whitespace-nowrap", "{active_label}" }
           }
-          // `fixed`：菜单显示的第一帧不进文档流，否则会把同一行的触发按钮挤开、定位偏移（FB-19）。
-          DropdownContent { class: "fixed w-48",
+          DropdownContent { class: "w-48",
               DropdownLabel { class: "text-[10px] uppercase tracking-wider", "{t(lang(), \"theme.heading\")}" }
               DropdownRadioGroup { value: active_id, on_value_change: move |id: String| switch.call(id),
                   for t in themes.iter() {

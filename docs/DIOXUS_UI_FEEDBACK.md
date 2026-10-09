@@ -3,20 +3,16 @@
 > 在 rustineverything.app 迁移到 [`dioxus-shadcn`](https://github.com/yuxuetr/dioxus-ui) 的过程中（计划见 [`DIOXUS_UI_MIGRATION.md`](DIOXUS_UI_MIGRATION.md)），
 > 记录组件库本身的问题与改进点，之后整理成 dioxus-ui 的 issue / RFC。
 
-## 汇总（2026-10-08，本站使用 dioxus-shadcn 0.6.2）
+## 汇总（2026-10-09，本站使用 dioxus-shadcn 0.6.3）
 
-待上游处理（可直接转成 dioxus-ui 的 issue，每条都有复现与建议修复）：
+没有待上游处理的条目。
 
-| 编号 | 问题 | 影响 | 本站临时处理 |
-| --- | --- | --- | --- |
-| FB-17 | Dialog 里的 Command 键盘高亮失效 | 中 | 只在打开时挂载（`search.rs`） |
-| FB-19 | 浮层先量锚点后脱离文档流，flex 行里定位偏移 | 中 | DropdownContent 加 `fixed` |
-| FB-18 | Command 异步结果不自动高亮第一项 | 低 | 无（按 ↓ 即可） |
-| FB-20 | NavigationMenu hydration 前打不开（建议） | 低到中 | 生态菜单保留纯 CSS |
-| FB-21 | 默认密度下 `ButtonSize::Sm` 实际 40px | 低 | 导航栏搜索按钮加 `min-h-8` |
-| FB-13 | 文档站仍用 `document::Title`（部分修复） | 低 | — |
-
-已在 0.6.1 / 0.6.2 修复：FB-01 ~ FB-08、FB-10、FB-11、FB-14、FB-15（本站的 FB-15 绕行写法已删除）。上游 wontfix 并给出理由：FB-09、FB-12、FB-16。
+- 已修复：
+  - 0.6.1 / 0.6.2 修复 FB-01 ~ FB-08、FB-10、FB-11、FB-14、FB-15。
+  - 0.6.3 修复 FB-13、FB-17、FB-18、FB-19、FB-21，依据 dioxus-ui RFC 0081。
+  - 本站为这些问题写的临时处理已全部删除。
+- 上游以文档说明代替修复：FB-20。组件文档写明 NavigationMenu 需要 hydration 才能展开，本站的生态菜单继续用纯 CSS（D5）。
+- 上游 wontfix，并给出了理由：FB-09、FB-12、FB-16。
 
 ## 记录规则
 
@@ -161,7 +157,7 @@
 - 现象：`document::Title` 在客户端调用 `set_title`，后者内部是 `eval("document.title = …")`，即 `new Function`。CSP 不含 `'unsafe-eval'` 时抛 EvalError，wasm-bindgen 未标 `catch`，运行时崩溃。站点在做 B1 时读源码发现（2026-10-08，见 `SECURITY_REMEDIATION.md` B1）。
 - 影响：中。按 FB-02 改完组件后，照着示例写 `document::Title` 的使用者仍然过不了 CSP L1，而且看起来像是组件库的问题。
 - 建议的上游修复：FB-10 的 CSP 说明里写明这一条；示例与文档站改用 web-sys 设置标题（服务端仍用 `document::Title` 输出 `<title>`）；向 Dioxus 报告 `set_title` 应直接用 `web_sys::Document::set_title`。
-- 状态：部分修复：web-demo 改为 `Dioxus.toml` 的 `[web.app] title`，README CSP 节写明 `document::Title` 需要 `unsafe-eval`；文档站 `site/src/main.rs:47` 与 desktop 预览仍用 `document::Title`（desktop 不受 CSP 影响）
+- 状态：fixed in 0.6.3（文档站改为在 `Dioxus.toml` 里设置标题，不再用 `document::Title`）。此前部分修复：web-demo 改为 `Dioxus.toml` 的 `[web.app] title`，README CSP 节写明 `document::Title` 需要 `unsafe-eval`；文档站 `site/src/main.rs:47` 与 desktop 预览仍用 `document::Title`（desktop 不受 CSP 影响）
 
 ### FB-14 `Tabs` 挂载即 eval，点击切换也只能经 eval 生效
 
@@ -197,7 +193,7 @@
 - 影响：中。命令面板最常见的形态就是放在 Dialog 里（shadcn 的 `CommandDialog`），按文档组合会得到一个看起来正常、键盘却失效的面板。
 - 站点临时处理：`if open() { Command { … } }`，只在打开时挂载（`search.rs`）。
 - 建议的上游修复：Command 在祖先 `hidden` 解除时重新启动脚本（例如脚本不因 `hidden` 退出、改为等待可见），或提供 `CommandDialog` 并在文档里写明挂载方式；浏览器测试加一组「Dialog 内的 Command」。
-- 状态：open
+- 状态：fixed in 0.6.3（listbox 脚本在祖先带 `hidden` 时继续运行）。本站已删除只在打开时挂载的写法（`search.rs`），并在浏览器验证：打开 ⌘K、输入后按 ↓ 和回车都正常；关闭后再打开仍然正常
 
 ### FB-18 `Command` 的结果异步到达时不会自动高亮第一项
 
@@ -206,7 +202,7 @@
 - 影响：低。键盘仍可用，只是多一次按键；同步过滤（`command_matches`）的用法不受影响。
 - 站点临时处理：无。
 - 建议的上游修复：观察器在 `highlighted` 为空且出现可用选项时高亮 `initial()`（Command 模式下）。
-- 状态：open
+- 状态：fixed in 0.6.3（结果在重置之后才到达时，自动高亮第一项）。浏览器验证：异步结果出现后，`aria-activedescendant` 指向第一条
 
 ### FB-19 浮层定位先量锚点、后脱离文档流，flex 行里的菜单会偏移
 
@@ -216,7 +212,7 @@
 - 影响：中。菜单离开触发器，看起来像错位的组件；不在 flex 行里、或内容外层有定位容器时不出现，所以示例站可能看不到。
 - 站点临时处理：`DropdownContent { class: "fixed …" }`，让内容第一帧就脱离文档流（`theme_picker.rs`、`lang_picker.rs`、`user_menu.rs`）。
 - 建议的上游修复：`place()` 里先设 `position: fixed`（以及 `--dxui-anchor-width`），再量锚点；或在基础类里带 `fixed`。浏览器测试加「flex 行内的触发器」布局。
-- 状态：open
+- 状态：fixed in 0.6.3（先让内容脱离文档流，再测量锚点）。本站已删除三处 `fixed`，浏览器验证：1200px 宽度下，主题菜单和语言菜单的右边缘都与触发器对齐
 
 ### FB-20 `NavigationMenu` 在 hydration 前无法展开（建议）
 
@@ -224,7 +220,7 @@
 - 现象：内容面板只由组件状态显示，SSR 输出全部带 `hidden`。wasm 加载完成前、或加载失败时，桌面导航的下拉面板打不开，里面的链接不可达。本站的生态 mega 菜单是纯 CSS（`group-hover` / `group-focus-within`），关闭 JavaScript 时仍能用悬停和键盘展开，U9 因此决定不迁移（2026-10-08，见 DIOXUS_UI_MIGRATION.md D5）。
 - 影响：低到中。只影响首屏与 wasm 失败的情形，但导航是站点里最不该依赖脚本的部分。
 - 建议的上游修复：渐进增强——SSR 时内容用 CSS 的 `:hover` / `:focus-within` 可见（例如根上加 `group`、内容加 `group-hover:block`），脚本接管后再改为状态驱动；或在文档里说明 NavigationMenu 需要 hydration 才可用。
-- 状态：open（建议）
+- 状态：上游以文档说明处理（0.6.3）：`docs/components/navigation-menu.md` 写明内容在 hydration 后才能展开，并说明不提供 CSS 悬停回退的原因。本站继续使用纯 CSS 菜单（D5）
 
 ### FB-21 默认密度下 `ButtonSize::Sm` 实际是 40px
 
@@ -234,4 +230,4 @@
 - 影响：低。按钮只是变高；在导航栏、工具栏这种固定高度的行里会撑高整行。`Sm` 在默认密度下失去意义。
 - 站点临时处理：导航栏搜索按钮 `class` 加 `min-h-8`（`search.rs`）；cases、podcast、博客翻页的 `Sm` 按钮保持 40px，点击区域更大，不处理。
 - 建议的上游修复：密度最小高度按尺寸取，Comfortable 下 `Sm` 为 `min-h-8`（或 Comfortable 不加最小高度，只有 Touch 加）；补一个「Comfortable + Sm 高 32px」的测试。
-- 状态：open
+- 状态：fixed in 0.6.3（默认密度不再追加最小高度）。本站已删除 search、classic、minimal 里的 `min-h-*` 覆盖写法。cases、podcast、博客翻页里的 `Sm` 按钮随之从 40px 变为 32px，与 shadcn 尺寸一致

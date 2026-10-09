@@ -87,6 +87,7 @@ CSP 保持不含 `'unsafe-eval'`。组件库在 web 端改用 web-sys（FB-02，
 - NavigationMenu 的内容是 `hidden: !open`，`open` 只由组件状态与脚本改变，hydration 前（及 wasm 加载失败时）无法展开，桌面导航的全部领域入口不可达。
 - NavigationMenu 的收益：真实的 `aria-expanded`、Esc 关闭、点击开合、触发器间方向键。这些是现方案缺的，但不足以抵消首屏不可用。
 - 重估条件：NavigationMenu 提供无 JS 时也能展开的回退（例如内容同时带 `group-hover` / `group-focus-within` 可见类，脚本只负责增强），或站点的无障碍审计把 Esc / `aria-expanded` 列为必改项。上游建议见 FB-20。
+- 0.6.3 复核（2026-10-09）：上游在组件文档里写明内容需要 hydration 才能展开，并明确不提供 CSS 悬停回退。第一个重估条件因此短期内不会满足，结论不变。
 
 ### D6 SSR / hydration 一致性是每个任务的硬验收
 

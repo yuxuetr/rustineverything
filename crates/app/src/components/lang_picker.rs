@@ -57,8 +57,7 @@ pub fn LangPicker() -> Element {
               }
               span { "{current_label}" }
           }
-          // `fixed` 见 theme_picker.rs（FB-19）。
-          DropdownContent { class: "fixed w-40",
+          DropdownContent { class: "w-40",
               DropdownLabel { class: "text-[10px] uppercase tracking-wider", "{t(current, \"lang.heading\")}" }
               DropdownRadioGroup {
                   value: current_code.to_string(),

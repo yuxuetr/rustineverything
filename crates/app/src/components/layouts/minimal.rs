@@ -50,12 +50,11 @@ pub fn MinimalShell() -> Element {
                           SearchButton {}
                           ThemePicker {}
                           LangPicker {}
-                          // 紧凑条保持原 28px（FB-21：默认 min-h-10）
                           Button {
                               r#type: "button",
                               variant: ButtonVariant::Ghost,
                               size: ButtonSize::Icon,
-                              class: "h-7 w-7 min-h-7 text-muted-foreground",
+                              class: "h-7 w-7 text-muted-foreground",
                               onclick: toggle_dark,
                               "aria-label": "{t(lang(), \"nav.toggle_dark\")}",
                               "aria-pressed": is_dark().to_string(),
@@ -77,7 +76,7 @@ pub fn MinimalShell() -> Element {
                                   r#type: "button",
                                   variant: ButtonVariant::Ghost,
                                   size: ButtonSize::Sm,
-                                  class: "h-7 min-h-7 px-2 text-xs",
+                                  class: "h-7 px-2 text-xs",
                                   onclick: move |_| show_auth_modal.set(true),
                                   "{t(lang(), \"auth.sign_in\")}"
                               }

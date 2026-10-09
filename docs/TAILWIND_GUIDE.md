@@ -203,15 +203,13 @@ Dioxus 的 `rsx!` 支持 `{variable}` 直接插入到 class 字符串中。确�
 
 - **`class` 是合并，不是追加**：同一类 utility（如 `px-*`、`bg-*`）用户值替换组件默认值，其余保留。
 - **链接做成按钮的样子**：用导出的类名函数，例如 `a { class: button_class(ButtonVariant::Outline, ButtonSize::Sm, UiDensity::Comfortable, "") }`；还有 `badge_class`、`card_class`、`tabs_*_class` 等。
-- **密度**：默认 Comfortable 会给控件加最小高度；后台页包在 `DensityProvider { density: UiDensity::Compact }` 里。
+- **密度**：默认 Comfortable 下按钮高度由尺寸决定（`Sm` 32px、`Md` 40px）；后台页包在 `DensityProvider { density: UiDensity::Compact }` 里。
 - **边框颜色要显式写**：Tailwind v4 默认边框色是 `currentColor`，手写边框加 `border-border`。
 - **严格 CSP**：站点不允许 `'unsafe-eval'`。不要用 `document::eval` 与 `document::Title`（`crates/app/tests/csp_no_eval.rs` 会拦下），浏览器操作走 `widgets::browser`，页面标题用 `PageTitle`。
 - **弹层放在哪里**：带 `backdrop-filter` / `transform` / `filter` 的祖先会成为 `fixed` 子元素的定位容器。全屏弹层（Dialog、Sheet）不要渲染在导航栏 header 里，放在它之外。
-- **已知的组件库问题与站点绕法**：
-  - Dropdown 内容加 `fixed`（FB-19：在 flex 行里定位偏移）。
-  - Dialog 里的 Command 只在打开时挂载：`if open() { Command { … } }`（FB-17）。
+- **已知的组件库问题与站点绕法**（FB-17、FB-19 已在 0.6.3 修复，对应绕法已删除）：
   - ToggleGroup 单选再点已选项会报空值，需要「总有一项选中」时受控并忽略空值。
-  - 导航下拉用纯 CSS 的 `group-hover` / `group-focus-within`，不用 NavigationMenu（FB-20：hydration 前打不开）。
+  - 导航下拉用纯 CSS 的 `group-hover` / `group-focus-within`，不用 NavigationMenu（FB-20：hydration 前打不开，上游决定不提供 CSS 回退）。
 
 ## 4. Tailwind v4 速查
 
