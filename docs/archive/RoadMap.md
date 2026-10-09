@@ -1,5 +1,11 @@
 # Rust in Everything — RoadMap
 
+> **已归档（2026-10-09）**：这是 Phase 0–7 的原始规划，保留作历史记录，**不描述当前架构**。
+> 其中「插件全部 WASM（wasmi 运行时）」、§2.7 插件 ABI、PluginEngine 均已在 R1–R5 移除——
+> 第一方插件编译进宿主，决策见 [`SECURITY_REMEDIATION.md`](../SECURITY_REMEDIATION.md)「P-EVAL 决定」。
+> 当前架构以 [`ENGINES_SPEC.md`](../ENGINES_SPEC.md)、[`MODULE_SPEC.md`](../MODULE_SPEC.md)、
+> [`DEVELOPER.md`](../DEVELOPER.md) 为准。
+
 > 把当前 Dioxus 个人站重构为 **多核心引擎 + 可插拔模块 + 已稳定 MDX 内容内核** 的可扩展平台。
 > 本路线图与 `Todos.md` 配套：路线图给「为什么 / 做什么 / 验收什么」，Todos 给「具体要写哪些代码」。
 

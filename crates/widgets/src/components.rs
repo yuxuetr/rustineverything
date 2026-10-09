@@ -60,10 +60,16 @@ impl MdxComponent for BilibiliComponent {
     let id = attrs.get("id").cloned().unwrap_or_default();
     rsx! {
         div { class: "not-prose aspect-video my-8 overflow-hidden rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800",
-            iframe { class: "w-full h-full border-0", src: "//player.bilibili.com/player.html?bvid={id}&page=1&high_quality=1", allowfullscreen: true }
+            iframe { class: "w-full h-full border-0", src: bilibili_embed_url(&id), allowfullscreen: true }
         }
     }
   }
+}
+
+/// 写死 https：协议相对地址在 http 页面上会变成 http，被 CSP 的
+/// `frame-src https://player.bilibili.com` 拦掉。
+fn bilibili_embed_url(id: &str) -> String {
+  format!("https://player.bilibili.com/player.html?bvid={id}&page=1&high_quality=1")
 }
 
 // ────────────────────────────────────────────────────────────
@@ -168,6 +174,14 @@ mod tests {
     register_default_components();
     // 重复注册 → 覆盖同名条目，组件总数应保持不变
     assert_eq!(registered_count(), first);
+  }
+
+  #[test]
+  fn bilibili_embed_url_is_https() {
+    assert_eq!(
+      bilibili_embed_url("BV1xx411c7mD"),
+      "https://player.bilibili.com/player.html?bvid=BV1xx411c7mD&page=1&high_quality=1"
+    );
   }
 
   #[test]

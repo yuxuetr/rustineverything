@@ -667,6 +667,9 @@ fn split_title_heading(body: &str) -> (Option<&str>, &str) {
 /// 读取一个 lesson 目录的完整内容（含正文 / 媒体 / 代码 / 下载）
 #[cfg(feature = "server")]
 pub fn read_lesson(course_slug: &str, chapter_slug: &str, lesson_slug: &str) -> Option<Lesson> {
+  if ![course_slug, chapter_slug, lesson_slug].into_iter().all(app_core::utils::is_safe_slug) {
+    return None;
+  }
   let root = get_courses_root();
   let dir = root.join(course_slug).join(chapter_slug).join(lesson_slug);
   if !dir.is_dir() {
@@ -744,6 +747,9 @@ pub fn read_lesson(course_slug: &str, chapter_slug: &str, lesson_slug: &str) -> 
 /// 扫描一个 chapter 目录，返回带 LessonSummary 的 Chapter
 #[cfg(feature = "server")]
 pub fn read_chapter(course_slug: &str, chapter_slug: &str) -> Option<Chapter> {
+  if ![course_slug, chapter_slug].into_iter().all(app_core::utils::is_safe_slug) {
+    return None;
+  }
   let root = get_courses_root();
   let dir = root.join(course_slug).join(chapter_slug);
   if !dir.is_dir() {
@@ -840,6 +846,11 @@ pub fn read_chapter(course_slug: &str, chapter_slug: &str) -> Option<Chapter> {
 /// 读取单个课程（含全部章节与 lesson summary）
 #[cfg(feature = "server")]
 pub fn read_course(course_slug: &str) -> Option<Course> {
+  // slug 来自可直接调用的 server fn；付费判断（read_course）与取正文（read_lesson）
+  // 必须解析到同一目录，所以三个读取函数都只接受单段 slug。
+  if !app_core::utils::is_safe_slug(course_slug) {
+    return None;
+  }
   let root = get_courses_root();
   let dir = root.join(course_slug);
   if !dir.is_dir() {
@@ -2852,6 +2863,36 @@ mod tests {
     let files = scan_code_files(tmp.path(), "/base");
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].raw_url, "/base/hello.rs");
+  }
+
+  /// 课程读取的 slug 都来自可直接调用的 server fn：含 `..` / `/` 的参数不能让
+  /// `read_course` 看不到付费课程、却让 `read_lesson` 读到它的课时。
+  #[test]
+  fn test_course_readers_reject_path_segments() {
+    let tmp = TempDir::new().unwrap();
+    let _cwd_guard = lock_cwd();
+    let cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let res = {
+      let course = tmp.path().join("assets/courses/paid");
+      write(&course.join("course.yaml"), "title: Paid\naccess_tier: paid\nprice: 9900\n");
+      write(&course.join("01-c/01-l/index.md"), "# 付费正文\n");
+
+      assert!(read_lesson("paid", "01-c", "01-l").is_some());
+      for (c, ch, l) in [
+        ("..", "courses/paid/01-c", "01-l"),
+        ("paid/..", "paid/01-c", "01-l"),
+        ("paid", "01-c/..", "01-c/01-l"),
+      ] {
+        assert!(read_lesson(c, ch, l).is_none(), "{c} {ch} {l}");
+      }
+      assert!(read_course("..").is_none());
+      assert!(read_course("paid/.").is_none());
+      assert!(read_chapter("..", "courses/paid/01-c").is_none());
+      Ok::<(), ()>(())
+    };
+    std::env::set_current_dir(cwd).unwrap();
+    res.unwrap();
   }
 
   #[test]

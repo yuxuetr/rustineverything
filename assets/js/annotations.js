@@ -64,23 +64,6 @@ body.no-anno .rie-anno {
   0%   { background-color: rgba(59, 130, 246, 0.35); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.25); }
   100% { background-color: transparent; box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
 }
-/* 可见性 toggle：右上角固定小点。Tailwind 在项目中是预编译的，仅收录已使用的类，所以这里手写原样式以保证定位生效。 */
-.rie-anno-toggle {
-  position: fixed; top: 80px; right: 16px; z-index: 50;
-  width: 32px; height: 32px; padding: 0; border: 1px solid rgba(148, 163, 184, 0.4);
-  border-radius: 999px; background: rgba(255, 255, 255, 0.85);
-  color: #475569; cursor: pointer; backdrop-filter: blur(6px);
-  display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  transition: background-color 120ms ease, color 120ms ease;
-}
-.rie-anno-toggle:hover { background: rgba(255, 255, 255, 1); color: #0f172a; }
-.rie-anno-toggle.is-off { color: #94a3b8; }
-.rie-anno-toggle svg { width: 16px; height: 16px; }
-@media (prefers-color-scheme: dark) {
-  .rie-anno-toggle { background: rgba(15, 23, 42, 0.8); color: #cbd5e1; border-color: rgba(71, 85, 105, 0.5); }
-  .rie-anno-toggle:hover { background: rgba(15, 23, 42, 1); color: #f8fafc; }
-}
 `;
   function ensureStyles() {
     if (document.getElementById('rie-anno-styles')) return;

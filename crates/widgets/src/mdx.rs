@@ -330,6 +330,9 @@ fn render_tag(
     Tag::TableCell => rsx! {
         td { class: "px-4 py-3 text-sm", {children.into_iter()} }
     },
+    Tag::Strong => rsx! { strong { {children.into_iter()} } },
+    Tag::Emphasis => rsx! { em { {children.into_iter()} } },
+    Tag::Strikethrough => rsx! { del { {children.into_iter()} } },
     _ => rsx! { span { {children.into_iter()} } },
   }
 }
@@ -699,6 +702,21 @@ fn extract_attr(html: &str, attr: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  fn render_markdown(content: &str, untrusted: bool) -> String {
+    let content = content.to_string();
+    dioxus_ssr::render_element(rsx! { Markdown { content, blog_id: "t", untrusted } })
+  }
+
+  #[test]
+  fn inline_emphasis_renders_semantic_tags() {
+    for untrusted in [false, true] {
+      let html = render_markdown("**粗体** *斜体* ~~删除~~", untrusted);
+      assert!(html.contains("<strong>粗体</strong>"), "{html}");
+      assert!(html.contains("<em>斜体</em>"), "{html}");
+      assert!(html.contains("<del>删除</del>"), "{html}");
+    }
+  }
 
   #[test]
   fn trusted_images_keep_relative_and_external_sources() {

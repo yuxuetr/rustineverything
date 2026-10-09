@@ -46,5 +46,9 @@ web-sys = { version = "0.3", features = [
   "Window",
 ] }
 
+[dev-dependencies]
+# 渲染测试：把 Markdown 组件 SSR 成 HTML 字符串再断言
+dioxus-ssr = "0.7.9"
+
 [features]
 server = ["dioxus/server"]

@@ -25,6 +25,7 @@ pub mod mdx;
 pub mod registry;
 pub mod sanitize;
 pub mod seo;
+pub mod status;
 
 // 重导出最常用 API，方便调用方仅依赖 widgets 顶层路径。
 pub use components::register_default_components;
@@ -35,3 +36,4 @@ pub use registry::{
 };
 pub use sanitize::sanitize_user_html;
 pub use seo::{build_canonical, inject_seo};
+pub use status::{LoadFailed, NotFound};

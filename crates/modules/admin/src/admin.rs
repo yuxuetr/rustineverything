@@ -9,9 +9,12 @@ use app_core::session::{SessionUser, ALL_ROLES};
 use app_core::settings::{LlmFailureAction, ModerationSettings, ModerationThresholdsConfig};
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  button_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Checkbox, DensityProvider,
-  Input, NativeSelect, NativeSelectOption, Spinner, SpinnerSize, Switch, Tabs, TabsContent,
-  TabsList, TabsTrigger, Textarea, UiDensity,
+  button_class, use_density, AlertDialog, AlertDialogAction, AlertDialogActionVariant,
+  AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogOverlay, AlertDialogTitle, AlertDialogTrigger, Badge, BadgeVariant,
+  Button, ButtonSize, ButtonVariant, Checkbox, DensityProvider, Input, NativeSelect,
+  NativeSelectOption, Spinner, SpinnerSize, Switch, Tabs, TabsContent, TabsList, TabsTrigger,
+  Textarea, UiDensity,
 };
 
 // =============================================================
@@ -386,12 +389,11 @@ fn CommentRow(comment: AdminCommentRow, on_deleted: EventHandler<Result<(), Stri
               }
           }
           div { class: "shrink-0",
-              Button {
-                  variant: ButtonVariant::Ghost,
-                  size: ButtonSize::Sm,
-                  class: "text-destructive hover:bg-destructive/10",
-                  disabled: submitting(),
-                  onclick: move |_| {
+              ConfirmDelete {
+                  title: "删除这条评论？".to_string(),
+                  description: format!("评论 #{} 将被永久删除，无法恢复。", comment.id),
+                  busy: submitting(),
+                  on_confirm: move |_| {
                       let on_deleted = on_deleted;
                       spawn(async move {
                           submitting.set(true);
@@ -402,7 +404,6 @@ fn CommentRow(comment: AdminCommentRow, on_deleted: EventHandler<Result<(), Stri
                           submitting.set(false);
                       });
                   },
-                  if submitting() { "..." } else { "删除" }
               }
           }
       }
@@ -506,12 +507,11 @@ fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) 
               }
           }
           div { class: "shrink-0",
-              Button {
-                  variant: ButtonVariant::Ghost,
-                  size: ButtonSize::Sm,
-                  class: "text-destructive hover:bg-destructive/10",
-                  disabled: submitting(),
-                  onclick: move |_| {
+              ConfirmDelete {
+                  title: "删除这个话题？".to_string(),
+                  description: format!("「{}」及其 {} 条回复将被永久删除，无法恢复。", topic.title, topic.reply_count),
+                  busy: submitting(),
+                  on_confirm: move |_| {
                       let on_deleted = on_deleted;
                       spawn(async move {
                           submitting.set(true);
@@ -522,7 +522,49 @@ fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) 
                           submitting.set(false);
                       });
                   },
-                  if submitting() { "..." } else { "删除" }
+              }
+          }
+      }
+  }
+}
+
+/// 删除类按钮：先弹确认框，确认后才调用 `on_confirm`。删除不可恢复。
+/// 默认是表格行内的 ghost「删除」；审核队列用实心红色按钮并换文案。
+#[component]
+fn ConfirmDelete(
+  title: String,
+  description: String,
+  busy: bool,
+  on_confirm: EventHandler<()>,
+  #[props(default = "删除".to_string())] label: String,
+  #[props(default = ButtonVariant::Ghost)] variant: ButtonVariant,
+  /// 与 `busy` 不同：只禁用、不显示「...」（如批量操作未选中任何行）。
+  #[props(default)]
+  disabled: bool,
+) -> Element {
+  let density = use_density();
+  let extra =
+    if variant == ButtonVariant::Ghost { "text-destructive hover:bg-destructive/10" } else { "" };
+  rsx! {
+      AlertDialog {
+          AlertDialogTrigger {
+              class: button_class(variant, ButtonSize::Sm, density, extra),
+              disabled: busy || disabled,
+              if busy { "..." } else { "{label}" }
+          }
+          AlertDialogOverlay {}
+          AlertDialogContent {
+              AlertDialogHeader {
+                  AlertDialogTitle { "{title}" }
+                  AlertDialogDescription { "{description}" }
+              }
+              AlertDialogFooter {
+                  AlertDialogCancel { "取消" }
+                  AlertDialogAction {
+                      variant: AlertDialogActionVariant::Destructive,
+                      onclick: move |_| on_confirm.call(()),
+                      "{label}"
+                  }
               }
           }
       }
@@ -693,11 +735,14 @@ pub fn AdminModerationPage() -> Element {
                               },
                               "批量通过"
                           }
-                          Button {
+                          ConfirmDelete {
+                              title: format!("批量拒绝 {selected_count} 条？"),
+                              description: format!("选中的 {selected_count} 条内容将被永久删除，无法恢复。"),
+                              label: "批量拒绝（删除内容）".to_string(),
                               variant: ButtonVariant::Destructive,
-                              size: ButtonSize::Sm,
-                              disabled: selected_count == 0 || bulk_busy(),
-                              onclick: move |_| {
+                              busy: bulk_busy(),
+                              disabled: selected_count == 0,
+                              on_confirm: move |_| {
                                   let ids: Vec<i64> = selected().iter().copied().collect();
                                   spawn(async move {
                                       bulk_busy.set(true);
@@ -707,7 +752,6 @@ pub fn AdminModerationPage() -> Element {
                                       }
                                   });
                               },
-                              "批量拒绝（删除内容）"
                           }
                       }
                   }
@@ -869,11 +913,13 @@ fn ModerationQueueRowView(
                           },
                           "通过"
                       }
-                      Button {
+                      ConfirmDelete {
+                          title: "拒绝并删除这条内容？".to_string(),
+                          description: format!("{author} 的这条{kind_label}将被永久删除，无法恢复。"),
+                          label: "拒绝（删除内容）".to_string(),
                           variant: ButtonVariant::Destructive,
-                          size: ButtonSize::Sm,
-                          disabled: submitting(),
-                          onclick: move |_| {
+                          busy: submitting(),
+                          on_confirm: move |_| {
                               let on_done = on_done;
                               spawn(async move {
                                   submitting.set(true);
@@ -884,7 +930,6 @@ fn ModerationQueueRowView(
                                   submitting.set(false);
                               });
                           },
-                          "拒绝（删除内容）"
                       }
                   }
               }
