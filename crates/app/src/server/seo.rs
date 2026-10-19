@@ -27,27 +27,27 @@ async fn collect_content_entries(is_on: impl Fn(&str) -> bool) -> Vec<ContentEnt
     }));
   }
 
-  // 内容板块条目，按开关收录。宏只在本函数存在一份。
-  macro_rules! collect_board {
-    ($id:literal, $list:path, $route:literal) => {
-      if is_on($id) {
-        for a in $list().await.unwrap_or_default() {
-          entries.push(ContentEntry {
-            url_path: format!(concat!($route, "/{}"), a.slug),
-            title: a.title,
-            description: a.description,
-            date: a.date,
-            tags: a.tags,
-          });
-        }
-      }
-    };
+  // 内容板块条目，按开关收录。
+  for b in [
+    module_embedded::BOARD,
+    module_ai::BOARD,
+    module_web3::BOARD,
+    module_wasm::BOARD,
+    module_cli::BOARD,
+  ] {
+    if !is_on(b.id) {
+      continue;
+    }
+    for a in board::server::list_board_articles(b.id.to_string()).await.unwrap_or_default() {
+      entries.push(ContentEntry {
+        url_path: format!("{}/{}", b.route, a.slug),
+        title: a.title,
+        description: a.description,
+        date: a.date,
+        tags: a.tags,
+      });
+    }
   }
-  collect_board!("embedded", module_embedded::server::list_embedded_articles, "/embedded");
-  collect_board!("ai", module_ai::server::list_ai_articles, "/ai");
-  collect_board!("web3", module_web3::server::list_web3_articles, "/web3");
-  collect_board!("wasm", module_wasm::server::list_wasm_articles, "/wasm");
-  collect_board!("cli", module_cli::server::list_cli_articles, "/cli");
 
   entries
 }

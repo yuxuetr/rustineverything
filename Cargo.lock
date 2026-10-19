@@ -171,6 +171,7 @@ dependencies = [
  "app-core",
  "axum",
  "base64",
+ "board",
  "chrono",
  "dioxus",
  "dioxus-shadcn",
@@ -619,6 +620,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdeb9d870516001442e364c5220d3574d2da8dc765554b4a617230d33fa58ef5"
 dependencies = [
  "objc2",
+]
+
+[[package]]
+name = "board"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "dioxus",
+ "dioxus-shadcn",
+ "serde",
+ "serde_yaml",
+ "tracing",
+ "widgets",
 ]
 
 [[package]]
@@ -4451,16 +4465,9 @@ dependencies = [
 name = "module-ai"
 version = "0.1.0"
 dependencies = [
- "app-core",
- "chrono",
+ "board",
  "dioxus",
- "dioxus-shadcn",
  "sdk",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
- "widgets",
 ]
 
 [[package]]
@@ -4499,16 +4506,9 @@ dependencies = [
 name = "module-cli"
 version = "0.1.0"
 dependencies = [
- "app-core",
- "chrono",
+ "board",
  "dioxus",
- "dioxus-shadcn",
  "sdk",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
- "widgets",
 ]
 
 [[package]]
@@ -4573,16 +4573,9 @@ dependencies = [
 name = "module-embedded"
 version = "0.1.0"
 dependencies = [
- "app-core",
- "chrono",
+ "board",
  "dioxus",
- "dioxus-shadcn",
  "sdk",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
- "widgets",
 ]
 
 [[package]]
@@ -4701,32 +4694,18 @@ dependencies = [
 name = "module-wasm"
 version = "0.1.0"
 dependencies = [
- "app-core",
- "chrono",
+ "board",
  "dioxus",
- "dioxus-shadcn",
  "sdk",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
- "widgets",
 ]
 
 [[package]]
 name = "module-web3"
 version = "0.1.0"
 dependencies = [
- "app-core",
- "chrono",
+ "board",
  "dioxus",
- "dioxus-shadcn",
  "sdk",
- "serde",
- "serde_yaml",
- "tempfile",
- "tracing",
- "widgets",
 ]
 
 [[package]]

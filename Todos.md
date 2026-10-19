@@ -466,7 +466,9 @@
 
 ### 阶段 O — 页面与板块优化（2026-10-19 走查）
 方案与证据见 [`docs/SITE_OPTIMIZATION_PLAN.md`](docs/SITE_OPTIMIZATION_PLAN.md)（E1–E15 为证据编号，D1–D4 为待作者决定项）。每条任务一个提交；带「需决定」的任务先等对应 D 项确认。
-- [ ] O1 — 板块共享组件：`widgets::board::{BoardIndex, BoardArticle}`，5 个 `<board>.rs` 改为调用；不合并 crate（E5）。验收：5 板块落地页 / 文章页渲染与改前一致（SSR HTML diff 只差预期部分），各板块单测通过
+- [x] O1 — 板块共享组件：`widgets::board::{BoardIndex, BoardArticle}`，5 个 `<board>.rs` 改为调用；不合并 crate（E5）。验收：5 板块落地页 / 文章页渲染与改前一致（SSR HTML diff 只差预期部分），各板块单测通过
+  - 完成：共享实现放在新 crate `crates/board`（widgets 不依赖 shadcn / i18n，单独成 crate 更干净）：`Board` 常量 + 一对带板块参数的 server fn（`list_board_articles` / `get_board_article`，整个 `topics/` 一份 mtime 缓存）+ `BoardIndex` / `BoardArticle`。5 个板块 crate 只剩 `lib.rs`（`BOARD` 常量 + 两个一行页面 + `problems()` 自检单测），净删约 3000 行。8 个页面 SSR HTML 与改前逐字相同（仅 hydration 调试类型名不同）
+  - 发现：dev 下 `/wasm`、`/wasm/:slug` 404——dioxus-server 在 debug 构建把 `public/wasm` 目录整体 `nest_service` 到 `/wasm`，抢走路由；release 按文件逐个挂载，不受影响。仅影响本地开发，不改路由。重估条件：release 构建下 `curl -o /dev/null -w '%{http_code}' $BASE/wasm` 不为 200
 - [ ] O2 — 板块文章页：frontmatter 走 `inject_seo`；不存在的 slug 回 404（server fn 改返回 `Option` + `widgets::NotFound`）；卡片与返回链接改 `Link`；文章头显示日期与标签（E1/E3/E4）。验收：curl 缺失 slug 404、正常页 `<title>` 为文章标题且带 description / canonical；单测先红后绿
 - [ ] O3 — `widgets::PageMeta` + 列表 / 落地页元信息：首页、5 板块、案例列表与详情、课程列表与详情、播客、论坛、文档首页（E1）。验收：脚本 curl 上述路径 `<title>` 互不相同且非站名
 - [ ] O4 — sitemap / feed 覆盖 docs、案例详情、课程详情（不含课时）；布局加 `rel="alternate"` feed 链接（E2）。验收：sitemap 条目数 = 各来源计数之和（单测）

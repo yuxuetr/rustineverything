@@ -1,8 +1,8 @@
-//! 嵌入式板块的落地页与文章详情页。导航用 `<a href>`，避免对 app `Route` 的循环依赖。
+//! 板块落地页与文章详情页。导航用 `<a href>`，避免对 app `Route` 的循环依赖。
 //!
-//! 重构 B3：数据获取从 `use_resource` 迁移到 `use_server_future`，由服务端预取并随
-//! SSR HTML 下发，客户端 hydration 直接拿到内容（消除首屏 spinner + 二次抓取）。
-//! 列表的子主题筛选 / 搜索仍是客户端 signal 交互，置于 `SuspenseBoundary` 内的子组件。
+//! 重构 B3：数据经 `use_server_future` 服务端预取并随 SSR HTML 下发，
+//! 客户端 hydration 直接拿到内容。子主题筛选 / 搜索是客户端 signal 交互，
+//! 置于 `SuspenseBoundary` 内的子组件。
 
 use dioxus::prelude::*;
 use dioxus_shadcn::{
@@ -13,10 +13,8 @@ use widgets::{parse_mdx, Markdown};
 
 use app_core::i18n::{t, Language};
 
-use crate::server::{get_embedded_article, list_embedded_articles, ArticleSummary};
-use crate::text::{
-  matches_query, normalize_tag, BOARD_ID, BOARD_ROUTE, FEATURED_CRATES, SUBTOPICS,
-};
+use crate::server::{get_board_article, list_board_articles};
+use crate::{matches_query, normalize_tag, ArticleSummary, Board};
 
 /// 读取全局语言信号（缺省回退 Zh）。方案 A：板块文案随该信号切换。
 fn current_lang() -> Language {
@@ -36,10 +34,10 @@ fn chip_class(active: bool) -> String {
 }
 
 #[component]
-pub fn EmbeddedIndexPage() -> Element {
+pub fn BoardIndex(board: Board) -> Element {
   let lang = current_lang();
-  let label = t(lang, &format!("{BOARD_ID}.label"));
-  let tagline = t(lang, &format!("{BOARD_ID}.tagline"));
+  let label = t(lang, &format!("{}.label", board.id));
+  let tagline = t(lang, &format!("{}.tagline", board.id));
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950",
           div { class: "max-w-6xl mx-auto px-4 sm:px-6",
@@ -54,20 +52,20 @@ pub fn EmbeddedIndexPage() -> Element {
                           Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                       }
                   },
-                  EmbeddedIndexList {}
+                  BoardIndexList { board }
               }
           }
       }
   }
 }
 
-/// 文章列表（重构 B3）：`list_embedded_articles` 经 `use_server_future` 服务端预取，
-/// 子主题筛选 / 搜索仍是客户端 signal 交互。置于 SuspenseBoundary 内。
 #[component]
-fn EmbeddedIndexList() -> Element {
+fn BoardIndexList(board: Board) -> Element {
   let lang = current_lang();
-  let articles_res =
-    use_server_future(|| async move { list_embedded_articles().await.unwrap_or_default() })?;
+  let id = board.id;
+  let articles_res = use_server_future(move || async move {
+    list_board_articles(id.to_string()).await.unwrap_or_default()
+  })?;
   let articles: Vec<ArticleSummary> = articles_res().unwrap_or_default();
 
   let mut active_subtopic = use_signal(String::new);
@@ -102,12 +100,12 @@ fn EmbeddedIndexList() -> Element {
               onclick: move |_| active_subtopic.set(String::new()),
               "{t(lang, \"board.all\")}"
           }
-          for s in SUBTOPICS.iter() {
+          for s in board.subtopics.iter() {
               {
-                  let slug = s.slug.to_string();
-                  let is_active = sub == s.slug;
-                  let chip = t(lang, &format!("{}.sub.{}.label", BOARD_ID, s.slug));
-                  let blurb = t(lang, &format!("{}.sub.{}.blurb", BOARD_ID, s.slug));
+                  let slug = s.to_string();
+                  let is_active = sub == *s;
+                  let chip = t(lang, &format!("{}.sub.{}.label", id, s));
+                  let blurb = t(lang, &format!("{}.sub.{}.blurb", id, s));
                   rsx! {
                       button {
                           r#type: "button",
@@ -131,7 +129,7 @@ fn EmbeddedIndexList() -> Element {
               } else {
                   div { class: "space-y-4",
                       for a in filtered.iter() {
-                          ArticleCard { key: "{a.slug}", article: a.clone() }
+                          ArticleCard { key: "{a.slug}", board, article: a.clone() }
                       }
                   }
               }
@@ -140,9 +138,9 @@ fn EmbeddedIndexList() -> Element {
           aside {
               h2 { class: "text-sm font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-4", "{t(lang, \"board.featured\")}" }
               div { class: "space-y-3",
-                  for c in FEATURED_CRATES.iter() {
+                  for c in board.featured_crates.iter() {
                       {
-                          let blurb = t(lang, &format!("{}.crate.{}.blurb", BOARD_ID, normalize_tag(c.name)));
+                          let blurb = t(lang, &format!("{}.crate.{}.blurb", id, normalize_tag(c.name)));
                           rsx! {
                               a {
                                   href: "{c.url}",
@@ -162,12 +160,11 @@ fn EmbeddedIndexList() -> Element {
 }
 
 #[component]
-fn ArticleCard(article: ArticleSummary) -> Element {
+fn ArticleCard(board: Board, article: ArticleSummary) -> Element {
   let lang = current_lang();
-  let href = format!("{}/{}", BOARD_ROUTE, article.slug);
-  let known = SUBTOPICS.iter().any(|s| s.slug == article.subtopic);
-  let sub = if known {
-    t(lang, &format!("{}.sub.{}.label", BOARD_ID, article.subtopic))
+  let href = format!("{}/{}", board.route, article.slug);
+  let sub = if board.subtopics.contains(&article.subtopic.as_str()) {
+    t(lang, &format!("{}.sub.{}.label", board.id, article.subtopic))
   } else {
     String::new()
   };
@@ -195,14 +192,15 @@ fn ArticleCard(article: ArticleSummary) -> Element {
 }
 
 #[component]
-pub fn EmbeddedArticlePage(slug: String) -> Element {
+pub fn BoardArticle(board: Board, slug: String) -> Element {
   let lang = current_lang();
-  let back = format!("{} {}", t(lang, "board.back_prefix"), t(lang, &format!("{BOARD_ID}.label")));
+  let back =
+    format!("{} {}", t(lang, "board.back_prefix"), t(lang, &format!("{}.label", board.id)));
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950",
           div { class: "max-w-4xl mx-auto px-4 sm:px-6",
               a {
-                  href: "{BOARD_ROUTE}",
+                  href: "{board.route}",
                   class: "inline-flex items-center gap-1 text-sm text-primary hover:underline mb-8",
                   "{back}"
               }
@@ -214,7 +212,7 @@ pub fn EmbeddedArticlePage(slug: String) -> Element {
                               Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                           }
                       },
-                      EmbeddedArticleContent { slug: slug.clone() }
+                      BoardArticleContent { board, slug: slug.clone() }
                   }
               }
           }
@@ -222,13 +220,14 @@ pub fn EmbeddedArticlePage(slug: String) -> Element {
   }
 }
 
-/// 文章正文（重构 B3）：`get_embedded_article` 经 `use_server_future` + `use_reactive!` 服务端预取，
-/// 随路由参数 slug 变化重取。置于 SuspenseBoundary 内。
+/// 文章正文：`use_reactive!` 让路由参数 slug 变化时重取。
 #[component]
-fn EmbeddedArticleContent(slug: String) -> Element {
+fn BoardArticleContent(board: Board, slug: String) -> Element {
   let lang = current_lang();
-  let content_res =
-    use_server_future(use_reactive!(|slug| async move { get_embedded_article(slug).await }))?;
+  let id = board.id;
+  let content_res = use_server_future(use_reactive!(|slug| async move {
+    get_board_article(id.to_string(), slug).await
+  }))?;
   match content_res() {
     Some(Ok(content)) => {
       let (_meta, _body) = parse_mdx(&content);

@@ -20,23 +20,23 @@ use module_admin::admin::{
   AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminModerationSettingsPage,
   AdminTopicsPage, AdminUsersPage,
 };
-use module_ai::ai::{AiArticlePage, AiIndexPage};
+use module_ai::{AiArticlePage, AiIndexPage};
 use module_blog::server::{get_blog_content, list_blog_posts};
 use module_cases::cases::{CaseDetailPage, CasesIndexPage};
-use module_cli::cli::{CliArticlePage, CliIndexPage};
+use module_cli::{CliArticlePage, CliIndexPage};
 use module_course::course::{
   AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
 };
 #[cfg(feature = "payments")]
 use module_course::pay_ui::MyOrdersPage;
 use module_docs::docs::{DocPage as DocPageView, Docs as DocsView};
-use module_embedded::embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
+use module_embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
 use module_forum::forum::{
   DiscussionPanel, MyTopicsPage, NewTopicPage, TopicDetailPage, TopicsByTagPage, TopicsIndexPage,
 };
 use module_podcast::podcast::PodcastPage;
-use module_wasm::wasm::{WasmArticlePage, WasmIndexPage};
-use module_web3::web3::{Web3ArticlePage, Web3IndexPage};
+use module_wasm::{WasmArticlePage, WasmIndexPage};
+use module_web3::{Web3ArticlePage, Web3IndexPage};
 use widgets::{inject_seo, parse_mdx, Markdown};
 
 /// Application routes

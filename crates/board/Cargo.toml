@@ -1,0 +1,20 @@
+[package]
+name = "board"
+version = "0.1.0"
+edition = "2021"
+description = "5 个内容板块（embedded / ai / web3 / wasm / cli）共用的数据扫描与页面"
+
+[dependencies]
+dioxus = { workspace = true, features = ["fullstack", "router"] }
+dioxus-shadcn = { workspace = true, features = ["alert", "badge", "card", "empty", "input", "spinner"] }
+serde = { workspace = true, features = ["derive"] }
+serde_yaml = { workspace = true }
+widgets = { path = "../widgets" }
+app-core = { path = "../core" }
+tracing = { workspace = true }
+
+[features]
+server = [
+    "dioxus/server",
+    "widgets/server",
+]
