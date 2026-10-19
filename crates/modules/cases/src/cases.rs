@@ -181,6 +181,11 @@ pub fn CasesIndexPage() -> Element {
   let submit_url = submit_case_url();
 
   rsx! {
+      widgets::PageMeta {
+          title: tc(lang, "case.title"),
+          description: tc(lang, "case.subtitle"),
+          path: "/case".to_string(),
+      }
       section { class: "py-12 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
               div { class: "flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-8",
@@ -480,18 +485,22 @@ pub fn CaseDetailPage(slug: String) -> Element {
 #[component]
 fn CaseDetailLoaded(slug: String) -> Element {
   let lang = use_language_ctx();
-  let case_res =
-    use_server_future(use_reactive!(
-      |slug| async move { get_case(slug).await.unwrap_or_default() }
-    ))?;
+  let case_res = use_server_future(use_reactive!(|slug| async move { get_case(slug).await }))?;
 
   match case_res() {
-    Some(Some(case)) => rsx! { CaseDetailBody { case } },
+    Some(Ok(Some(case))) => rsx! {
+        widgets::PageMeta {
+            title: case.name.clone(),
+            description: case.description.clone(),
+            path: format!("/case/{}", case.slug),
+        }
+        CaseDetailBody { case }
+    },
+    Some(Err(_)) => rsx! { widgets::LoadFailed {} },
     _ => rsx! {
-        div { class: "py-20 text-center",
-            h1 { class: "text-2xl font-bold text-slate-900 dark:text-white", "{tc(lang, \"case.not_found\")}" }
-            p { class: "mt-3 text-slate-500 dark:text-slate-400", "\"{slug}\" " }
-            a { href: "/case", class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-6 font-semibold"),
+        widgets::NotFound { message: tc(lang, "case.not_found") }
+        div { class: "text-center",
+            a { href: "/case", class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "font-semibold"),
                 "{tc(lang, \"case.back\")}"
             }
         }

@@ -43,6 +43,11 @@ fn LocalSectionTitle(title: String, subtitle: Option<String>) -> Element {
 #[component]
 pub fn CoursesIndexPage() -> Element {
   rsx! {
+      widgets::PageMeta {
+          title: "Rust 课程".to_string(),
+          description: "系统化学习路径，从基础到全栈实战".to_string(),
+          path: "/course".to_string(),
+      }
       section { class: "py-12 min-h-screen bg-[var(--color-bg)] transition-colors duration-300",
           LocalContainer {
               LocalSectionTitle {
@@ -197,13 +202,18 @@ fn CourseDetailLoaded(slug: String) -> Element {
 
   match course_res() {
     Some(Some(c)) => {
-      rsx! { CourseDetailBody { course: c, progress: progress.clone(), last: last.clone() } }
+      rsx! {
+          widgets::PageMeta {
+              title: c.title.clone(),
+              description: c.description.clone(),
+              path: format!("/course/{}", slug),
+          }
+          CourseDetailBody { course: c, progress: progress.clone(), last: last.clone() }
+      }
     }
     _ => rsx! {
-        div { class: "text-center py-20",
-            h2 { class: "text-2xl font-bold text-slate-900 dark:text-white mb-4",
-                "课程未找到"
-            }
+        widgets::NotFound { message: "课程未找到".to_string() }
+        div { class: "text-center",
             p { class: "text-slate-500", "课程 \"{slug}\" 不存在或尚未发布。" }
             a { href: "/course",
                 class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-6"),

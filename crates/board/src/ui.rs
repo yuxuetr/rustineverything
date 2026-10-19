@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use dioxus_shadcn::{
   badge_class, card_class, BadgeVariant, Empty, EmptyDescription, Input, Spinner, SpinnerSize,
 };
-use widgets::{get_seo_base_url, inject_seo, parse_mdx, LoadFailed, Markdown, NotFound};
+use widgets::{get_seo_base_url, inject_seo, parse_mdx, LoadFailed, Markdown, NotFound, PageMeta};
 
 use app_core::i18n::{t, Language};
 
@@ -38,6 +38,7 @@ pub fn BoardIndex(board: Board) -> Element {
   let label = t(lang, &format!("{}.label", board.id));
   let tagline = t(lang, &format!("{}.tagline", board.id));
   rsx! {
+      PageMeta { title: label.clone(), description: tagline.clone(), path: board.route.to_string() }
       section { class: "py-12 bg-white dark:bg-slate-950",
           div { class: "max-w-6xl mx-auto px-4 sm:px-6",
               div { class: "mb-10",

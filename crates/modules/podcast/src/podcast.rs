@@ -115,6 +115,11 @@ pub fn PodcastPage() -> Element {
     filtered.iter().skip(safe_page * PAGE_SIZE).take(PAGE_SIZE).cloned().collect();
 
   rsx! {
+      widgets::PageMeta {
+          title: tp(lang, "podcast.title").to_string(),
+          description: tp(lang, "podcast.subtitle").to_string(),
+          path: "/podcast".to_string(),
+      }
       section { class: "py-12 bg-[var(--color-bg)] transition-colors duration-300",
           LocalContainer {
               LocalSectionTitle {

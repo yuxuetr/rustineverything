@@ -110,6 +110,51 @@ pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
   }
 }
 
+/// 站名，作为非文章页 `<title>` 的后缀（与 `Dioxus.toml` / `site.json` 一致）。
+pub const SITE_NAME: &str = "Rust in Everything";
+
+/// 列表 / 落地页的元信息：`<title>`（`{title} - 站名`）、description、
+/// og:title / og:description / og:url 与 canonical。文章页用 [`inject_seo`]。
+///
+/// 自带 SuspenseBoundary（等 `BASE_URL` 时不渲染任何东西），调用方直接放进页面即可。
+#[component]
+pub fn PageMeta(title: String, description: String, path: String) -> Element {
+  rsx! {
+      SuspenseBoundary { fallback: |_| VNode::empty(),
+          PageMetaInner { title, description, path }
+      }
+  }
+}
+
+#[component]
+fn PageMetaInner(title: String, description: String, path: String) -> Element {
+  let base_url_res =
+    use_server_future(|| async move { get_seo_base_url().await.unwrap_or_default() })?;
+  let base_url = base_url_res().unwrap_or_default();
+  let canonical = build_canonical(None, &path, &base_url);
+  let full_title = page_title(&title);
+  rsx! {
+      crate::browser::PageTitle { title: full_title.clone() }
+      if !description.is_empty() {
+          document::Meta { name: "description", content: "{description}" }
+          document::Meta { property: "og:description", content: "{description}" }
+      }
+      document::Meta { property: "og:title", content: "{full_title}" }
+      document::Meta { property: "og:type", content: "website" }
+      document::Meta { property: "og:url", content: "{canonical}" }
+      document::Link { rel: "canonical", href: "{canonical}" }
+  }
+}
+
+/// `{title} - 站名`；空标题只用站名。
+pub fn page_title(title: &str) -> String {
+  if title.is_empty() {
+    SITE_NAME.to_string()
+  } else {
+    format!("{title} - {SITE_NAME}")
+  }
+}
+
 /// 构造 canonical URL：如果 `meta.canonical` 已显式提供则原样返回；否则
 /// 以 `base_url + path` 拼接。`base_url` 末尾的 `/` 会被去掉，`path`
 /// 前的 `/` 会被补上，避免 `https://x.com//foo` 双斜杠。
@@ -190,6 +235,12 @@ mod tests {
       date: Some("2026-01-15".into()),
       tags: vec!["rust".into(), "welcome".into()],
     }
+  }
+
+  #[test]
+  fn page_title_appends_site_name() {
+    assert_eq!(page_title("案例"), "案例 - Rust in Everything");
+    assert_eq!(page_title(""), "Rust in Everything");
   }
 
   #[test]

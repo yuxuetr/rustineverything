@@ -171,6 +171,11 @@ pub fn Home() -> Element {
   ];
 
   rsx! {
+      widgets::PageMeta {
+          title: t(lang(), "hero.title"),
+          description: t(lang(), "hero.subtitle"),
+          path: "/".to_string(),
+      }
       Hero {}
 
       // 两大生态支柱：直接体现「Rust 生态 + AI 生态」定位
@@ -308,6 +313,11 @@ fn BlogIndexInner() -> Element {
   let lang = use_i18n();
 
   rsx! {
+      widgets::PageMeta {
+          title: t(lang(), "blog.title"),
+          description: t(lang(), "blog.subtitle"),
+          path: "/blog".to_string(),
+      }
       section { class: "py-12 bg-white dark:bg-slate-950",
           div { class: "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8",
               // 页面标题（静态，始终展示）

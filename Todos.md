@@ -471,7 +471,9 @@
   - 发现：dev 下 `/wasm`、`/wasm/:slug` 404——dioxus-server 在 debug 构建把 `public/wasm` 目录整体 `nest_service` 到 `/wasm`，抢走路由；release 按文件逐个挂载，不受影响。仅影响本地开发，不改路由。重估条件：release 构建下 `curl -o /dev/null -w '%{http_code}' $BASE/wasm` 不为 200
 - [x] O2 — 板块文章页：frontmatter 走 `inject_seo`；不存在的 slug 回 404（server fn 改返回 `Option` + `widgets::NotFound`）；卡片与返回链接改 `Link`；文章头显示日期与标签（E1/E3/E4）。验收：curl 缺失 slug 404、正常页 `<title>` 为文章标题且带 description / canonical；单测先红后绿
   - 完成：`get_board_article` 改返回 `Option`（缺失 / 非法标识 → `None` → `NotFound` 404；IO 错 → `LoadFailed` 500，不再把原始报错渲染给访客）；文章页走 `inject_seo`（`get_seo_base_url` 从 app 移到 `widgets::seo`，供模块 crate 使用，端点不变）；卡片与返回链接改 `Link`（浏览器验证 SPA 跳转不整页刷新）；文章头显示日期与标签。顺带修复：`cli/clap-derive-subcommands` 描述里未转义的 `"` 让 frontmatter 整体解析失败（列表标题为空、日期丢失），加了扫描真实 assets 的内容校验单测（先红后绿）
-- [ ] O3 — `widgets::PageMeta` + 列表 / 落地页元信息：首页、5 板块、案例列表与详情、课程列表与详情、播客、论坛、文档首页（E1）。验收：脚本 curl 上述路径 `<title>` 互不相同且非站名
+- [x] O3 — `widgets::PageMeta` + 列表 / 落地页元信息：首页、5 板块、案例列表与详情、课程列表与详情、播客、论坛、文档首页（E1）。验收：脚本 curl 上述路径 `<title>` 互不相同且非站名
+  - 完成：`widgets::PageMeta { title, description, path }`（自带 SuspenseBoundary 取 `BASE_URL`；`<title>` 统一为 `{title} - 站名`，`page_title()` 也给文档页用）。接入首页、博客列表、文档首页、播客、课程列表 / 详情、案例列表 / 详情、论坛列表 / 话题详情、5 板块、生态页。顺带：案例 / 课程 / 生态页「不存在」改用 `NotFound` 回 404（原为 200），案例读取出错回 500。验收脚本 `scripts/check_page_titles.sh`（14 个路径 title 互不相同且非纯站名，退出码 0；注意 `LC_ALL=C`，否则 uniq 会把 CJK 标题判为相同）
+  - 已知：SPA 导航后 `<head>` 里的 canonical 会累积（Dioxus head 元素卸载不移除，博客文章页原本如此）。SSR HTML 只有一个，不影响爬虫。重估条件：`curl -s $URL | grep -c 'rel="canonical"'` 大于 1
 - [ ] O4 — sitemap / feed 覆盖 docs、案例详情、课程详情（不含课时）；布局加 `rel="alternate"` feed 链接（E2）。验收：sitemap 条目数 = 各来源计数之和（单测）
 - [ ] O5 — 论坛与首页热帖区分「加载失败」与「空」，标签栏失败不再停在「加载中」；B6 结论不变（仍为 use_resource）（E8）。验收：停 `rie-postgres` 后页面显示失败提示，起库后正常
 - [ ] O6 — 播客改 `use_server_future`；修复 `/audio` 在 dev 404（先查生产 Dockerfile 行为再定方案）；`audio_url` 校验文件存在，缺失时不渲染播放器（E6/E7）。需决定 D2（占位数据去留）。验收：SSR HTML 含节目标题；可播放的期能播放

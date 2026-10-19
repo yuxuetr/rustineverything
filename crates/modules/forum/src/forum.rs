@@ -267,6 +267,11 @@ pub fn TopicsIndexPage() -> Element {
   let is_logged_in = session_user.as_ref().map(|s| s.read().is_some()).unwrap_or(false);
 
   rsx! {
+      widgets::PageMeta {
+          title: tf(lang, "forum.title").to_string(),
+          description: tf(lang, "forum.subtitle").to_string(),
+          path: "/topics".to_string(),
+      }
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
               // Hero
@@ -468,6 +473,11 @@ fn TopicDetailLoaded(id: i32) -> Element {
 
   match replied().or_else(|| detail_res().flatten()) {
     Some(d) => rsx! {
+        widgets::PageMeta {
+            title: d.title.clone(),
+            description: d.content.chars().take(120).collect::<String>(),
+            path: format!("/topics/{}", d.id),
+        }
         TopicDetailBody {
             detail: d,
             on_replied: move |new_detail: TopicDetail| replied.set(Some(new_detail)),

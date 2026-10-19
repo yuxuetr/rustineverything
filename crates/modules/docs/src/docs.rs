@@ -38,6 +38,11 @@ fn DocsIndexInner() -> Element {
   let tree = use_server_future(|| async move { list_doc_tree().await.unwrap_or_default() })?;
 
   rsx! {
+      widgets::PageMeta {
+          title: "文档".to_string(),
+          description: "从基础语法到全栈实战，系统化学习 Rust 生态。选择一个主题开始探索。".to_string(),
+          path: "/docs".to_string(),
+      }
       div { class: "max-w-7xl mx-auto flex",
               // 左侧导航：一级分类列表（仅桌面端显示）
               aside { class: "hidden lg:block shrink-0 w-64 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 pt-8 pb-12 px-4",
@@ -219,7 +224,7 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
                           Some(Ok(Some(resp))) => rsx! {
                               // SEO: 注入 title / description / keywords / og:image
                               if !resp.meta.title.is_empty() {
-                                  widgets::browser::PageTitle { title: format!("{} - Rust in Everything", resp.meta.title) }
+                                  widgets::browser::PageTitle { title: widgets::page_title(&resp.meta.title) }
                               }
                               if !resp.meta.description.is_empty() {
                                   document::Meta { name: "description", content: "{resp.meta.description}" }

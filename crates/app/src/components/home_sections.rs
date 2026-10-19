@@ -360,16 +360,15 @@ fn ForumColumn() -> Element {
 pub fn EcosystemPage(id: String) -> Element {
   let lang = use_i18n();
   let Some(eco) = ecosystem_by_id(&id) else {
-    return rsx! {
-        section { class: "py-24",
-            Container {
-                p { class: "text-center text-slate-400", "{t(lang(), \"eco.not_found\")}" }
-            }
-        }
-    };
+    return rsx! { widgets::NotFound { message: t(lang(), "eco.not_found") } };
   };
 
   rsx! {
+      widgets::PageMeta {
+          title: t(lang(), eco.label_key),
+          description: t(lang(), eco.blurb_key),
+          path: format!("/ecosystem/{id}"),
+      }
       // 头部
       section { class: "py-16 sm:py-20 bg-gradient-to-b from-slate-950 to-slate-900",
           div { class: "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8",
