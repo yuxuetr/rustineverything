@@ -20,6 +20,18 @@ fn main() {
 
     // 同步 UI 必需的静态文件：root/assets → crates/app/assets
     sync_dir(&root_assets, &app_assets, true);
+
+    // audio/ 体积大，sync_dir 不复制；dev 下（cwd = crates/app）`/audio` 静态挂载读
+    // 的是这里，没有它就 404。软链指回 root（Docker 构建前已 cp 真实目录，不受影响）。
+    #[cfg(unix)]
+    {
+      let link = app_assets.join("audio");
+      if let Ok(target) = root_assets.join("audio").canonicalize() {
+        if fs::symlink_metadata(&link).is_err() {
+          let _ = std::os::unix::fs::symlink(target, &link);
+        }
+      }
+    }
   }
 
   // Reverse sync: 若 crates/app/assets/tailwind.css 与 root 内容不同（Tailwind

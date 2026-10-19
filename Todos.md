@@ -479,7 +479,9 @@
   - 顺带发现并修复（单独提交）：`build.rs` 镜像只拷不删，dev 下仍读到已删的旧文档与 phase R 插件 wasm（fdd4d16）；Dockerfile 漏了 O1 新增的 `crates/board`（3161834）
 - [x] O5 — 论坛与首页热帖区分「加载失败」与「空」，标签栏失败不再停在「加载中」；B6 结论不变（仍为 use_resource）（E8）。验收：停 `rie-postgres` 后页面显示失败提示，起库后正常
   - 完成：论坛列表 / 标签栏 / 标签页 / 我的话题与首页「论坛热帖」保留 `Result`，`Err` 显示「加载失败」（列表带重试按钮，`resource.restart()`），空列表才显示空状态；仍是 use_resource。浏览器验证：停 `rie-postgres` → 列表「加载失败，请稍后重试」+ 重试、首页「论坛暂时无法加载」；起库后 1 话题 2 标签正常
-- [ ] O6 — 播客改 `use_server_future`；修复 `/audio` 在 dev 404（先查生产 Dockerfile 行为再定方案）；`audio_url` 校验文件存在，缺失时不渲染播放器（E6/E7）。需决定 D2（占位数据去留）。验收：SSR HTML 含节目标题；可播放的期能播放
+- [x] O6（技术部分；D2 内容待定） — 播客改 `use_server_future`；修复 `/audio` 在 dev 404（先查生产 Dockerfile 行为再定方案）；`audio_url` 校验文件存在，缺失时不渲染播放器（E6/E7）。需决定 D2（占位数据去留）。验收：SSR HTML 含节目标题；可播放的期能播放
+  - 完成：播客改 `use_server_future`（SSR HTML 含 3 期标题与播放器；默认选中第一期改为渲染期计算，去掉 use_effect）；`Episode.url` 改 `Option`，本地 `/audio/…`、`/podcasts/…` 与相对路径只在文件存在时给出，缺失时显示「本期音频暂未上线」，不再给一个 404 地址（删掉了 `audio.mp3` 兜底；先写测试）；dev 下 `/audio` 404：生产 Dockerfile 把根 assets 整体拷到 /app/assets，生产不受影响，问题只在 dev 镜像跳过 `audio/`，`build.rs` 改为在镜像里软链回根 `assets/audio`。浏览器验证可播放、切换节目正常
+  - D2 仍待作者决定（未改内容）：3 期 `audio_url` 指向同一文件；该文件实长 19:38，yaml 写 24:15；`guest: 张三` 与 2024-01 日期疑为占位
 - [ ] O7 — 案例卡无 cover 时不渲染封面区；板块子分类 chip 只显示有文章的（E9/E10）。需决定 D4
 - [ ] O8 — 导航与页脚：桌面导航加播客；手机站名不截断；页脚删重复标语、加「专题」列与 RSS（E11/E12）。验收：390 / 1280 两种宽度截图
 - [ ] O9 — 首页删除「按领域浏览」区块（E13）。需决定 D3

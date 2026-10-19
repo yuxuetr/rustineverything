@@ -14,7 +14,8 @@ pub struct Episode {
   pub description: String,
   pub duration: String,
   pub date: String,
-  pub url: String,
+  /// 可播放的音频地址；本地文件不存在时为 `None`（页面不渲染播放器）。
+  pub url: Option<String>,
   #[serde(default)]
   pub guest: Option<String>,
   #[serde(default)]
@@ -104,19 +105,28 @@ fn file_date(path: &std::path::Path) -> String {
 }
 
 /// 解析 audio_url 取得最终 url。优先级：
-/// 1. http(s) 或 / 开头 -> 原样保留
-/// 2. 相对路径 -> /podcasts/<slug>/<file>
-/// 3. 空 -> 扫描目录中的音频文件
+/// 1. http(s) -> 原样保留（无法校验）
+/// 2. `/audio/…`、`/podcasts/…` -> 资产根下文件存在才保留；其它 `/` 开头原样保留
+/// 3. 相对路径 -> 节目目录下文件存在时为 /podcasts/<slug>/<file>
+/// 4. 空 -> 扫描目录中的音频文件
+///
+/// `dir` 是 `<资产根>/podcasts/<slug>`。
 #[cfg(feature = "server")]
 fn resolve_audio_url(slug: &str, dir: &std::path::Path, audio_url: &str) -> Option<String> {
-  if audio_url.starts_with('/') || audio_url.starts_with("http") {
-    Some(audio_url.to_string())
-  } else if !audio_url.is_empty() {
-    Some(format!("/podcasts/{}/{}", slug, audio_url))
-  } else {
-    // 扫描目录中的音频文件
-    find_audio_file(dir).map(|f| format!("/podcasts/{}/{}", slug, f))
+  if audio_url.starts_with("http") {
+    return Some(audio_url.to_string());
   }
+  if let Some(rel) = audio_url.strip_prefix('/') {
+    if !(rel.starts_with("audio/") || rel.starts_with("podcasts/")) {
+      return Some(audio_url.to_string());
+    }
+    let assets_root = dir.parent()?.parent()?;
+    return assets_root.join(rel).is_file().then(|| audio_url.to_string());
+  }
+  if !audio_url.is_empty() {
+    return dir.join(audio_url).is_file().then(|| format!("/podcasts/{}/{}", slug, audio_url));
+  }
+  find_audio_file(dir).map(|f| format!("/podcasts/{}/{}", slug, f))
 }
 
 /// server-only: 从某个节目目录读取 Episode（优先读 YAML，否则仅从音频文件推断）
@@ -138,8 +148,7 @@ pub fn read_episode_from_dir(dir: &std::path::Path) -> Option<Episode> {
     let content = fs::read_to_string(&path).ok()?;
     let meta: EpisodeMeta = serde_yaml::from_str(&content).ok()?;
 
-    let url = resolve_audio_url(&slug, dir, &meta.audio_url)
-      .unwrap_or_else(|| format!("/podcasts/{}/audio.mp3", slug));
+    let url = resolve_audio_url(&slug, dir, &meta.audio_url);
 
     let id = if meta.id != 0 { meta.id } else { slug_to_id(&slug) };
 
@@ -158,7 +167,7 @@ pub fn read_episode_from_dir(dir: &std::path::Path) -> Option<Episode> {
     // === 仅有音频文件，无 YAML：推断元数据 ===
     let audio_file = find_audio_file(dir)?;
     let audio_path = dir.join(&audio_file);
-    let url = format!("/podcasts/{}/{}", slug, audio_file);
+    let url = Some(format!("/podcasts/{}/{}", slug, audio_file));
 
     // 标题 = 文件名（去扩展名）
     let title = std::path::Path::new(&audio_file)
@@ -262,24 +271,38 @@ mod tests {
       &dir,
       "id: 1\ntitle: T\ndescription: D\nduration: \"10:00\"\ndate: 2024-01-01\naudio_url: a.mp3\n",
     );
+    write_audio(&dir, "a.mp3");
     let ep = read_episode_from_dir(&dir).unwrap();
     assert_eq!(ep.id, 1);
     assert_eq!(ep.slug, "ep1");
     assert_eq!(ep.title, "T");
     // 相对 audio_url 解析为 /podcasts/<slug>/<file>
-    assert_eq!(ep.url, "/podcasts/ep1/a.mp3");
+    assert_eq!(ep.url.as_deref(), Some("/podcasts/ep1/a.mp3"));
+  }
+
+  #[test]
+  fn test_missing_local_audio_has_no_url() {
+    // 文件不存在时不给 url（页面不渲染播放器），而不是给一个 404 的地址
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().join("podcasts/ep");
+    write_yaml(&dir, "id: 1\ntitle: T\ndate: 2024-01-01\naudio_url: gone.mp3\n");
+    assert_eq!(read_episode_from_dir(&dir).unwrap().url, None);
+    write_yaml(&dir, "id: 1\ntitle: T\ndate: 2024-01-01\naudio_url: /audio/gone.m4a\n");
+    assert_eq!(read_episode_from_dir(&dir).unwrap().url, None);
   }
 
   #[test]
   fn test_audio_url_absolute_kept_as_is() {
+    // 资产根布局：<root>/podcasts/<slug>/ 与 <root>/audio/
     let tmp = TempDir::new().unwrap();
-    let dir = tmp.path().join("ep");
+    let dir = tmp.path().join("podcasts/ep");
     write_yaml(
       &dir,
       "id: 2\ntitle: T\nduration: \"5:00\"\ndate: 2024-02-01\naudio_url: /audio/foo.m4a\n",
     );
+    write_audio(&tmp.path().join("audio"), "foo.m4a");
     let ep = read_episode_from_dir(&dir).unwrap();
-    assert_eq!(ep.url, "/audio/foo.m4a");
+    assert_eq!(ep.url.as_deref(), Some("/audio/foo.m4a"));
   }
 
   #[test]
@@ -288,17 +311,17 @@ mod tests {
     let dir = tmp.path().join("ep");
     write_yaml(&dir, "id: 3\ntitle: T\nduration: \"5:00\"\ndate: 2024-02-01\naudio_url: https://cdn.example.com/x.mp3\n");
     let ep = read_episode_from_dir(&dir).unwrap();
-    assert_eq!(ep.url, "https://cdn.example.com/x.mp3");
+    assert_eq!(ep.url.as_deref(), Some("https://cdn.example.com/x.mp3"));
   }
 
   #[test]
   fn test_audio_url_fallback_when_missing_and_no_files() {
-    // 无 audio_url 且目录中没有音频文件时，退化到默认 audio.mp3
+    // 无 audio_url 且目录中没有音频文件：没有可播放的地址
     let tmp = TempDir::new().unwrap();
     let dir = tmp.path().join("noaudio");
     write_yaml(&dir, "id: 4\ntitle: T\nduration: \"5:00\"\ndate: 2024-02-01\n");
     let ep = read_episode_from_dir(&dir).unwrap();
-    assert_eq!(ep.url, "/podcasts/noaudio/audio.mp3");
+    assert_eq!(ep.url, None);
   }
 
   #[test]
@@ -309,7 +332,7 @@ mod tests {
     write_yaml(&dir, "id: 10\ntitle: T\ndate: 2024-04-01\n");
     write_audio(&dir, "my-show.m4a");
     let ep = read_episode_from_dir(&dir).unwrap();
-    assert_eq!(ep.url, "/podcasts/auto/my-show.m4a");
+    assert_eq!(ep.url.as_deref(), Some("/podcasts/auto/my-show.m4a"));
   }
 
   #[test]
@@ -321,7 +344,7 @@ mod tests {
     let ep = read_episode_from_dir(&dir).unwrap();
     assert_eq!(ep.slug, "talk-001");
     assert_eq!(ep.title, "深度对谈");
-    assert_eq!(ep.url, "/podcasts/talk-001/深度对谈.mp3");
+    assert_eq!(ep.url.as_deref(), Some("/podcasts/talk-001/深度对谈.mp3"));
     assert!(ep.id > 0);
     // date 应为文件创建时间（近期）
     assert!(!ep.date.is_empty(), "应该从文件 mtime 推导出日期");
