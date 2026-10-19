@@ -1,4 +1,4 @@
-//! 板块落地页与文章详情页。导航用 `<a href>`，避免对 app `Route` 的循环依赖。
+//! 板块落地页与文章详情页。站内导航用 `Link { to: String }`，不依赖 app 的 `Route`。
 //!
 //! 重构 B3：数据经 `use_server_future` 服务端预取并随 SSR HTML 下发，
 //! 客户端 hydration 直接拿到内容。子主题筛选 / 搜索是客户端 signal 交互，
@@ -6,10 +6,9 @@
 
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  badge_class, card_class, Alert, AlertDescription, AlertVariant, BadgeVariant, Empty,
-  EmptyDescription, Input, Spinner, SpinnerSize,
+  badge_class, card_class, BadgeVariant, Empty, EmptyDescription, Input, Spinner, SpinnerSize,
 };
-use widgets::{parse_mdx, Markdown};
+use widgets::{get_seo_base_url, inject_seo, parse_mdx, LoadFailed, Markdown, NotFound};
 
 use app_core::i18n::{t, Language};
 
@@ -169,8 +168,8 @@ fn ArticleCard(board: Board, article: ArticleSummary) -> Element {
     String::new()
   };
   rsx! {
-      a {
-          href: "{href}",
+      Link {
+          to: href,
           class: card_class("block p-5 rounded-xl shadow-none hover:shadow-md hover:border-primary/50 transition-all"),
           div { class: "flex items-center gap-2 mb-2 text-xs",
               if !sub.is_empty() {
@@ -199,8 +198,8 @@ pub fn BoardArticle(board: Board, slug: String) -> Element {
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950",
           div { class: "max-w-4xl mx-auto px-4 sm:px-6",
-              a {
-                  href: "{board.route}",
+              Link {
+                  to: board.route,
                   class: "inline-flex items-center gap-1 text-sm text-primary hover:underline mb-8",
                   "{back}"
               }
@@ -228,21 +227,31 @@ fn BoardArticleContent(board: Board, slug: String) -> Element {
   let content_res = use_server_future(use_reactive!(|slug| async move {
     get_board_article(id.to_string(), slug).await
   }))?;
+  let base_url_res =
+    use_server_future(|| async move { get_seo_base_url().await.unwrap_or_default() })?;
+  let base_url = base_url_res().unwrap_or_default();
   match content_res() {
-    Some(Ok(content)) => {
-      let (_meta, _body) = parse_mdx(&content);
+    Some(Ok(Some(content))) => {
+      let (meta, _body) = parse_mdx(&content);
+      let path = format!("{}/{}", board.route, slug);
+      let date = meta.date.clone().unwrap_or_default();
       rsx! {
+          {inject_seo(&meta, &path, &base_url)}
+          if !date.is_empty() || !meta.tags.is_empty() {
+              div { class: "flex flex-wrap items-center gap-2 mb-4 text-xs",
+                  if !date.is_empty() {
+                      time { class: "text-slate-400", datetime: "{date}", "{date}" }
+                  }
+                  for tag in meta.tags.iter() {
+                      span { class: badge_class(BadgeVariant::Secondary, "font-normal text-muted-foreground"), "#{tag}" }
+                  }
+              }
+          }
           Markdown { content: content.clone(), blog_id: slug.clone() }
       }
     }
-    Some(Err(e)) => {
-      let msg = format!("{}{}", t(lang, "board.load_error_prefix"), e);
-      rsx! {
-          Alert { variant: AlertVariant::Destructive,
-              AlertDescription { variant: AlertVariant::Destructive, "{msg}" }
-          }
-      }
-    }
+    Some(Ok(None)) => rsx! { NotFound { message: t(lang, "board.not_found") } },
+    Some(Err(_)) => rsx! { LoadFailed {} },
     None => rsx! {
         div { class: "flex items-center justify-center py-20",
             Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }

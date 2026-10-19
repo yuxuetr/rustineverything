@@ -111,16 +111,28 @@ pub async fn list_board_articles(board: String) -> Result<Vec<ArticleSummary>, S
   Ok(all.get(&board).cloned().unwrap_or_default())
 }
 
-/// 读取单篇文章的原始 markdown（含 frontmatter）。
-#[server]
-pub async fn get_board_article(board: String, slug: String) -> Result<String, ServerFnError> {
-  if !app_core::utils::is_safe_slug(&board) || !app_core::utils::is_safe_slug(&slug) {
-    return Err(ServerFnError::new("无效的文章标识".to_string()));
+/// 读取单篇文章的原始 markdown（含 frontmatter）。不存在（含非法标识）返回 `None`。
+#[cfg(feature = "server")]
+fn read_article(root: &Path, board: &str, slug: &str) -> std::io::Result<Option<String>> {
+  if !app_core::utils::is_safe_slug(board) || !app_core::utils::is_safe_slug(slug) {
+    return Ok(None);
   }
-  let Some(file) = index_file(&topics_root().join(&board).join(&slug)) else {
-    return Err(ServerFnError::new(format!("文章未找到: {}", slug)));
-  };
-  fs::read_to_string(&file).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))
+  match index_file(&root.join(board).join(slug)) {
+    Some(file) => fs::read_to_string(file).map(Some),
+    None => Ok(None),
+  }
+}
+
+/// 单篇文章原文。`Ok(None)` = 不存在（页面回 404），`Err` = 读取出错（回 500）。
+#[server]
+pub async fn get_board_article(
+  board: String,
+  slug: String,
+) -> Result<Option<String>, ServerFnError> {
+  read_article(&topics_root(), &board, &slug).map_err(|e| {
+    tracing::error!(board = %board, slug = %slug, error = %e, "board: read article failed");
+    ServerFnError::new("读取失败".to_string())
+  })
 }
 
 #[cfg(all(test, feature = "server"))]
@@ -141,6 +153,32 @@ mod tests {
     let fm = parse_frontmatter("no frontmatter here");
     assert!(fm.title.is_empty());
     assert!(fm.tags.is_empty());
+  }
+
+  #[test]
+  fn read_article_distinguishes_missing_from_present() {
+    let tmp = std::env::temp_dir().join(format!("board-read-{}", std::process::id()));
+    fs::create_dir_all(tmp.join("ai/real")).unwrap();
+    fs::write(tmp.join("ai/real/index.md"), "# hi").unwrap();
+    assert_eq!(read_article(&tmp, "ai", "real").unwrap().as_deref(), Some("# hi"));
+    assert_eq!(read_article(&tmp, "ai", "missing").unwrap(), None);
+    assert_eq!(read_article(&tmp, "ai", "../ai").unwrap(), None);
+    assert_eq!(read_article(&tmp, "nope", "real").unwrap(), None);
+    fs::remove_dir_all(&tmp).unwrap();
+  }
+
+  /// 内容校验：frontmatter 解析失败会静默退化为空标题（曾因描述里未转义的 `"` 发生）。
+  #[test]
+  fn every_real_article_has_a_title() {
+    let all = build_all(&topics_root());
+    assert!(!all.is_empty(), "找不到 assets/topics");
+    let untitled: Vec<String> = all
+      .iter()
+      .flat_map(|(b, items)| items.iter().map(move |a| (b, a)))
+      .filter(|(_, a)| a.title.is_empty() || a.date.is_empty())
+      .map(|(b, a)| format!("{b}/{}", a.slug))
+      .collect();
+    assert!(untitled.is_empty(), "frontmatter 解析失败或缺 title/date: {untitled:?}");
   }
 
   #[test]

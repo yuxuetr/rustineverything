@@ -15,7 +15,6 @@ use crate::components::nav::Navbar;
 use crate::components::view::{Container, SectionTitle};
 use crate::i18n::{t, use_i18n};
 use crate::server::enabled_module_ids;
-use crate::server::get_seo_base_url;
 use module_admin::admin::{
   AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminModerationSettingsPage,
   AdminTopicsPage, AdminUsersPage,
@@ -37,7 +36,7 @@ use module_forum::forum::{
 use module_podcast::podcast::PodcastPage;
 use module_wasm::{WasmArticlePage, WasmIndexPage};
 use module_web3::{Web3ArticlePage, Web3IndexPage};
-use widgets::{inject_seo, parse_mdx, Markdown};
+use widgets::{get_seo_base_url, inject_seo, parse_mdx, Markdown};
 
 /// Application routes
 #[derive(Debug, Clone, Routable, PartialEq)]

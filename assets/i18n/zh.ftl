@@ -135,7 +135,7 @@ board.search = 搜索文章 / 标签…
 board.featured = 精选 crate
 board.empty = 暂无文章。
 board.back_prefix = ← 返回
-board.load_error_prefix = 加载失败：
+board.not_found = 文章不存在
 
 # ── 嵌入式 ──
 embedded.label = 嵌入式

@@ -135,7 +135,7 @@ board.search = Search articles / tags…
 board.featured = Featured crates
 board.empty = No articles yet.
 board.back_prefix = ← Back to
-board.load_error_prefix = Failed to load: 
+board.not_found = Article not found
 
 # ── Embedded ──
 embedded.label = Embedded

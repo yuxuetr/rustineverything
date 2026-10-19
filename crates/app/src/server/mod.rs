@@ -296,23 +296,6 @@ pub async fn get_current_user() -> Result<Option<SessionUser>, ServerFnError> {
   }
 }
 
-// ========== SEO ==========
-
-/// Phase 2.3: 返回站点根 URL（含 scheme），给 `inject_seo`
-/// 拼接 canonical URL 使用。服务端读 `BASE_URL` 环境变量；未
-/// 设置时返回空串（不报错，由 inject_seo 降级使用相对路径）。
-#[post("/api/seo/base-url")]
-pub async fn get_seo_base_url() -> Result<String, ServerFnError> {
-  #[cfg(feature = "server")]
-  {
-    Ok(std::env::var("BASE_URL").unwrap_or_default())
-  }
-  #[cfg(not(feature = "server"))]
-  {
-    Ok(String::new())
-  }
-}
-
 // ========== 模块开关（Phase 3.4） ==========
 
 /// Phase 3.4：返回当前启用的模块 id 列表。
