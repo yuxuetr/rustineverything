@@ -477,7 +477,8 @@
 - [x] O4 — sitemap / feed 覆盖 docs、案例详情、课程详情（不含课时）；布局加 `rel="alternate"` feed 链接（E2）。验收：sitemap 条目数 = 各来源计数之和（单测）
   - 完成：`collect_detail_paths` 把文档（有正文的节点）、案例详情、课程详情加进 sitemap（不带 lastmod）。**不进 feed**：feed 是按日期的「新内容」，这三类没有日期，进 feed 只会是噪音（与方案原文「sitemap / feed」不同，有意收窄）。布局 `<head>` 加 Atom `rel=alternate`。sitemap 由 38 → 64 条。验收单测用真实 assets 独立计数比对（docs 数 = 磁盘 index 数；先红：镜像残留旧 `_meta.json` 时 7 ≠ 34）
   - 顺带发现并修复（单独提交）：`build.rs` 镜像只拷不删，dev 下仍读到已删的旧文档与 phase R 插件 wasm（fdd4d16）；Dockerfile 漏了 O1 新增的 `crates/board`（3161834）
-- [ ] O5 — 论坛与首页热帖区分「加载失败」与「空」，标签栏失败不再停在「加载中」；B6 结论不变（仍为 use_resource）（E8）。验收：停 `rie-postgres` 后页面显示失败提示，起库后正常
+- [x] O5 — 论坛与首页热帖区分「加载失败」与「空」，标签栏失败不再停在「加载中」；B6 结论不变（仍为 use_resource）（E8）。验收：停 `rie-postgres` 后页面显示失败提示，起库后正常
+  - 完成：论坛列表 / 标签栏 / 标签页 / 我的话题与首页「论坛热帖」保留 `Result`，`Err` 显示「加载失败」（列表带重试按钮，`resource.restart()`），空列表才显示空状态；仍是 use_resource。浏览器验证：停 `rie-postgres` → 列表「加载失败，请稍后重试」+ 重试、首页「论坛暂时无法加载」；起库后 1 话题 2 标签正常
 - [ ] O6 — 播客改 `use_server_future`；修复 `/audio` 在 dev 404（先查生产 Dockerfile 行为再定方案）；`audio_url` 校验文件存在，缺失时不渲染播放器（E6/E7）。需决定 D2（占位数据去留）。验收：SSR HTML 含节目标题；可播放的期能播放
 - [ ] O7 — 案例卡无 cover 时不渲染封面区；板块子分类 chip 只显示有文章的（E9/E10）。需决定 D4
 - [ ] O8 — 导航与页脚：桌面导航加播客；手机站名不截断；页脚删重复标语、加「专题」列与 RSS（E11/E12）。验收：390 / 1280 两种宽度截图

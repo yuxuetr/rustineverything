@@ -319,15 +319,19 @@ fn BlogColumn() -> Element {
 #[component]
 fn ForumColumn() -> Element {
   let lang = use_i18n();
-  // 论坛走 DB，用 use_resource（非 SEO、可能未连库）；失败/空时优雅降级。
-  let res = use_resource(|| async move { list_topics(None, Some(0)).await.unwrap_or_default() });
-  let topics: Vec<TopicSummary> =
-    res.read().clone().unwrap_or_default().into_iter().take(5).collect();
-  let loaded = res.read().is_some();
+  // 论坛走 DB，用 use_resource（非 SEO、可能未连库）。失败与「空」分开显示。
+  let res = use_resource(|| async move { list_topics(None, Some(0)).await });
+  let state = res.read().as_ref().map(|r| r.is_ok());
+  let topics: Vec<TopicSummary> = match &*res.read() {
+    Some(Ok(list)) => list.iter().take(5).cloned().collect(),
+    _ => Vec::new(),
+  };
   let reply_unit = lang().pick("回复", "replies");
   rsx! {
-      if !loaded {
+      if state.is_none() {
           {loading_spinner()}
+      } else if state == Some(false) {
+          p { class: "text-sm text-slate-400 py-6 text-center", "{t(lang(), \"home.community.forum_failed\")}" }
       } else if topics.is_empty() {
           p { class: "text-sm text-slate-400 py-6 text-center", "{t(lang(), \"home.community.forum_empty\")}" }
       } else {

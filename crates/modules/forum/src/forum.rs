@@ -43,6 +43,10 @@ fn tf(lang: Language, key: &str) -> &'static str {
     (_, "forum.popular_tags") => "热门标签",
     (Language::En, "forum.loading") => "Loading...",
     (_, "forum.loading") => "加载中...",
+    (Language::En, "forum.load_failed") => "Failed to load. Please try again later.",
+    (_, "forum.load_failed") => "加载失败，请稍后重试",
+    (Language::En, "forum.retry") => "Retry",
+    (_, "forum.retry") => "重试",
     (Language::En, "forum.no_tags") => "No tags yet",
     (_, "forum.no_tags") => "暂无标签",
     (Language::En, "forum.no_topics") => "No topics yet — be the first to post!",
@@ -107,6 +111,23 @@ fn Loading() -> Element {
   rsx! {
       div { class: "flex items-center justify-center py-20",
           Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
+      }
+  }
+}
+
+/// 列表加载失败（DB 不可用等）：与「空列表」区分，避免把故障显示成「还没有话题」。
+#[component]
+fn LoadFailedState(on_retry: EventHandler<()>) -> Element {
+  let lang = use_language_ctx();
+  rsx! {
+      div { class: "py-16 text-center",
+          p { class: "text-slate-500 dark:text-slate-400 mb-4", "{tf(lang, \"forum.load_failed\")}" }
+          button {
+              r#type: "button",
+              class: button_class(ButtonVariant::Outline, ButtonSize::Sm, UiDensity::Comfortable, ""),
+              onclick: move |_| on_retry.call(()),
+              "{tf(lang, \"forum.retry\")}"
+          }
       }
   }
 }
@@ -255,12 +276,12 @@ pub fn TopicsIndexPage() -> Element {
   // 重构 B6 评估：论坛列表页保留 use_resource，**不** 迁移到 use_server_future。
   // 理由：论坛是强交互 + 登录态相关（发帖 / 回复 / 实时刷新），内容动态且非 SEO
   // 关键；客户端加载更契合其交互模型。例外：详情页在服务端取，以便不存在时回 404。
-  let topics_res =
-    use_resource(|| async move { list_topics(None, Some(0)).await.unwrap_or_default() });
-  let tags_res = use_resource(|| async move { list_tags().await.unwrap_or_default() });
+  // 保留 Result：Err（DB 不可用）显示失败 + 重试，而不是「还没有话题」。
+  let mut topics_res = use_resource(|| async move { list_topics(None, Some(0)).await });
+  let tags_res = use_resource(|| async move { list_tags().await });
 
-  let topics = topics_res.read().as_ref().cloned();
-  let tags = tags_res.read().as_ref().cloned();
+  let topics = topics_res.read().as_ref().map(|r| r.as_ref().map_err(|_| ()).cloned());
+  let tags = tags_res.read().as_ref().map(|r| r.as_ref().map_err(|_| ()).cloned());
 
   let lang = use_language_ctx();
   let session_user = use_session_user_ctx();
@@ -302,10 +323,11 @@ pub fn TopicsIndexPage() -> Element {
                           h3 { class: "text-base font-extrabold text-slate-900 dark:text-slate-100 mb-3", "{tf(lang, \"forum.popular_tags\")}" }
                           match tags {
                               None => rsx! { div { class: "text-sm text-slate-400", "{tf(lang, \"forum.loading\")}" } },
-                              Some(list) if list.is_empty() => rsx! {
+                              Some(Err(())) => rsx! { div { class: "text-sm text-slate-400", "{tf(lang, \"forum.load_failed\")}" } },
+                              Some(Ok(list)) if list.is_empty() => rsx! {
                                   div { class: "text-sm text-slate-400", "{tf(lang, \"forum.no_tags\")}" }
                               },
-                              Some(list) => rsx! {
+                              Some(Ok(list)) => rsx! {
                                   div { class: "flex flex-wrap gap-2",
                                       for t in list.into_iter() {
                                           TagCloudLink { key: "{t.tag}", tag: t }
@@ -319,10 +341,11 @@ pub fn TopicsIndexPage() -> Element {
                   div {
                       match topics {
                           None => rsx! { Loading {} },
-                          Some(list) if list.is_empty() => rsx! {
+                          Some(Err(())) => rsx! { LoadFailedState { on_retry: move |_| topics_res.restart() } },
+                          Some(Ok(list)) if list.is_empty() => rsx! {
                               EmptyState { message: tf(lang, "forum.no_topics").to_string() }
                           },
-                          Some(list) => rsx! {
+                          Some(Ok(list)) => rsx! {
                               div { class: "space-y-4",
                                   for t in list.into_iter() {
                                       TopicCard { key: "{t.id}", topic: t }
@@ -358,11 +381,11 @@ fn TagCloudLink(tag: TagSummary) -> Element {
 pub fn TopicsByTagPage(tag: String) -> Element {
   let lang = use_language_ctx();
   let tag_for_res = tag.clone();
-  let res = use_resource(move || {
+  let mut res = use_resource(move || {
     let t = tag_for_res.clone();
-    async move { list_topics(Some(t), Some(0)).await.unwrap_or_default() }
+    async move { list_topics(Some(t), Some(0)).await }
   });
-  let topics = res.read().as_ref().cloned();
+  let topics = res.read().as_ref().map(|r| r.as_ref().map_err(|_| ()).cloned());
 
   rsx! {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
@@ -373,7 +396,7 @@ pub fn TopicsByTagPage(tag: String) -> Element {
               h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-2",
                   "#{tag}"
               }
-              if let Some(ref list) = topics {
+              if let Some(Ok(ref list)) = topics {
                   p { class: "text-sm text-slate-500 dark:text-slate-400 mb-6",
                       if lang == Language::En {
                           "{list.len()} {tf(lang, \"forum.topics_under_tag\")}"
@@ -385,10 +408,11 @@ pub fn TopicsByTagPage(tag: String) -> Element {
 
               match topics {
                   None => rsx! { Loading {} },
-                  Some(list) if list.is_empty() => rsx! {
+                  Some(Err(())) => rsx! { LoadFailedState { on_retry: move |_| res.restart() } },
+                  Some(Ok(list)) if list.is_empty() => rsx! {
                       EmptyState { message: format!("#{}", tag) }
                   },
-                  Some(list) => rsx! {
+                  Some(Ok(list)) => rsx! {
                       div { class: "space-y-4",
                           for t in list.into_iter() {
                               TopicCard { key: "{t.id}", topic: t }
@@ -408,8 +432,8 @@ pub fn TopicsByTagPage(tag: String) -> Element {
 #[component]
 pub fn MyTopicsPage() -> Element {
   let lang = use_language_ctx();
-  let res = use_resource(|| async move { list_my_topics().await.unwrap_or_default() });
-  let topics = res.read().as_ref().cloned();
+  let mut res = use_resource(|| async move { list_my_topics().await });
+  let topics = res.read().as_ref().map(|r| r.as_ref().map_err(|_| ()).cloned());
 
   rsx! {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
@@ -417,7 +441,8 @@ pub fn MyTopicsPage() -> Element {
               h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "{tf(lang, \"forum.my_topics\")}" }
               match topics {
                   None => rsx! { Loading {} },
-                  Some(list) if list.is_empty() => rsx! {
+                  Some(Err(())) => rsx! { LoadFailedState { on_retry: move |_| res.restart() } },
+                  Some(Ok(list)) if list.is_empty() => rsx! {
                       div { class: "text-center py-16",
                           p { class: "text-slate-500 dark:text-slate-400 mb-4", "{tf(lang, \"forum.my_topics_empty\")}" }
                           a { href: "/topics/new",
@@ -426,7 +451,7 @@ pub fn MyTopicsPage() -> Element {
                           }
                       }
                   },
-                  Some(list) => rsx! {
+                  Some(Ok(list)) => rsx! {
                       div { class: "space-y-4",
                           for t in list.into_iter() {
                               TopicCard { key: "{t.id}", topic: t }

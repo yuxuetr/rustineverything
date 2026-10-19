@@ -98,6 +98,7 @@ home.community.blog_empty = No posts yet
 home.community.forum = Hot topics
 home.community.forum_all = Visit forum
 home.community.forum_empty = No discussions yet — start the first thread
+home.community.forum_failed = The forum is unavailable right now
 home.card.basics.title = Rust Fundamentals
 home.card.basics.desc = A clear take on ownership, lifetimes, traits, and other core concepts.
 home.card.fullstack.title = Full-Stack Development

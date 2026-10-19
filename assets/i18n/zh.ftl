@@ -98,6 +98,7 @@ home.community.blog_empty = 暂无文章
 home.community.forum = 论坛热帖
 home.community.forum_all = 进入论坛
 home.community.forum_empty = 还没有讨论，来发第一帖
+home.community.forum_failed = 论坛暂时无法加载
 home.card.basics.title = Rust 基础
 home.card.basics.desc = 深入浅出所有权、生命周期、Trait 等核心概念。
 home.card.fullstack.title = 全栈开发
