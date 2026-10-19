@@ -61,6 +61,18 @@ pub fn ClassicShell() -> Element {
   let on_course = enabled.iter().any(|s| s == "course");
   let on_forum = enabled.iter().any(|s| s == "forum");
   let on_docs = enabled.iter().any(|s| s == "docs");
+  // 页脚「专题」列：5 个内容板块（与 taxonomy 的领域入口一致，按开关显示）。
+  let boards: Vec<(Route, &'static str)> = [
+    ("embedded", Route::Embedded {}, "nav.embedded"),
+    ("ai", Route::Ai {}, "nav.ai.rust_ai"),
+    ("web3", Route::Web3 {}, "nav.web3"),
+    ("wasm", Route::Wasm {}, "nav.wasm"),
+    ("cli", Route::Cli {}, "nav.cli"),
+  ]
+  .into_iter()
+  .filter(|(id, _, _)| enabled.iter().any(|s| s == id))
+  .map(|(_, route, key)| (route, key))
+  .collect();
 
   let link_class = move |target: Route| {
     let is_active = match (&route, &target) {
@@ -107,10 +119,9 @@ pub fn ClassicShell() -> Element {
                       div { class: "flex items-center gap-3 min-w-0",
                           Link {
                               to: Route::Home {},
-                              // mobile (<sm) 用 max-w-32 + truncate 防止站名挤占右侧按钮组；
-                              // sm–lg 区间横向导航走 hamburger（见下），空间充足故完整显示；
-                              // lg 起横向导航出现，shrink-0 确保标题不被挤压截断。
-                              class: "font-extrabold tracking-tight text-flow whitespace-nowrap inline-block truncate max-w-32 sm:max-w-none lg:shrink-0",
+                              // 站名不截断（O8）：<sm 时主题 / 语言收进抽屉、登录只留图标，
+                              // 右侧按钮组让出的宽度足够放下完整站名。
+                              class: "font-extrabold tracking-tight text-flow whitespace-nowrap inline-block shrink-0",
                               "Rust in Everything"
                           }
                           // 双生态为主：Rust 生态▾ / AI 生态▾ mega 菜单 + 4 个内容类型入口。
@@ -127,6 +138,9 @@ pub fn ClassicShell() -> Element {
                               }
                               if on_blog {
                                   Link { to: Route::BlogIndex {}, class: link_class(Route::BlogIndex {}), "{t_blog}" }
+                              }
+                              if on_podcast {
+                                  Link { to: Route::Podcast {}, class: link_class(Route::Podcast {}), "{t_podcast}" }
                               }
                               if on_forum {
                                   Link { to: Route::TopicsIndex {}, class: link_class(Route::TopicsIndex {}), "{t_forum}" }
@@ -153,11 +167,11 @@ pub fn ClassicShell() -> Element {
                           // Search
                           SearchButton {}
 
-                          // Phase 3.1: Theme switcher
-                          ThemePicker {}
-
-                          // Language Picker（下拉，便于后续支持更多语言）
-                          LangPicker {}
+                          // Phase 3.1: Theme switcher / 语言下拉。<sm 收进移动抽屉（见下）。
+                          div { class: "hidden sm:contents",
+                              ThemePicker {}
+                              LangPicker {}
+                          }
 
                           // Dark Mode Toggle
                           Button {
@@ -189,10 +203,11 @@ pub fn ClassicShell() -> Element {
                                   size: ButtonSize::Sm,
                                   class: "gap-1.5 whitespace-nowrap",
                                   onclick: move |_| show_auth_modal.set(true),
+                                  "aria-label": "{t(lang(), \"auth.sign_in\")}",
                                   svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                                       path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" }
                                   }
-                                  "{t(lang(), \"auth.sign_in\")}"
+                                  span { class: "hidden sm:inline", "{t(lang(), \"auth.sign_in\")}" }
                               }
                           }
 
@@ -258,6 +273,11 @@ pub fn ClassicShell() -> Element {
                       if on_docs {
                           Link { to: Route::Docs {}, class: "px-2 py-2 mt-1 rounded-md btn-flow text-center font-semibold transition-all", onclick: move |_| show_mobile_menu.set(false), "{t(lang(), \"nav.start\")}" }
                       }
+                      // <sm 顶栏放不下的主题 / 语言切换
+                      div { class: "sm:hidden mt-3 pt-3 border-t border-slate-200/70 dark:border-slate-800 flex items-center gap-2",
+                          ThemePicker {}
+                          LangPicker {}
+                      }
                   }
               }
           }
@@ -269,7 +289,7 @@ pub fn ClassicShell() -> Element {
           footer { class: "border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shrink-0",
               Container {
                   // 加厚 footer：品牌简介 + 内容栏 + 社区栏
-                  div { class: "py-12 grid grid-cols-2 md:grid-cols-4 gap-8 text-sm",
+                  div { class: "py-12 grid grid-cols-2 md:grid-cols-5 gap-8 text-sm",
                       div { class: "col-span-2 md:col-span-2",
                           span { class: "font-extrabold text-flow text-base", "Rust in Everything" }
                           p { class: "mt-2 max-w-sm text-slate-500 dark:text-slate-400 leading-relaxed", "{t(lang(), \"footer.tagline\")}" }
@@ -294,18 +314,29 @@ pub fn ClassicShell() -> Element {
                               }
                           }
                       }
+                      if !boards.is_empty() {
+                          div {
+                              p { class: "text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3", "{t(lang(), \"footer.col.topics\")}" }
+                              div { class: "flex flex-col gap-2 text-slate-600 dark:text-slate-300",
+                                  for (route, key) in boards.iter() {
+                                      Link { key: "{key}", to: route.clone(), class: "hover:text-[var(--color-primary)] transition-colors", "{t(lang(), key)}" }
+                                  }
+                              }
+                          }
+                      }
                       div {
                           p { class: "text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-3", "{t(lang(), \"footer.col.community\")}" }
                           div { class: "flex flex-col gap-2 text-slate-600 dark:text-slate-300",
                               if on_forum {
                                   Link { to: Route::TopicsIndex {}, class: "hover:text-[var(--color-primary)] transition-colors", "{t_forum}" }
                               }
+                              // /feed.xml 是服务端路由，不走客户端 Router
+                              a { href: "/feed.xml", class: "hover:text-[var(--color-primary)] transition-colors", "{t(lang(), \"footer.rss\")}" }
                           }
                       }
                   }
                   div { class: "py-5 border-t border-slate-100 dark:border-slate-900 text-xs text-slate-400",
-                      span { "Rust in Everything · " }
-                      span { "{t(lang(), \"footer.tagline\")}" }
+                      "© Rust in Everything"
                   }
               }
           }

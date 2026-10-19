@@ -60,6 +60,8 @@ blog.next_page = 下一页
 footer.tagline = 专注 Rust 工业实战与 AI 生态：案例、课程、文档、社区一站式聚合。
 footer.col.content = 内容
 footer.col.community = 社区
+footer.col.topics = 专题
+footer.rss = RSS 订阅
 
 # ── 首页 Hero ──
 hero.title = 专注 Rust 技术栈的学习与实战

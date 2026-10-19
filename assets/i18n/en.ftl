@@ -60,6 +60,8 @@ blog.next_page = Next page
 footer.tagline = Industrial Rust practice and the AI ecosystem — cases, courses, docs, and community in one place.
 footer.col.content = Content
 footer.col.community = Community
+footer.col.topics = Topics
+footer.rss = RSS feed
 
 # ── Home Hero ──
 hero.title = Learn and build with the Rust stack
