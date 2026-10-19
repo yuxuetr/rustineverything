@@ -247,9 +247,8 @@ fn collect_blogs_versioned() -> Vec<VersionedDoc> {
   out
 }
 
-/// Phase 6 内容板块（embedded/ai/web3/wasm/cli）。每个板块的 `kind` 即其
-/// module id，url 形如 `/<board>/<slug>`。文章来自 `assets/topics/<board>/`。
-const BOARD_IDS: &[&str] = &["embedded", "ai", "web3", "wasm", "cli"];
+/// Phase 6 内容板块（[`crate::BOARD_KINDS`]）。文章来自 `assets/topics/<board>/`。
+use crate::BOARD_KINDS as BOARD_IDS;
 
 fn collect_boards_versioned() -> Vec<VersionedDoc> {
   let mut out = Vec::new();
@@ -466,6 +465,7 @@ pub fn filter_versioned_by_enabled(
       "doc" => is_on("docs"),
       "topic" => is_on("forum"),
       "case" => is_on("cases"),
+      "course" => is_on("course"),
       k if BOARD_IDS.contains(&k) => is_on(k),
       _ => true,
     })
@@ -488,6 +488,7 @@ pub fn filter_documents_by_enabled(
       "doc" => is_on("docs"),
       "topic" => is_on("forum"),
       "case" => is_on("cases"),
+      "course" => is_on("course"),
       k if BOARD_IDS.contains(&k) => is_on(k),
       _ => true,
     })

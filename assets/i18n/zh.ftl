@@ -232,3 +232,19 @@ theme.heading = 主题
 theme.reset = 重置为默认
 lang.toggle = 切换语言
 lang.heading = 语言
+
+# 搜索弹窗（O10）
+search.button = 搜索
+search.placeholder = 搜索文档、博客、课程、案例、论坛与专题…
+search.kind_label = 内容类型
+search.failed = 搜索失败，请稍后再试
+search.searching = 搜索中…
+search.results = 条结果
+search.no_results = 没有匹配的结果
+search.hint = 输入关键词开始搜索 · 支持中英文 · 按 ⌘K 随时打开
+search.kind.all = 全部
+search.kind.doc = 文档
+search.kind.blog = 博客
+search.kind.course = 课程
+search.kind.case = 案例
+search.kind.topic = 话题

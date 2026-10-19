@@ -8,6 +8,7 @@
 //! "是否打开搜索模态"。在 App 根处 provide 一次,Navbar 与 Layout 共享。
 
 use crate::server::{search_query, SearchHit};
+use app_core::i18n::{t, Language};
 use dioxus::prelude::*;
 use dioxus_shadcn::{
   Alert, AlertDescription, AlertVariant, Button, ButtonSize, ButtonVariant, Command, CommandEmpty,
@@ -26,6 +27,11 @@ pub fn use_search_open_provider() -> Signal<bool> {
   sig
 }
 
+/// 当前语言（缺省 Zh）。
+fn current_lang() -> Language {
+  try_use_context::<Signal<Language>>().map(|s| s()).unwrap_or_default()
+}
+
 /// 子组件读取该 Signal。
 pub fn use_search_open() -> Option<Signal<bool>> {
   try_use_context::<SearchOpen>().map(|w| w.0)
@@ -38,6 +44,7 @@ pub fn SearchButton() -> Element {
     Some(o) => o,
     None => return rsx! {},
   };
+  let lang = current_lang();
   rsx! {
       Button {
           r#type: "button",
@@ -45,13 +52,13 @@ pub fn SearchButton() -> Element {
           size: ButtonSize::Sm,
           class: "gap-2 px-3 text-xs font-normal text-muted-foreground",
           onclick: move |_| open.set(true),
-          title: "搜索 (⌘K)",
+          title: "{t(lang, \"search.button\")} (⌘K)",
           svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
               path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2",
                   d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
               }
           }
-          span { class: "hidden sm:inline", "搜索" }
+          span { class: "hidden sm:inline", "{t(lang, \"search.button\")}" }
           kbd { class: "hidden sm:inline px-1.5 py-0.5 rounded bg-background border border-border font-mono text-[10px]",
               "⌘K"
           }
@@ -66,6 +73,7 @@ pub fn SearchModal() -> Element {
     Some(o) => o,
     None => return rsx! {},
   };
+  let lang = current_lang();
   let mut query = use_signal(String::new);
   let mut kind_filter = use_signal::<Option<String>>(|| None);
   let mut hits = use_signal::<Vec<SearchHit>>(Vec::new);
@@ -115,8 +123,9 @@ pub fn SearchModal() -> Element {
           elapsed.set(resp.elapsed_ms);
         }
         Err(e) => {
+          tracing::warn!(error = %e, "search: query failed");
           hits.set(Vec::new());
-          error.set(Some(format!("搜索失败: {}", e)));
+          error.set(Some(t(lang, "search.failed")));
         }
       }
       loading.set(false);
@@ -124,18 +133,18 @@ pub fn SearchModal() -> Element {
   });
 
   let status = if loading() {
-    "搜索中...".to_string()
+    t(lang, "search.searching")
   } else if hits().is_empty() {
     String::new()
   } else {
-    format!("{} 条结果 · {} ms", hits().len(), elapsed())
+    format!("{} {} · {} ms", hits().len(), t(lang, "search.results"), elapsed())
   };
 
   rsx! {
       Dialog { open: open(), on_open_change: move |v| open.set(v),
           DialogOverlay { class: "z-[100] bg-slate-900/50 backdrop-blur-sm" }
           DialogContent { class: "z-[100] top-24 max-w-2xl translate-y-0 gap-0 overflow-hidden rounded-xl p-0 shadow-2xl",
-              DialogTitle { class: "sr-only", "搜索" }
+              DialogTitle { class: "sr-only", "{t(lang, \"search.button\")}" }
               Command {
                   class: "rounded-none",
                   on_select: move |url: String| {
@@ -153,28 +162,28 @@ pub fn SearchModal() -> Element {
                       }
                       CommandInput {
                           value: query(),
-                          placeholder: "搜索博客、文档、论坛、案例、专题...",
+                          placeholder: t(lang, "search.placeholder"),
                           class: "h-12 px-0 text-base",
                           oninput: move |e: FormEvent| query.set(e.value()),
                       }
                       DialogClose { class: "static shrink-0 px-2 py-1 text-xs text-muted-foreground", "Esc" }
                   }
                   // kind 过滤栏:受控单选,再点已选项时的空值忽略,保证总有一项选中。
-                  div { class: "flex items-center gap-1 px-4 py-2 border-b border-border text-xs",
+                  div { class: "flex items-start gap-1 px-4 py-2 border-b border-border text-xs",
                       ToggleGroup {
-                          class: "gap-1",
-                          "aria-label": "内容类型",
+                          class: "gap-1 flex-wrap",
+                          "aria-label": t(lang, "search.kind_label"),
                           value: kind_filter().unwrap_or_else(|| "all".to_string()),
                           on_value_change: move |v: String| match v.as_str() {
                               "" => {}
                               "all" => kind_filter.set(None),
                               _ => kind_filter.set(Some(v)),
                           },
-                          for (value, label) in KINDS {
-                              ToggleGroupItem { value: *value, class: kind_chip_class(kind_filter().as_deref().unwrap_or("all") == *value), "{label}" }
+                          for (value, key) in KINDS {
+                              ToggleGroupItem { value: *value, class: kind_chip_class(kind_filter().as_deref().unwrap_or("all") == *value), "{t(lang, key)}" }
                           }
                       }
-                      span { class: "ml-auto text-muted-foreground", "aria-hidden": "true", "{status}" }
+                      span { class: "ml-auto shrink-0 py-0.5 text-muted-foreground", "aria-hidden": "true", "{status}" }
                   }
                   CommandStatus { "{status}" }
                   // 错误
@@ -186,9 +195,9 @@ pub fn SearchModal() -> Element {
                   // 结果
                   CommandList { class: "max-h-[60vh]",
                       if hits().is_empty() && !query().trim().is_empty() && !loading() {
-                          CommandEmpty { "没有匹配的结果" }
+                          CommandEmpty { "{t(lang, \"search.no_results\")}" }
                       } else if hits().is_empty() {
-                          CommandEmpty { "输入关键词开始搜索 · 支持中英文 · 按 ⌘K 随时打开" }
+                          CommandEmpty { "{t(lang, \"search.hint\")}" }
                       } else {
                           for (i, h) in hits().iter().enumerate() {
                               CommandItem { key: "{h.url}", id: "search-hit-{i}", value: h.url.clone(), class: "block rounded-none border-b border-border px-4 py-3 cursor-pointer",
@@ -203,9 +212,20 @@ pub fn SearchModal() -> Element {
   }
 }
 
-/// 过滤栏的类型:值 `all` 表示不过滤。
-const KINDS: &[(&str, &str)] =
-  &[("all", "全部"), ("blog", "博客"), ("doc", "文档"), ("topic", "话题"), ("case", "案例")];
+/// 过滤栏的类型（值, i18n key）:值 `all` 表示不过滤。板块沿用 `{board}.label`。
+const KINDS: &[(&str, &str)] = &[
+  ("all", "search.kind.all"),
+  ("doc", "search.kind.doc"),
+  ("blog", "search.kind.blog"),
+  ("course", "search.kind.course"),
+  ("case", "search.kind.case"),
+  ("topic", "search.kind.topic"),
+  ("embedded", "embedded.label"),
+  ("ai", "ai.label"),
+  ("web3", "web3.label"),
+  ("wasm", "wasm.label"),
+  ("cli", "cli.label"),
+];
 
 fn kind_chip_class(active: bool) -> &'static str {
   if active {
@@ -226,9 +246,10 @@ fn HitRow(hit: SearchHit) -> Element {
       ("TOPIC", "bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300")
     }
     "case" => ("CASE", "bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"),
+    "course" => ("COURSE", "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"),
     // Phase 6 内容板块：统一靛蓝徽章
     "embedded" => {
-      ("嵌入式", "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300")
+      ("EMBEDDED", "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300")
     }
     "ai" => ("AI", "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"),
     "web3" => ("WEB3", "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300"),

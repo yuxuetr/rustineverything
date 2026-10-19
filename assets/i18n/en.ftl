@@ -232,3 +232,19 @@ theme.heading = Theme
 theme.reset = Reset to default
 lang.toggle = Language
 lang.heading = Language
+
+# 搜索弹窗（O10）
+search.button = Search
+search.placeholder = Search docs, blog, courses, cases, forum and topics…
+search.kind_label = Content type
+search.failed = Search failed. Please try again later.
+search.searching = Searching…
+search.results = results
+search.no_results = No matching results
+search.hint = Type to search · Chinese and English · Press ⌘K anytime
+search.kind.all = All
+search.kind.doc = Docs
+search.kind.blog = Blog
+search.kind.course = Courses
+search.kind.case = Cases
+search.kind.topic = Forum
