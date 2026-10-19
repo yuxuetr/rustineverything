@@ -448,6 +448,7 @@ fn BlogInner(id: String) -> Element {
 /// 必须置于 SuspenseBoundary 内：`?` 会在数据未就绪时挂起，由边界渲染 fallback。
 #[component]
 fn BlogArticle(id: String) -> Element {
+  let lang = use_i18n();
   let anno_path = id.clone();
   let blog_path = format!("/blog/{}", id);
   // 正文随路由参数 id 变化重取：use_reactive 让闭包订阅 id（避免 SPA 导航后内容 stale）。
@@ -482,8 +483,8 @@ fn BlogArticle(id: String) -> Element {
             resource_path: id.clone(),
         }
     },
-    Some(Ok(None)) => rsx! { widgets::NotFound { message: "文章不存在" } },
-    Some(Err(_)) => rsx! { widgets::LoadFailed {} },
+    Some(Ok(None)) => rsx! { widgets::NotFound { message: t(lang(), "blog.not_found") } },
+    Some(Err(_)) => rsx! { widgets::LoadFailed { message: t(lang(), "common.load_failed") } },
     None => rsx! {
         div { class: "flex items-center justify-center py-20",
             Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }

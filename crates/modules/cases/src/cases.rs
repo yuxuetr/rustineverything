@@ -18,6 +18,8 @@ fn use_language_ctx() -> Language {
 fn tc(lang: Language, key: &str) -> &'static str {
   match (lang, key) {
         // 页面标题
+        (Language::En, "case.load_failed")    => "Failed to load. Please try again later.",
+        (Language::Zh, "case.load_failed")    => "加载失败，请稍后再试",
         (Language::En, "case.title")          => "Rust Project Showcase",
         (Language::Zh, "case.title")          => "Rust 项目案例库",
         (Language::En, "case.subtitle")       => "Discover real-world Rust frontend, backend, fullstack, AI, Web3, CLI, embedded and tooling projects.",
@@ -487,7 +489,7 @@ fn CaseDetailLoaded(slug: String) -> Element {
         }
         CaseDetailBody { case }
     },
-    Some(Err(_)) => rsx! { widgets::LoadFailed {} },
+    Some(Err(_)) => rsx! { widgets::LoadFailed { message: tc(lang, "case.load_failed") } },
     _ => rsx! {
         widgets::NotFound { message: tc(lang, "case.not_found") }
         div { class: "text-center",

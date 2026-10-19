@@ -12,6 +12,13 @@ use dioxus_shadcn::{
 };
 use widgets::Markdown;
 
+use app_core::i18n::{t, Language};
+
+/// 当前语言（缺省 Zh）。O11：课程列表 / 详情 / 目录文案随语言切换。
+fn current_lang() -> Language {
+  try_consume_context::<Signal<Language>>().map(|s| s()).unwrap_or_default()
+}
+
 // ============================================================
 // Local layout helpers (本模块自用，不污染上层组件树)
 // ============================================================
@@ -42,17 +49,18 @@ fn LocalSectionTitle(title: String, subtitle: Option<String>) -> Element {
 /// 重构 B4：课程列表改由 `CoursesList` 用 use_server_future 服务端预取（随 SSR HTML 下发）。
 #[component]
 pub fn CoursesIndexPage() -> Element {
+  let lang = current_lang();
   rsx! {
       widgets::PageMeta {
-          title: "Rust 课程".to_string(),
-          description: "系统化学习路径，从基础到全栈实战".to_string(),
+          title: t(lang, "course.title"),
+          description: t(lang, "course.subtitle"),
           path: "/course".to_string(),
       }
       section { class: "py-12 min-h-screen bg-[var(--color-bg)] transition-colors duration-300",
           LocalContainer {
               LocalSectionTitle {
-                  title: "Rust 课程".to_string(),
-                  subtitle: Some("系统化学习路径，从基础到全栈实战".to_string())
+                  title: t(lang, "course.title"),
+                  subtitle: Some(t(lang, "course.subtitle"))
               }
 
               SuspenseBoundary {
@@ -75,9 +83,7 @@ fn CoursesList() -> Element {
 
   if list.is_empty() {
     rsx! {
-        div { class: "text-center text-slate-500 py-20",
-            "暂无课程内容。把课程目录放到 ", code { "assets/courses/" }, " 下即可。"
-        }
+        div { class: "text-center text-slate-500 py-20", "{t(current_lang(), \"course.empty\")}" }
     }
   } else {
     rsx! {
@@ -104,6 +110,7 @@ fn CourseCard(course: CourseSummary) -> Element {
     ..
   } = course;
   let href = format!("/course/{slug}");
+  let lang = current_lang();
   rsx! {
       a {
           href: "{href}",
@@ -138,9 +145,9 @@ fn CourseCard(course: CourseSummary) -> Element {
                   }
               }
               div { class: "flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400",
-                  span { "{chapter_count} 章" }
+                  span { "{chapter_count} {t(lang, \"course.chapters\")}" }
                   span { "·" }
-                  span { "{lesson_count} 节" }
+                  span { "{lesson_count} {t(lang, \"course.lessons\")}" }
               }
               if !tags.is_empty() {
                   div { class: "mt-3 flex flex-wrap gap-1.5",
@@ -212,12 +219,12 @@ fn CourseDetailLoaded(slug: String) -> Element {
       }
     }
     _ => rsx! {
-        widgets::NotFound { message: "课程未找到".to_string() }
+        widgets::NotFound { message: t(current_lang(), "course.not_found") }
         div { class: "text-center",
-            p { class: "text-slate-500", "课程 \"{slug}\" 不存在或尚未发布。" }
+            p { class: "text-slate-500", "{t(current_lang(), \"course.not_found_detail\")}" }
             a { href: "/course",
                 class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-6"),
-                "返回课程列表"
+                "{t(current_lang(), \"course.back\")}"
             }
         }
     },
@@ -248,7 +255,8 @@ fn CourseDetailBody(
     Some(p) => Some(format!("/course/{}/{}", course.slug, p)),
     None => first_lesson_link(&course),
   };
-  let continue_label = if has_last { "继续学习" } else { "开始学习" };
+  let lang = current_lang();
+  let continue_label = t(lang, if has_last { "course.continue" } else { "course.start" });
   // 付费课程：查当前用户是否已拥有（决定显示「购买」还是「已拥有」）。
   let owned_res =
     use_resource(|| async move { crate::server::list_my_entitlements().await.unwrap_or_default() });
@@ -286,11 +294,11 @@ fn CourseDetailBody(
               }
               div { class: "flex items-center gap-3 text-sm text-slate-500 dark:text-slate-400",
                   span { class: "font-medium text-slate-700 dark:text-slate-300",
-                      "{course.chapters.len()} 章"
+                      "{course.chapters.len()} {t(lang, \"course.chapters\")}"
                   }
                   span { "·" }
                   span { class: "font-medium text-slate-700 dark:text-slate-300",
-                      "{total_lessons} 节"
+                      "{total_lessons} {t(lang, \"course.lessons\")}"
                   }
               }
               if !course.tags.is_empty() {
@@ -304,7 +312,7 @@ fn CourseDetailBody(
               if course.is_paid() {
                   if owned {
                       Badge { variant: BadgeVariant::Success, class: "mt-6 w-fit gap-2 rounded-lg px-4 py-2 text-sm font-medium",
-                          "✓ 已拥有本课程"
+                          "✓ {t(lang, \"course.owned\")}"
                       }
                   } else {
                       div { class: "mt-6 flex items-center gap-4",
@@ -317,10 +325,10 @@ fn CourseDetailBody(
               if total_lessons > 0 {
                   div { class: "mt-6 max-w-md",
                       div { class: "flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1",
-                          span { "学习进度" }
+                          span { "{t(lang, \"course.progress\")}" }
                           span { "{completed_lessons}/{total_lessons} · {percent}%" }
                       }
-                      Progress { value: percent as f32, class: "h-2 bg-border", "aria-label": "学习进度" }
+                      Progress { value: percent as f32, class: "h-2 bg-border", "aria-label": t(lang, "course.progress") }
                   }
               }
               // 继续学习按钮
@@ -335,7 +343,7 @@ fn CourseDetailBody(
       }
 
       // 章节手风琴
-      h2 { class: "text-2xl font-bold text-slate-900 dark:text-white mb-6", "课程目录" }
+      h2 { class: "text-2xl font-bold text-slate-900 dark:text-white mb-6", "{t(lang, \"course.outline\")}" }
       div { class: "space-y-4",
           for chapter in course.chapters.iter() {
               ChapterAccordion {
@@ -363,6 +371,7 @@ fn ChapterAccordion(
   course_paid: bool,
 ) -> Element {
   let lesson_count = chapter.lessons.len();
+  let lang = current_lang();
 
   rsx! {
       Collapsible {
@@ -378,7 +387,7 @@ fn ChapterAccordion(
                       "{chapter.title}"
                   }
                   span { class: "text-xs font-normal text-slate-400 dark:text-slate-500",
-                      "{lesson_count} 节"
+                      "{lesson_count} {t(lang, \"course.lessons\")}"
                   }
               }
               svg {
@@ -423,6 +432,7 @@ fn LessonRow(
   let kind_label = lesson.kind.as_str();
   // 付费课程：非试看课节加锁标记；试看课节标「试看」。
   let locked = course_paid && !lesson.preview;
+  let lang = current_lang();
   rsx! {
       li {
           a { href: "{href}",
@@ -436,7 +446,7 @@ fn LessonRow(
                   "{lesson.title}"
               }
               if lesson.preview && course_paid {
-                  Badge { variant: BadgeVariant::Success, class: "px-1.5 text-[10px]", "试看" }
+                  Badge { variant: BadgeVariant::Success, class: "px-1.5 text-[10px]", "{t(lang, \"course.preview\")}" }
               }
               if locked {
                   span { class: "text-xs flex-shrink-0 text-slate-400", "🔒" }

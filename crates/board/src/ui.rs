@@ -253,7 +253,7 @@ fn BoardArticleContent(board: Board, slug: String) -> Element {
       }
     }
     Some(Ok(None)) => rsx! { NotFound { message: t(lang, "board.not_found") } },
-    Some(Err(_)) => rsx! { LoadFailed {} },
+    Some(Err(_)) => rsx! { LoadFailed { message: t(lang, "common.load_failed") } },
     None => rsx! {
         div { class: "flex items-center justify-center py-20",
             Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }

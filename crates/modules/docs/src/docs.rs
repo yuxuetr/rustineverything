@@ -6,6 +6,13 @@ use dioxus_shadcn::{
 use crate::server::{get_doc_content, list_doc_tree, DocTreeNode};
 use widgets::Markdown;
 
+use app_core::i18n::{t, Language};
+
+/// 当前语言（缺省 Zh）。O11：文档页 UI 文案随语言切换。
+fn current_lang() -> Language {
+  try_consume_context::<Signal<Language>>().map(|s| s()).unwrap_or_default()
+}
+
 /// 给定文档路径段，构造 SPA URL（`/docs/<path>`）。
 fn doc_href(path: &str) -> String {
   if path.is_empty() {
@@ -35,19 +42,20 @@ pub fn Docs() -> Element {
 
 #[component]
 fn DocsIndexInner() -> Element {
+  let lang = current_lang();
   let tree = use_server_future(|| async move { list_doc_tree().await.unwrap_or_default() })?;
 
   rsx! {
       widgets::PageMeta {
-          title: "文档".to_string(),
-          description: "从基础语法到全栈实战，系统化学习 Rust 生态。选择一个主题开始探索。".to_string(),
+          title: t(lang, "docs.title"),
+          description: t(lang, "docs.subtitle"),
           path: "/docs".to_string(),
       }
       div { class: "max-w-7xl mx-auto flex",
               // 左侧导航：一级分类列表（仅桌面端显示）
               aside { class: "hidden lg:block shrink-0 w-64 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 pt-8 pb-12 px-4",
                   nav {
-                      h3 { class: "text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-3 mb-4", "文档导航" }
+                      h3 { class: "text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-3 mb-4", "{t(lang, \"docs.nav\")}" }
                       if let Some(ref nodes) = tree() {
                           for node in nodes.iter() {
                               {render_sidebar_link(node, "")}
@@ -61,9 +69,9 @@ fn DocsIndexInner() -> Element {
                   div { class: "max-w-4xl mx-auto",
                       // 标题
                       div { class: "mb-12",
-                          h1 { class: "text-3xl font-extrabold text-slate-900 dark:text-white mb-3", "文档" }
+                          h1 { class: "text-3xl font-extrabold text-slate-900 dark:text-white mb-3", "{t(lang, \"docs.title\")}" }
                           p { class: "text-lg text-slate-600 dark:text-slate-400 leading-relaxed",
-                              "从基础语法到全栈实战，系统化学习 Rust 生态。选择一个主题开始探索。"
+                              "{t(lang, \"docs.subtitle\")}"
                           }
                       }
 
@@ -77,7 +85,7 @@ fn DocsIndexInner() -> Element {
                               }
                           },
                           Some(_) => rsx! {
-                              Empty { class: "py-20", EmptyDescription { "暂无文档内容" } }
+                              Empty { class: "py-20", EmptyDescription { "{t(lang, \"docs.empty\")}" } }
                           },
                           None => rsx! {
                               div { class: "flex items-center justify-center py-20",
@@ -122,6 +130,7 @@ fn count_leaves(node: &DocTreeNode) -> usize {
 
 /// 文档分类卡片
 fn render_doc_card(node: &DocTreeNode) -> Element {
+  let lang = current_lang();
   let href = if node.has_content { doc_href(&node.path) } else { "/docs".to_string() };
   let child_count = count_leaves(node);
 
@@ -139,7 +148,7 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
                   "{node.title}"
               }
               span { class: badge_class(BadgeVariant::Secondary, "rounded-full font-normal text-muted-foreground"),
-                  "{child_count} 篇"
+                  "{child_count} {t(lang, \"docs.count_unit\")}"
               }
           }
           // 子项列表
@@ -152,13 +161,13 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
                       }
                   }
                   if has_more {
-                      li { class: "text-xs text-slate-400 italic", "…更多" }
+                      li { class: "text-xs text-slate-400 italic", "{t(lang, \"docs.more\")}" }
                   }
               }
           }
           // 底部箭头
           div { class: "mt-4 flex items-center text-sm font-medium text-primary opacity-0 group-hover:opacity-100 transition-opacity",
-              "开始阅读"
+              "{t(lang, \"docs.start_reading\")}"
               svg { class: "w-4 h-4 ml-1", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                   path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M9 5l7 7-7 7" }
               }
@@ -193,6 +202,7 @@ pub fn DocPage(path: Vec<String>, footer: Element) -> Element {
 
 #[component]
 fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
+  let lang = current_lang();
   let doc_path = path.join("/");
   let doc_path_for_tree = doc_path.clone();
   // Markdown blog_id 携带 "doc:<path>" 前缀，JS 运行时以此识别资源归属
@@ -241,8 +251,8 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
                               // 跨模块组合（标注层 + 讨论面板）由 app 层注入。
                               {footer.clone()}
                           },
-                          Some(Ok(None)) => rsx! { widgets::NotFound { message: "文档不存在" } },
-                          Some(Err(_)) => rsx! { widgets::LoadFailed {} },
+                          Some(Ok(None)) => rsx! { widgets::NotFound { message: t(lang, "docs.not_found") } },
+                          Some(Err(_)) => rsx! { widgets::LoadFailed { message: t(lang, "common.load_failed") } },
                           None => rsx! {
                               div { class: "flex items-center justify-center py-20",
                                   Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }

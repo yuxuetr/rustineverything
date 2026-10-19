@@ -18,16 +18,16 @@ pub fn NotFound(message: String) -> Element {
   }
 }
 
-/// 读取出错：SSR 回 500，只显示通用提示。具体错误在服务端日志里，
+/// 读取出错：SSR 回 500，只显示通用提示（调用方按语言传入）。具体错误在服务端日志里，
 /// 不展示给访客（原先会把 server fn 的原始报错直接渲染到页面上）。
 #[component]
-pub fn LoadFailed() -> Element {
+pub fn LoadFailed(message: String) -> Element {
   #[cfg(feature = "server")]
   dioxus::fullstack::FullstackContext::commit_http_status(
     dioxus::fullstack::StatusCode::INTERNAL_SERVER_ERROR,
     None,
   );
   rsx! {
-      div { class: "py-20 text-center text-slate-500 dark:text-slate-400", "加载失败，请稍后再试" }
+      div { class: "py-20 text-center text-slate-500 dark:text-slate-400", "{message}" }
   }
 }

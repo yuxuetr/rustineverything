@@ -41,6 +41,18 @@ fn tp(lang: Language, key: &str) -> &'static str {
     (Language::Zh, "podcast.empty") => "暂无节目",
     (Language::En, "podcast.all") => "All",
     (Language::Zh, "podcast.all") => "全部",
+    (Language::En, "podcast.filter") => "Filter by tag",
+    (Language::Zh, "podcast.filter") => "标签筛选",
+    (Language::En, "podcast.prev") => "Previous page",
+    (Language::Zh, "podcast.prev") => "上一页",
+    (Language::En, "podcast.next") => "Next page",
+    (Language::Zh, "podcast.next") => "下一页",
+    (Language::En, "podcast.not_found") => "Podcast episode not found",
+    (Language::Zh, "podcast.not_found") => "找不到该播客节目",
+    (Language::En, "podcast.loading") => "Loading…",
+    (Language::Zh, "podcast.loading") => "加载中…",
+    (Language::En, "podcast.featured") => "Featured Podcast",
+    (Language::Zh, "podcast.featured") => "推荐播客",
     (Language::En, "podcast.no_audio") => "Audio for this episode is not available yet",
     (Language::Zh, "podcast.no_audio") => "本期音频暂未上线",
     (Language::En, "podcast.no_results") => "No episodes match this tag",
@@ -198,7 +210,7 @@ fn PodcastBody() -> Element {
                               if !all_tags.is_empty() {
                                   div { class: card_class("rounded-2xl p-5 shadow-none"),
                                       p { class: "text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3",
-                                          if lang == Language::Zh { "标签筛选" } else { "Filter by tag" }
+                                          "{tp(lang, \"podcast.filter\")}"
                                       }
                                       div { class: "flex flex-wrap gap-2",
                                           // "全部" chip
@@ -307,7 +319,7 @@ fn PodcastBody() -> Element {
                                           variant: ButtonVariant::Ghost,
                                           size: ButtonSize::Sm,
                                           disabled: safe_page == 0,
-                                          "aria-label": "上一页",
+                                          "aria-label": tp(lang, "podcast.prev"),
                                           onclick: move |_| { if current_page() > 0 { current_page.set(current_page() - 1); } },
                                           "←"
                                       }
@@ -318,7 +330,7 @@ fn PodcastBody() -> Element {
                                           variant: ButtonVariant::Ghost,
                                           size: ButtonSize::Sm,
                                           disabled: safe_page + 1 >= total_pages,
-                                          "aria-label": "下一页",
+                                          "aria-label": tp(lang, "podcast.next"),
                                           onclick: move |_| { if current_page() + 1 < total_pages { current_page.set(current_page() + 1); } },
                                           "→"
                                       }
@@ -334,6 +346,7 @@ fn PodcastBody() -> Element {
 /// 可在 Markdown 中嵌入的 PodcastCard 组件
 #[component]
 pub fn PodcastCard(id: i32) -> Element {
+  let lang = use_language_ctx();
   let episode_res = use_resource(move || async move { get_episode_by_id(id).await.ok().flatten() });
 
   let state = episode_res.read().clone();
@@ -341,7 +354,7 @@ pub fn PodcastCard(id: i32) -> Element {
     Some(Some(ep)) => rsx! {
         div { class: card_class("not-prose my-8 p-6 rounded-2xl flex flex-col md:flex-row gap-6 items-center"),
             div { class: "flex-1 w-full",
-                div { class: "text-xs font-bold text-primary uppercase tracking-widest mb-2", "Featured Podcast" }
+                div { class: "text-xs font-bold text-primary uppercase tracking-widest mb-2", "{tp(lang, \"podcast.featured\")}" }
                 h4 { class: "text-xl font-extrabold text-slate-900 dark:text-white mb-2", "{ep.title}" }
                 div { class: "text-sm text-slate-500 mb-4", "{ep.date} · {ep.duration}" }
                 if let Some(ref url) = ep.url {
@@ -352,12 +365,12 @@ pub fn PodcastCard(id: i32) -> Element {
     },
     Some(None) => rsx! {
         Alert { variant: AlertVariant::Warning, class: "not-prose my-8",
-            AlertDescription { variant: AlertVariant::Warning, "找不到 ID 为 {id} 的播客节目" }
+            AlertDescription { variant: AlertVariant::Warning, "{tp(lang, \"podcast.not_found\")} (#{id})" }
         }
     },
     None => rsx! {
         div { class: "not-prose my-8 p-4 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-500",
-            "加载中..."
+            "{tp(lang, \"podcast.loading\")}"
         }
     },
   }

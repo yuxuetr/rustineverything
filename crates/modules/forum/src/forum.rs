@@ -43,6 +43,12 @@ fn tf(lang: Language, key: &str) -> &'static str {
     (_, "forum.popular_tags") => "热门标签",
     (Language::En, "forum.loading") => "Loading...",
     (_, "forum.loading") => "加载中...",
+    (Language::En, "forum.related") => "💬 Related discussions",
+    (_, "forum.related") => "💬 关联讨论",
+    (Language::En, "forum.start_discussion") => "Start a discussion",
+    (_, "forum.start_discussion") => "发起讨论",
+    (Language::En, "forum.related_empty") => "No discussions about this page yet — start one!",
+    (_, "forum.related_empty") => "还没有围绕本页的讨论，欢迎发起一个！",
     (Language::En, "forum.load_failed") => "Failed to load. Please try again later.",
     (_, "forum.load_failed") => "加载失败，请稍后重试",
     (Language::En, "forum.retry") => "Retry",
@@ -877,6 +883,7 @@ pub fn NewTopicPage() -> Element {
 
 #[component]
 pub fn DiscussionPanel(resource_kind: String, resource_path: String) -> Element {
+  let lang = use_language_ctx();
   let kind_for_res = resource_kind.clone();
   let path_for_res = resource_path.clone();
   let res = use_resource(move || {
@@ -895,17 +902,17 @@ pub fn DiscussionPanel(resource_kind: String, resource_path: String) -> Element 
   rsx! {
       section { class: "mt-12 border-t border-slate-200 dark:border-slate-800 pt-8",
           div { class: "flex items-center justify-between mb-5",
-              h3 { class: "text-lg font-bold text-slate-900 dark:text-white", "💬 关联讨论" }
+              h3 { class: "text-lg font-bold text-slate-900 dark:text-white", "{tf(lang, \"forum.related\")}" }
               a { href: "{new_href}",
                   class: "inline-flex items-center px-3 py-1.5 rounded-lg btn-flow text-xs font-semibold transition-all",
-                  "发起讨论"
+                  "{tf(lang, \"forum.start_discussion\")}"
               }
           }
           match topics {
-              None => rsx! { div { class: "text-sm text-slate-400", "加载中..." } },
+              None => rsx! { div { class: "text-sm text-slate-400", "{tf(lang, \"forum.loading\")}" } },
               Some(list) if list.is_empty() => rsx! {
                   div { class: "text-sm text-slate-500 dark:text-slate-400 py-4 text-center",
-                      "还没有围绕本页的讨论，欢迎发起一个！"
+                      "{tf(lang, \"forum.related_empty\")}"
                   }
               },
               Some(list) => rsx! {
