@@ -19,7 +19,7 @@ fn main() {
     }
 
     // 同步 UI 必需的静态文件：root/assets → crates/app/assets
-    sync_dir(&root_assets, &app_assets);
+    sync_dir(&root_assets, &app_assets, true);
   }
 
   // Reverse sync: 若 crates/app/assets/tailwind.css 与 root 内容不同（Tailwind
@@ -38,7 +38,7 @@ fn main() {
   let root_uploads = root_assets.join("uploads");
   if app_uploads.exists() {
     let _ = fs::create_dir_all(&root_uploads);
-    sync_dir(&app_uploads, &root_uploads);
+    sync_dir(&app_uploads, &root_uploads, false);
   }
 }
 
@@ -59,9 +59,25 @@ fn copy_if_changed(src: &Path, dst: &Path) {
   }
 }
 
-fn sync_dir(src: &Path, dst: &Path) {
+/// `prune`：删除 dst 中 src 已不存在的条目（root 里删掉的文档 / 文件不该还被
+/// dev server 读到）。`uploads/` 与 `tailwind.css` 的 SoT 在 app 侧，永不删除；
+/// 反向同步（app→root uploads）不 prune，否则会删掉 root 侧的用户上传。
+fn sync_dir(src: &Path, dst: &Path, prune: bool) {
   if !src.exists() {
     return;
+  }
+
+  if prune {
+    if let Ok(entries) = fs::read_dir(dst) {
+      for entry in entries.flatten() {
+        let name = entry.file_name();
+        if name == "uploads" || name == "tailwind.css" || src.join(&name).exists() {
+          continue;
+        }
+        let path = entry.path();
+        let _ = if path.is_dir() { fs::remove_dir_all(&path) } else { fs::remove_file(&path) };
+      }
+    }
   }
 
   for entry in fs::read_dir(src).unwrap() {
@@ -77,7 +93,7 @@ fn sync_dir(src: &Path, dst: &Path) {
       }
 
       let _ = fs::create_dir_all(&dest_path);
-      sync_dir(&path, &dest_path);
+      sync_dir(&path, &dest_path, prune);
     } else {
       // 过滤掉超大文件
       if let Ok(metadata) = fs::metadata(&path) {
