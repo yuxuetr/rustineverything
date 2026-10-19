@@ -82,8 +82,6 @@ hero.stat.cases.label = 可复用模板
 # ── 首页板块卡片 ──
 home.section_title = 专注 Rust 生态
 home.section_subtitle = 从底层原理到全栈实战，构建高性能、高可靠的软件系统
-home.browse.title = 按领域浏览
-home.browse.subtitle = 沿 Rust 生态与 AI 生态，按板块深入文档、案例与课程
 home.featured.title = 精选案例
 home.featured.subtitle = 来自工业实践的 Rust 项目，可直接借鉴的工程范式
 home.featured.all = 查看全部案例
@@ -109,28 +107,6 @@ home.card.aiwasm.title = AI 与 WASM
 home.card.aiwasm.desc = 探索 WebAssembly 高性能计算与 Rust AI 生态。
 
 # ── 首页模块网格卡片（home.mod.<id>.title / .desc）──
-home.mod.docs.title = 文档
-home.mod.docs.desc = 从所有权到全栈，系统化的 Rust 学习路径。
-home.mod.blog.title = 博客
-home.mod.blog.desc = 持续更新的实战经验与技术笔记。
-home.mod.course.title = 课程
-home.mod.course.desc = 由浅入深、循序渐进的系统化课程。
-home.mod.cases.title = 案例
-home.mod.cases.desc = 可复用的工程模板与实战项目。
-home.mod.ai.title = AI
-home.mod.ai.desc = 大模型、推理与 Rust AI 生态。
-home.mod.wasm.title = WASM
-home.mod.wasm.desc = WebAssembly 高性能计算与跨端运行。
-home.mod.web3.title = Web3
-home.mod.web3.desc = 区块链、智能合约与去中心化应用。
-home.mod.embedded.title = 嵌入式
-home.mod.embedded.desc = 用 Rust 驱动 MCU 与裸机开发。
-home.mod.cli.title = CLI
-home.mod.cli.desc = 打造高效、健壮的命令行工具。
-home.mod.podcast.title = 播客
-home.mod.podcast.desc = 用耳朵学 Rust，通勤路上也能进步。
-home.mod.forum.title = 论坛
-home.mod.forum.desc = 提问、讨论、分享，和社区一起成长。
 
 # ── 板块共享 UI ──
 board.all = 全部

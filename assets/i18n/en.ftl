@@ -82,8 +82,6 @@ hero.stat.cases.label = Reusable templates
 # ── Home feature cards ──
 home.section_title = Focused on the Rust ecosystem
 home.section_subtitle = From low-level principles to full-stack practice — building high-performance, reliable software systems
-home.browse.title = Browse by area
-home.browse.subtitle = Dive into docs, cases, and courses across the Rust and AI ecosystems
 home.featured.title = Featured cases
 home.featured.subtitle = Rust projects from industrial practice — engineering patterns you can borrow
 home.featured.all = View all cases
@@ -109,28 +107,6 @@ home.card.aiwasm.title = AI & WASM
 home.card.aiwasm.desc = Explore high-performance WebAssembly compute and the Rust AI ecosystem.
 
 # ── Home module grid cards (home.mod.<id>.title / .desc) ──
-home.mod.docs.title = Docs
-home.mod.docs.desc = From ownership to full-stack — a structured Rust learning path.
-home.mod.blog.title = Blog
-home.mod.blog.desc = Hands-on experience and technical notes, updated regularly.
-home.mod.course.title = Courses
-home.mod.course.desc = A progressive, systematic course series from basics to depth.
-home.mod.cases.title = Cases
-home.mod.cases.desc = Reusable engineering templates and real-world projects.
-home.mod.ai.title = AI
-home.mod.ai.desc = LLMs, inference, and the Rust AI ecosystem.
-home.mod.wasm.title = WASM
-home.mod.wasm.desc = High-performance WebAssembly compute, everywhere.
-home.mod.web3.title = Web3
-home.mod.web3.desc = Blockchain, smart contracts, and decentralized apps.
-home.mod.embedded.title = Embedded
-home.mod.embedded.desc = Drive MCUs and bare-metal development with Rust.
-home.mod.cli.title = CLI
-home.mod.cli.desc = Build fast, robust command-line tools.
-home.mod.podcast.title = Podcast
-home.mod.podcast.desc = Learn Rust by ear — progress even on your commute.
-home.mod.forum.title = Forum
-home.mod.forum.desc = Ask, discuss, and share — grow together with the community.
 
 # ── Board shared UI ──
 board.all = All
