@@ -45,6 +45,12 @@ pub struct ArticleSummary {
 }
 
 impl Board {
+  /// 至少有一篇文章的子主题（保持 `subtopics` 的顺序）。筛选 chip 只显示这些（O7），
+  /// 否则 6 个 chip 配 1–2 篇文章，大部分点了都是空。
+  pub fn subtopics_with_articles(&self, articles: &[ArticleSummary]) -> Vec<&'static str> {
+    self.subtopics.iter().copied().filter(|s| articles.iter().any(|a| a.subtopic == *s)).collect()
+  }
+
   /// 配置自检，返回所有问题（空 = 合法）。各板块 crate 的单测调用它。
   pub fn problems(&self) -> Vec<String> {
     let mut out = Vec::new();
@@ -154,6 +160,18 @@ mod tests {
     };
     let p = bad.problems();
     assert_eq!(p.len(), 6, "{p:?}");
+  }
+
+  #[test]
+  fn subtopics_with_articles_keeps_board_order_and_drops_empty() {
+    let mut a = summary("2026-01-01", "a");
+    a.subtopic = "inference".into();
+    let mut b = summary("2026-01-02", "b");
+    b.subtopic = "unknown".into();
+    let mut c = summary("2026-01-03", "c");
+    c.subtopic = "inference".into();
+    assert_eq!(GOOD.subtopics_with_articles(&[a, b, c]), vec!["inference"]);
+    assert_eq!(GOOD.subtopics_with_articles(&[]), Vec::<&str>::new());
   }
 
   #[test]

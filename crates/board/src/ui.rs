@@ -71,6 +71,7 @@ fn BoardIndexList(board: Board) -> Element {
   let mut active_subtopic = use_signal(String::new);
   let mut query = use_signal(String::new);
 
+  let subtopics = board.subtopics_with_articles(&articles);
   let q = query();
   let sub = active_subtopic();
   let filtered: Vec<ArticleSummary> = articles
@@ -100,7 +101,7 @@ fn BoardIndexList(board: Board) -> Element {
               onclick: move |_| active_subtopic.set(String::new()),
               "{t(lang, \"board.all\")}"
           }
-          for s in board.subtopics.iter() {
+          for s in subtopics.iter() {
               {
                   let slug = s.to_string();
                   let is_active = sub == *s;

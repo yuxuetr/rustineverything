@@ -144,17 +144,12 @@ fn FeaturedCasesInner() -> Element {
 
 #[component]
 fn CaseCard(case: CaseSummary) -> Element {
-  let first = case.name.chars().next().unwrap_or('R');
   rsx! {
       Link {
           to: Route::CaseDetail { slug: case.slug.clone() },
           class: "group flex flex-col rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden hover:shadow-lg transition-all",
           if let Some(cover) = case.cover_url.clone() {
               img { src: "{cover}", class: "h-36 w-full object-cover", alt: "{case.name}", loading: "lazy" }
-          } else {
-              div { class: "h-36 w-full bg-linear-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-950 flex items-center justify-center text-3xl font-extrabold text-slate-300 dark:text-slate-600",
-                  "{first}"
-              }
           }
           div { class: "p-5 flex flex-col flex-1",
               div { class: "flex items-center gap-2 mb-2",
