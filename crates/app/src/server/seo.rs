@@ -52,6 +52,36 @@ async fn collect_content_entries(is_on: impl Fn(&str) -> bool) -> Vec<ContentEnt
   entries
 }
 
+/// 没有日期的详情页（文档 / 案例 / 课程详情）：只进 sitemap（不带 lastmod），不进 feed。
+/// 课时是付费内容，不收录。
+async fn collect_detail_paths(is_on: impl Fn(&str) -> bool) -> Vec<String> {
+  let mut paths = Vec::new();
+  if is_on("docs") {
+    paths.extend(doc_paths(&module_docs::server::list_doc_tree().await.unwrap_or_default()));
+  }
+  if is_on("cases") {
+    let cases = module_cases::server::list_cases(None, None, None).await.unwrap_or_default();
+    paths.extend(cases.into_iter().map(|c| format!("/case/{}", c.slug)));
+  }
+  if is_on("course") {
+    let courses = module_course::server::list_courses().await.unwrap_or_default();
+    paths.extend(courses.into_iter().map(|c| format!("/course/{}", c.slug)));
+  }
+  paths
+}
+
+/// 文档树里有正文的节点 → `/docs/<path>`（深度优先，父在子前）。
+fn doc_paths(nodes: &[module_docs::server::DocTreeNode]) -> Vec<String> {
+  let mut out = Vec::new();
+  for n in nodes {
+    if n.has_content && !n.path.is_empty() {
+      out.push(format!("/docs/{}", n.path));
+    }
+    out.extend(doc_paths(&n.children));
+  }
+  out
+}
+
 fn xml_response(content_type: &str, cache_control: &str, body: String) -> axum::response::Response {
   axum::response::Response::builder()
     .header("content-type", content_type)
@@ -78,6 +108,7 @@ async fn sitemap_handler(base: String) -> axum::response::Response {
       static_paths.push(p.to_string());
     }
   }
+  static_paths.extend(collect_detail_paths(is_on).await);
   let static_paths_ref: Vec<&str> = static_paths.iter().map(String::as_str).collect();
 
   let xml = build_sitemap_xml(&entries, &static_paths_ref, &base);
@@ -143,4 +174,78 @@ pub fn mount(router: Router, base_url: &str) -> Router {
         async move { robots_handler(base).await }
       }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use module_docs::server::DocTreeNode;
+
+  fn node(path: &str, has_content: bool, children: Vec<DocTreeNode>) -> DocTreeNode {
+    DocTreeNode {
+      slug: path.rsplit('/').next().unwrap_or_default().to_string(),
+      title: path.to_string(),
+      path: path.to_string(),
+      has_content,
+      description: String::new(),
+      children,
+    }
+  }
+
+  #[test]
+  fn doc_paths_keeps_only_nodes_with_content() {
+    let tree = vec![
+      node(
+        "basics",
+        true,
+        vec![node("basics/ownership", true, vec![]), node("basics/wip", false, vec![])],
+      ),
+      node("empty-dir", false, vec![node("empty-dir/leaf", true, vec![])]),
+    ];
+    assert_eq!(
+      doc_paths(&tree),
+      vec!["/docs/basics", "/docs/basics/ownership", "/docs/empty-dir/leaf"]
+    );
+  }
+
+  /// 验收（O4）：sitemap 的详情页条目 = 各来源计数之和，用真实 assets 独立计数比对。
+  #[tokio::test]
+  async fn detail_paths_cover_every_doc_case_and_course() {
+    let root = app_core::utils::get_asset_root();
+    let count_dirs = |sub: &str| {
+      std::fs::read_dir(root.join(sub))
+        .map(|rd| {
+          rd.flatten()
+            .filter(|e| {
+              e.path().is_dir() && !e.file_name().to_string_lossy().starts_with(['_', '.'])
+            })
+            .count()
+        })
+        .unwrap_or(0)
+    };
+    let docs = doc_paths(&module_docs::server::list_doc_tree().await.unwrap_or_default()).len();
+    let index_files = walk_count(&root.join("docs"));
+    assert!(docs > 0);
+    assert_eq!(docs, index_files, "文档树漏掉了磁盘上的文档（深度上限 / _meta.json 过滤？）");
+
+    let paths = collect_detail_paths(|_| true).await;
+    assert_eq!(paths.len(), docs + count_dirs("cases") + count_dirs("courses"));
+    assert_eq!(collect_detail_paths(|_| false).await, Vec::<String>::new());
+  }
+
+  /// 非根目录下 index.md(x) 的数量（根 index 是 /docs 本身，已在静态路径里）。
+  fn walk_count(dir: &std::path::Path) -> usize {
+    let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
+    rd.flatten()
+      .map(|e| {
+        let p = e.path();
+        if p.is_dir() {
+          let own = ["index.md", "index.mdx"].iter().any(|f| p.join(f).is_file()) as usize;
+          own + walk_count(&p)
+        } else {
+          0
+        }
+      })
+      .sum()
+  }
 }

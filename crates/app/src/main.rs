@@ -313,6 +313,8 @@ fn HeadAssets() -> Element {
   rsx! {
       // Head links
       document::Link { rel: "icon", href: FAVICON }
+      // feed 自动发现（O4）：/feed.xml 是 Atom。
+      document::Link { rel: "alternate", r#type: "application/atom+xml", title: widgets::SITE_NAME, href: "/feed.xml" }
       document::Link { rel: "stylesheet", href: MAIN_CSS }
       document::Link { rel: "stylesheet", href: TAILWIND_CSS }
 

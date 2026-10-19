@@ -474,7 +474,9 @@
 - [x] O3 — `widgets::PageMeta` + 列表 / 落地页元信息：首页、5 板块、案例列表与详情、课程列表与详情、播客、论坛、文档首页（E1）。验收：脚本 curl 上述路径 `<title>` 互不相同且非站名
   - 完成：`widgets::PageMeta { title, description, path }`（自带 SuspenseBoundary 取 `BASE_URL`；`<title>` 统一为 `{title} - 站名`，`page_title()` 也给文档页用）。接入首页、博客列表、文档首页、播客、课程列表 / 详情、案例列表 / 详情、论坛列表 / 话题详情、5 板块、生态页。顺带：案例 / 课程 / 生态页「不存在」改用 `NotFound` 回 404（原为 200），案例读取出错回 500。验收脚本 `scripts/check_page_titles.sh`（14 个路径 title 互不相同且非纯站名，退出码 0；注意 `LC_ALL=C`，否则 uniq 会把 CJK 标题判为相同）
   - 已知：SPA 导航后 `<head>` 里的 canonical 会累积（Dioxus head 元素卸载不移除，博客文章页原本如此）。SSR HTML 只有一个，不影响爬虫。重估条件：`curl -s $URL | grep -c 'rel="canonical"'` 大于 1
-- [ ] O4 — sitemap / feed 覆盖 docs、案例详情、课程详情（不含课时）；布局加 `rel="alternate"` feed 链接（E2）。验收：sitemap 条目数 = 各来源计数之和（单测）
+- [x] O4 — sitemap / feed 覆盖 docs、案例详情、课程详情（不含课时）；布局加 `rel="alternate"` feed 链接（E2）。验收：sitemap 条目数 = 各来源计数之和（单测）
+  - 完成：`collect_detail_paths` 把文档（有正文的节点）、案例详情、课程详情加进 sitemap（不带 lastmod）。**不进 feed**：feed 是按日期的「新内容」，这三类没有日期，进 feed 只会是噪音（与方案原文「sitemap / feed」不同，有意收窄）。布局 `<head>` 加 Atom `rel=alternate`。sitemap 由 38 → 64 条。验收单测用真实 assets 独立计数比对（docs 数 = 磁盘 index 数；先红：镜像残留旧 `_meta.json` 时 7 ≠ 34）
+  - 顺带发现并修复（单独提交）：`build.rs` 镜像只拷不删，dev 下仍读到已删的旧文档与 phase R 插件 wasm（fdd4d16）；Dockerfile 漏了 O1 新增的 `crates/board`（3161834）
 - [ ] O5 — 论坛与首页热帖区分「加载失败」与「空」，标签栏失败不再停在「加载中」；B6 结论不变（仍为 use_resource）（E8）。验收：停 `rie-postgres` 后页面显示失败提示，起库后正常
 - [ ] O6 — 播客改 `use_server_future`；修复 `/audio` 在 dev 404（先查生产 Dockerfile 行为再定方案）；`audio_url` 校验文件存在，缺失时不渲染播放器（E6/E7）。需决定 D2（占位数据去留）。验收：SSR HTML 含节目标题；可播放的期能播放
 - [ ] O7 — 案例卡无 cover 时不渲染封面区；板块子分类 chip 只显示有文章的（E9/E10）。需决定 D4
