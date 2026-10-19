@@ -463,3 +463,17 @@
 
 ### 阶段 E — dioxus-ui（在 dioxus-ui 仓库修复）
 - [x] E-1 — 把 FB-02 ~ FB-12 同步到 dioxus-ui 的待办 / RFC，按其流程修复发版（上游 0.6.1 去除 eval、0.6.2 安全加固；FB-09/12/16 上游 wontfix 并给出理由；本站升级到 0.6.2，各条状态见 DIOXUS_UI_FEEDBACK.md）
+
+### 阶段 O — 页面与板块优化（2026-10-19 走查）
+方案与证据见 [`docs/SITE_OPTIMIZATION_PLAN.md`](docs/SITE_OPTIMIZATION_PLAN.md)（E1–E15 为证据编号，D1–D4 为待作者决定项）。每条任务一个提交；带「需决定」的任务先等对应 D 项确认。
+- [ ] O1 — 板块共享组件：`widgets::board::{BoardIndex, BoardArticle}`，5 个 `<board>.rs` 改为调用；不合并 crate（E5）。验收：5 板块落地页 / 文章页渲染与改前一致（SSR HTML diff 只差预期部分），各板块单测通过
+- [ ] O2 — 板块文章页：frontmatter 走 `inject_seo`；不存在的 slug 回 404（server fn 改返回 `Option` + `widgets::NotFound`）；卡片与返回链接改 `Link`；文章头显示日期与标签（E1/E3/E4）。验收：curl 缺失 slug 404、正常页 `<title>` 为文章标题且带 description / canonical；单测先红后绿
+- [ ] O3 — `widgets::PageMeta` + 列表 / 落地页元信息：首页、5 板块、案例列表与详情、课程列表与详情、播客、论坛、文档首页（E1）。验收：脚本 curl 上述路径 `<title>` 互不相同且非站名
+- [ ] O4 — sitemap / feed 覆盖 docs、案例详情、课程详情（不含课时）；布局加 `rel="alternate"` feed 链接（E2）。验收：sitemap 条目数 = 各来源计数之和（单测）
+- [ ] O5 — 论坛与首页热帖区分「加载失败」与「空」，标签栏失败不再停在「加载中」；B6 结论不变（仍为 use_resource）（E8）。验收：停 `rie-postgres` 后页面显示失败提示，起库后正常
+- [ ] O6 — 播客改 `use_server_future`；修复 `/audio` 在 dev 404（先查生产 Dockerfile 行为再定方案）；`audio_url` 校验文件存在，缺失时不渲染播放器（E6/E7）。需决定 D2（占位数据去留）。验收：SSR HTML 含节目标题；可播放的期能播放
+- [ ] O7 — 案例卡无 cover 时不渲染封面区；板块子分类 chip 只显示有文章的（E9/E10）。需决定 D4
+- [ ] O8 — 导航与页脚：桌面导航加播客；手机站名不截断；页脚删重复标语、加「专题」列与 RSS（E11/E12）。验收：390 / 1280 两种宽度截图
+- [ ] O9 — 首页删除「按领域浏览」区块（E13）。需决定 D3
+- [ ] O10 — 搜索：弹窗文案接入 i18n，筛选补 5 个板块，课程标题 / 简介进索引（E14）
+- [ ] O11 — 其余硬编码文案接入 i18n：博客 / 文档 / 课程不存在提示，播客 6 处（E15）。验收：切到 EN 后上述页面无中文残留
