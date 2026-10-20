@@ -513,3 +513,13 @@
 - [x] L7 — 测 basic 与完整版的二进制大小 / 依赖数 / 冷构建时间，决定是否拆 app-core（DL5），结论写回设计文档
   - 完成：server 端依赖 515（完整）/ 488（basic）/ 382（basic 若拆 core 并去掉 migration，`cargo tree --prune` 估算）；release 二进制 50.0 MB / 30.9 MB，basic 里 sea-orm / sqlx / migration 约 2.3 MB、jwt / oauth2 / reqwest / rustls 约 0.6 MB（`nm` 符号间距估算）。结论：当前版本不拆 core——basic 已能无库运行，收益只有约 22% 依赖数与约 3 MB，代价是 core 两个新 feature + search 重建索引接口门控 + migration 依赖改走 core。重估条件（可执行）与数据表写在 FEATURE_TIERS.md DL5
 - [ ] T — 打赏（T1–T4，见设计文档 §6）：**待作者确认 DL6 后开工**
+
+### 阶段 I — 海外支付（Stripe + 按地区给出支付方式，2026-10-20）
+设计见 [`docs/PAYMENT_SPEC.md`](docs/PAYMENT_SPEC.md) §15。作者决定：接 Stripe；课程另设美元价，海外按美元付。打赏（T）继续留在待办。
+- [ ] I1 — `price_usd` 字段 + `Region` + `quote(course, provider, region)` + `methods_for(region, configured)`。验收：单测覆盖大陆 / 海外 × 三个网关 × 有无美元价
+- [ ] I2 — `StripeProvider`（`stripe` feature）：Checkout Session 下单、webhook 解析、PaymentIntent 搜索查单、退款；`verify_signature`。验收：单测（独立 HMAC 向量；篡改 body、过期时间戳必须失败）
+- [ ] I3 — 接线：`create_order(region)`、`payment_providers()`、对账 / 退款分派、`/api/pay/stripe/notify`、订单带币种、`.env.example`。验收：未配 Stripe 时行为与现在一致；用测试签名构造的 webhook 走通流水线
+- [ ] I4 — 界面：时区判断地区，课程详情 / 付费墙 / 首页课程卡 / 购买弹窗按地区报价与列支付方式，可手动切换；我的订单按币种显示。验收：浏览器模拟两个时区截图
+- [ ] I5 — 购买弹窗与我的订单 i18n（阶段 O 的重估条件已触发）。验收：EN 下弹窗与订单页无中文
+- [ ] I6 — Stripe 测试模式端到端（下单 → 支付 → 回调发货 → 对账 → 退款）。**需要作者提供 `sk_test_` 密钥与 webhook secret**
+
