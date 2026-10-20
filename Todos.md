@@ -494,3 +494,14 @@
 - [x] O11 — 其余硬编码文案接入 i18n：博客 / 文档 / 课程不存在提示，播客 6 处（E15）。验收：切到 EN 后上述页面无中文残留
   - 完成：`widgets::LoadFailed` 改为调用方传文案（widgets 无 i18n）；博客 / 文档（首页、卡片、侧栏、不存在）/ 课程（列表、详情、目录、不存在）/ 播客（筛选、翻页 aria、PodcastCard 3 处）/ 评论区（10 处）/ 关联讨论面板（4 处）接入中英文。浏览器 EN 验收 9 个路径：剩余中文只有内容本身（文档 / 课程 / 播客数据）与下面刻意不做的支付弹窗
   - 有意不做（当前版本）：课时页、付费墙、标注、`pay_ui`（购买弹窗 / 我的订单）仍为中文——支付只有支付宝 / 微信、以人民币计价，面向中文用户；课时内容本身也是中文。重估条件：出现非人民币支付渠道（`grep -rn 'provider ==' crates/modules/course/src/pay_ui.rs` 出现 alipay / wechat 之外的值），或 `assets/courses/*/` 下出现英文课程（`course.yaml` 含 `lang: en`）
+
+### 阶段 L — 功能分层（Cargo features，2026-10-20）
+设计与证据见 [`docs/FEATURE_TIERS.md`](docs/FEATURE_TIERS.md)。四层：basic（无 feature）→ `accounts` → `course` → `payments`；`tips` 待 DL6 确认。默认构建（`web` + `payments`）行为不变。作者未答复的三个问题按推荐处理：做成通用框架（basic 不需要数据库）、标注归课程层（DL3）、打赏需登录且待确认后开工（DL6）。
+- [ ] L1 — 去掉 cases / course 对 blog 的无用依赖；案例详情 `DiscussionPanel` 改由 app 经 `footer` 插槽注入。验收：`cargo tree -p module-cases` 无 forum / blog；案例详情 SSR HTML 不变
+- [ ] L2 — `register_compiled_modules`：编译进来的模块登记进 ModuleEngine；hero / 生态菜单的课程、案例、文档链接按启用列表显示。验收：单测
+- [ ] L3 — `accounts` 层：论坛 / 评论 / 上传 / 管理后台可选依赖，页面 404 桩，登录入口与启动校验按 feature。验收：basic 不配 `DATABASE_URL` / `JWT_SECRET` 能启动并浏览内容页，`/topics` `/admin` 404；完整构建不变
+- [ ] L4 — `course` 层：课程 / 标注 / 订单 / 权益后台 / `/courses` 鉴权 / sitemap / 搜索 / 首页课程区按 feature。验收：`accounts` 构建运行时 `/course` 404、博客无标注
+- [ ] L5 — About 页：`/about` 渲染 `assets/pages/about.md`，不存在时 404，页脚按存在与否显示
+- [ ] L6 — 分层门禁 `scripts/check_tiers.sh`（四档 × server / web 两端 `cargo check`）接入 CI，Dockerfile `ARG FEATURES`，文档。验收：反向验证（故意加一处无门控引用，脚本失败）
+- [ ] L7 — 测 basic 与完整版的二进制大小 / 依赖数 / 冷构建时间，决定是否拆 app-core（DL5），结论写回设计文档
+- [ ] T — 打赏（T1–T4，见设计文档 §6）：**待作者确认 DL6 后开工**
