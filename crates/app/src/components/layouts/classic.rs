@@ -50,6 +50,7 @@ pub fn ClassicShell() -> Element {
   let on_course = enabled.iter().any(|s| s == "course");
   let on_forum = enabled.iter().any(|s| s == "forum");
   let on_docs = enabled.iter().any(|s| s == "docs");
+  let on_about = enabled.iter().any(|s| s == "about");
   // 页脚「专题」列：5 个内容板块（与 taxonomy 的领域入口一致，按开关显示）。
   let boards: Vec<(Route, &'static str)> = [
     ("embedded", Route::Embedded {}, "nav.embedded"),
@@ -321,6 +322,9 @@ pub fn ClassicShell() -> Element {
                               }
                               // /feed.xml 是服务端路由，不走客户端 Router
                               a { href: "/feed.xml", class: "hover:text-[var(--color-primary)] transition-colors", "{t(lang(), \"footer.rss\")}" }
+                              if on_about {
+                                  Link { to: Route::About {}, class: "hover:text-[var(--color-primary)] transition-colors", "{t(lang(), \"footer.about\")}" }
+                              }
                           }
                       }
                   }

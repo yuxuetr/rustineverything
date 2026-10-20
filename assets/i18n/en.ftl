@@ -61,6 +61,7 @@ footer.tagline = Industrial Rust practice and the AI ecosystem — cases, course
 footer.col.content = Content
 footer.col.community = Community
 footer.col.topics = Topics
+footer.about = About
 footer.rss = RSS feed
 
 # ── Home Hero ──

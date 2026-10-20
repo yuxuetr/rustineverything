@@ -61,6 +61,7 @@ footer.tagline = 专注 Rust 工业实战与 AI 生态：案例、课程、文�
 footer.col.content = 内容
 footer.col.community = 社区
 footer.col.topics = 专题
+footer.about = 关于
 footer.rss = RSS 订阅
 
 # ── 首页 Hero ──

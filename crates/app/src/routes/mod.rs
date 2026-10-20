@@ -16,6 +16,7 @@ use crate::components::module_gate::{use_enabled_modules, ModuleGate};
 use crate::components::nav::Navbar;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
+use crate::server::get_about_page;
 use module_ai::{AiArticlePage, AiIndexPage};
 use module_blog::server::{get_blog_content, list_blog_posts};
 use module_cases::cases::{CaseDetailPage, CasesIndexPage};
@@ -160,6 +161,9 @@ pub enum Route {
 
         #[route("/podcast")]
         Podcast {},
+
+        #[route("/about")]
+        About {},
 
         // 注意：SPA 路由使用单数 /course，避免与静态 ServeDir(/courses) 冲突
         #[route("/course")]
@@ -646,6 +650,55 @@ pub fn Cli() -> Element {
 #[component]
 pub fn CliArticle(slug: String) -> Element {
   rsx! { ModuleGate { id: "cli".to_string(), CliArticlePage { slug } } }
+}
+
+/// /about：渲染 `assets/pages/about.md`（frontmatter 的 title / description 进 head）。
+#[component]
+pub fn About() -> Element {
+  rsx! {
+      ModuleGate { id: "about".to_string(),
+          section { class: "py-12 bg-white dark:bg-slate-950",
+              Container {
+                  div { class: "max-w-3xl mx-auto text-slate-700 dark:text-slate-200",
+                      SuspenseBoundary {
+                          fallback: |_| rsx! {
+                              div { class: "flex items-center justify-center py-20",
+                                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
+                              }
+                          },
+                          AboutBody {}
+                      }
+                  }
+              }
+          }
+      }
+  }
+}
+
+#[component]
+fn AboutBody() -> Element {
+  let lang = use_i18n();
+  let page = use_server_future(|| async move { get_about_page().await })?;
+  match page() {
+    Some(Ok(Some(content))) => {
+      // 交给 Markdown 的是去掉 frontmatter 的正文：否则它会用 frontmatter 标题覆盖
+      // PageMeta 的「标题 - 站名」。
+      let (meta, body) = parse_mdx(&content);
+      let title =
+        if meta.title.is_empty() { t(lang(), "footer.about") } else { meta.title.clone() };
+      rsx! {
+          widgets::PageMeta {
+              title,
+              description: meta.description.clone().unwrap_or_default(),
+              path: "/about".to_string(),
+          }
+          Markdown { content: body, blog_id: "about".to_string() }
+      }
+    }
+    Some(Ok(None)) => rsx! { widgets::NotFound { message: t(lang(), "common.not_found") } },
+    Some(Err(_)) => rsx! { widgets::LoadFailed { message: t(lang(), "common.load_failed") } },
+    None => rsx! {},
+  }
 }
 
 #[component]

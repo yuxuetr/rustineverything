@@ -88,7 +88,8 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
 /// 本次编译带进来的模块 id（docs/FEATURE_TIERS.md DL2）。导航 / ModuleGate / sitemap /
 /// 搜索只认这个集合；site.json 的模块开关只能在其中再关。
 fn compiled_modules() -> Vec<&'static str> {
-  let mut ids = vec!["blog", "podcast", "cases", "docs", "embedded", "ai", "web3", "wasm", "cli"];
+  let mut ids =
+    vec!["blog", "podcast", "cases", "docs", "embedded", "ai", "web3", "wasm", "cli", "about"];
   if cfg!(feature = "accounts") {
     ids.push("forum");
   }

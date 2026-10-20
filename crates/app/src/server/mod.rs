@@ -342,6 +342,28 @@ pub async fn is_module_enabled(id: String) -> Result<bool, ServerFnError> {
   }
 }
 
+// ========== About ==========
+
+/// About 页正文（`assets/pages/about.md`，含 frontmatter）。文件不存在 → `None`（页面 404）。
+#[post("/api/pages/about")]
+pub async fn get_about_page() -> Result<Option<String>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    match std::fs::read_to_string(get_asset_root().join("pages").join("about.md")) {
+      Ok(content) => Ok(Some(content)),
+      Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+      Err(e) => {
+        tracing::warn!(error = %e, "about: read failed");
+        Err(ServerFnError::new("读取 About 页失败"))
+      }
+    }
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(None)
+  }
+}
+
 // ========== 布局 ==========
 
 /// Phase 3.3：返回 `site.json::active_layout`（空字符串回退到 `"classic"`）。

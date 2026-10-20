@@ -202,6 +202,11 @@ fn builtin_module_specs() -> Vec<ModuleSpec> {
       .with_routes(["/docs", "/docs/*"])
       .with_nav_label_key("nav-docs")
       .with_static_path("/docs"),
+    // About 页（`assets/pages/about.md`），页脚链接 + sitemap。
+    ModuleSpec::new("about", "关于")
+      .with_routes(["/about"])
+      .with_nav_label_key("nav-about")
+      .with_static_path("/about"),
   ]
 }
 
@@ -498,11 +503,11 @@ mod tests {
     let ids: Vec<&str> = specs.iter().map(|s| s.id.as_str()).collect();
     for id in [
       "blog", "podcast", "course", "forum", "cases", "docs", "embedded", "ai", "web3", "wasm",
-      "cli",
+      "cli", "about",
     ] {
       assert!(ids.contains(&id), "缺少内置模块: {}", id);
     }
-    assert_eq!(specs.len(), 11);
+    assert_eq!(specs.len(), 12);
   }
 
   #[test]
@@ -512,7 +517,7 @@ mod tests {
       .map(|s| s.id)
       .collect();
     assert_eq!(ids, ["blog", "docs"]);
-    assert_eq!(only_compiled(builtin_module_specs(), None).len(), 11);
+    assert_eq!(only_compiled(builtin_module_specs(), None).len(), 12);
   }
 
   #[test]
