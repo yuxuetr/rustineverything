@@ -603,5 +603,6 @@
   - 完成（2026-10-20，无代码改动）：`dx serve --release` 实测，`/assets/*-dxh<hash>.*`（app.js、wasm、css、favicon）已是 `public, max-age=31536000, immutable`，由 dioxus 自带；`/js/*` 文件名不带哈希，`no-cache` + 304 复验是有意的（`static_assets.rs` 注释），保持。顺带量了 G4：release wasm 7.09MB → br 1.54MB（66ms）/ gzip 1.74MB
 - [x] G6 — sitemap 补 `/ecosystem/*` 与免费试看课节。验收：sitemap 含这些 URL
   - 完成（a18a876）：sitemap 加 `taxonomy::ecosystems()` 的落地页；`Course::open_lesson_paths()`（复用 `can_access_lesson`，免费课程全部、付费课程只有试看）加入详情路径。单测：`open_lesson_paths_follow_access_rules`；O4 计数测试加上课节，并断言试看课节在、付费课节不在。实测 sitemap 65 → 68 个 URL（两个生态页 + `01-what-is-rust`）。`SEO_SPEC.md` §4 写明收录范围
-- [ ] G7 — `/blog` 加 h1、案例详情正文标题降级、尾斜杠 301、Atom 日期改 RFC 3339。验收：curl 实测
+- [x] G7 — `/blog` 加 h1、案例详情正文标题降级、尾斜杠 301、Atom 日期改 RFC 3339。验收：curl 实测
+  - 完成（4961985）：`/blog`、`/podcast`、`/course` 列表标题 h2 → h1（审计只发现 `/blog`，逐页数 h1 时又发现后两个）；案例 README 经 `text::demote_h1`（跳过围栏代码块）把 `#` 降为 `##`；用户内容（`untrusted`）的标题最高 h2；`trailing_slash_mw`：GET / HEAD 的尾斜杠地址永久重定向（axum `Redirect::permanent`，308）到无斜杠地址，根路径、`/api/*`、去掉斜杠后以 `//` 开头的不跳；Atom `<updated>` 纯日期补 `T00:00:00Z`。单测 4 个（先红后绿）。curl 实测：`/blog/` → 308 `/blog`，查询串保留，`//evil.com/` 404 不跳；上述页面与两个案例详情各 1 个 h1；feed 日期为 RFC 3339
 - [ ] G8 — JSON-LD：课程详情 Course、首页 WebSite。验收：SSR 输出含对应 `@type`，JSON 可解析
