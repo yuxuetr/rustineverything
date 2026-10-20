@@ -133,7 +133,9 @@ PAY_NOTIFY_BASE=https://<公网域名>   # 拼 notify/return URL；必须 HTTPS
 ## 9. 幂等 / 安全 / 对账
 - **验签是发货前提**：任何未通过验签的回调一律拒绝，绝不据此发货。
 - **金额核验**：回调金额必须 == `order.amount`，币种 CNY；不符记异常、不发货。
-- **幂等**：以 `out_trade_no` 为键；`order.status==paid` 直接成功返回；entitlement 用
+- **幂等**：以 `out_trade_no` 为键；`order.status==paid` 直接成功返回；`refunded` 的订单收到成功回调
+  只确认、记 pay_audit 告警，不认领不发货（H1，否则退款后网关重试会把订单改回 paid）；认领的条件
+  UPDATE 只接受 `pending` / `closed`；entitlement 用
   `ON CONFLICT DO NOTHING/UPDATE`（M4 已是幂等）。
 - **回调可重复**：网关会重试直到收到成功响应 → 处理器必须可重入。
 - **对账（M5e，已实现）**：启动期定时任务（默认 300s 一轮，`PAY_RECONCILE_*`

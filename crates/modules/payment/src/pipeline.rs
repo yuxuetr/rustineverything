@@ -102,7 +102,9 @@ impl OrderStore for sea_orm::DatabaseConnection {
       .col_expr(order::Column::ProviderTxn, Expr::value(txn_id))
       .col_expr(order::Column::PaidAt, Expr::value(Some(chrono::Utc::now().fixed_offset())))
       .filter(order::Column::OutTradeNo.eq(out_trade_no))
-      .filter(order::Column::Status.ne("paid"))
+      // closed 也可认领：对账 2h 关单，而 Stripe 付款页 24h 内仍可付。
+      // 不含 refunded（H1），查单与认领之间被退款时也不会改回 paid。
+      .filter(order::Column::Status.is_in(["pending", "closed"]))
       .exec(self)
       .await
       .map(|res| res.rows_affected)
@@ -160,6 +162,9 @@ pub enum NotifyDecision {
   RejectAmountMismatch,
   /// 订单已 paid：幂等快路径，直接确认。
   AlreadyPaid,
+  /// 订单已退款（H1）：网关重试的成功回调只确认、不认领不发货，否则会把
+  /// 退过款的订单改回 paid 并再发一次货。
+  AckRefunded,
   /// 认领并发货。
   Claim,
 }
@@ -171,10 +176,11 @@ pub fn decide(event: &PaymentEvent, snapshot: &OrderSnapshot) -> NotifyDecision 
   if event.amount_cents != snapshot.amount_cents {
     return NotifyDecision::RejectAmountMismatch;
   }
-  if snapshot.status == "paid" {
-    return NotifyDecision::AlreadyPaid;
+  match snapshot.status.as_str() {
+    "paid" => NotifyDecision::AlreadyPaid,
+    "refunded" => NotifyDecision::AckRefunded,
+    _ => NotifyDecision::Claim,
   }
-  NotifyDecision::Claim
 }
 
 /// 流水线结果：调用方据此构造网关应答（支付宝纯文本 / 微信 JSON）。
@@ -216,6 +222,15 @@ where
   };
   match decide(event, &snapshot) {
     NotifyDecision::AckNotSuccess | NotifyDecision::AlreadyPaid => return NotifyOutcome::Ok,
+    NotifyDecision::AckRefunded => {
+      tracing::warn!(
+        target: "pay_audit",
+        "{} notify: success event for refunded order {}, not re-delivered",
+        provider,
+        event.out_trade_no
+      );
+      return NotifyOutcome::Ok;
+    }
     NotifyDecision::RejectAmountMismatch => {
       // 3) 金额核验失败：留痕 + 拒绝。
       tracing::warn!(
@@ -374,6 +389,20 @@ mod tests {
     assert_eq!(outcome, NotifyOutcome::Ok);
     assert_eq!(delivered, 0, "已 paid 的重放不得二次发货");
     assert_eq!(store.claims.load(Ordering::SeqCst), 0, "幂等快路径不触发 UPDATE");
+  }
+
+  /// H1：退款后网关重试的成功回调不得把订单改回 paid、不得再发货。
+  #[tokio::test]
+  async fn refunded_order_acks_without_claim_or_delivery() {
+    assert_eq!(
+      decide(&event(9900, EVENT_STATUS_SUCCESS), &snapshot(9900, "refunded")),
+      NotifyDecision::AckRefunded
+    );
+    let store = MockStore::new(Some(snapshot(9900, "refunded")), Ok(1));
+    let (outcome, delivered) = run(&store, event(9900, EVENT_STATUS_SUCCESS), true).await;
+    assert_eq!(outcome, NotifyOutcome::Ok, "确认收到，免得网关反复重试");
+    assert_eq!(delivered, 0);
+    assert_eq!(store.claims.load(Ordering::SeqCst), 0);
   }
 
   #[tokio::test]
