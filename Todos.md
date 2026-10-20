@@ -544,6 +544,7 @@
 重估结论：功能侧没有现在该做的（M3、M6 见上，均写了重估条件）。剩下的上线阻碍是外部条件（商户号、公网域名、Stripe 正式 webhook），但照着仓库文档部署时有两处会卡住，属于现在能修的：
 1. **支付宝 / 微信的环境变量没有写进部署文档。** `.env.example` 只有 Stripe 段；`PAYMENT_SPEC.md` §8 漏了 `WECHAT_PLATFORM_PUBLIC_KEY`（代码必填，缺了微信不启用）；`DEPLOY_GUIDE.md` 完全没提支付（回调地址、Stripe webhook 事件、后台开通支付宝 / 微信）。
 2. **配置错了没有任何提示。** 三个网关的 `config()` 在缺项或值非法（如 `WECHAT_API_V3_KEY` 不是 32 字节、密钥不是 base64）时都只返回 `None`，启动日志不说哪些网关启用了，下单时只报「未配置」，运维无从知道是哪一项。
-- [ ] D1 — 启动时按网关打一行日志：已启用 / 未配置（相关变量都没设）/ 配置有误（设了一部分，列出缺的变量名；都设了仍失败则说值无效）。只输出变量名，不输出值。验收：单测覆盖三种状态；本地启动日志能看到 stripe 已启用
+- [x] D1 — 启动时按网关打一行日志：已启用 / 未配置（相关变量都没设）/ 配置有误（设了一部分，列出缺的变量名；都设了仍失败则说值无效）。只输出变量名，不输出值。验收：单测覆盖三种状态；本地启动日志能看到 stripe 已启用
+  - 完成（0920338）：`host::config_status()` / `log_config_status()`，各网关在 `config()` 旁声明 `REQUIRED_ENV`；app 启动时调用（payments feature）。单测 2 个：四种状态；`REQUIRED_ENV` 与 `config()` 实际读取的变量一致（删掉 `WECHAT_PLATFORM_PUBLIC_KEY` 或让共用的 `PAY_NOTIFY_BASE` 算作已配置都会变红）。本地 dx 实测：正常为 alipay / wechat 未配置、stripe 已启用；临时只设 `ALIPAY_APP_ID` → warn 列出缺的两个密钥变量；微信六项都设但 APIv3 密钥长度不对 → warn 值无效。619 个测试通过，clippy 与四档检查通过
 - [ ] D2 — 文档：`.env.example` 补支付宝 / 微信段；`PAYMENT_SPEC.md` §8 补 `WECHAT_PLATFORM_PUBLIC_KEY` 与密钥格式；`DEPLOY_GUIDE.md` 新增「在线支付」一节（features、回调地址、Stripe webhook、上线前检查）。验收：文档里的变量名与代码中读取的完全一致（`grep` 对比）
 
