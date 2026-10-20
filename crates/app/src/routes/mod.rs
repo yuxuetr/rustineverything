@@ -681,9 +681,7 @@ fn AboutBody() -> Element {
   let page = use_server_future(|| async move { get_about_page().await })?;
   match page() {
     Some(Ok(Some(content))) => {
-      // 交给 Markdown 的是去掉 frontmatter 的正文：否则它会用 frontmatter 标题覆盖
-      // PageMeta 的「标题 - 站名」。
-      let (meta, body) = parse_mdx(&content);
+      let (meta, _body) = parse_mdx(&content);
       let title =
         if meta.title.is_empty() { t(lang(), "footer.about") } else { meta.title.clone() };
       rsx! {
@@ -692,7 +690,7 @@ fn AboutBody() -> Element {
               description: meta.description.clone().unwrap_or_default(),
               path: "/about".to_string(),
           }
-          Markdown { content: body, blog_id: "about".to_string() }
+          Markdown { content, blog_id: "about".to_string() }
       }
     }
     Some(Ok(None)) => rsx! { widgets::NotFound { message: t(lang(), "common.not_found") } },
