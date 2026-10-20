@@ -288,7 +288,7 @@ fn render_tag(
       // `javascript:` / `data:` 编码 URL 都会被 reject，渲染为纯文本（保留 children）。
       // 实体反编码 + 协议检查在 [`crate::sanitize::is_safe_link_url`]。
       if crate::sanitize::is_safe_link_url(dest_url.as_ref()) {
-        rsx! { a { href: "{dest_url}", class: "text-blue-600 dark:text-blue-400 underline decoration-blue-500/30 hover:decoration-blue-500 transition-all", {children.into_iter()} } }
+        rsx! { a { href: "{dest_url}", class: "text-primary underline decoration-primary/30 hover:decoration-primary transition-all", {children.into_iter()} } }
       } else {
         // 丢弃链接、保留可见文本，避免内容因 URL 被拒而消失
         rsx! { span { {children.into_iter()} } }

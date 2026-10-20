@@ -515,7 +515,7 @@ fn CaseDetailBody(case: Case, footer: Element) -> Element {
               div { class: if case.cover_url.is_some() { "grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-0" } else { "grid grid-cols-1" },
                   div { class: "p-8 md:p-10",
                       div { class: "mb-4 flex flex-wrap items-center gap-2",
-                          span { class: "rounded-full bg-orange-100 dark:bg-orange-900/30 px-3 py-1 text-xs font-semibold text-orange-700 dark:text-orange-300",
+                          span { class: "rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary",
                               "{category}"
                           }
                           span { class: "rounded-full bg-slate-200 dark:bg-slate-800 px-3 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300",
