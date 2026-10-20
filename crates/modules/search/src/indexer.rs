@@ -458,18 +458,7 @@ pub fn filter_versioned_by_enabled(
   enabled_module_ids: &[String],
 ) -> Vec<VersionedDoc> {
   let is_on = |id: &str| enabled_module_ids.iter().any(|s| s == id);
-  docs
-    .into_iter()
-    .filter(|v| match v.doc.kind.as_str() {
-      "blog" => is_on("blog"),
-      "doc" => is_on("docs"),
-      "topic" => is_on("forum"),
-      "case" => is_on("cases"),
-      "course" => is_on("course"),
-      k if BOARD_IDS.contains(&k) => is_on(k),
-      _ => true,
-    })
-    .collect()
+  docs.into_iter().filter(|v| crate::module_of_kind(&v.doc.kind).is_none_or(is_on)).collect()
 }
 
 /// Phase 3.4：按 module id 过滤已汇总的索引文档，便于上层显式调用。
@@ -481,18 +470,7 @@ pub fn filter_documents_by_enabled(
   enabled_module_ids: &[String],
 ) -> Vec<IndexedDocument> {
   let is_on = |id: &str| enabled_module_ids.iter().any(|s| s == id);
-  docs
-    .into_iter()
-    .filter(|d| match d.kind.as_str() {
-      "blog" => is_on("blog"),
-      "doc" => is_on("docs"),
-      "topic" => is_on("forum"),
-      "case" => is_on("cases"),
-      "course" => is_on("course"),
-      k if BOARD_IDS.contains(&k) => is_on(k),
-      _ => true,
-    })
-    .collect()
+  docs.into_iter().filter(|d| crate::module_of_kind(&d.kind).is_none_or(is_on)).collect()
 }
 
 #[cfg(test)]

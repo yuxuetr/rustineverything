@@ -251,6 +251,7 @@ search.kind.topic = Forum
 
 # O11: common / docs / courses
 common.load_failed = Failed to load. Please try again later.
+common.not_found = Page not found
 blog.not_found = Article not found
 docs.title = Docs
 docs.subtitle = From the basics to full-stack practice — pick a topic to start exploring the Rust ecosystem.

@@ -67,8 +67,8 @@ basic 层仍编译 core 的 sea-orm / oauth2 / jsonwebtoken，但运行时不需
 
 1. **L1 去掉无用 / 反向依赖**：删 cases、course 对 blog 的依赖；案例详情的 `DiscussionPanel` 改由 app 经 `footer` 插槽注入（与 docs 同）。验收：`cargo tree -p module-cases` 无 forum / blog；案例详情 SSR HTML 与改前一致。
 2. **L2 编译模块登记**：DL2 的 `register_compiled_modules`；hero 与生态菜单里的课程 / 案例 / 文档链接改为按启用列表显示（现在 site.json 关掉课程后这两处仍有链接，是已有 bug）。单测：登记后 specs 只含登记项。
-3. **L3 `accounts` 层**：论坛 / 评论 / 上传 / 审核 / 管理后台改可选依赖；页面拆到 `routes/accounts.rs` + 404 桩；登录入口按 feature；启动时只在 `accounts` 下校验 `JWT_SECRET`、连库、迁移，挂 auth 路由。验收：basic 两端编译通过；basic 服务端不配 `DATABASE_URL` / `JWT_SECRET` 能启动，`/`、`/blog`、`/docs`、`/podcast`、`/case` 200，`/topics`、`/admin` 404，页面无登录按钮；完整构建行为不变（`scripts/check_page_titles.sh` 通过）。
-4. **L4 `course` 层**：课程改可选依赖；课程页、标注、我的标注 / 订单、权益后台、`/courses` 静态鉴权、sitemap 课程项、课程进搜索、首页课程区按 feature。验收：`--features server,accounts` 编译并运行，`/course` 404、博客页无标注；完整构建不变。
+3. **L3 `course` 层**（先于 accounts：课程依赖登录，反过来切会出现「有课程无登录」的组合）：课程改可选依赖；课程页、标注、我的标注 / 订单、权益后台、`/courses` 静态鉴权、sitemap 课程项、课程进搜索、首页课程区按 feature。验收：`--features server,accounts` 编译并运行，`/course` 404、博客页无标注；完整构建不变。
+4. **L4 `accounts` 层**：论坛 / 评论 / 上传 / 审核 / 管理后台改可选依赖；页面拆到 `routes/accounts.rs` + 404 桩；登录入口按 feature；启动时只在 `accounts` 下校验 `JWT_SECRET`、连库、迁移，挂 auth 路由。验收：basic 两端编译通过；basic 服务端不配 `DATABASE_URL` / `JWT_SECRET` 能启动，`/`、`/blog`、`/docs`、`/podcast`、`/case` 200，`/topics`、`/admin` 404，页面无登录按钮；完整构建行为不变（`scripts/check_page_titles.sh` 通过）。
 5. **L5 About 页**（basic）：`/about` 渲染 `assets/pages/about.md`（frontmatter 给 title / description），文件不存在时 404；页脚链接按文件是否存在显示。
 6. **L6 分层门禁**：`scripts/check_tiers.sh` 对 basic / accounts / course / 完整四档各跑 server 与 web 两次 `cargo check`；CI 替换现有「no payments」两步；Dockerfile 加 `ARG FEATURES`；DEVELOPER / DEPLOY 文档写明。反向验证：在 basic 可达的代码里加一处对 `module_forum` 的无门控引用，脚本必须失败。
 7. **L7 量一下 basic 与完整版的差距**：release 服务端二进制大小、依赖数、冷构建时间；据此决定 DL5 是否拆 core，结论写回本文档。

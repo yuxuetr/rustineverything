@@ -63,6 +63,7 @@ async fn collect_detail_paths(is_on: impl Fn(&str) -> bool) -> Vec<String> {
     let cases = module_cases::server::list_cases(None, None, None).await.unwrap_or_default();
     paths.extend(cases.into_iter().map(|c| format!("/case/{}", c.slug)));
   }
+  #[cfg(feature = "course")]
   if is_on("course") {
     let courses = module_course::server::list_courses().await.unwrap_or_default();
     paths.extend(courses.into_iter().map(|c| format!("/course/{}", c.slug)));
@@ -229,7 +230,8 @@ mod tests {
     assert_eq!(docs, index_files, "文档树漏掉了磁盘上的文档（深度上限 / _meta.json 过滤？）");
 
     let paths = collect_detail_paths(|_| true).await;
-    assert_eq!(paths.len(), docs + count_dirs("cases") + count_dirs("courses"));
+    let courses = if cfg!(feature = "course") { count_dirs("courses") } else { 0 };
+    assert_eq!(paths.len(), docs + count_dirs("cases") + courses);
     assert_eq!(collect_detail_paths(|_| false).await, Vec::<String>::new());
   }
 

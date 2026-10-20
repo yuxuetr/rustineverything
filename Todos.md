@@ -501,8 +501,8 @@
   - 完成（d77cdbf）：`CaseDetailPage` 加 `footer` 插槽，讨论面板由 app 注入，只在案例存在时渲染；cases 删 forum / blog 依赖，course 删 blog 依赖（两者代码都没引用 blog）。`cargo tree` 确认无残留；`/case`、`/case/bat`、`/docs` SSR HTML 与改前相同（只差 hydration 调试信息里的源码行号）
 - [x] L2 — `register_compiled_modules`：编译进来的模块登记进 ModuleEngine；hero / 生态菜单的课程、案例、文档链接按启用列表显示。验收：单测
   - 完成（c14751a）：core 加 `register_compiled_modules`，`default_module_specs` 只返回登记过的（未登记 = 全部；纯函数 `only_compiled` 单测，故意不过滤时变红）；app `main` 两端登记。三份「拉启用列表」合成 `use_enabled_modules`。按启用列表显示：hero 三个按钮、mega 菜单「学习资源」与精选 CTA、首页精选案例 / 课程区、社区动态两栏、生态页领域与案例区。浏览器验证（site.json 关 course / cases / forum）：首页与 `/ecosystem/rust` hydration 后指向这三者的链接为 0，社区动态只剩博客栏。注意：SSR 首帧仍按「编译进来的全集」渲染、hydration 后收敛（导航原本如此）；L3 起编译期关掉的模块在 SSR 首帧就不出现
-- [ ] L3 — `accounts` 层：论坛 / 评论 / 上传 / 管理后台可选依赖，页面 404 桩，登录入口与启动校验按 feature。验收：basic 不配 `DATABASE_URL` / `JWT_SECRET` 能启动并浏览内容页，`/topics` `/admin` 404；完整构建不变
-- [ ] L4 — `course` 层：课程 / 标注 / 订单 / 权益后台 / `/courses` 鉴权 / sitemap / 搜索 / 首页课程区按 feature。验收：`accounts` 构建运行时 `/course` 404、博客无标注
+- [ ] L3 — `course` 层（先切课程：课程依赖登录，先切 accounts 会出现「有课程无登录」的非法组合）：课程 / 标注 / 订单 / 权益后台 / `/courses` 鉴权 / sitemap / 搜索 / 首页课程区按 feature。验收：`accounts` 构建运行时 `/course` 404、博客无标注
+- [ ] L4 — `accounts` 层：论坛 / 评论 / 上传 / 管理后台可选依赖，页面 404 桩，登录入口与启动校验按 feature。验收：basic 不配 `DATABASE_URL` / `JWT_SECRET` 能启动并浏览内容页，`/topics` `/admin` 404；完整构建不变
 - [ ] L5 — About 页：`/about` 渲染 `assets/pages/about.md`，不存在时 404，页脚按存在与否显示
 - [ ] L6 — 分层门禁 `scripts/check_tiers.sh`（四档 × server / web 两端 `cargo check`）接入 CI，Dockerfile `ARG FEATURES`，文档。验收：反向验证（故意加一处无门控引用，脚本失败）
 - [ ] L7 — 测 basic 与完整版的二进制大小 / 依赖数 / 冷构建时间，决定是否拆 app-core（DL5），结论写回设计文档

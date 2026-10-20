@@ -16,6 +16,7 @@ use crate::routes::Route;
 use crate::taxonomy::{ecosystem_by_id, ecosystem_of_case_category, ecosystems};
 use module_blog::server::{list_blog_posts, BlogPostSummary};
 use module_cases::server::{list_cases, CaseSummary};
+#[cfg(feature = "course")]
 use module_course::server::{list_courses, CourseSummary};
 use module_forum::server::{list_topics, TopicSummary};
 
@@ -169,6 +170,7 @@ fn CaseCard(case: CaseSummary) -> Element {
 // ── 课程 ──────────────────────────────────────────────────
 
 /// 课程分区：体系化 Rust / AI 实战课程（付费层级/资源徽章见 M4）。
+#[cfg(feature = "course")]
 #[component]
 pub fn CourseShowcase() -> Element {
   let lang = use_i18n();
@@ -190,6 +192,7 @@ pub fn CourseShowcase() -> Element {
   }
 }
 
+#[cfg(feature = "course")]
 #[component]
 fn CourseShowcaseInner() -> Element {
   let lang = use_i18n();
@@ -210,6 +213,7 @@ fn CourseShowcaseInner() -> Element {
   }
 }
 
+#[cfg(feature = "course")]
 #[component]
 fn CourseCard(course: CourseSummary) -> Element {
   let lang = use_i18n();

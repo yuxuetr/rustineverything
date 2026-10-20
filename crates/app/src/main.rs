@@ -88,9 +88,12 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
 /// 本次编译带进来的模块 id（docs/FEATURE_TIERS.md DL2）。导航 / ModuleGate / sitemap /
 /// 搜索只认这个集合；site.json 的模块开关只能在其中再关。
 fn compiled_modules() -> Vec<&'static str> {
-  vec![
-    "blog", "podcast", "cases", "docs", "embedded", "ai", "web3", "wasm", "cli", "forum", "course",
-  ]
+  let mut ids =
+    vec!["blog", "podcast", "cases", "docs", "embedded", "ai", "web3", "wasm", "cli", "forum"];
+  if cfg!(feature = "course") {
+    ids.push("course");
+  }
+  ids
 }
 
 fn main() {
@@ -130,7 +133,7 @@ fn main() {
   });
 
   // O10：课程同样经注册表进索引。只收标题 / 简介 / 标签——课时正文是付费内容，不进公开搜索。
-  #[cfg(feature = "server")]
+  #[cfg(all(feature = "server", feature = "course"))]
   app_core::engines::doc_source::register_doc_source(|| {
     module_course::server::scan_courses(&module_course::server::get_courses_root())
       .into_iter()

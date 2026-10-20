@@ -4,11 +4,12 @@ use dioxus_shadcn::{
   badge_class, BadgeVariant, Button, ButtonSize, ButtonVariant, Spinner, SpinnerSize,
 };
 
-use crate::components::admin_entitlements::AdminEntitlementsPage;
 use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
+#[cfg(feature = "course")]
+use crate::components::home_sections::CourseShowcase;
 use crate::components::home_sections::{
-  CommunityFeed, CourseShowcase, EcosystemPage, EcosystemPillars, FeaturedCases,
+  CommunityFeed, EcosystemPage, EcosystemPillars, FeaturedCases,
 };
 use crate::components::module_gate::{use_enabled_modules, ModuleGate};
 use crate::components::nav::Navbar;
@@ -22,11 +23,8 @@ use module_ai::{AiArticlePage, AiIndexPage};
 use module_blog::server::{get_blog_content, list_blog_posts};
 use module_cases::cases::{CaseDetailPage, CasesIndexPage};
 use module_cli::{CliArticlePage, CliIndexPage};
-use module_course::course::{
-  AnnotationLayer, CourseDetailPage, CoursesIndexPage, LessonPage, MyAnnotationsPage,
-};
-#[cfg(feature = "payments")]
-use module_course::pay_ui::MyOrdersPage;
+#[cfg(feature = "course")]
+use module_course::course::AnnotationLayer;
 use module_docs::docs::{DocPage as DocPageView, Docs as DocsView};
 use module_embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
 use module_forum::forum::{
@@ -36,6 +34,62 @@ use module_podcast::podcast::PodcastPage;
 use module_wasm::{WasmArticlePage, WasmIndexPage};
 use module_web3::{Web3ArticlePage, Web3IndexPage};
 use widgets::{get_seo_base_url, inject_seo, parse_mdx, Markdown};
+
+#[cfg(feature = "course")]
+mod course;
+#[cfg(feature = "course")]
+pub use course::*;
+
+/// 某一层没编译进来时（docs/FEATURE_TIERS.md DL1），为它的路由生成同名页面组件，
+/// 渲染 404。`Route` 因此在各层都相同，导航链接照常编译，是否显示由启用列表决定。
+#[allow(unused_macros)]
+macro_rules! absent_pages {
+  ($($name:ident { $($field:ident : $ty:ty),* }),* $(,)?) => {
+    $(
+      #[component]
+      pub fn $name($($field: $ty),*) -> Element {
+        $(let _ = $field;)*
+        let lang = use_i18n();
+        rsx! { widgets::NotFound { message: t(lang(), "common.not_found") } }
+      }
+    )*
+  };
+}
+
+#[cfg(not(feature = "course"))]
+absent_pages! {
+  Courses {},
+  CourseDetail { slug: String },
+  Lesson { slug: String, chapter: String, lesson: String },
+  MyAnnotations {},
+  MyOrders {},
+  AdminEntitlements {},
+}
+
+/// 标注层（course 层，FEATURE_TIERS DL3）；未编译课程时为空。
+fn annotation_layer(resource_kind: &str, resource_path: String) -> Element {
+  #[cfg(feature = "course")]
+  {
+    rsx! { AnnotationLayer { resource_kind: resource_kind.to_string(), resource_path } }
+  }
+  #[cfg(not(feature = "course"))]
+  {
+    let _ = (resource_kind, resource_path);
+    rsx! {}
+  }
+}
+
+/// 首页课程区（course 层）；未编译课程时为空。
+fn course_showcase() -> Element {
+  #[cfg(feature = "course")]
+  {
+    rsx! { CourseShowcase {} }
+  }
+  #[cfg(not(feature = "course"))]
+  {
+    rsx! {}
+  }
+}
 
 /// Application routes
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -162,7 +216,7 @@ pub fn Home() -> Element {
           FeaturedCases {}
       }
       if on("course") {
-          CourseShowcase {}
+          {course_showcase()}
       }
 
       // 社区动态：最新博客 + 论坛热帖
@@ -189,10 +243,7 @@ pub fn DocPage(path: Vec<String>) -> Element {
           DocPageView {
               path: path.clone(),
               footer: rsx! {
-                  AnnotationLayer {
-                      resource_kind: "doc".to_string(),
-                      resource_path: doc_path.clone(),
-                  }
+                  {annotation_layer("doc", doc_path.clone())}
                   DiscussionPanel {
                       resource_kind: "doc".to_string(),
                       resource_path: doc_path.clone(),
@@ -469,10 +520,7 @@ fn BlogArticle(id: String) -> Element {
         // **必须传纯 slug**（如 "welcome"）。
         Markdown { content: content.clone(), blog_id: id.clone() }
         // 标注层（resource_kind="blog"，path = 博客 id）
-        AnnotationLayer {
-            resource_kind: "blog".to_string(),
-            resource_path: anno_path.clone(),
-        }
+        {annotation_layer("blog", anno_path.clone())}
         // 评论与关联讨论只挂在存在的文章下
         div { class: "border-t border-slate-200 dark:border-slate-800 pt-8 mt-12",
             CommentBox { blog_id: id.clone() }
@@ -489,33 +537,6 @@ fn BlogArticle(id: String) -> Element {
             Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
         }
     },
-  }
-}
-
-#[component]
-pub fn Courses() -> Element {
-  rsx! { ModuleGate { id: "course".to_string(), CoursesIndexPage {} } }
-}
-
-#[component]
-pub fn CourseDetail(slug: String) -> Element {
-  rsx! { ModuleGate { id: "course".to_string(), CourseDetailPage { slug: slug } } }
-}
-
-#[component]
-pub fn Lesson(slug: String, chapter: String, lesson: String) -> Element {
-  let lesson_path = format!("{}/{}/{}", slug, chapter, lesson);
-  rsx! {
-      ModuleGate { id: "course".to_string(),
-          LessonPage { slug: slug.clone(), chapter: chapter.clone(), lesson: lesson.clone() }
-          // 资源讨论面板：关联论坛话题（以 lesson kind 记录）
-          Container {
-              DiscussionPanel {
-                  resource_kind: "lesson".to_string(),
-                  resource_path: lesson_path,
-              }
-          }
-      }
   }
 }
 
@@ -615,37 +636,11 @@ pub fn MyTopics() -> Element {
   rsx! { ModuleGate { id: "forum".to_string(), MyTopicsPage {} } }
 }
 
-/// /me/orders 我的订单页（payments feature 门控；关闭时渲染占位提示，
-/// 路由保留以免旧链接 404）。
-#[component]
-pub fn MyOrders() -> Element {
-  #[cfg(feature = "payments")]
-  {
-    rsx! { ModuleGate { id: "course".to_string(), MyOrdersPage {} } }
-  }
-  #[cfg(not(feature = "payments"))]
-  {
-    rsx! {
-        section { class: "py-20 bg-white dark:bg-slate-950 min-h-[60vh]",
-            div { class: "mx-auto max-w-4xl px-4 text-center text-slate-500",
-                "在线支付未开通，暂无订单可查。如需开通课程权益请联系管理员。"
-            }
-        }
-    }
-  }
-}
-
 #[component]
 pub fn Podcast() -> Element {
   rsx! {
       ModuleGate { id: "podcast".to_string(), PodcastPage {} }
   }
-}
-
-/// /me/annotations 个人标注列表页
-#[component]
-pub fn MyAnnotations() -> Element {
-  rsx! { MyAnnotationsPage {} }
 }
 
 #[component]
@@ -666,11 +661,6 @@ pub fn AdminComments() -> Element {
 #[component]
 pub fn AdminTopics() -> Element {
   rsx! { AdminTopicsPage {} }
-}
-
-#[component]
-pub fn AdminEntitlements() -> Element {
-  rsx! { AdminEntitlementsPage {} }
 }
 
 #[component]
