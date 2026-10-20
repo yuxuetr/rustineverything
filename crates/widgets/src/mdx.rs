@@ -150,6 +150,22 @@ fn render_stream<'a>(
                     nodes.push(render_code_block(lang, code_text, id));
                 }
             }
+            Event::Start(Tag::Image { dest_url, title, .. }) => {
+                // X1：图片的描述是它的子事件，取纯文本作 alt（不当正文渲染）。
+                let mut alt = String::new();
+                let mut depth = 0usize;
+                while let Some(event) = it.next() {
+                    match event {
+                        Event::Start(_) => depth += 1,
+                        Event::End(_) if depth == 0 => break,
+                        Event::End(_) => depth -= 1,
+                        Event::Text(t) | Event::Code(t) => alt.push_str(&t),
+                        Event::SoftBreak | Event::HardBreak => alt.push(' '),
+                        _ => {}
+                    }
+                }
+                nodes.push(render_image(&dest_url, &title, &alt, blog_id, untrusted));
+            }
             Event::Start(Tag::TableHead) => {
                 // TableHead 内的 cell 需要渲染为 <th> 而非 <td>
                 let mut header_cells = Vec::new();
@@ -176,7 +192,7 @@ fn render_stream<'a>(
             Event::Start(tag) => {
                 let id = mint_block_id(top, block_idx);
                 let children = render_stream(it, blog_id, untrusted, block_idx, false);
-                nodes.push(render_tag(tag, children, blog_id, untrusted, id));
+                nodes.push(render_tag(tag, children, untrusted, id));
             }
             Event::End(_) => break,
             Event::Text(text) => nodes.push(rsx! { "{text}" }),
@@ -224,10 +240,24 @@ fn mint_block_id(top: bool, block_idx: &mut usize) -> Option<String> {
   Some(format!("b{}", n))
 }
 
+/// 图片：相对路径按 blog_id 解析（`image_src`），描述作 alt，title 作图注。
+fn render_image(dest_url: &str, title: &str, alt: &str, blog_id: &str, untrusted: bool) -> Element {
+  let Some(src) = image_src(dest_url, blog_id, untrusted) else {
+    return rsx! { span { class: "text-red-500", "[image rejected: unsafe URL]" } };
+  };
+  rsx! {
+      figure { class: "my-8",
+          img { src: "{src}", alt: "{alt}", class: "rounded-2xl shadow-xl mx-auto border border-slate-200 dark:border-slate-800" }
+          if !title.is_empty() {
+              figcaption { class: "text-center text-sm text-slate-500 mt-3 italic", "{title}" }
+          }
+      }
+  }
+}
+
 fn render_tag(
   tag: Tag,
   children: Vec<Element>,
-  blog_id: &str,
   untrusted: bool,
   block_id: Option<String>,
 ) -> Element {
@@ -296,20 +326,6 @@ fn render_tag(
       }
     }
 
-    // --- 核心：处理图片相对路径 ---
-    Tag::Image { dest_url, title, .. } => {
-      let Some(src) = image_src(&dest_url, blog_id, untrusted) else {
-        return rsx! { span { class: "text-red-500", "[image rejected: unsafe URL]" } };
-      };
-      rsx! {
-          figure { class: "my-8",
-              img { src: "{src}", class: "rounded-2xl shadow-xl mx-auto border border-slate-200 dark:border-slate-800" }
-              if !title.is_empty() {
-                  figcaption { class: "text-center text-sm text-slate-500 mt-3 italic", "{title}" }
-              }
-          }
-      }
-    }
     Tag::BlockQuote(kind) => {
       render_blockquote(kind, children, if has_bid { Some(bid.clone()) } else { None })
     }
@@ -715,6 +731,18 @@ mod tests {
     assert!(render_markdown("# 标题", false).contains("<h1"));
     let html = render_markdown("# 标题", true);
     assert!(!html.contains("<h1") && html.contains("<h2"), "{html}");
+  }
+
+  /// X1：`![描述](x.png)` 的描述作为 alt，内联格式只取文本；没写描述时 alt 为空。
+  #[test]
+  fn image_description_becomes_alt() {
+    for untrusted in [false, true] {
+      let html = render_markdown("![架构 *总览* 图](/uploads/a.png)", untrusted);
+      assert!(html.contains("alt=\"架构 总览 图\""), "{html}");
+      assert!(!html.contains("<em>"), "描述不应作为正文渲染：{html}");
+      let html = render_markdown("![](/uploads/a.png)", untrusted);
+      assert!(html.contains("alt=\"\""), "{html}");
+    }
   }
 
   #[test]
