@@ -19,13 +19,13 @@ dioxus-shadcn = { workspace = true, features = ["badge", "button", "card", "dial
 module-blog = { path = "../modules/blog" }
 module-podcast = { path = "../modules/podcast" }
 module-course = { path = "../modules/course", optional = true }
-module-forum = { path = "../modules/forum" }
-module-admin = { path = "../modules/admin" }
+module-forum = { path = "../modules/forum", optional = true }
+module-admin = { path = "../modules/admin", optional = true }
 module-search = { path = "../modules/search" }
 module-cases = { path = "../modules/cases" }
 module-docs = { path = "../modules/docs" }
-module-comments = { path = "../modules/comments" }
-module-uploads = { path = "../modules/uploads" }
+module-comments = { path = "../modules/comments", optional = true }
+module-uploads = { path = "../modules/uploads", optional = true }
 module-embedded = { path = "../modules/embedded" }
 module-ai = { path = "../modules/ai" }
 module-web3 = { path = "../modules/web3" }
@@ -55,8 +55,11 @@ web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
 # 功能分层（docs/FEATURE_TIERS.md）：默认 = 完整站点。
+# 账号层：登录、论坛、博客评论、图片上传、管理后台；需要 Postgres 与 JWT_SECRET。
+# 关闭时（basic）不连库、不要求 JWT_SECRET，相关路由 404。
+accounts = ["dep:module-forum", "dep:module-comments", "dep:module-admin", "dep:module-uploads"]
 # 课程层：课程 / 课时 / 标注 / 权益后台 / Pro 会员。关闭时课程路由 404。
-course = ["dep:module-course"]
+course = ["accounts", "dep:module-course"]
 # 在线支付（PM4，默认开）：级联 module-course/payments。关闭时 /api/pay/* 不注册、
 # 购买 UI / 我的订单退化，权益仍可由 admin 手动授予。
 payments = ["course", "module-course/payments"]
@@ -68,13 +71,13 @@ server = [
     "module-blog/server",
     "module-podcast/server",
     "module-course?/server",
-    "module-forum/server",
-    "module-admin/server",
+    "module-forum?/server",
+    "module-admin?/server",
     "module-search/server",
     "module-cases/server",
     "module-docs/server",
-    "module-comments/server",
-    "module-uploads/server",
+    "module-comments?/server",
+    "module-uploads?/server",
     "module-embedded/server",
     "module-ai/server",
     "module-web3/server",

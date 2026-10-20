@@ -1,4 +1,4 @@
-#[cfg(feature = "server")]
+#[cfg(all(feature = "server", feature = "accounts"))]
 pub mod auth_routes;
 #[cfg(feature = "server")]
 pub mod health;
@@ -13,6 +13,7 @@ pub mod seo;
 #[cfg(feature = "server")]
 pub mod static_assets;
 
+#[cfg(feature = "accounts")]
 use app_core::session::SessionUser;
 #[cfg(feature = "server")]
 use app_core::settings::SiteConfig;
@@ -25,7 +26,7 @@ use serde::{Deserialize, Serialize};
 // ========== 辅助：从 FullstackContext 读取 Cookie 中的用户 ==========
 
 /// server-only: 从当前请求上下文的 Cookie 中解析 SessionUser
-#[cfg(feature = "server")]
+#[cfg(all(feature = "server", feature = "accounts"))]
 fn current_session_user() -> Option<SessionUser> {
   use app_core::session::parse_session_from_cookie_header;
   use dioxus::fullstack::FullstackContext;
@@ -174,6 +175,7 @@ pub async fn set_user_theme(id: String) -> Result<(), ServerFnError> {
 
 // ========== Auth 辅助 (server-only) ==========
 
+#[cfg(feature = "accounts")]
 #[cfg(feature = "server")]
 fn build_auth_service() -> (app_core::auth::AuthService, SiteConfig) {
   use app_core::auth::{AuthConfig, AuthService};
@@ -196,6 +198,7 @@ fn build_auth_service() -> (app_core::auth::AuthService, SiteConfig) {
 }
 
 /// URL 里的 provider 段 → site.json 启用的内置 provider。
+#[cfg(feature = "accounts")]
 #[cfg(feature = "server")]
 fn resolve_provider(
   site_config: &SiteConfig,
@@ -208,6 +211,7 @@ fn resolve_provider(
 
 // ========== Auth 端点 ==========
 
+#[cfg(feature = "accounts")]
 #[post("/api/auth/providers")]
 pub async fn get_auth_providers() -> Result<Vec<app_core::AuthProviderDisplay>, ServerFnError> {
   #[cfg(feature = "server")]
@@ -224,6 +228,7 @@ pub async fn get_auth_providers() -> Result<Vec<app_core::AuthProviderDisplay>, 
 /// Phase 7.2：准备一次 OAuth 登录，返回 (跳转 URL, 加密后的 cookie value)。
 /// 仅供 axum 路由 `/api/auth/login/{provider}` 使用：路由把 cookie value
 /// 套上 [`app_core::auth::build_pkce_set_cookie`] 后下发，再 302 到 url。
+#[cfg(feature = "accounts")]
 #[cfg(feature = "server")]
 pub async fn prepare_login_for_provider(
   provider: String,
@@ -242,6 +247,7 @@ pub async fn prepare_login_for_provider(
 /// elapsed；`code` skip 以免 OAuth code 进日志，但 code_len 入字段供
 /// 联调判定；`provider` / 解密后 cookie 内的 `pkce_cookie.provider`
 /// 都已脱敏。
+#[cfg(feature = "accounts")]
 #[cfg(feature = "server")]
 #[tracing::instrument(
   name = "server::auth_callback",
@@ -284,6 +290,7 @@ pub async fn auth_callback_internal(
 }
 
 /// 获取当前登录用户 — 前端调用
+#[cfg(feature = "accounts")]
 #[post("/api/auth/me")]
 pub async fn get_current_user() -> Result<Option<SessionUser>, ServerFnError> {
   #[cfg(feature = "server")]

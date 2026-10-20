@@ -4,6 +4,7 @@ use dioxus_shadcn::{
   badge_class, BadgeVariant, Button, ButtonSize, ButtonVariant, Spinner, SpinnerSize,
 };
 
+#[cfg(feature = "accounts")]
 use crate::components::comment::CommentBox;
 use crate::components::hero::Hero;
 #[cfg(feature = "course")]
@@ -15,10 +16,6 @@ use crate::components::module_gate::{use_enabled_modules, ModuleGate};
 use crate::components::nav::Navbar;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
-use module_admin::admin::{
-  AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminModerationSettingsPage,
-  AdminTopicsPage, AdminUsersPage,
-};
 use module_ai::{AiArticlePage, AiIndexPage};
 use module_blog::server::{get_blog_content, list_blog_posts};
 use module_cases::cases::{CaseDetailPage, CasesIndexPage};
@@ -27,14 +24,17 @@ use module_cli::{CliArticlePage, CliIndexPage};
 use module_course::course::AnnotationLayer;
 use module_docs::docs::{DocPage as DocPageView, Docs as DocsView};
 use module_embedded::{EmbeddedArticlePage, EmbeddedIndexPage};
-use module_forum::forum::{
-  DiscussionPanel, MyTopicsPage, NewTopicPage, TopicDetailPage, TopicsByTagPage, TopicsIndexPage,
-};
+#[cfg(feature = "accounts")]
+use module_forum::forum::DiscussionPanel;
 use module_podcast::podcast::PodcastPage;
 use module_wasm::{WasmArticlePage, WasmIndexPage};
 use module_web3::{Web3ArticlePage, Web3IndexPage};
 use widgets::{get_seo_base_url, inject_seo, parse_mdx, Markdown};
 
+#[cfg(feature = "accounts")]
+mod accounts;
+#[cfg(feature = "accounts")]
+pub use accounts::*;
 #[cfg(feature = "course")]
 mod course;
 #[cfg(feature = "course")]
@@ -64,6 +64,51 @@ absent_pages! {
   MyAnnotations {},
   MyOrders {},
   AdminEntitlements {},
+}
+
+#[cfg(not(feature = "accounts"))]
+absent_pages! {
+  TopicsIndex {},
+  TopicsNew {},
+  TopicsByTag { tag: String },
+  TopicDetail { id: i32 },
+  MyTopics {},
+  AdminDashboard {},
+  AdminUsers {},
+  AdminComments {},
+  AdminTopics {},
+  AdminModeration {},
+  AdminModerationSettings {},
+}
+
+/// 资源讨论面板（论坛，accounts 层）；未编译时为空。
+fn discussion(resource_kind: &str, resource_path: String) -> Element {
+  #[cfg(feature = "accounts")]
+  {
+    rsx! { DiscussionPanel { resource_kind: resource_kind.to_string(), resource_path } }
+  }
+  #[cfg(not(feature = "accounts"))]
+  {
+    let _ = (resource_kind, resource_path);
+    rsx! {}
+  }
+}
+
+/// 博客评论区（accounts 层）；未编译时为空（连同上方分隔线）。
+fn comments(blog_id: String) -> Element {
+  #[cfg(feature = "accounts")]
+  {
+    rsx! {
+        div { class: "border-t border-slate-200 dark:border-slate-800 pt-8 mt-12",
+            CommentBox { blog_id }
+        }
+    }
+  }
+  #[cfg(not(feature = "accounts"))]
+  {
+    let _ = blog_id;
+    rsx! {}
+  }
 }
 
 /// 标注层（course 层，FEATURE_TIERS DL3）；未编译课程时为空。
@@ -244,10 +289,7 @@ pub fn DocPage(path: Vec<String>) -> Element {
               path: path.clone(),
               footer: rsx! {
                   {annotation_layer("doc", doc_path.clone())}
-                  DiscussionPanel {
-                      resource_kind: "doc".to_string(),
-                      resource_path: doc_path.clone(),
-                  }
+                  {discussion("doc", doc_path.clone())}
               },
           }
       }
@@ -522,13 +564,8 @@ fn BlogArticle(id: String) -> Element {
         // 标注层（resource_kind="blog"，path = 博客 id）
         {annotation_layer("blog", anno_path.clone())}
         // 评论与关联讨论只挂在存在的文章下
-        div { class: "border-t border-slate-200 dark:border-slate-800 pt-8 mt-12",
-            CommentBox { blog_id: id.clone() }
-        }
-        DiscussionPanel {
-            resource_kind: "blog".to_string(),
-            resource_path: id.clone(),
-        }
+        {comments(id.clone())}
+        {discussion("blog", id.clone())}
     },
     Some(Ok(None)) => rsx! { widgets::NotFound { message: t(lang(), "blog.not_found") } },
     Some(Err(_)) => rsx! { widgets::LoadFailed { message: t(lang(), "common.load_failed") } },
@@ -552,7 +589,7 @@ pub fn CaseDetail(slug: String) -> Element {
           CaseDetailPage {
               slug: slug.clone(),
               footer: rsx! {
-                  DiscussionPanel { resource_kind: "case".to_string(), resource_path: slug.clone() }
+                  {discussion("case", slug.clone())}
               },
           }
       }
@@ -612,63 +649,8 @@ pub fn CliArticle(slug: String) -> Element {
 }
 
 #[component]
-pub fn TopicsIndex() -> Element {
-  rsx! { ModuleGate { id: "forum".to_string(), TopicsIndexPage {} } }
-}
-
-#[component]
-pub fn TopicsNew() -> Element {
-  rsx! { ModuleGate { id: "forum".to_string(), NewTopicPage {} } }
-}
-
-#[component]
-pub fn TopicsByTag(tag: String) -> Element {
-  rsx! { ModuleGate { id: "forum".to_string(), TopicsByTagPage { tag } } }
-}
-
-#[component]
-pub fn TopicDetail(id: i32) -> Element {
-  rsx! { ModuleGate { id: "forum".to_string(), TopicDetailPage { id } } }
-}
-
-#[component]
-pub fn MyTopics() -> Element {
-  rsx! { ModuleGate { id: "forum".to_string(), MyTopicsPage {} } }
-}
-
-#[component]
 pub fn Podcast() -> Element {
   rsx! {
       ModuleGate { id: "podcast".to_string(), PodcastPage {} }
   }
-}
-
-#[component]
-pub fn AdminDashboard() -> Element {
-  rsx! { AdminDashboardPage {} }
-}
-
-#[component]
-pub fn AdminUsers() -> Element {
-  rsx! { AdminUsersPage {} }
-}
-
-#[component]
-pub fn AdminComments() -> Element {
-  rsx! { AdminCommentsPage {} }
-}
-
-#[component]
-pub fn AdminTopics() -> Element {
-  rsx! { AdminTopicsPage {} }
-}
-
-#[component]
-pub fn AdminModeration() -> Element {
-  rsx! { AdminModerationPage {} }
-}
-
-#[component]
-pub fn AdminModerationSettings() -> Element {
-  rsx! { AdminModerationSettingsPage {} }
 }

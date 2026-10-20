@@ -71,7 +71,7 @@ pub fn MinimalShell() -> Element {
                           // 用户菜单：与 Classic 一致但样式更紧凑
                           if let Some(ref u) = session_user() {
                               UserMenu { user: u.clone(), compact: true, show_my_topics: false }
-                          } else {
+                          } else if cfg!(feature = "accounts") {
                               Button {
                                   r#type: "button",
                                   variant: ButtonVariant::Ghost,

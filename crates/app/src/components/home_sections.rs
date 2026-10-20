@@ -18,6 +18,7 @@ use module_blog::server::{list_blog_posts, BlogPostSummary};
 use module_cases::server::{list_cases, CaseSummary};
 #[cfg(feature = "course")]
 use module_course::server::{list_courses, CourseSummary};
+#[cfg(feature = "accounts")]
 use module_forum::server::{list_topics, TopicSummary};
 
 /// 两大生态 pillars：Rust 生态 | AI 生态，各列子领域 chips（链接到领域路由）。
@@ -287,7 +288,7 @@ pub fn CommunityFeed(blog: bool, forum: bool) -> Element {
                               h3 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200", "{t(lang(), \"home.community.forum\")}" }
                               Link { to: Route::TopicsIndex {}, class: "text-xs text-[var(--color-primary)] hover:underline", "{t(lang(), \"home.community.forum_all\")}" }
                           }
-                          ForumColumn {}
+                          {forum_column()}
                       }
                   }
               }
@@ -323,6 +324,19 @@ fn BlogColumn() -> Element {
   }
 }
 
+/// 论坛热帖栏（accounts 层）；未编译论坛时为空（`forum` 恒为 false，不会渲染到这里）。
+fn forum_column() -> Element {
+  #[cfg(feature = "accounts")]
+  {
+    rsx! { ForumColumn {} }
+  }
+  #[cfg(not(feature = "accounts"))]
+  {
+    rsx! {}
+  }
+}
+
+#[cfg(feature = "accounts")]
 #[component]
 fn ForumColumn() -> Element {
   let lang = use_i18n();

@@ -185,7 +185,7 @@ pub fn ClassicShell() -> Element {
                           // User avatar / Sign In
                           if let Some(ref u) = session_user() {
                               UserMenu { user: u.clone(), compact: false, show_my_topics: on_forum }
-                          } else {
+                          } else if cfg!(feature = "accounts") {
                               Button {
                                   r#type: "button",
                                   variant: ButtonVariant::Ghost,

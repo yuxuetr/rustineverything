@@ -444,9 +444,12 @@ pub fn collect_file_documents() -> Vec<VersionedDoc> {
 #[cfg(feature = "server")]
 pub async fn collect_dyn_documents() -> Vec<IndexedDocument> {
   let mut out = Vec::new();
-  match collect_topics().await {
-    Ok(mut t) => out.append(&mut t),
-    Err(e) => tracing::warn!(error = %e, "search: failed to collect topics"),
+  // 论坛没编译进来 / 已关闭时不去连库（basic 层没有数据库，docs/FEATURE_TIERS.md）。
+  if app_core::engines::module::default_module_engine().is_enabled("forum") {
+    match collect_topics().await {
+      Ok(mut t) => out.append(&mut t),
+      Err(e) => tracing::warn!(error = %e, "search: failed to collect topics"),
+    }
   }
   out.extend(collect_registered_external());
   out
