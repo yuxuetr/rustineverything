@@ -511,6 +511,7 @@ docker compose logs -f app | grep "schema migrations"
 | postgres 密码 | 强密码；不暴露 5432 端口到公网（compose 默认仅 127.0.0.1） |
 | Cookie Secure | `BASE_URL` 以 `https://` 起首时自动启用（main.rs cookie_is_secure） |
 | 反向代理 | TLS 终止 + `X-Forwarded-Proto: https` |
+| app 端口 | compose 默认只绑 `127.0.0.1:8080`（`APP_BIND`）；对外只开网关 / 反代。限流按 `X-Forwarded-For` 区分客户端，直连 app 的请求可伪造该头绕过限流 |
 | `RUST_LOG=info` | 而非 `debug`，避免敏感请求参数进日志 |
 | 在线支付 | 启动日志里要用的网关都是 `payment gateway enabled`；Stripe 用 `sk_live_` 且 webhook 已建（§7） |
 | Admin 升级 | 创建第一个 admin 后**移除** `users` 表的开放写权限脚本 |
