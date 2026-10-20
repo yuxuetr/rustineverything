@@ -35,5 +35,7 @@ pub use registry::{
   clear_for_tests, list_registered, register, registered_count, ComponentRegistry, MdxComponent,
 };
 pub use sanitize::sanitize_user_html;
-pub use seo::{build_canonical, get_seo_base_url, inject_seo, page_title, PageMeta, SITE_NAME};
+pub use seo::{
+  build_canonical, get_seo_base_url, inject_seo, page_title, website_schema, PageMeta, SITE_NAME,
+};
 pub use status::{LoadFailed, NotFound};

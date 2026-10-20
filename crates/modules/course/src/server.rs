@@ -168,6 +168,36 @@ impl Course {
     self.access_tier != "free"
   }
 
+  /// schema.org `Course`（G8，课程详情页 JSON-LD；`url` 由 PageMeta 补）。
+  /// 付费课程每个币种一条 Offer；免费课程标 `isAccessibleForFree`。
+  pub fn schema(&self) -> serde_json::Value {
+    let mut v = serde_json::json!({
+      "@type": "Course",
+      "name": self.title,
+      "description": self.description,
+      "inLanguage": "zh-CN",
+      "provider": { "@type": "Organization", "name": widgets::SITE_NAME },
+    });
+    if self.is_paid() {
+      let offer = |amount: i64, currency: &str| {
+        serde_json::json!({
+          "@type": "Offer",
+          "category": "Paid",
+          "price": format!("{}.{:02}", amount / 100, amount % 100),
+          "priceCurrency": currency,
+        })
+      };
+      let mut offers = vec![offer(self.price, &self.currency)];
+      if let Some(usd) = self.price_usd {
+        offers.push(offer(usd, "USD"));
+      }
+      v["offers"] = offers.into();
+    } else {
+      v["isAccessibleForFree"] = true.into();
+    }
+    v
+  }
+
   /// 未登录访客能读的课节路径（免费课程全部；付费课程只有试看课节），
   /// 直接用 `can_access_lesson` 判定。供 sitemap 收录（G6）。
   pub fn open_lesson_paths(&self) -> Vec<String> {
@@ -2942,6 +2972,43 @@ mod tests {
 
   fn lock_cwd() -> std::sync::MutexGuard<'static, ()> {
     CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+  }
+
+  /// G8：schema.org Course。付费课程每个币种一条 Offer，免费课程标 isAccessibleForFree。
+  #[test]
+  fn schema_lists_offers_per_currency() {
+    let mut course = read_course_fixture();
+    let v = course.schema();
+    assert_eq!(v["@type"], "Course");
+    assert_eq!(v["name"], "C");
+    assert_eq!(v["provider"]["name"], widgets::SITE_NAME);
+    assert_eq!(v["offers"][0]["price"], "99.50");
+    assert_eq!(v["offers"][0]["priceCurrency"], "CNY");
+    assert_eq!(v["offers"][1]["price"], "14.99");
+    assert_eq!(v["offers"][1]["priceCurrency"], "USD");
+    course.price_usd = None;
+    assert_eq!(course.schema()["offers"].as_array().map(Vec::len), Some(1));
+    course.access_tier = "free".into();
+    let free = course.schema();
+    assert_eq!(free["isAccessibleForFree"], true);
+    assert!(free.get("offers").is_none());
+  }
+
+  fn read_course_fixture() -> Course {
+    Course {
+      slug: "c".into(),
+      title: "C".into(),
+      description: "d".into(),
+      cover: None,
+      tags: vec![],
+      level: None,
+      order: 0,
+      access_tier: "paid".into(),
+      price: 9950,
+      currency: "CNY".into(),
+      price_usd: Some(1499),
+      chapters: vec![],
+    }
   }
 
   /// G6：免费课程的课节全部公开；付费课程只有试看课节公开。

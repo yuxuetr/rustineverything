@@ -282,6 +282,7 @@ pub fn Home() -> Element {
           title: t(lang(), "hero.title"),
           description: t(lang(), "hero.subtitle"),
           path: "/".to_string(),
+          schema: widgets::website_schema(),
       }
       Hero { enabled: enabled.clone() }
 

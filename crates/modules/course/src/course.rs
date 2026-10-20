@@ -216,6 +216,7 @@ fn CourseDetailLoaded(slug: String) -> Element {
               title: c.title.clone(),
               description: c.description.clone(),
               path: format!("/course/{}", slug),
+              schema: c.schema(),
           }
           CourseDetailBody { course: c, progress: progress.clone(), last: last.clone() }
       }

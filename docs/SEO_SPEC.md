@@ -137,6 +137,12 @@ rsx! {
 - `crates/app/index.html` 是 dx 的页面模板，只比默认模板多 `<html lang="zh-CN">`；SSR 始终渲染中文，英文是 hydration 后按 `site_lang` cookie 切换的界面语言。
 - 不做英文独立 URL / hreflang：内容全部是中文，开英文 URL 收录到的也是中文正文。重估条件与命令见 [`AUDIT_2026-10-20.md`](AUDIT_2026-10-20.md) §4。
 
+### 3.2 结构化数据（JSON-LD）
+
+- 文章页：`inject_seo` 输出 `Article`。
+- 其他页面：`PageMeta { schema }` 传入 schema.org 对象，自动补 `@context` 与 `url`（canonical）。首页 `widgets::website_schema()`（`WebSite`）；课程详情 `Course::schema()`（`Course`，付费课程每个币种一条 `Offer`，免费课程 `isAccessibleForFree`）。
+- 序列化后 `<` 写成 `\u003c`，正文里的 `</script>` 不会提前结束脚本。
+
 ## 4. Sitemap.xml
 
 由 `build_sitemap_xml(entries, static_paths, base_url)` 生成
