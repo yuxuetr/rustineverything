@@ -6,8 +6,9 @@
 //!
 //! - **作用范围**：仅 `/api/*`（server fn、auth、pay 回调都在该前缀下）。
 //!   SSR 页面与静态资源不限流——页面加载会并发拉多个资源，限流误伤大。
-//! - **分级**：`/api/auth/*` 与 `/api/pay/*` 用更严的 sensitive 桶（防爆破 /
-//!   防回调滥用）；其余 `/api/*` 用宽松的默认桶。
+//! - **分级**：`/api/auth/*`、`/api/pay/*` 与下单（`/api/orders/create`、
+//!   `/api/orders/tip`）用更严的 sensitive 桶（防爆破 / 防回调滥用 / 防刷单）；
+//!   其余 `/api/*` 用宽松的默认桶。
 //! - **键**：`x-forwarded-for` 首个 IP（gateway / 反代注入）→ `x-real-ip` →
 //!   兜底共享桶 `"global"`。无反代直连时退化为全局限流，仍能防单源打满。
 //!
@@ -131,7 +132,9 @@ pub fn classify_path(path: &str) -> Option<bool> {
   if !path.starts_with("/api/") {
     return None;
   }
-  Some(path.starts_with("/api/auth/") || path.starts_with("/api/pay/"))
+  // 下单（H4）每次写一行订单并调用一次网关，与登录 / 回调同用严格桶。
+  const SENSITIVE: [&str; 4] = ["/api/auth/", "/api/pay/", "/api/orders/create", "/api/orders/tip"];
+  Some(SENSITIVE.iter().any(|p| path.starts_with(p)))
 }
 
 /// 从请求头解析限流键。信任反代注入的 `x-forwarded-for` 首个 IP；
@@ -233,6 +236,10 @@ mod tests {
     assert_eq!(classify_path("/api/comments/list"), Some(false));
     assert_eq!(classify_path("/api/auth/login/github"), Some(true));
     assert_eq!(classify_path("/api/pay/alipay/notify"), Some(true));
+    // H4：下单每次写一行订单并调用一次网关。
+    assert_eq!(classify_path("/api/orders/create"), Some(true));
+    assert_eq!(classify_path("/api/orders/tip"), Some(true));
+    assert_eq!(classify_path("/api/orders/mine"), Some(false));
   }
 
   #[test]
