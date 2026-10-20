@@ -282,7 +282,7 @@ trait 边界 = 未来 WASM ABI 边界，两路线不冲突。若把 Provider 下
 - 验签失败回 400；处理失败回 500，让 Stripe 重试。
 
 **DI7 流水线不加币种核验。** Session 由服务端用订单的币种创建，回调经我方 webhook secret 验签，币种不可能与订单不同。
-重估条件：新增网关（可能由客户端或第三方创建支付会话）——`ls crates/modules/payment/src | grep -vxE '(lib|crypto|host|pipeline|reconcile|alipay|wechat|stripe)\.rs'` 有输出。
+重估条件：新增网关（可能由客户端或第三方创建支付会话）——`find crates/modules/payment/src -maxdepth 1 -name '*.rs' -exec basename {} \; | grep -vxE '(lib|crypto|host|pipeline|reconcile|alipay|wechat|stripe)\.rs'` 有输出。
 
 **DI8 API 版本固定。** 请求头带 `Stripe-Version: 2024-06-20`，响应结构不随账户默认版本漂移。
 
