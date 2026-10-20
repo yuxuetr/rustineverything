@@ -41,7 +41,9 @@ impl MdxComponent for YouTubeComponent {
     "YouTube"
   }
   fn render(&self, attrs: &HashMap<String, String>) -> Element {
-    let id = attrs.get("id").cloned().unwrap_or_default();
+    let Some(id) = embed_id(attrs) else {
+      return rsx! {};
+    };
     rsx! {
         div { class: "not-prose aspect-video my-8 overflow-hidden rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800",
             iframe { class: "w-full h-full", src: "https://www.youtube.com/embed/{id}", allowfullscreen: true }
@@ -57,13 +59,27 @@ impl MdxComponent for BilibiliComponent {
     "Bilibili"
   }
   fn render(&self, attrs: &HashMap<String, String>) -> Element {
-    let id = attrs.get("id").cloned().unwrap_or_default();
+    let Some(id) = embed_id(attrs) else {
+      return rsx! {};
+    };
     rsx! {
         div { class: "not-prose aspect-video my-8 overflow-hidden rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800",
             iframe { class: "w-full h-full border-0", src: bilibili_embed_url(&id), allowfullscreen: true }
         }
     }
   }
+}
+
+/// 视频编号（YouTube id / Bilibili BV 号）只由字母、数字、`_`、`-` 组成。
+/// id 来自用户内容并直接拼进 iframe 地址（H7），其它字符一律不渲染，
+/// 免得借 `?` / `&` / `/` 改写嵌入页的路径和参数。
+fn embed_id(attrs: &HashMap<String, String>) -> Option<String> {
+  attrs
+    .get("id")
+    .filter(|id| {
+      !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    })
+    .cloned()
 }
 
 /// 写死 https：协议相对地址在 http 页面上会变成 http，被 CSP 的
@@ -134,6 +150,19 @@ impl MdxComponent for StrikethroughComponent {
 mod tests {
   use super::*;
   use crate::registry::{clear_for_tests, list_registered, registered_count};
+
+  /// H7：id 来自用户内容，只能是视频编号，不能带出路径或查询参数。
+  #[test]
+  fn embed_id_rejects_url_syntax() {
+    let id = |v: &str| embed_id(&HashMap::from([("id".to_string(), v.to_string())]));
+    assert_eq!(id("dQw4w9WgXcQ").as_deref(), Some("dQw4w9WgXcQ"));
+    assert_eq!(id("BV1xx411c7mD").as_deref(), Some("BV1xx411c7mD"));
+    assert_eq!(id("a_b-c").as_deref(), Some("a_b-c"));
+    for bad in ["", "x?autoplay=1", "x&page=2", "../watch", "x y", "x#t", "%3F"] {
+      assert_eq!(id(bad), None, "{bad}");
+    }
+    assert_eq!(embed_id(&HashMap::new()), None);
+  }
 
   /// 注：本 mod 操作全局单例 registry，所有测试共享同一进程状态。
   /// 同一测试进程内单跑 / 顺序跑均可。Cargo 默认开 -j 并行，所以
