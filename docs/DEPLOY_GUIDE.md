@@ -392,7 +392,47 @@ labels:
   - "traefik.http.services.rie.loadbalancer.server.port=8080"
 ```
 
-## 7. site.json 配置
+## 7. 在线支付（可选）
+
+默认镜像带在线支付（`payments` feature）。一个网关都没配时：购买弹窗提示「该地区暂无可用的支付方式」，打赏卡片不显示；
+运营仍可在 `/admin/entitlements` 手动开通课程与会员。网关各自独立，配哪个启用哪个。
+
+### 7.1 变量与回调地址
+
+变量清单与注释见 [`.env.example`](../.env.example) 支付段，细节见 [PAYMENT_SPEC.md](PAYMENT_SPEC.md) §8 / §15.3。
+三个网关共用 `PAY_NOTIFY_BASE`（公网 https 根地址，通常与 `BASE_URL` 相同）。
+
+| 网关 | 变量 | 回调地址（填到网关后台） |
+| --- | --- | --- |
+| 支付宝 | `ALIPAY_APP_ID` `ALIPAY_APP_PRIVATE_KEY` `ALIPAY_PUBLIC_KEY`（可选 `ALIPAY_GATEWAY`） | 下单时自动带上 `{PAY_NOTIFY_BASE}/api/pay/alipay/notify`，无需后台配置 |
+| 微信支付 v3 | `WECHAT_MCHID` `WECHAT_APP_ID` `WECHAT_API_V3_KEY` `WECHAT_MCH_PRIVATE_KEY` `WECHAT_MCH_SERIAL_NO` `WECHAT_PLATFORM_PUBLIC_KEY` | 下单时自动带上 `{PAY_NOTIFY_BASE}/api/pay/wechat/notify` |
+| Stripe | `STRIPE_SECRET_KEY` `STRIPE_WEBHOOK_SECRET` | 在 Stripe 后台添加 webhook：`{PAY_NOTIFY_BASE}/api/pay/stripe/notify`（见 7.2） |
+
+启动日志逐个网关报告状态，部署后先看这几行：
+
+```bash
+docker compose logs app | grep 'payment gateway'
+# payment gateway enabled gateway="stripe"
+# payment gateway partly configured; disabled gateway="alipay" missing="ALIPAY_PUBLIC_KEY"
+```
+
+`partly configured` 列出缺的变量名；`value is malformed` 表示都设了但某个值格式不对（密钥不是 PEM / base64、
+`WECHAT_API_V3_KEY` 不是 32 字节）。日志只有变量名，不含值。
+
+### 7.2 Stripe 上线
+
+1. 后台切到正式模式，`STRIPE_SECRET_KEY` 填 `sk_live_…`。测试密钥只留在本地；贴到过聊天或工单里的测试密钥在后台 roll 掉。
+2. Developers → Webhooks 添加端点 `https://<域名>/api/pay/stripe/notify`，订阅
+   `checkout.session.completed` 与 `checkout.session.async_payment_succeeded`；把该端点的 signing secret（`whsec_…`）填进 `STRIPE_WEBHOOK_SECRET`。正式与测试模式的 secret 不同。
+3. 要在 Stripe 收银台出现支付宝 / 微信支付：在 Settings → Payment methods 里开通。代码不指定支付方式，收银台显示后台已开通的全部方式。Stripe 账户须在中国大陆以外注册。
+
+### 7.3 上线检查
+
+- 反向代理放行 `/api/pay/*` 的 POST，不改写请求体：回调的签名覆盖请求内容，改过就验不过、不发货。
+- 回调走 app 的敏感限流桶（每 IP 5 rps、突发 15，见 `crates/app/src/server/rate_limit.rs`）。偶尔被限流也不会丢单：网关会重试，对账任务（默认每 5 分钟）会向网关查单并补发货。
+- 小额实付一单 → 我的订单显示已支付、课程解锁 → 管理员在 `/admin/entitlements` 退款 → 订单变为已退款。Stripe 后台的 webhook 投递记录应全是 200。
+
+## 8. site.json 配置
 
 `assets/site.json` 控制站点形态（站点名 / 主题 / 模块开关 / 布局）。
 完整字段见 [`THEME_SPEC.md`](THEME_SPEC.md) + [`MODULE_SPEC.md`](MODULE_SPEC.md)。
@@ -422,7 +462,7 @@ labels:
 docker compose restart app
 ```
 
-## 8. 内容资产
+## 9. 内容资产
 
 `assets/` 包含运行时数据：
 
@@ -441,7 +481,7 @@ docker compose restart app
 2. `git commit` + push
 3. 在服务器上 `git pull && docker compose build app && docker compose up -d app`
 
-## 9. 升级流程
+## 10. 升级流程
 
 ```bash
 # 0. 备份数据库（强烈建议；详见 OPERATIONS.md §备份）
@@ -462,7 +502,7 @@ docker compose logs -f app | grep "schema migrations"
 
 回滚见 [OPERATIONS.md](OPERATIONS.md#rollback)。
 
-## 10. 安全 checklist（上线前）
+## 11. 安全 checklist（上线前）
 
 | 项目 | 检查 |
 | --- | --- |
@@ -472,16 +512,17 @@ docker compose logs -f app | grep "schema migrations"
 | Cookie Secure | `BASE_URL` 以 `https://` 起首时自动启用（main.rs cookie_is_secure） |
 | 反向代理 | TLS 终止 + `X-Forwarded-Proto: https` |
 | `RUST_LOG=info` | 而非 `debug`，避免敏感请求参数进日志 |
+| 在线支付 | 启动日志里要用的网关都是 `payment gateway enabled`；Stripe 用 `sk_live_` 且 webhook 已建（§7） |
 | Admin 升级 | 创建第一个 admin 后**移除** `users` 表的开放写权限脚本 |
 | 容器更新 | 定期 `docker compose pull` 后台镜像（postgres） |
 
-## 11. 已知限制
+## 12. 已知限制
 
 - **uploads/ 不集中备份**：当前用户图片只在 `app-uploads` 卷里；若需异地备份，挂 NFS / S3-FUSE 或自行 `docker cp` 定时拷出。
 - **搜索索引目录需挂卷**：Phase 7.3 起索引落盘到 `SEARCH_INDEX_DIR`（默认 `data/search-index`）。docker-compose 已为该路径配卷；裸机部署需自行确保该目录持久化，否则重启会触发一次全量重建（仍可正常对外服务，只是冷启动慢）。
 - **moderation provider**：当前 ModerationEngine 为骨架，未接入实际 LLM。Phase 4.3+ 落地。
 
-## 12. 参考
+## 13. 参考
 
 - [CI workflow](.github/workflows/ci.yml) — 跟生产构建路径几乎对齐
 - [OPERATIONS.md](OPERATIONS.md) — 日常运维 / 故障排查
