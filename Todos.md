@@ -579,7 +579,8 @@
   - 完成（ae6bcb9）：`stripe::reversed_payment_intent`（纯函数，单测覆盖全额 / 部分退款 / 拒付 / 无关事件）；`handle_stripe_notify` 先分流到 `stripe_reversal`，按 `provider_txn` 找订单后调用从管理员退款抽出的 `mark_refunded`。本地 dx + 自签 webhook 实测：部分退款 200 不变；全额退款 → 订单 refunded、purchase 权益删除；重放 200 无变化；拒付同样撤销；未知 PaymentIntent 200 + 告警。测试数据已清理。`DEPLOY_GUIDE.md`、`PAYMENT_SPEC.md` §15、`.env.example` 的 webhook 事件补上两项
 - [x] H3 — 购买发货冲突时不覆盖已有权益来源（保护 admin_grant）。验收：先赠后买再退款，权限仍在
   - 完成（015aca9）：`grant_entitlement_internal` 对 `purchase` 用 `ON CONFLICT DO NOTHING`（`exec_without_returning`，冲突不报错），管理员授予仍覆盖。本地自签 webhook 实测：已有 admin_grant 的课付款后来源仍为 admin_grant，退款后权限保留；无权益的课付款写 purchase，退款后删除；退款后重放成功回调订单仍为 refunded、不再发货（顺带端到端验证 H1）。未做旧代码下的反向运行：旧代码 `update_columns(Source)` 会把来源改成 purchase，退款按 source=purchase 删除
-- [ ] H4 — `/api/orders/create`、`/api/orders/tip` 归入严格限流桶。验收：`classify_path` 单测
+- [x] H4 — `/api/orders/create`、`/api/orders/tip` 归入严格限流桶。验收：`classify_path` 单测
+  - 完成（cf69a20）：`classify_path` 的严格前缀加上两条下单路径（默认 5 rps / 15 突发，每 IP）。单测新增三条断言，旧代码下变红；`/api/orders/mine` 仍走默认桶
 - [ ] H5 — compose 里应用端口只绑 127.0.0.1，DEPLOY_GUIDE 说明。验收：`docker compose config` 输出 host_ip 127.0.0.1
 - [ ] H6 — 依赖升级到修复版本（rustls ≥0.23.46、h2 ≥0.4.16、quinn-proto ≥0.11.18 等）。验收：`cargo audit` 只剩无修复版本的条目
 - [ ] H7 — YouTube / Bilibili 嵌入 id 只允许 `[A-Za-z0-9_-]`。验收：单测，带 `?` / `&` / `/` 的 id 不渲染 iframe
