@@ -26,7 +26,8 @@ pub fn use_enabled_modules() -> Vec<String> {
   fn compiled() -> Vec<String> {
     app_core::engines::module::default_module_specs().into_iter().map(|s| s.id).collect()
   }
-  let res = use_resource(|| async move { enabled_module_ids().await.unwrap_or_else(|_| compiled()) });
+  let res =
+    use_resource(|| async move { enabled_module_ids().await.unwrap_or_else(|_| compiled()) });
   let enabled = res.read().as_ref().cloned().unwrap_or_else(compiled);
   enabled
 }

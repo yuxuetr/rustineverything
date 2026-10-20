@@ -258,7 +258,8 @@ fn CourseCard(course: CourseSummary) -> Element {
 #[component]
 pub fn CommunityFeed(blog: bool, forum: bool) -> Element {
   let lang = use_i18n();
-  let grid = if blog && forum { "grid grid-cols-1 lg:grid-cols-2 gap-6" } else { "grid grid-cols-1 gap-6" };
+  let grid =
+    if blog && forum { "grid grid-cols-1 lg:grid-cols-2 gap-6" } else { "grid grid-cols-1 gap-6" };
   rsx! {
       section { class: "py-20 bg-white dark:bg-slate-950",
           Container {

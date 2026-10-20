@@ -16,12 +16,12 @@ use dioxus_shadcn::{
 
 use crate::components::ecosystem_menu::EcosystemMenu;
 use crate::components::lang_picker::LangPicker;
+use crate::components::module_gate::use_enabled_modules;
 use crate::components::theme_picker::ThemePicker;
 use crate::components::user_menu::UserMenu;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
-use crate::components::module_gate::use_enabled_modules;
 use crate::taxonomy::ecosystems;
 use module_search::search::SearchButton;
 
