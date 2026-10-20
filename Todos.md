@@ -512,7 +512,12 @@
   - 完成（5c3343d；前置 78be668 清掉 web 端 5 个既有 dead-code warning，门禁才能把 warning 当失败）：`scripts/check_tiers.sh [档位…]` 对 basic / accounts / course / full 各跑 server、web 两次 `cargo check -p app`，有 error 或 warning 即退出 1（本机全量约 33s）。CI 用它替换原先的完整版 + 两条 no-payments 检查。反向验证：无门控 `use module_forum` → basic 两端 error 变红；去掉课程专用 import 的 cfg → accounts/server 因 unused import 变红；还原后全绿。Dockerfile 加 `ARG APP_FEATURES` 传给 `dx bundle`；README「功能分层」表 + 提交前检查、DEPLOY_GUIDE 档位构建说明
 - [x] L7 — 测 basic 与完整版的二进制大小 / 依赖数 / 冷构建时间，决定是否拆 app-core（DL5），结论写回设计文档
   - 完成：server 端依赖 515（完整）/ 488（basic）/ 382（basic 若拆 core 并去掉 migration，`cargo tree --prune` 估算）；release 二进制 50.0 MB / 30.9 MB，basic 里 sea-orm / sqlx / migration 约 2.3 MB、jwt / oauth2 / reqwest / rustls 约 0.6 MB（`nm` 符号间距估算）。结论：当前版本不拆 core——basic 已能无库运行，收益只有约 22% 依赖数与约 3 MB，代价是 core 两个新 feature + search 重建索引接口门控 + migration 依赖改走 core。重估条件（可执行）与数据表写在 FEATURE_TIERS.md DL5
-- [ ] T — 打赏（T1–T4，见设计文档 §6）：**待作者确认 DL6 后开工**
+- [ ] T — 打赏（见 FEATURE_TIERS.md §6，DT1–DT5；2026-10-20 作者确认：登录、固定档位 ¥5/10/20/50，海外 $1/3/5/10）
+  - [ ] T1 — 订单 `course_slug` → `product_ref` + `product_kind`；`on_paid` 收快照，`deliver()` 按种类分派；退款按种类撤权益
+  - [ ] T2 — `create_tip_order` + 档位 + 来源校验 + `OrderRequest.return_path`
+  - [ ] T3 — 打赏卡片（博客文章末尾、播客页）+ 弹窗支持打赏 + 我的订单显示 + 中英文案
+  - [ ] T4 — 管理后台订单列表显示种类与来源
+  - [ ] T5 — Stripe 测试模式端到端（海外 $3、大陆 ¥10、退款一笔打赏）
 
 ### 阶段 I — 海外支付（Stripe + 按地区给出支付方式，2026-10-20）
 设计见 [`docs/PAYMENT_SPEC.md`](docs/PAYMENT_SPEC.md) §15。作者决定：接 Stripe；课程另设美元价，海外按美元付。打赏（T）继续留在待办。
