@@ -286,6 +286,7 @@ trait 边界 = 未来 WASM ABI 边界，两路线不冲突。若把 Provider 下
 
 **DI6 webhook 验签**：`Stripe-Signature` 的 `t` / `v1`，HMAC-SHA256(`{t}.{body}`, webhook secret)，常数时间比较，时间戳 ±300s（与微信一致）。
 - 处理的事件：`checkout.session.completed`、`checkout.session.async_payment_succeeded`，两者都要求 `payment_status == "paid"` 才算成功。
+- 全额退款与拒付（H2）：`charge.refunded` 且 `refunded == true`、`charge.dispute.created` → 按 `payment_intent` 找 `provider_txn` 相同的订单，`paid → refunded` 并撤销 `source=purchase` 权益（与管理员退款共用 `mark_refunded`）。部分退款不处理；拒付按退款处理，赢了拒付由管理员重新授予。我方管理员退款同样会触发 `charge.refunded`，订单已是 refunded，直接确认。找不到订单也确认收到。
 - 其他事件确认收到，不发货。
 - 验签失败回 400；处理失败回 500，让 Stripe 重试。
 

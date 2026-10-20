@@ -81,6 +81,23 @@ pub fn verify_signature(webhook_secret: &str, header: &str, body: &str, now_secs
   })
 }
 
+/// H2：已验签的 webhook 若表示钱已退回买家，返回对应的 PaymentIntent id
+/// （订单的 `provider_txn`）。算数的只有全额退款（`charge.refunded` 且
+/// `refunded == true`）与拒付（`charge.dispute.created`，资金已被冻结）。
+pub fn reversed_payment_intent(event: &serde_json::Value) -> Option<String> {
+  let object = &event["data"]["object"];
+  let reversed = match event["type"].as_str()? {
+    "charge.refunded" => object["refunded"].as_bool() == Some(true),
+    "charge.dispute.created" => true,
+    _ => false,
+  };
+  if reversed {
+    str_field(&object["payment_intent"])
+  } else {
+    None
+  }
+}
+
 /// 用配置里的 webhook secret 校验回调（与 alipay / wechat 的 `verify_notify` 同形）。
 pub fn verify_notify(cfg: &StripeConfig, header: &str, body: &str, now_secs: i64) -> bool {
   verify_signature(&cfg.webhook_secret, header, body, now_secs)
@@ -448,5 +465,28 @@ mod tests {
     let pending = p.parse_refund(r#"{"id":"re_2","status":"pending"}"#).unwrap();
     assert!(pending.is_accepted());
     assert!(!p.parse_refund(r#"{"id":"re_3","status":"failed"}"#).unwrap().is_accepted());
+  }
+
+  /// H2：全额退款与拒付取出 PaymentIntent，部分退款和其它事件不算。
+  #[test]
+  fn reversal_events_yield_payment_intent() {
+    let charge = |kind: &str, refunded: bool| {
+      serde_json::json!({
+        "type": kind,
+        "data": { "object": { "object": "charge", "payment_intent": "pi_1", "refunded": refunded } },
+      })
+    };
+    assert_eq!(reversed_payment_intent(&charge("charge.refunded", true)).as_deref(), Some("pi_1"));
+    assert_eq!(reversed_payment_intent(&charge("charge.refunded", false)), None, "部分退款");
+    let dispute = serde_json::json!({
+      "type": "charge.dispute.created",
+      "data": { "object": { "object": "dispute", "charge": "ch_1", "payment_intent": "pi_1" } },
+    });
+    assert_eq!(reversed_payment_intent(&dispute).as_deref(), Some("pi_1"));
+    assert_eq!(reversed_payment_intent(&charge("charge.succeeded", true)), None);
+    let NotifyPayload::Json(session) = session_event("checkout.session.completed", "paid") else {
+      unreachable!("session_event 总是 JSON");
+    };
+    assert_eq!(reversed_payment_intent(&session), None);
   }
 }

@@ -1623,6 +1623,39 @@ async fn deliver(
     .map_err(|e| e.to_string())
 }
 
+/// server-only：钱已退回买家后的落库（管理员退款与 Stripe 退款 / 拒付回调共用）：
+/// 条件 UPDATE `paid → refunded`，课程订单再撤销 `source=purchase` 的权益
+/// （admin_grant 等其它来源不动；打赏没发过货）。重复调用无副作用。
+/// 返回是否撤销了权益（供日志）。
+#[cfg(all(feature = "server", feature = "payments"))]
+async fn mark_refunded(
+  db: &sea_orm::DatabaseConnection,
+  row: &app_core::entities::order::Model,
+) -> Result<bool, String> {
+  use app_core::entities::{entitlement, order};
+  use sea_orm::sea_query::Expr;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+  order::Entity::update_many()
+    .col_expr(order::Column::Status, Expr::value("refunded"))
+    .filter(order::Column::OutTradeNo.eq(&row.out_trade_no))
+    .filter(order::Column::Status.eq("paid"))
+    .exec(db)
+    .await
+    .map_err(|e| e.to_string())?;
+  let revoke =
+    crate::product::ProductKind::parse(&row.product_kind).is_some_and(|k| k.grants_entitlement());
+  if revoke {
+    entitlement::Entity::delete_many()
+      .filter(entitlement::Column::UserId.eq(row.user_id))
+      .filter(entitlement::Column::CourseSlug.eq(row.product_ref.clone()))
+      .filter(entitlement::Column::Source.eq("purchase"))
+      .exec(db)
+      .await
+      .map_err(|e| e.to_string())?;
+  }
+  Ok(revoke)
+}
+
 /// server-only：把 PayError 展开为用户可读错误（取内层文案，与重构前
 /// 直接透传 String 错误的响应文案一致）。
 #[cfg(all(feature = "server", feature = "payments"))]
@@ -2071,8 +2104,8 @@ pub async fn handle_wechat_notify(
 /// 处理 Stripe webhook（由 app 的 Axum 路由 `/api/pay/stripe/notify` 调用；阶段 I）。
 ///
 /// 入参：`Stripe-Signature` 头 + 原始 body（验签需逐字节一致）。流程：验签（含
-/// ±300s 时间戳，宿主侧，DI6）→ 只处理 `checkout.session.*` 事件 →
-/// `parse_notify` 中立化 → 统一流水线。返回 HTTP 状态：200 确认；验签失败 400；
+/// ±300s 时间戳，宿主侧，DI6）→ 全额退款 / 拒付走 `stripe_reversal`（H2）→
+/// 其余只处理 `checkout.session.*` 事件 → `parse_notify` 中立化 → 统一流水线。返回 HTTP 状态：200 确认；验签失败 400；
 /// 处理失败 500（Stripe 会重试）。
 #[cfg(all(feature = "server", feature = "payments"))]
 pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
@@ -2098,6 +2131,10 @@ pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
     amount_total = event["data"]["object"]["amount_total"].as_i64().unwrap_or(-1),
     "notify received"
   );
+  // H2：在 Stripe 后台全额退款或买家拒付 → 订单 refunded、撤销购买权益。
+  if let Some(intent) = module_payment::stripe::reversed_payment_intent(&event) {
+    return stripe_reversal(&intent, kind).await;
+  }
   // 其他事件（订阅了但不处理的）确认收到，免得 Stripe 重试。
   if !kind.starts_with("checkout.session.") {
     return 200;
@@ -2114,6 +2151,48 @@ pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
     200
   } else {
     500
+  }
+}
+
+/// H2：按 PaymentIntent 找 Stripe 订单并标记退款。找不到订单（非本站付款）也
+/// 确认收到；只有数据库出错返回 500 让 Stripe 重试。
+#[cfg(all(feature = "server", feature = "payments"))]
+async fn stripe_reversal(intent: &str, kind: &str) -> u16 {
+  use app_core::entities::order;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+  let Ok(db) = open_db().await else {
+    return 500;
+  };
+  let row = match order::Entity::find()
+    .filter(order::Column::Provider.eq("stripe"))
+    .filter(order::Column::ProviderTxn.eq(intent))
+    .one(&db)
+    .await
+  {
+    Ok(Some(row)) => row,
+    Ok(None) => {
+      tracing::warn!(target: "pay_audit", event_type = %kind, "stripe reversal: no order for payment intent");
+      return 200;
+    }
+    Err(_) => return 500,
+  };
+  if row.status != "paid" {
+    // 我方管理员退款也会收到 charge.refunded，此时订单已是 refunded。
+    return 200;
+  }
+  match mark_refunded(&db, &row).await {
+    Ok(revoked) => {
+      tracing::warn!(
+        target: "pay_audit",
+        "stripe {}: {} order {} refunded{}",
+        kind,
+        row.product_kind,
+        row.out_trade_no,
+        if revoked { " + purchase entitlement revoked" } else { "" }
+      );
+      200
+    }
+    Err(_) => 500,
   }
 }
 
@@ -2277,9 +2356,8 @@ pub async fn admin_list_orders() -> Result<Vec<AdminOrderInfo>, ServerFnError> {
 pub async fn admin_refund_order(out_trade_no: String) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use app_core::entities::{entitlement, order};
+    use app_core::entities::order;
     use module_payment::{host, RefundRequest};
-    use sea_orm::sea_query::Expr;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let admin = app_core::session::require_admin().await?;
@@ -2312,26 +2390,7 @@ pub async fn admin_refund_order(out_trade_no: String) -> Result<(), ServerFnErro
       );
       return Err(ServerFnError::new(format!("网关退款未受理（状态 {}）", result.status)));
     }
-    // 条件 UPDATE：paid → refunded（并发防护；rows=0 表示已被处理，幂等）。
-    order::Entity::update_many()
-      .col_expr(order::Column::Status, Expr::value("refunded"))
-      .filter(order::Column::OutTradeNo.eq(&out_trade_no))
-      .filter(order::Column::Status.eq("paid"))
-      .exec(&db)
-      .await
-      .map_err(|e| ServerFnError::new(e.to_string()))?;
-    // 课程订单撤销购买来源的权益（不动 admin_grant 等其它来源）；打赏没发过货。
-    let revoke =
-      crate::product::ProductKind::parse(&row.product_kind).is_some_and(|k| k.grants_entitlement());
-    if revoke {
-      entitlement::Entity::delete_many()
-        .filter(entitlement::Column::UserId.eq(row.user_id))
-        .filter(entitlement::Column::CourseSlug.eq(row.product_ref.clone()))
-        .filter(entitlement::Column::Source.eq("purchase"))
-        .exec(&db)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    }
+    let revoke = mark_refunded(&db, &row).await.map_err(ServerFnError::new)?;
     tracing::info!(
       target: "pay_audit",
       "refund: {} order {} refunded (gateway status {}, by admin {}){}",

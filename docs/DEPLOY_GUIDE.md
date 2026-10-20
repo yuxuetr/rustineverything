@@ -423,7 +423,7 @@ docker compose logs app | grep 'payment gateway'
 
 1. 后台切到正式模式，`STRIPE_SECRET_KEY` 填 `sk_live_…`。测试密钥只留在本地；贴到过聊天或工单里的测试密钥在后台 roll 掉。
 2. Developers → Webhooks 添加端点 `https://<域名>/api/pay/stripe/notify`，订阅
-   `checkout.session.completed` 与 `checkout.session.async_payment_succeeded`；把该端点的 signing secret（`whsec_…`）填进 `STRIPE_WEBHOOK_SECRET`。正式与测试模式的 secret 不同。
+   `checkout.session.completed`、`checkout.session.async_payment_succeeded`、`charge.refunded`、`charge.dispute.created`（后两个用于在 Stripe 后台退款或买家拒付时撤销课程权限）；把该端点的 signing secret（`whsec_…`）填进 `STRIPE_WEBHOOK_SECRET`。正式与测试模式的 secret 不同。
 3. 要在 Stripe 收银台出现支付宝 / 微信支付：在 Settings → Payment methods 里开通。代码不指定支付方式，收银台显示后台已开通的全部方式。Stripe 账户须在中国大陆以外注册。
 
 ### 7.3 上线检查
