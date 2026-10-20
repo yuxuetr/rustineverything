@@ -18,6 +18,8 @@ fn use_language_ctx() -> Language {
 fn tc(lang: Language, key: &str) -> &'static str {
   match (lang, key) {
         // 页面标题
+        (Language::En, "case.load_failed")    => "Failed to load. Please try again later.",
+        (Language::Zh, "case.load_failed")    => "加载失败，请稍后再试",
         (Language::En, "case.title")          => "Rust Project Showcase",
         (Language::Zh, "case.title")          => "Rust 项目案例库",
         (Language::En, "case.subtitle")       => "Discover real-world Rust frontend, backend, fullstack, AI, Web3, CLI, embedded and tooling projects.",
@@ -67,8 +69,6 @@ fn tc(lang: Language, key: &str) -> &'static str {
         (Language::Zh, "case.cat_field")      => "分类",
         (Language::En, "case.lang_field")     => "Language",
         (Language::Zh, "case.lang_field")     => "语言",
-        (Language::En, "case.added_on")       => " · ★ {stars} · Added ",
-        (Language::Zh, "case.added_on")       => " · ★ {stars} · 收录于 ",
         _ => "",
     }
 }
@@ -142,9 +142,6 @@ fn category_badge_class(c: &str) -> &'static str {
     _ => "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
   }
 }
-fn placeholder_gradient(c: &str) -> &'static str {
-  match c { "frontend"=>"bg-linear-to-br from-slate-800 via-slate-700 to-slate-600 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500","backend"=>"bg-linear-to-br from-slate-900 via-slate-800 to-slate-700 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500","fullstack"=>"bg-linear-to-br from-slate-800 via-slate-700 to-slate-500 dark:from-slate-600 dark:via-slate-500 dark:to-slate-400","cli"=>"bg-linear-to-br from-slate-900 via-slate-700 to-slate-600 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500","embedded"=>"bg-linear-to-br from-slate-800 via-slate-600 to-slate-500 dark:from-slate-600 dark:via-slate-500 dark:to-slate-400","ai"=>"bg-linear-to-br from-slate-900 via-slate-800 to-slate-600 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500","web3"=>"bg-linear-to-br from-slate-800 via-slate-700 to-slate-600 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500","library"=>"bg-linear-to-br from-slate-900 via-slate-700 to-slate-500 dark:from-slate-600 dark:via-slate-500 dark:to-slate-400","tool"=>"bg-linear-to-br from-slate-800 via-slate-600 to-slate-500 dark:from-slate-600 dark:via-slate-500 dark:to-slate-400","desktop"=>"bg-linear-to-br from-slate-900 via-slate-800 to-slate-700 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500",_=>"bg-linear-to-br from-slate-800 via-slate-700 to-slate-600 dark:from-slate-600 dark:via-slate-500 dark:to-slate-400" }
-}
 fn tag_color_class(t: &str) -> &'static str {
   match t {
     "axum" => "bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300",
@@ -181,6 +178,11 @@ pub fn CasesIndexPage() -> Element {
   let submit_url = submit_case_url();
 
   rsx! {
+      widgets::PageMeta {
+          title: tc(lang, "case.title"),
+          description: tc(lang, "case.subtitle"),
+          path: "/case".to_string(),
+      }
       section { class: "py-12 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
               div { class: "flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-8",
@@ -387,28 +389,23 @@ fn CaseCard(case: CaseSummary) -> Element {
   let href = format!("/case/{}", case.slug);
   let cat_label = category_label(lang, &case.category);
   let emoji = category_emoji(&case.category);
-  let grad = placeholder_gradient(&case.category);
   let badge = category_badge_class(&case.category);
+  // 没有封面就不画封面区（O7 / D4）：占位图只会让 17 张卡片看起来一样。
   rsx! {
       article { class: card_class("group overflow-hidden rounded-2xl hover:-translate-y-1 hover:shadow-xl hover:border-primary/50 transition-all duration-300"),
-          a { href: "{href}", class: "block",
-              div { class: "aspect-[16/9] {grad} overflow-hidden relative",
-                  if let Some(cover) = case.cover_url.as_ref() {
+          if let Some(cover) = case.cover_url.as_ref() {
+              a { href: "{href}", class: "block",
+                  div { class: "aspect-[16/9] overflow-hidden",
                       img { src: "{cover}", alt: "{case.name}", loading: "lazy", class: "h-full w-full object-cover group-hover:scale-105 transition-transform duration-500" }
-                  } else {
-                      div { class: "h-full w-full flex flex-col items-center justify-center gap-2",
-                          span { class: "text-4xl drop-shadow-lg", "{emoji}" }
-                          span { class: "text-sm font-bold text-white/80 tracking-wide", "{cat_label}" }
-                      }
-                  }
-                  if case.favorite {
-                      div { class: "absolute top-3 right-3 bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg", "{tc(lang, \"case.featured\")}" }
                   }
               }
           }
           div { class: "p-5",
               div { class: "mb-3 flex items-center gap-2 flex-wrap",
                   span { class: "rounded-full px-2.5 py-1 text-[11px] font-bold {badge}", "{emoji} {cat_label}" }
+                  if case.favorite {
+                      span { class: "rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white", "{tc(lang, \"case.featured\")}" }
+                  }
                   span { class: "rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider", "{case.language}" }
               }
               a { href: "{href}", class: "block",
@@ -427,7 +424,8 @@ fn CaseCard(case: CaseSummary) -> Element {
               }
               div { class: "mt-4 border-t border-slate-100 dark:border-slate-800 pt-4" }
               div { class: "flex items-center justify-between gap-2",
-                  div { class: "flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400",
+                  // stars 未采集（0）时不显示，与首页精选案例一致。
+                  div { class: if case.stars > 0 { "flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400" } else { "hidden" },
                       svg { class: "w-3.5 h-3.5 text-amber-500", fill: "currentColor", view_box: "0 0 20 20",
                           path { d: "M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" }
                       }
@@ -480,18 +478,22 @@ pub fn CaseDetailPage(slug: String) -> Element {
 #[component]
 fn CaseDetailLoaded(slug: String) -> Element {
   let lang = use_language_ctx();
-  let case_res =
-    use_server_future(use_reactive!(
-      |slug| async move { get_case(slug).await.unwrap_or_default() }
-    ))?;
+  let case_res = use_server_future(use_reactive!(|slug| async move { get_case(slug).await }))?;
 
   match case_res() {
-    Some(Some(case)) => rsx! { CaseDetailBody { case } },
+    Some(Ok(Some(case))) => rsx! {
+        widgets::PageMeta {
+            title: case.name.clone(),
+            description: case.description.clone(),
+            path: format!("/case/{}", case.slug),
+        }
+        CaseDetailBody { case }
+    },
+    Some(Err(_)) => rsx! { widgets::LoadFailed { message: tc(lang, "case.load_failed") } },
     _ => rsx! {
-        div { class: "py-20 text-center",
-            h1 { class: "text-2xl font-bold text-slate-900 dark:text-white", "{tc(lang, \"case.not_found\")}" }
-            p { class: "mt-3 text-slate-500 dark:text-slate-400", "\"{slug}\" " }
-            a { href: "/case", class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-6 font-semibold"),
+        widgets::NotFound { message: tc(lang, "case.not_found") }
+        div { class: "text-center",
+            a { href: "/case", class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "font-semibold"),
                 "{tc(lang, \"case.back\")}"
             }
         }
@@ -503,16 +505,12 @@ fn CaseDetailLoaded(slug: String) -> Element {
 fn CaseDetailBody(case: Case) -> Element {
   let lang = use_language_ctx();
   let category = category_label(lang, &case.category);
-  let initial = match case.name.chars().next() {
-    Some(ch) => ch.to_string(),
-    None => "R".to_string(),
-  };
   let markdown_id = format!("case:{}", case.slug);
   rsx! {
       div { class: "max-w-5xl mx-auto",
           a { href: "/case", class: "text-sm font-semibold text-primary hover:underline", "{tc(lang, \"case.back\")}" }
           div { class: "mt-6 overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50",
-              div { class: "grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-0",
+              div { class: if case.cover_url.is_some() { "grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-0" } else { "grid grid-cols-1" },
                   div { class: "p-8 md:p-10",
                       div { class: "mb-4 flex flex-wrap items-center gap-2",
                           span { class: "rounded-full bg-orange-100 dark:bg-orange-900/30 px-3 py-1 text-xs font-semibold text-orange-700 dark:text-orange-300",
@@ -561,16 +559,15 @@ fn CaseDetailBody(case: Case) -> Element {
                           } else {
                               span { "{case.author}" }
                           }
-                          span { " · ★ {case.stars} · {case.date_added}" }
+                          if case.stars > 0 {
+                              span { " · ★ {case.stars}" }
+                          }
+                          span { " · {case.date_added}" }
                       }
                   }
-                  div { class: "min-h-72 bg-linear-to-br from-slate-800 via-slate-700 to-slate-600 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500",
-                      if let Some(cover) = case.cover_url.as_ref() {
+                  if let Some(cover) = case.cover_url.as_ref() {
+                      div { class: "min-h-72",
                           img { src: "{cover}", alt: "{case.name}", class: "h-full w-full object-cover" }
-                      } else {
-                          div { class: "h-full min-h-72 flex items-center justify-center text-7xl font-black text-white/90",
-                              "{initial}"
-                          }
                       }
                   }
               }
@@ -596,9 +593,11 @@ fn CaseDetailBody(case: Case) -> Element {
                               dt { class: "text-slate-500 dark:text-slate-400", "{tc(lang, \"case.lang_field\")}" }
                               dd { class: "font-semibold text-slate-900 dark:text-white", "{case.language}" }
                           }
-                          div {
-                              dt { class: "text-slate-500 dark:text-slate-400", "Stars" }
-                              dd { class: "font-semibold text-slate-900 dark:text-white", "{case.stars}" }
+                          if case.stars > 0 {
+                              div {
+                                  dt { class: "text-slate-500 dark:text-slate-400", "Stars" }
+                                  dd { class: "font-semibold text-slate-900 dark:text-white", "{case.stars}" }
+                              }
                           }
                       }
                   }

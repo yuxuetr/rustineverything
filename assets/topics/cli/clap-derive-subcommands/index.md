@@ -1,6 +1,6 @@
 ---
 title: "用 clap derive 写子命令式 CLI"
-description: "clap 的 derive API：用结构体和枚举声明参数与子命令，让"不合法的调用无法构造"。"
+description: "clap 的 derive API：用结构体和枚举声明参数与子命令，让「不合法的调用无法构造」。"
 date: "2026-05-19"
 subtopic: "args"
 tags: ["clap", "args", "cli"]

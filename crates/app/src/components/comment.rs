@@ -4,6 +4,8 @@ use module_comments::server::{get_comments, post_comment};
 use module_uploads::server::upload_image;
 use widgets::Markdown;
 
+use crate::i18n::{t, use_i18n};
+
 #[derive(PartialEq, Props, Clone)]
 pub struct CommentBoxProps {
   pub blog_id: String,
@@ -16,6 +18,7 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
   let mut is_submitting = use_signal(|| false);
   let session_user = crate::use_session_user();
   let mut show_auth_modal = crate::use_auth_modal();
+  let lang = use_i18n();
 
   // Fetch comments
   let blog_id_for_res = props.blog_id.clone();
@@ -75,7 +78,7 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
 
   rsx! {
       div { class: "mt-16 border-t border-slate-200 dark:border-slate-800 pt-10",
-          h3 { class: "text-2xl font-bold text-slate-900 dark:text-white mb-8", "评论区" }
+          h3 { class: "text-2xl font-bold text-slate-900 dark:text-white mb-8", "{t(lang(), \"comment.title\")}" }
 
           // Input Area — 已登录才展示编辑器，未登录提示登录
           if is_logged_in {
@@ -86,8 +89,8 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
                       // Toolbar
                       div { class: "flex items-center justify-between px-5 py-3 border-b border-border bg-muted/50",
                           TabsList { class: "h-8",
-                              TabsTrigger { value: "edit", class: "py-1 text-xs", "编辑" }
-                              TabsTrigger { value: "preview", class: "py-1 text-xs", "预览" }
+                              TabsTrigger { value: "edit", class: "py-1 text-xs", "{t(lang(), \"comment.edit\")}" }
+                              TabsTrigger { value: "preview", class: "py-1 text-xs", "{t(lang(), \"comment.preview\")}" }
                           }
 
                           label { class: "cursor-pointer p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 transition-colors",
@@ -109,8 +112,8 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
                               Textarea {
                                   class: "h-36 border-0 bg-transparent px-0 focus-visible:ring-0 resize-y",
                                   value: content(),
-                                  placeholder: "写下你的评论 (支持 Markdown, 图片)...",
-                                  "aria-label": "评论内容",
+                                  placeholder: t(lang(), "comment.placeholder"),
+                                  "aria-label": t(lang(), "comment.content_label"),
                                   on_value_change: move |v: String| content.set(v),
                               }
                           } else {
@@ -127,18 +130,18 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
                           class: "px-5 font-semibold",
                           disabled: is_submitting(),
                           onclick: handle_submit,
-                          if is_submitting() { "提交中..." } else { "发布评论" }
+                          if is_submitting() { "{t(lang(), \"comment.submitting\")}" } else { "{t(lang(), \"comment.submit\")}" }
                       }
                   }
               }
           } else {
               // 未登录提示
               div { class: card_class("rounded-2xl p-8 text-center shadow-none"),
-                  p { class: "text-slate-500 dark:text-slate-400 mb-4", "登录后即可发表评论" }
+                  p { class: "text-slate-500 dark:text-slate-400 mb-4", "{t(lang(), \"comment.login_hint\")}" }
                   Button {
                       onclick: move |_| show_auth_modal.set(true),
                       class: "font-semibold",
-                      "登录"
+                      "{t(lang(), \"auth.sign_in\")}"
                   }
               }
           }
@@ -175,7 +178,7 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
                       }
                   }
               } else {
-                  div { class: "text-center text-slate-500 py-10", "加载评论中..." }
+                  div { class: "text-center text-slate-500 py-10", "{t(lang(), \"comment.loading\")}" }
               }
           }
       }

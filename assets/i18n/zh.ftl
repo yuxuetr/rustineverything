@@ -60,6 +60,8 @@ blog.next_page = 下一页
 footer.tagline = 专注 Rust 工业实战与 AI 生态：案例、课程、文档、社区一站式聚合。
 footer.col.content = 内容
 footer.col.community = 社区
+footer.col.topics = 专题
+footer.rss = RSS 订阅
 
 # ── 首页 Hero ──
 hero.title = 专注 Rust 技术栈的学习与实战
@@ -80,8 +82,6 @@ hero.stat.cases.label = 可复用模板
 # ── 首页板块卡片 ──
 home.section_title = 专注 Rust 生态
 home.section_subtitle = 从底层原理到全栈实战，构建高性能、高可靠的软件系统
-home.browse.title = 按领域浏览
-home.browse.subtitle = 沿 Rust 生态与 AI 生态，按板块深入文档、案例与课程
 home.featured.title = 精选案例
 home.featured.subtitle = 来自工业实践的 Rust 项目，可直接借鉴的工程范式
 home.featured.all = 查看全部案例
@@ -98,6 +98,7 @@ home.community.blog_empty = 暂无文章
 home.community.forum = 论坛热帖
 home.community.forum_all = 进入论坛
 home.community.forum_empty = 还没有讨论，来发第一帖
+home.community.forum_failed = 论坛暂时无法加载
 home.card.basics.title = Rust 基础
 home.card.basics.desc = 深入浅出所有权、生命周期、Trait 等核心概念。
 home.card.fullstack.title = 全栈开发
@@ -106,28 +107,6 @@ home.card.aiwasm.title = AI 与 WASM
 home.card.aiwasm.desc = 探索 WebAssembly 高性能计算与 Rust AI 生态。
 
 # ── 首页模块网格卡片（home.mod.<id>.title / .desc）──
-home.mod.docs.title = 文档
-home.mod.docs.desc = 从所有权到全栈，系统化的 Rust 学习路径。
-home.mod.blog.title = 博客
-home.mod.blog.desc = 持续更新的实战经验与技术笔记。
-home.mod.course.title = 课程
-home.mod.course.desc = 由浅入深、循序渐进的系统化课程。
-home.mod.cases.title = 案例
-home.mod.cases.desc = 可复用的工程模板与实战项目。
-home.mod.ai.title = AI
-home.mod.ai.desc = 大模型、推理与 Rust AI 生态。
-home.mod.wasm.title = WASM
-home.mod.wasm.desc = WebAssembly 高性能计算与跨端运行。
-home.mod.web3.title = Web3
-home.mod.web3.desc = 区块链、智能合约与去中心化应用。
-home.mod.embedded.title = 嵌入式
-home.mod.embedded.desc = 用 Rust 驱动 MCU 与裸机开发。
-home.mod.cli.title = CLI
-home.mod.cli.desc = 打造高效、健壮的命令行工具。
-home.mod.podcast.title = 播客
-home.mod.podcast.desc = 用耳朵学 Rust，通勤路上也能进步。
-home.mod.forum.title = 论坛
-home.mod.forum.desc = 提问、讨论、分享，和社区一起成长。
 
 # ── 板块共享 UI ──
 board.all = 全部
@@ -135,7 +114,7 @@ board.search = 搜索文章 / 标签…
 board.featured = 精选 crate
 board.empty = 暂无文章。
 board.back_prefix = ← 返回
-board.load_error_prefix = 加载失败：
+board.not_found = 文章不存在
 
 # ── 嵌入式 ──
 embedded.label = 嵌入式
@@ -253,3 +232,54 @@ theme.heading = 主题
 theme.reset = 重置为默认
 lang.toggle = 切换语言
 lang.heading = 语言
+
+# 搜索弹窗（O10）
+search.button = 搜索
+search.placeholder = 搜索文档、博客、课程、案例、论坛与专题…
+search.kind_label = 内容类型
+search.failed = 搜索失败，请稍后再试
+search.searching = 搜索中…
+search.results = 条结果
+search.no_results = 没有匹配的结果
+search.hint = 输入关键词开始搜索 · 支持中英文 · 按 ⌘K 随时打开
+search.kind.all = 全部
+search.kind.doc = 文档
+search.kind.blog = 博客
+search.kind.course = 课程
+search.kind.case = 案例
+search.kind.topic = 话题
+
+# O11：通用 / 文档 / 课程
+common.load_failed = 加载失败，请稍后再试
+blog.not_found = 文章不存在
+docs.title = 文档
+docs.subtitle = 从基础语法到全栈实战，系统化学习 Rust 生态。选择一个主题开始探索。
+docs.nav = 文档导航
+docs.empty = 暂无文档内容
+docs.count_unit = 篇
+docs.more = …更多
+docs.start_reading = 开始阅读
+docs.not_found = 文档不存在
+course.title = Rust 课程
+course.subtitle = 系统化学习路径，从基础到全栈实战
+course.empty = 暂无课程内容
+course.chapters = 章
+course.lessons = 节
+course.not_found = 课程未找到
+course.not_found_detail = 该课程不存在或尚未发布。
+course.back = 返回课程列表
+course.continue = 继续学习
+course.start = 开始学习
+course.owned = 已拥有本课程
+course.progress = 学习进度
+course.outline = 课程目录
+course.preview = 试看
+comment.title = 评论区
+comment.edit = 编辑
+comment.preview = 预览
+comment.placeholder = 写下你的评论（支持 Markdown、图片）…
+comment.content_label = 评论内容
+comment.submitting = 提交中…
+comment.submit = 发布评论
+comment.login_hint = 登录后即可发表评论
+comment.loading = 加载评论中…

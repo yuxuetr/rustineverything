@@ -144,17 +144,12 @@ fn FeaturedCasesInner() -> Element {
 
 #[component]
 fn CaseCard(case: CaseSummary) -> Element {
-  let first = case.name.chars().next().unwrap_or('R');
   rsx! {
       Link {
           to: Route::CaseDetail { slug: case.slug.clone() },
           class: "group flex flex-col rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden hover:shadow-lg transition-all",
           if let Some(cover) = case.cover_url.clone() {
               img { src: "{cover}", class: "h-36 w-full object-cover", alt: "{case.name}", loading: "lazy" }
-          } else {
-              div { class: "h-36 w-full bg-linear-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-950 flex items-center justify-center text-3xl font-extrabold text-slate-300 dark:text-slate-600",
-                  "{first}"
-              }
           }
           div { class: "p-5 flex flex-col flex-1",
               div { class: "flex items-center gap-2 mb-2",
@@ -319,15 +314,19 @@ fn BlogColumn() -> Element {
 #[component]
 fn ForumColumn() -> Element {
   let lang = use_i18n();
-  // 论坛走 DB，用 use_resource（非 SEO、可能未连库）；失败/空时优雅降级。
-  let res = use_resource(|| async move { list_topics(None, Some(0)).await.unwrap_or_default() });
-  let topics: Vec<TopicSummary> =
-    res.read().clone().unwrap_or_default().into_iter().take(5).collect();
-  let loaded = res.read().is_some();
+  // 论坛走 DB，用 use_resource（非 SEO、可能未连库）。失败与「空」分开显示。
+  let res = use_resource(|| async move { list_topics(None, Some(0)).await });
+  let state = res.read().as_ref().map(|r| r.is_ok());
+  let topics: Vec<TopicSummary> = match &*res.read() {
+    Some(Ok(list)) => list.iter().take(5).cloned().collect(),
+    _ => Vec::new(),
+  };
   let reply_unit = lang().pick("回复", "replies");
   rsx! {
-      if !loaded {
+      if state.is_none() {
           {loading_spinner()}
+      } else if state == Some(false) {
+          p { class: "text-sm text-slate-400 py-6 text-center", "{t(lang(), \"home.community.forum_failed\")}" }
       } else if topics.is_empty() {
           p { class: "text-sm text-slate-400 py-6 text-center", "{t(lang(), \"home.community.forum_empty\")}" }
       } else {
@@ -360,16 +359,15 @@ fn ForumColumn() -> Element {
 pub fn EcosystemPage(id: String) -> Element {
   let lang = use_i18n();
   let Some(eco) = ecosystem_by_id(&id) else {
-    return rsx! {
-        section { class: "py-24",
-            Container {
-                p { class: "text-center text-slate-400", "{t(lang(), \"eco.not_found\")}" }
-            }
-        }
-    };
+    return rsx! { widgets::NotFound { message: t(lang(), "eco.not_found") } };
   };
 
   rsx! {
+      widgets::PageMeta {
+          title: t(lang(), eco.label_key),
+          description: t(lang(), eco.blurb_key),
+          path: format!("/ecosystem/{id}"),
+      }
       // 头部
       section { class: "py-16 sm:py-20 bg-gradient-to-b from-slate-950 to-slate-900",
           div { class: "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8",

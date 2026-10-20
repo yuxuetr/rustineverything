@@ -27,7 +27,9 @@ use crate::indexer::{
 };
 use crate::text::truncate_chars;
 
-pub const TOKENIZER_NAME: &str = "jieba";
+/// 分词器名是 schema 的一部分。O10 给 jieba 加了 LowerCaser，旧索引里的词项保留
+/// 原大小写，所以改名（原为 `"jieba"`）：旧索引打开时走 schema 不匹配 → 清空重建。
+pub const TOKENIZER_NAME: &str = "jieba_lower";
 
 /// 默认持久化目录（相对工作目录）。可通过 `SEARCH_INDEX_DIR` 覆盖。
 pub const DEFAULT_INDEX_DIR: &str = "data/search-index";
@@ -136,7 +138,10 @@ impl SearchEngine {
     };
 
     // 注册 jieba 分词器（运行时状态，每次 open 都要重新注册）。
-    let analyzer: TextAnalyzer = tantivy_jieba::JiebaTokenizer::default().into();
+    // LowerCaser：英文检索大小写不敏感（"candle" 命中标题 "Candle"）。
+    let analyzer = TextAnalyzer::builder(tantivy_jieba::JiebaTokenizer::default())
+      .filter(tantivy::tokenizer::LowerCaser)
+      .build();
     index.tokenizers().register(TOKENIZER_NAME, analyzer);
 
     let reader = index
@@ -624,6 +629,27 @@ mod tests {
     assert!(hits[0].score >= hits.last().unwrap().score);
   }
 
+  /// 英文大小写不敏感：标题 "Candle"、查询 "candle" 也要命中（反之亦然）。
+  #[test]
+  fn engine_query_is_case_insensitive() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    eng
+      .replace_all(vec![IndexedDocument {
+        kind: "case".to_string(),
+        ref_id: "candle".to_string(),
+        title: "Candle".to_string(),
+        body: "Hugging Face 出品的 Rust 机器学习框架".to_string(),
+        url: "/case/candle".to_string(),
+        created_at: String::new(),
+      }])
+      .expect("write");
+    for q in ["candle", "CANDLE", "hugging face"] {
+      assert_eq!(eng.query(q, None, 10).expect("query").len(), 1, "{q}");
+    }
+    assert_eq!(eng.query("candle", Some("case"), 10).expect("query").len(), 1);
+  }
+
   #[test]
   fn engine_query_kind_filter() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -725,6 +751,41 @@ mod tests {
     assert_eq!(eng2.reader.searcher().num_docs(), 2);
     let hits = eng2.query("Rust", None, 10).expect("query");
     assert!(!hits.is_empty());
+  }
+
+  /// 旧版（分词器名 "jieba"、未小写化）建的索引要被重建，否则大小写修复对存量部署无效。
+  #[test]
+  fn index_from_previous_tokenizer_is_rebuilt() {
+    use tantivy::schema::{TextFieldIndexing, TextOptions};
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let dir = tmp.path().to_path_buf();
+    {
+      let mmap = MmapDirectory::open(&dir).expect("mmap open");
+      let mut b = Schema::builder();
+      let old = TextOptions::default()
+        .set_indexing_options(
+          TextFieldIndexing::default()
+            .set_tokenizer("jieba")
+            .set_index_option(tantivy::schema::IndexRecordOption::WithFreqsAndPositions),
+        )
+        .set_stored();
+      let uid = b.add_text_field("doc_uid", STRING | STORED);
+      b.add_text_field("kind", STRING | STORED | FAST);
+      b.add_text_field("ref_id", STRING | STORED);
+      b.add_text_field("title", old.clone());
+      b.add_text_field("body", old);
+      b.add_text_field("url", STRING | STORED);
+      b.add_text_field("created_at", STRING | STORED);
+      let idx = Index::open_or_create(mmap, b.build()).expect("create old index");
+      let old_analyzer: TextAnalyzer = tantivy_jieba::JiebaTokenizer::default().into();
+      idx.tokenizers().register("jieba", old_analyzer);
+      let mut w: tantivy::IndexWriter = idx.writer(15_000_000).expect("writer");
+      w.add_document(tantivy::doc!(uid => "blog:old")).expect("add");
+      w.commit().expect("commit");
+    }
+    let (_eng, fresh) = SearchEngine::open_or_create(&dir).expect("reopen");
+    assert!(fresh, "旧分词器的索引应被清空重建");
   }
 
   #[test]

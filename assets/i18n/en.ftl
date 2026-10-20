@@ -60,6 +60,8 @@ blog.next_page = Next page
 footer.tagline = Industrial Rust practice and the AI ecosystem — cases, courses, docs, and community in one place.
 footer.col.content = Content
 footer.col.community = Community
+footer.col.topics = Topics
+footer.rss = RSS feed
 
 # ── Home Hero ──
 hero.title = Learn and build with the Rust stack
@@ -80,8 +82,6 @@ hero.stat.cases.label = Reusable templates
 # ── Home feature cards ──
 home.section_title = Focused on the Rust ecosystem
 home.section_subtitle = From low-level principles to full-stack practice — building high-performance, reliable software systems
-home.browse.title = Browse by area
-home.browse.subtitle = Dive into docs, cases, and courses across the Rust and AI ecosystems
 home.featured.title = Featured cases
 home.featured.subtitle = Rust projects from industrial practice — engineering patterns you can borrow
 home.featured.all = View all cases
@@ -98,6 +98,7 @@ home.community.blog_empty = No posts yet
 home.community.forum = Hot topics
 home.community.forum_all = Visit forum
 home.community.forum_empty = No discussions yet — start the first thread
+home.community.forum_failed = The forum is unavailable right now
 home.card.basics.title = Rust Fundamentals
 home.card.basics.desc = A clear take on ownership, lifetimes, traits, and other core concepts.
 home.card.fullstack.title = Full-Stack Development
@@ -106,28 +107,6 @@ home.card.aiwasm.title = AI & WASM
 home.card.aiwasm.desc = Explore high-performance WebAssembly compute and the Rust AI ecosystem.
 
 # ── Home module grid cards (home.mod.<id>.title / .desc) ──
-home.mod.docs.title = Docs
-home.mod.docs.desc = From ownership to full-stack — a structured Rust learning path.
-home.mod.blog.title = Blog
-home.mod.blog.desc = Hands-on experience and technical notes, updated regularly.
-home.mod.course.title = Courses
-home.mod.course.desc = A progressive, systematic course series from basics to depth.
-home.mod.cases.title = Cases
-home.mod.cases.desc = Reusable engineering templates and real-world projects.
-home.mod.ai.title = AI
-home.mod.ai.desc = LLMs, inference, and the Rust AI ecosystem.
-home.mod.wasm.title = WASM
-home.mod.wasm.desc = High-performance WebAssembly compute, everywhere.
-home.mod.web3.title = Web3
-home.mod.web3.desc = Blockchain, smart contracts, and decentralized apps.
-home.mod.embedded.title = Embedded
-home.mod.embedded.desc = Drive MCUs and bare-metal development with Rust.
-home.mod.cli.title = CLI
-home.mod.cli.desc = Build fast, robust command-line tools.
-home.mod.podcast.title = Podcast
-home.mod.podcast.desc = Learn Rust by ear — progress even on your commute.
-home.mod.forum.title = Forum
-home.mod.forum.desc = Ask, discuss, and share — grow together with the community.
 
 # ── Board shared UI ──
 board.all = All
@@ -135,7 +114,7 @@ board.search = Search articles / tags…
 board.featured = Featured crates
 board.empty = No articles yet.
 board.back_prefix = ← Back to
-board.load_error_prefix = Failed to load: 
+board.not_found = Article not found
 
 # ── Embedded ──
 embedded.label = Embedded
@@ -253,3 +232,54 @@ theme.heading = Theme
 theme.reset = Reset to default
 lang.toggle = Language
 lang.heading = Language
+
+# 搜索弹窗（O10）
+search.button = Search
+search.placeholder = Search docs, blog, courses, cases, forum and topics…
+search.kind_label = Content type
+search.failed = Search failed. Please try again later.
+search.searching = Searching…
+search.results = results
+search.no_results = No matching results
+search.hint = Type to search · Chinese and English · Press ⌘K anytime
+search.kind.all = All
+search.kind.doc = Docs
+search.kind.blog = Blog
+search.kind.course = Courses
+search.kind.case = Cases
+search.kind.topic = Forum
+
+# O11: common / docs / courses
+common.load_failed = Failed to load. Please try again later.
+blog.not_found = Article not found
+docs.title = Docs
+docs.subtitle = From the basics to full-stack practice — pick a topic to start exploring the Rust ecosystem.
+docs.nav = Docs navigation
+docs.empty = No docs yet
+docs.count_unit = docs
+docs.more = …more
+docs.start_reading = Start reading
+docs.not_found = Doc not found
+course.title = Rust Courses
+course.subtitle = Structured learning paths, from fundamentals to full-stack practice
+course.empty = No courses yet
+course.chapters = chapters
+course.lessons = lessons
+course.not_found = Course not found
+course.not_found_detail = This course does not exist or has not been published yet.
+course.back = Back to courses
+course.continue = Continue learning
+course.start = Start learning
+course.owned = You own this course
+course.progress = Progress
+course.outline = Course outline
+course.preview = Preview
+comment.title = Comments
+comment.edit = Write
+comment.preview = Preview
+comment.placeholder = Write a comment (Markdown and images supported)…
+comment.content_label = Comment
+comment.submitting = Posting…
+comment.submit = Post comment
+comment.login_hint = Sign in to leave a comment
+comment.loading = Loading comments…

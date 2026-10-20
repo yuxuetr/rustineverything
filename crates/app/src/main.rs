@@ -120,6 +120,22 @@ fn main() {
       .collect()
   });
 
+  // O10：课程同样经注册表进索引。只收标题 / 简介 / 标签——课时正文是付费内容，不进公开搜索。
+  #[cfg(feature = "server")]
+  app_core::engines::doc_source::register_doc_source(|| {
+    module_course::server::scan_courses(&module_course::server::get_courses_root())
+      .into_iter()
+      .map(|c| app_core::engines::doc_source::ExternalIndexedDoc {
+        kind: "course".to_string(),
+        ref_id: c.slug.clone(),
+        title: c.title,
+        body: format!("{} {}", c.description, c.tags.join(" ")),
+        url: format!("/course/{}", c.slug),
+        created_at: String::new(),
+      })
+      .collect()
+  });
+
   // Server: customize the Axum router to serve blog post static assets
   #[cfg(feature = "server")]
   dioxus::serve(|| async move {
@@ -313,6 +329,8 @@ fn HeadAssets() -> Element {
   rsx! {
       // Head links
       document::Link { rel: "icon", href: FAVICON }
+      // feed 自动发现（O4）：/feed.xml 是 Atom。
+      document::Link { rel: "alternate", r#type: "application/atom+xml", title: widgets::SITE_NAME, href: "/feed.xml" }
       document::Link { rel: "stylesheet", href: MAIN_CSS }
       document::Link { rel: "stylesheet", href: TAILWIND_CSS }
 

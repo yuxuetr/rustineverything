@@ -41,6 +41,20 @@ fn tp(lang: Language, key: &str) -> &'static str {
     (Language::Zh, "podcast.empty") => "暂无节目",
     (Language::En, "podcast.all") => "All",
     (Language::Zh, "podcast.all") => "全部",
+    (Language::En, "podcast.filter") => "Filter by tag",
+    (Language::Zh, "podcast.filter") => "标签筛选",
+    (Language::En, "podcast.prev") => "Previous page",
+    (Language::Zh, "podcast.prev") => "上一页",
+    (Language::En, "podcast.next") => "Next page",
+    (Language::Zh, "podcast.next") => "下一页",
+    (Language::En, "podcast.not_found") => "Podcast episode not found",
+    (Language::Zh, "podcast.not_found") => "找不到该播客节目",
+    (Language::En, "podcast.loading") => "Loading…",
+    (Language::Zh, "podcast.loading") => "加载中…",
+    (Language::En, "podcast.featured") => "Featured Podcast",
+    (Language::Zh, "podcast.featured") => "推荐播客",
+    (Language::En, "podcast.no_audio") => "Audio for this episode is not available yet",
+    (Language::Zh, "podcast.no_audio") => "本期音频暂未上线",
     (Language::En, "podcast.no_results") => "No episodes match this tag",
     (Language::Zh, "podcast.no_results") => "没有匹配该标签的节目",
     _ => "",
@@ -66,30 +80,51 @@ fn LocalSectionTitle(title: String, subtitle: Option<String>) -> Element {
 
 const PAGE_SIZE: usize = 8;
 
-/// Podcast 主页面：从 server 动态加载节目列表
+/// Podcast 主页面。节目来自 `assets/podcasts/`（SEO 内容），经 `use_server_future`
+/// 服务端预取并随 SSR HTML 下发（O6，理由同 B6 对内容页的结论）。
 #[component]
 pub fn PodcastPage() -> Element {
   let lang = use_language_ctx();
+  rsx! {
+      widgets::PageMeta {
+          title: tp(lang, "podcast.title").to_string(),
+          description: tp(lang, "podcast.subtitle").to_string(),
+          path: "/podcast".to_string(),
+      }
+      section { class: "py-12 bg-[var(--color-bg)] transition-colors duration-300",
+          LocalContainer {
+              LocalSectionTitle {
+                  title: tp(lang, "podcast.title").to_string(),
+                  subtitle: Some(tp(lang, "podcast.subtitle").to_string())
+              }
+              SuspenseBoundary {
+                  fallback: |_| rsx! {
+                      div { class: "flex items-center justify-center py-20",
+                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
+                      }
+                  },
+                  PodcastBody {}
+              }
+          }
+      }
+  }
+}
 
-  let episodes_res = use_resource(move || async move { list_episodes().await.unwrap_or_default() });
-
-  let episodes = episodes_res.read().as_ref().cloned().unwrap_or_default();
-  let mut current_episode = use_signal::<Option<Episode>>(|| None);
+/// 播放器 + 标签筛选 + 节目列表。未手动选择时默认第一期（不自动播放），
+/// 这样 SSR HTML 里就有当前节目。
+#[component]
+fn PodcastBody() -> Element {
+  let lang = use_language_ctx();
+  let episodes_res =
+    use_server_future(|| async move { list_episodes().await.unwrap_or_default() })?;
+  let episodes: Vec<Episode> = episodes_res().unwrap_or_default();
+  let mut selected_id = use_signal::<Option<i32>>(|| None);
   let mut is_playing = use_signal(|| false);
   let mut active_tag = use_signal::<Option<String>>(|| None);
   let mut current_page = use_signal(|| 0usize);
-
-  // 加载完成后默认选中第一个节目（不自动播放）
-  {
-    let eps_for_default = episodes.clone();
-    use_effect(use_reactive!(|eps_for_default| {
-      if current_episode.read().is_none() {
-        if let Some(first) = eps_for_default.first().cloned() {
-          current_episode.set(Some(first));
-        }
-      }
-    }));
-  }
+  let current_episode: Option<Episode> = selected_id()
+    .and_then(|id| episodes.iter().find(|e| e.id == id).cloned())
+    .or_else(|| episodes.first().cloned());
 
   // 汇总所有 tag（有序去重）
   let all_tags: Vec<String> = {
@@ -115,23 +150,11 @@ pub fn PodcastPage() -> Element {
     filtered.iter().skip(safe_page * PAGE_SIZE).take(PAGE_SIZE).cloned().collect();
 
   rsx! {
-      section { class: "py-12 bg-[var(--color-bg)] transition-colors duration-300",
-          LocalContainer {
-              LocalSectionTitle {
-                  title: tp(lang, "podcast.title").to_string(),
-                  subtitle: Some(tp(lang, "podcast.subtitle").to_string())
-              }
-
-              match (current_episode.read().clone(), episodes.is_empty()) {
-                  (None, true) => rsx! {
-                      div { class: "flex items-center justify-center py-20",
-                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
-                      }
-                  },
-                  (None, false) => rsx! {
+              match current_episode {
+                  None => rsx! {
                       Empty { class: "py-20", EmptyDescription { "{tp(lang, \"podcast.empty\")}" } }
                   },
-                  (Some(active), _) => rsx! {
+                  Some(active) => rsx! {
                       // 2列布局：左=播放器+标签（sticky），右=节目列表（sticky）
                       div { class: "grid grid-cols-1 lg:grid-cols-2 gap-6 mt-10 lg:items-start",
 
@@ -167,13 +190,17 @@ pub fn PodcastPage() -> Element {
                                           }
                                       }
                                       div { class: "mt-8",
-                                          audio {
-                                              class: "w-full focus:outline-none",
-                                              controls: true,
-                                              src: "{active.url}",
-                                              onplay: move |_| is_playing.set(true),
-                                              onpause: move |_| is_playing.set(false),
-                                              "Your browser does not support the audio element."
+                                          if let Some(ref url) = active.url {
+                                              audio {
+                                                  class: "w-full focus:outline-none",
+                                                  controls: true,
+                                                  src: "{url}",
+                                                  onplay: move |_| is_playing.set(true),
+                                                  onpause: move |_| is_playing.set(false),
+                                                  "Your browser does not support the audio element."
+                                              }
+                                          } else {
+                                              p { class: "text-sm text-slate-400", "{tp(lang, \"podcast.no_audio\")}" }
                                           }
                                       }
                                   }
@@ -183,7 +210,7 @@ pub fn PodcastPage() -> Element {
                               if !all_tags.is_empty() {
                                   div { class: card_class("rounded-2xl p-5 shadow-none"),
                                       p { class: "text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3",
-                                          if lang == Language::Zh { "标签筛选" } else { "Filter by tag" }
+                                          "{tp(lang, \"podcast.filter\")}"
                                       }
                                       div { class: "flex flex-wrap gap-2",
                                           // "全部" chip
@@ -246,13 +273,13 @@ pub fn PodcastPage() -> Element {
                                   }
                                   for episode in paged.iter() {
                                       {
-                                          let ep_clone = episode.clone();
+                                          let ep_id = episode.id;
                                           let active_id = active.id;
                                           let is_active_ep = active_id == episode.id;
                                           rsx! {
                                               button {
                                                   key: "{episode.id}",
-                                                  onclick: move |_| current_episode.set(Some(ep_clone.clone())),
+                                                  onclick: move |_| selected_id.set(Some(ep_id)),
                                                   class: format_args!(
                                                       "w-full text-left px-5 py-4 transition-all {}",
                                                       if is_active_ep {
@@ -292,7 +319,7 @@ pub fn PodcastPage() -> Element {
                                           variant: ButtonVariant::Ghost,
                                           size: ButtonSize::Sm,
                                           disabled: safe_page == 0,
-                                          "aria-label": "上一页",
+                                          "aria-label": tp(lang, "podcast.prev"),
                                           onclick: move |_| { if current_page() > 0 { current_page.set(current_page() - 1); } },
                                           "←"
                                       }
@@ -303,7 +330,7 @@ pub fn PodcastPage() -> Element {
                                           variant: ButtonVariant::Ghost,
                                           size: ButtonSize::Sm,
                                           disabled: safe_page + 1 >= total_pages,
-                                          "aria-label": "下一页",
+                                          "aria-label": tp(lang, "podcast.next"),
                                           onclick: move |_| { if current_page() + 1 < total_pages { current_page.set(current_page() + 1); } },
                                           "→"
                                       }
@@ -313,14 +340,13 @@ pub fn PodcastPage() -> Element {
                       }
                   },
               }
-          }
-      }
   }
 }
 
 /// 可在 Markdown 中嵌入的 PodcastCard 组件
 #[component]
 pub fn PodcastCard(id: i32) -> Element {
+  let lang = use_language_ctx();
   let episode_res = use_resource(move || async move { get_episode_by_id(id).await.ok().flatten() });
 
   let state = episode_res.read().clone();
@@ -328,21 +354,23 @@ pub fn PodcastCard(id: i32) -> Element {
     Some(Some(ep)) => rsx! {
         div { class: card_class("not-prose my-8 p-6 rounded-2xl flex flex-col md:flex-row gap-6 items-center"),
             div { class: "flex-1 w-full",
-                div { class: "text-xs font-bold text-primary uppercase tracking-widest mb-2", "Featured Podcast" }
+                div { class: "text-xs font-bold text-primary uppercase tracking-widest mb-2", "{tp(lang, \"podcast.featured\")}" }
                 h4 { class: "text-xl font-extrabold text-slate-900 dark:text-white mb-2", "{ep.title}" }
                 div { class: "text-sm text-slate-500 mb-4", "{ep.date} · {ep.duration}" }
-                audio { class: "w-full h-10", controls: true, src: "{ep.url}" }
+                if let Some(ref url) = ep.url {
+                    audio { class: "w-full h-10", controls: true, src: "{url}" }
+                }
             }
         }
     },
     Some(None) => rsx! {
         Alert { variant: AlertVariant::Warning, class: "not-prose my-8",
-            AlertDescription { variant: AlertVariant::Warning, "找不到 ID 为 {id} 的播客节目" }
+            AlertDescription { variant: AlertVariant::Warning, "{tp(lang, \"podcast.not_found\")} (#{id})" }
         }
     },
     None => rsx! {
         div { class: "not-prose my-8 p-4 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-500",
-            "加载中..."
+            "{tp(lang, \"podcast.loading\")}"
         }
     },
   }

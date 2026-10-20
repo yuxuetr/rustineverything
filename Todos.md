@@ -463,3 +463,34 @@
 
 ### 阶段 E — dioxus-ui（在 dioxus-ui 仓库修复）
 - [x] E-1 — 把 FB-02 ~ FB-12 同步到 dioxus-ui 的待办 / RFC，按其流程修复发版（上游 0.6.1 去除 eval、0.6.2 安全加固；FB-09/12/16 上游 wontfix 并给出理由；本站升级到 0.6.2，各条状态见 DIOXUS_UI_FEEDBACK.md）
+
+### 阶段 O — 页面与板块优化（2026-10-19 走查）
+方案与证据见 [`docs/SITE_OPTIMIZATION_PLAN.md`](docs/SITE_OPTIMIZATION_PLAN.md)（E1–E15 为证据编号，D1–D4 为待作者决定项）。每条任务一个提交；带「需决定」的任务先等对应 D 项确认。
+- [x] O1 — 板块共享组件：`widgets::board::{BoardIndex, BoardArticle}`，5 个 `<board>.rs` 改为调用；不合并 crate（E5）。验收：5 板块落地页 / 文章页渲染与改前一致（SSR HTML diff 只差预期部分），各板块单测通过
+  - 完成：共享实现放在新 crate `crates/board`（widgets 不依赖 shadcn / i18n，单独成 crate 更干净）：`Board` 常量 + 一对带板块参数的 server fn（`list_board_articles` / `get_board_article`，整个 `topics/` 一份 mtime 缓存）+ `BoardIndex` / `BoardArticle`。5 个板块 crate 只剩 `lib.rs`（`BOARD` 常量 + 两个一行页面 + `problems()` 自检单测），净删约 3000 行。8 个页面 SSR HTML 与改前逐字相同（仅 hydration 调试类型名不同）
+  - 发现：dev 下 `/wasm`、`/wasm/:slug` 404——dioxus-server 在 debug 构建把 `public/wasm` 目录整体 `nest_service` 到 `/wasm`，抢走路由；release 按文件逐个挂载，不受影响。仅影响本地开发，不改路由。重估条件：release 构建下 `curl -o /dev/null -w '%{http_code}' $BASE/wasm` 不为 200
+- [x] O2 — 板块文章页：frontmatter 走 `inject_seo`；不存在的 slug 回 404（server fn 改返回 `Option` + `widgets::NotFound`）；卡片与返回链接改 `Link`；文章头显示日期与标签（E1/E3/E4）。验收：curl 缺失 slug 404、正常页 `<title>` 为文章标题且带 description / canonical；单测先红后绿
+  - 完成：`get_board_article` 改返回 `Option`（缺失 / 非法标识 → `None` → `NotFound` 404；IO 错 → `LoadFailed` 500，不再把原始报错渲染给访客）；文章页走 `inject_seo`（`get_seo_base_url` 从 app 移到 `widgets::seo`，供模块 crate 使用，端点不变）；卡片与返回链接改 `Link`（浏览器验证 SPA 跳转不整页刷新）；文章头显示日期与标签。顺带修复：`cli/clap-derive-subcommands` 描述里未转义的 `"` 让 frontmatter 整体解析失败（列表标题为空、日期丢失），加了扫描真实 assets 的内容校验单测（先红后绿）
+- [x] O3 — `widgets::PageMeta` + 列表 / 落地页元信息：首页、5 板块、案例列表与详情、课程列表与详情、播客、论坛、文档首页（E1）。验收：脚本 curl 上述路径 `<title>` 互不相同且非站名
+  - 完成：`widgets::PageMeta { title, description, path }`（自带 SuspenseBoundary 取 `BASE_URL`；`<title>` 统一为 `{title} - 站名`，`page_title()` 也给文档页用）。接入首页、博客列表、文档首页、播客、课程列表 / 详情、案例列表 / 详情、论坛列表 / 话题详情、5 板块、生态页。顺带：案例 / 课程 / 生态页「不存在」改用 `NotFound` 回 404（原为 200），案例读取出错回 500。验收脚本 `scripts/check_page_titles.sh`（14 个路径 title 互不相同且非纯站名，退出码 0；注意 `LC_ALL=C`，否则 uniq 会把 CJK 标题判为相同）
+  - 已知：SPA 导航后 `<head>` 里的 canonical 会累积（Dioxus head 元素卸载不移除，博客文章页原本如此）。SSR HTML 只有一个，不影响爬虫。重估条件：`curl -s $URL | grep -c 'rel="canonical"'` 大于 1
+- [x] O4 — sitemap / feed 覆盖 docs、案例详情、课程详情（不含课时）；布局加 `rel="alternate"` feed 链接（E2）。验收：sitemap 条目数 = 各来源计数之和（单测）
+  - 完成：`collect_detail_paths` 把文档（有正文的节点）、案例详情、课程详情加进 sitemap（不带 lastmod）。**不进 feed**：feed 是按日期的「新内容」，这三类没有日期，进 feed 只会是噪音（与方案原文「sitemap / feed」不同，有意收窄）。布局 `<head>` 加 Atom `rel=alternate`。sitemap 由 38 → 64 条。验收单测用真实 assets 独立计数比对（docs 数 = 磁盘 index 数；先红：镜像残留旧 `_meta.json` 时 7 ≠ 34）
+  - 顺带发现并修复（单独提交）：`build.rs` 镜像只拷不删，dev 下仍读到已删的旧文档与 phase R 插件 wasm（fdd4d16）；Dockerfile 漏了 O1 新增的 `crates/board`（3161834）
+- [x] O5 — 论坛与首页热帖区分「加载失败」与「空」，标签栏失败不再停在「加载中」；B6 结论不变（仍为 use_resource）（E8）。验收：停 `rie-postgres` 后页面显示失败提示，起库后正常
+  - 完成：论坛列表 / 标签栏 / 标签页 / 我的话题与首页「论坛热帖」保留 `Result`，`Err` 显示「加载失败」（列表带重试按钮，`resource.restart()`），空列表才显示空状态；仍是 use_resource。浏览器验证：停 `rie-postgres` → 列表「加载失败，请稍后重试」+ 重试、首页「论坛暂时无法加载」；起库后 1 话题 2 标签正常
+- [x] O6（技术部分；D2 内容待定） — 播客改 `use_server_future`；修复 `/audio` 在 dev 404（先查生产 Dockerfile 行为再定方案）；`audio_url` 校验文件存在，缺失时不渲染播放器（E6/E7）。需决定 D2（占位数据去留）。验收：SSR HTML 含节目标题；可播放的期能播放
+  - 完成：播客改 `use_server_future`（SSR HTML 含 3 期标题与播放器；默认选中第一期改为渲染期计算，去掉 use_effect）；`Episode.url` 改 `Option`，本地 `/audio/…`、`/podcasts/…` 与相对路径只在文件存在时给出，缺失时显示「本期音频暂未上线」，不再给一个 404 地址（删掉了 `audio.mp3` 兜底；先写测试）；dev 下 `/audio` 404：生产 Dockerfile 把根 assets 整体拷到 /app/assets，生产不受影响，问题只在 dev 镜像跳过 `audio/`，`build.rs` 改为在镜像里软链回根 `assets/audio`。浏览器验证可播放、切换节目正常
+  - D2 仍待作者决定（未改内容）：3 期 `audio_url` 指向同一文件；该文件实长 19:38，yaml 写 24:15；`guest: 张三` 与 2024-01 日期疑为占位
+- [x] O7 — 案例卡无 cover 时不渲染封面区；板块子分类 chip 只显示有文章的（E9/E10）。需决定 D4
+  - 完成（D4 按推荐：无封面不渲染；D1 只做 chip 收敛，不加「持续更新中」文案）：案例列表卡、详情页、首页精选三处没有 cover 时不画封面区（详情改单列；「精选」角标挪进标签行）；删掉不再使用的 `placeholder_gradient`。板块 chip 只显示有文章的子主题（`Board::subtopics_with_articles`，先红后绿），/embedded 由 7 个降为 3 个。顺带：`stars` 全为 0（未采集），列表 / 详情 0 时不再显示「★ 0」，与首页一致；删掉无引用的 `case.added_on` 文案
+- [x] O8 — 导航与页脚：桌面导航加播客；手机站名不截断；页脚删重复标语、加「专题」列与 RSS（E11/E12）。验收：390 / 1280 两种宽度截图
+  - 完成：桌面导航加「播客」（受开关）；<sm 时主题 / 语言收进移动抽屉、登录只留图标（带 aria-label），站名去掉 `max-w-32 truncate`——390px 下完整显示（141px，无横向滚动），抽屉内切语言验证可用；页脚删底部重复标语（改为 `© Rust in Everything`），新增「专题」列（5 板块，受开关）与社区列 RSS（`a href=/feed.xml`，服务端路由不走 Router）。截图：390 顶栏 / 抽屉、1280 导航 / 页脚
+- [x] O9 — 首页删除「按领域浏览」区块（E13）。需决定 D3
+  - 完成（D3 按推荐：删除）：首页去掉「按领域浏览」11 卡网格及其 `ModuleCard` / `module_icon` / `SectionTitle`（已无其他调用）与 `home.browse.*` / `home.mod.*` 文案。入口由生态卡、导航 mega 菜单、页脚「专题 / 内容」列覆盖。重估条件：首页去掉生态卡或导航 mega 菜单时，入口需要另有承载
+- [x] O10 — 搜索：弹窗文案接入 i18n，筛选补 5 个板块，课程标题 / 简介进索引（E14）
+  - 完成：弹窗与导航搜索按钮文案接入 i18n（`search.*`，中英）；筛选补课程与 5 个板块（板块用 `{board}.label`；服务端 `normalize_kind` 原来只认 4 种，板块筛选根本不生效，一并修，`BOARD_KINDS` 提到 crate 根共用）；课程经 `doc_source` 注册表进索引（只收标题 / 简介 / 标签，与 cases 同一 IoC 方式）；徽章补 COURSE、嵌入式改 EMBEDDED 与其余一致；搜索失败不再把原始错误渲染给访客。顺带修复（单独提交）：英文检索大小写敏感（"candle" 搜不到 Candle 案例），分词器加 LowerCaser 并改名触发存量索引重建
+  - 注意：索引在启动时只复用、不重扫（设计如此，见 OPERATIONS.md）；已部署环境要看到课程结果，需 admin 调一次 `POST /api/search/reindex`——本次分词器改名会让存量索引在下次启动时自动全量重建，所以这次部署无需手动操作
+- [x] O11 — 其余硬编码文案接入 i18n：博客 / 文档 / 课程不存在提示，播客 6 处（E15）。验收：切到 EN 后上述页面无中文残留
+  - 完成：`widgets::LoadFailed` 改为调用方传文案（widgets 无 i18n）；博客 / 文档（首页、卡片、侧栏、不存在）/ 课程（列表、详情、目录、不存在）/ 播客（筛选、翻页 aria、PodcastCard 3 处）/ 评论区（10 处）/ 关联讨论面板（4 处）接入中英文。浏览器 EN 验收 9 个路径：剩余中文只有内容本身（文档 / 课程 / 播客数据）与下面刻意不做的支付弹窗
+  - 有意不做（当前版本）：课时页、付费墙、标注、`pay_ui`（购买弹窗 / 我的订单）仍为中文——支付只有支付宝 / 微信、以人民币计价，面向中文用户；课时内容本身也是中文。重估条件：出现非人民币支付渠道（`grep -rn 'provider ==' crates/modules/course/src/pay_ui.rs` 出现 alipay / wechat 之外的值），或 `assets/courses/*/` 下出现英文课程（`course.yaml` 含 `lang: en`）

@@ -76,6 +76,7 @@ COPY crates/sdk/Cargo.toml crates/sdk/Cargo.toml
 COPY crates/core/Cargo.toml crates/core/Cargo.toml
 COPY crates/llm/Cargo.toml crates/llm/Cargo.toml
 COPY crates/widgets/Cargo.toml crates/widgets/Cargo.toml
+COPY crates/board/Cargo.toml crates/board/Cargo.toml
 COPY crates/app/Cargo.toml crates/app/Cargo.toml
 COPY crates/app/build.rs crates/app/build.rs
 COPY crates/app/Dioxus.toml crates/app/Dioxus.toml
@@ -95,6 +96,7 @@ COPY crates/sdk/src crates/sdk/src
 COPY crates/core/src crates/core/src
 COPY crates/llm/src crates/llm/src
 COPY crates/widgets/src crates/widgets/src
+COPY crates/board/src crates/board/src
 COPY crates/migration/src crates/migration/src
 COPY crates/app/src crates/app/src
 COPY assets ./assets
