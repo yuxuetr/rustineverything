@@ -14,6 +14,8 @@ use widgets::Markdown;
 
 use app_core::i18n::{t, Language};
 
+use crate::pricing::{Pricing, Region};
+
 /// 当前语言（缺省 Zh）。O11：课程列表 / 详情 / 目录文案随语言切换。
 fn current_lang() -> Language {
   try_consume_context::<Signal<Language>>().map(|s| s()).unwrap_or_default()
@@ -261,7 +263,7 @@ fn CourseDetailBody(
   let owned_res =
     use_resource(|| async move { crate::server::list_my_entitlements().await.unwrap_or_default() });
   let owned = owned_res.read().clone().unwrap_or_default().iter().any(|s| s == &course.slug);
-  let yuan = course.price / 100;
+  let price_label = course.pricing().list_price(Region::default()).label();
   rsx! {
       // Hero
       div { class: "grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12",
@@ -316,8 +318,8 @@ fn CourseDetailBody(
                       }
                   } else {
                       div { class: "mt-6 flex items-center gap-4",
-                          span { class: "text-2xl font-extrabold text-primary", "¥{yuan}" }
-                          PurchaseEntry { course_slug: course.slug.clone(), price: course.price }
+                          span { class: "text-2xl font-extrabold text-primary", "{price_label}" }
+                          PurchaseEntry { course_slug: course.slug.clone(), pricing: course.pricing() }
                       }
                   }
               }
@@ -542,7 +544,7 @@ fn LessonContent(
         h1 { class: "text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white mb-6",
             "{lesson.title}"
         }
-        LessonPaywall { course_slug: course_slug.clone(), price: lesson.price }
+        LessonPaywall { course_slug: course_slug.clone(), pricing: lesson.pricing.clone() }
     };
   }
   rsx! {
@@ -593,8 +595,8 @@ fn LessonContent(
 
 /// 付费墙：锁定课节的占位卡片 + 购买入口（M5d）。
 #[component]
-fn LessonPaywall(course_slug: String, price: i64) -> Element {
-  let yuan = price / 100;
+fn LessonPaywall(course_slug: String, pricing: Pricing) -> Element {
+  let price = pricing.list_price(Region::default());
   rsx! {
       div { class: card_class("rounded-2xl p-10 text-center max-w-xl mx-auto"),
           div { class: "w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center text-3xl mb-5",
@@ -604,11 +606,11 @@ fn LessonPaywall(course_slug: String, price: i64) -> Element {
           p { class: "mt-3 text-slate-600 dark:text-slate-400 leading-relaxed",
               "开通本课程后即可解锁全部课节，含文档、视频、音频与代码资源。"
           }
-          if price > 0 {
-              div { class: "mt-5 text-3xl font-extrabold text-primary", "¥{yuan}" }
+          if price.amount > 0 {
+              div { class: "mt-5 text-3xl font-extrabold text-primary", "{price.label()}" }
           }
           div { class: "mt-6",
-              PurchaseEntry { course_slug, price }
+              PurchaseEntry { course_slug, pricing }
           }
           p { class: "mt-4 text-sm text-slate-400",
               "需登录后购买；试看课节免费开放。"
@@ -621,16 +623,16 @@ fn LessonPaywall(course_slug: String, price: i64) -> Element {
 /// 关闭时退化为「联系管理员开通」提示（权益仍可由 /admin/entitlements
 /// 手动授予，Paywall 鉴权不变）。
 #[component]
-fn PurchaseEntry(course_slug: String, price: i64) -> Element {
+fn PurchaseEntry(course_slug: String, pricing: Pricing) -> Element {
   #[cfg(feature = "payments")]
   {
     rsx! {
-        crate::pay_ui::PurchaseButton { course_slug, price }
+        crate::pay_ui::PurchaseButton { course_slug, pricing }
     }
   }
   #[cfg(not(feature = "payments"))]
   {
-    let _ = (course_slug, price);
+    let _ = (course_slug, pricing);
     rsx! {
         span { class: "inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-500 dark:text-slate-400",
             "在线购买未开通，请联系管理员开通课程权益"

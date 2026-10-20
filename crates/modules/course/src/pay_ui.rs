@@ -15,6 +15,7 @@ use dioxus_shadcn::{
   TableCell, TableHead, TableHeader, TableRow, ToggleGroup, ToggleGroupItem, UiDensity,
 };
 
+use crate::pricing::{Pricing, Region};
 use crate::server::{create_order, list_my_orders, my_membership, query_order, OrderInfo};
 
 /// 由 fast_qr 把支付链接渲染成 SVG 二维码字符串。
@@ -36,14 +37,15 @@ fn clean_err(e: &ServerFnError) -> String {
 
 /// 购买按钮：点击弹出购买弹窗。放在 Paywall / 课程详情。
 #[component]
-pub fn PurchaseButton(course_slug: String, price: i64) -> Element {
+pub fn PurchaseButton(course_slug: String, pricing: Pricing) -> Element {
   let mut open = use_signal(|| false);
-  let yuan = price / 100;
+  let price = pricing.list_price(Region::default()).label();
+  let price_cny = pricing.price;
   rsx! {
       Dialog { open: open(), on_open_change: move |v| open.set(v),
           DialogTrigger {
               class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "px-6 font-semibold"),
-              "购买 ¥{yuan}"
+              "购买 {price}"
           }
           DialogOverlay { class: "z-[60]" }
           DialogContent { class: "z-[60] max-w-sm gap-0 rounded-2xl",
@@ -54,7 +56,7 @@ pub fn PurchaseButton(course_slug: String, price: i64) -> Element {
               }
               // 内容只在打开时挂载：每次重新打开都从选择支付方式开始。
               if open() {
-                  PurchaseForm { course_slug: course_slug.clone(), price }
+                  PurchaseForm { course_slug: course_slug.clone(), price: price_cny }
               }
           }
       }

@@ -110,9 +110,9 @@ pub struct Lesson {
   /// 服务端鉴权结论：true 表示当前用户无权查看，正文/媒体/代码已清空，前端渲染 Paywall。
   #[serde(default)]
   pub locked: bool,
-  /// 所属课程价格（分）；锁定时供 Paywall 展示。
+  /// 所属课程价格；锁定时供 Paywall 展示。
   #[serde(default)]
-  pub price: i64,
+  pub pricing: crate::pricing::Pricing,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -147,6 +147,9 @@ pub struct Course {
   /// 货币代码，默认 CNY。
   #[serde(default = "default_currency")]
   pub currency: String,
+  /// 海外价格（美分，阶段 I）；未设时海外也按 `price` 收。
+  #[serde(default)]
+  pub price_usd: Option<i64>,
   pub chapters: Vec<Chapter>,
 }
 
@@ -163,6 +166,14 @@ impl Course {
   /// 是否付费课程（非 free 层级）。
   pub fn is_paid(&self) -> bool {
     self.access_tier != "free"
+  }
+
+  pub fn pricing(&self) -> crate::pricing::Pricing {
+    crate::pricing::Pricing {
+      price: self.price,
+      currency: self.currency.clone(),
+      price_usd: self.price_usd,
+    }
   }
 }
 
@@ -184,6 +195,18 @@ pub struct CourseSummary {
   pub price: i64,
   #[serde(default = "default_currency")]
   pub currency: String,
+  #[serde(default)]
+  pub price_usd: Option<i64>,
+}
+
+impl CourseSummary {
+  pub fn pricing(&self) -> crate::pricing::Pricing {
+    crate::pricing::Pricing {
+      price: self.price,
+      currency: self.currency.clone(),
+      price_usd: self.price_usd,
+    }
+  }
 }
 
 impl From<&Course> for CourseSummary {
@@ -202,6 +225,7 @@ impl From<&Course> for CourseSummary {
       access_tier: c.access_tier.clone(),
       price: c.price,
       currency: c.currency.clone(),
+      price_usd: c.price_usd,
     }
   }
 }
@@ -231,6 +255,8 @@ struct CourseMeta {
   price: Option<i64>,
   #[serde(default)]
   currency: Option<String>,
+  #[serde(default)]
+  price_usd: Option<i64>,
 }
 
 #[allow(dead_code)]
@@ -741,7 +767,7 @@ pub fn read_lesson(course_slug: &str, chapter_slug: &str, lesson_slug: &str) -> 
     downloads,
     preview: frontmatter.preview,
     locked: false,
-    price: 0,
+    pricing: Default::default(),
   })
 }
 
@@ -924,6 +950,7 @@ pub fn read_course(course_slug: &str) -> Option<Course> {
     access_tier: meta.access_tier.clone().unwrap_or_else(default_access_tier),
     price: meta.price.unwrap_or(0),
     currency: meta.currency.clone().unwrap_or_else(default_currency),
+    price_usd: meta.price_usd,
     chapters,
   })
 }
@@ -1004,7 +1031,7 @@ pub async fn get_lesson(
       // 鉴权在服务端进行，锁定时清空正文/媒体/代码，绝不把付费内容下发到客户端。
       let course = read_course(&slug);
       if let Some(course) = course.as_ref().filter(|c| c.is_paid()) {
-        lesson_ref.price = course.price;
+        lesson_ref.pricing = course.pricing();
         let user = current_session_user();
         if !lesson_access_allowed(course, &slug, lesson_ref.preview, user.as_ref()).await? {
           lesson_ref.locked = true;
@@ -2894,6 +2921,28 @@ mod tests {
     };
     std::env::set_current_dir(cwd).unwrap();
     res.unwrap();
+  }
+
+  /// 阶段 I：`price_usd` 从 course.yaml 读入，经 `pricing()` 给海外报价；未写时为 None。
+  #[test]
+  fn test_course_reads_price_usd() {
+    use crate::pricing::Region;
+    let tmp = TempDir::new().unwrap();
+    let _cwd_guard = lock_cwd();
+    let cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(tmp.path()).unwrap();
+    let courses = tmp.path().join("assets/courses");
+    write(
+      &courses.join("usd/course.yaml"),
+      "title: U\naccess_tier: paid\nprice: 9900\nprice_usd: 1499\n",
+    );
+    write(&courses.join("cny/course.yaml"), "title: C\naccess_tier: paid\nprice: 9900\n");
+    let (usd, cny) = (read_course("usd"), read_course("cny"));
+    std::env::set_current_dir(cwd).unwrap();
+    let usd = usd.unwrap().pricing();
+    assert_eq!(usd.price_usd, Some(1499));
+    assert_eq!(usd.list_price(Region::Overseas).label(), "$14.99");
+    assert_eq!(cny.unwrap().pricing().price_usd, None);
   }
 
   #[test]

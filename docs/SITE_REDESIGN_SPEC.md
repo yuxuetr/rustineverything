@@ -138,6 +138,7 @@ AI 生态 (ai):
   access_tier: paid        # free | paid | pro，缺省 free
   price: 9900              # 分；currency 默认 CNY
   currency: CNY
+  price_usd: 1499          # 可选，美分；海外访客经 Stripe 按美元付（PAYMENT_SPEC §15）
   ```
 - Lesson `index.md` frontmatter 扩展：`preview: true`（标记免费试看课节）。
 - **Entitlement（DB / SeaORM 新表）**：
