@@ -27,7 +27,8 @@ pub struct AlipayConfig {
   alipay_public_key_der: Vec<u8>,
   pub gateway: String,
   pub notify_url: String,
-  pub return_url: String,
+  /// 站点根地址；同步返回地址 = 它 + 订单的 `return_path`。
+  pub return_base: String,
 }
 
 /// 加载配置；任一关键项缺失/无法解析 → None（支付宝下单将报「未配置」）。
@@ -45,7 +46,7 @@ pub fn config() -> Option<AlipayConfig> {
     alipay_public_key_der,
     gateway,
     notify_url: format!("{base}/api/pay/alipay/notify"),
-    return_url: format!("{base}/course"),
+    return_base: base.to_string(),
   })
 }
 
@@ -115,6 +116,7 @@ pub fn build_pay_url(
   out_trade_no: &str,
   subject: &str,
   amount_cents: i64,
+  return_path: &str,
 ) -> Result<String, String> {
   let (method, product_code) = match scene {
     "wap" => ("alipay.trade.wap.pay", "QUICK_WAP_WAY"),
@@ -128,7 +130,7 @@ pub fn build_pay_url(
   })
   .to_string();
   let mut params = common_params(cfg, method, biz);
-  params.insert("return_url".into(), cfg.return_url.clone());
+  params.insert("return_url".into(), format!("{}{}", cfg.return_base, return_path));
 
   let sign = rsa2_sign(&cfg.app_private_key_der, &canonical(&params))?;
 
@@ -278,9 +280,16 @@ impl PaymentProvider for AlipayProvider {
         .map_err(PayError::Sign),
       s => {
         let scn = if s == "wap" { "wap" } else { "page" };
-        build_pay_url(&self.cfg, scn, &req.out_trade_no, &req.subject, req.amount_cents)
-          .map(|u| OrderCall::Direct(PayAction::PayUrl(u)))
-          .map_err(PayError::Sign)
+        build_pay_url(
+          &self.cfg,
+          scn,
+          &req.out_trade_no,
+          &req.subject,
+          req.amount_cents,
+          &req.return_path,
+        )
+        .map(|u| OrderCall::Direct(PayAction::PayUrl(u)))
+        .map_err(PayError::Sign)
       }
     }
   }
@@ -428,7 +437,7 @@ mod tests {
       alipay_public_key_der: pub_der,
       gateway: "https://openapi.alipay.com/gateway.do".into(),
       notify_url: "https://e/n".into(),
-      return_url: "https://e/r".into(),
+      return_base: "https://e".into(),
     }
   }
 
@@ -499,12 +508,16 @@ mod tests {
       currency: "CNY".into(),
       scene: "page".into(),
       client_ip: None,
+      return_path: "/blog/welcome".into(),
     };
-    // page / wap → 签名直跳。
+    // page / wap → 签名直跳；付款后回到下单页。
     match p.build_order(&req) {
       Ok(OrderCall::Direct(PayAction::PayUrl(u))) => {
         assert!(u.starts_with("https://openapi.alipay.com/gateway.do?"));
         assert!(u.contains("alipay.trade.page.pay"));
+        let url = url::Url::parse(&u).unwrap();
+        let back = url.query_pairs().find(|(k, _)| k == "return_url").map(|(_, v)| v.into_owned());
+        assert_eq!(back.as_deref(), Some("https://e/blog/welcome"));
       }
       other => panic!("expected direct pay url, got {other:?}"),
     }
@@ -535,6 +548,7 @@ mod tests {
       currency: "CNY".into(),
       scene: "qr".into(),
       client_ip: None,
+      return_path: String::new(),
     };
     let ok =
       r#"{"alipay_trade_precreate_response":{"code":"10000","qr_code":"https://qr.alipay.com/x"}}"#;

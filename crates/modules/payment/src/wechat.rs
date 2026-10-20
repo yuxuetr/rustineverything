@@ -434,6 +434,7 @@ mod tests {
       currency: "CNY".into(),
       scene: "native".into(),
       client_ip: None,
+      return_path: String::new(),
     };
     match p.build_order(&req) {
       Ok(OrderCall::Http(pr)) => {
@@ -468,6 +469,7 @@ mod tests {
       currency: "CNY".into(),
       scene: "native".into(),
       client_ip: None,
+      return_path: String::new(),
     };
     assert_eq!(
       p.parse_order_response(&req, r#"{"code_url":"weixin://wxpay/x"}"#).unwrap(),
