@@ -507,6 +507,11 @@ fn LessonLoaded(slug: String, chapter: String, lesson: String) -> Element {
 
   match lesson_res() {
     Some(Some(l)) => rsx! {
+        widgets::PageMeta {
+            title: l.title.clone(),
+            description: l.doc.as_ref().map(|d| d.description.clone()).unwrap_or_default(),
+            path: format!("/course/{slug}/{chapter}/{lesson}"),
+        }
         LessonContent {
             lesson: l,
             blog_id: blog_id.clone(),
@@ -516,7 +521,7 @@ fn LessonLoaded(slug: String, chapter: String, lesson: String) -> Element {
         }
     },
     _ => rsx! {
-        div { class: "text-center py-20 text-slate-500", "课节未找到。" }
+        widgets::NotFound { message: t(current_lang(), "course.lesson_not_found") }
     },
   }
 }
