@@ -10,7 +10,7 @@
 | 账号 | `accounts` | 登录（OAuth）、论坛、博客评论、图片上传、内容审核、管理后台（用户 / 评论 / 话题 / 审核） | Postgres、`JWT_SECRET` |
 | 课程 | `course` = `accounts` + 课程 | 课程 / 课时 / 付费墙、标注、学习进度、权益（admin 手动开通）、Pro 会员 | 同上 |
 | 在线支付 | `payments` = `course` + 网关 | 微信 / 支付宝下单、回调发货、对账、我的订单 | 同上 + 商户密钥 |
-| 打赏 | `tips` = `accounts` + 网关 | 见 §6，**待作者确认后开工** | 同上 + 商户密钥 |
+| 打赏 | 随 `payments`（DT4） | 博客 / 播客页打赏，见 §6 | 同上 |
 
 `default = ["web", "payments"]`，即今天的完整站点；不传 feature 的构建行为与现在一致。
 
@@ -94,12 +94,42 @@ basic 层仍编译 core 的 sea-orm / oauth2 / jsonwebtoken，但运行时不需
 - **层腐化**：不常编译的组合很快会编译不过——L6 的门禁就是为此。
 - **`cargo test --workspace` 会合并 feature**：工作区测试始终是完整版；各层只靠 `check_tiers.sh` 的编译检查与 L3/L4 的手工运行验收。
 
-## 6. 打赏（待作者确认 DL6 后开工）
+## 6. 打赏
 
-推荐形态（需确认）：
-- 必须登录（复用 `orders.user_id NOT NULL`、我的订单、对账任务）；
-- 固定档位（如 ¥5 / 10 / 20 / 50），不收留言；打赏对象是站点本身，不分作者；
-- 入口：博客文章末尾、播客页；
-- 数据：`orders` 加 `product_kind`（`course` | `tip`，默认 `course`）与通用的 `product_ref`，支付流水线 `on_paid` 按 kind 分派（tip 不发权益）——这一步同时是「会员自助购买」（M6 余项）的前置。
+2026-10-20 作者确认（DL6）：必须登录；固定档位，不收留言；打赏对象是站点本身；入口在博客文章末尾和播客页；海外按美元档位收。
 
-任务：T1 订单加 product_kind 迁移 + 流水线分派；T2 下单 server fn（`tips` feature）；T3 打赏按钮 + 我的订单显示打赏；T4 管理后台打赏列表。
+| 档位 | 1 | 2 | 3 | 4 |
+| --- | --- | --- | --- | --- |
+| 大陆（支付宝 / 微信 / Stripe） | ¥5 | ¥10 | ¥20 | ¥50 |
+| 海外（Stripe） | $1 | $3 | $5 | $10 |
+
+报价复用课程的规则（PAYMENT_SPEC DI3）：把档位看成 `Pricing { price: 人民币, price_usd: Some(美元) }`，直接走 `Pricing::quote`——支付宝 / 微信永远收人民币，Stripe 在海外收美元。档位是代码常量，客户端只传档位序号，金额由服务端算。
+
+### DT1 订单表：`course_slug` 改名 `product_ref`，加 `product_kind`
+
+`product_kind`：`course` | `tip`，旧数据默认 `course`。`product_ref`：课程是课程 slug；打赏是打赏发生的页面路径（`/blog/<slug>` 或 `/podcast`），管理员能看到哪篇文章收到打赏，付款后也能回到原页面。
+不改名而把页面路径塞进 `course_slug` 会让列名说谎；改名是一次 `RENAME COLUMN`，代码约 15 处。
+
+### DT2 发货按种类分派，pipeline 不认识种类
+
+`pipeline::process_event` / `reconcile_order` 的 `on_paid` 回调改为收整份 `OrderSnapshot`（含 `product_kind` / `product_ref`）。course 侧一个 `deliver()` 按种类分派：`course` 写权益，`tip` 什么都不做；不认识的种类返回错误（应答失败、网关重试、`pay_audit` 留痕），不静默当成功。四个调用点（三个回调 + 对账）原来各写一遍发货闭包，合成这一个函数。退款同理：只有 `course` 撤销权益。
+
+### DT3 下单请求带返回路径
+
+支付宝的 `return_url`、Stripe 的 `cancel_url` 现在写死为 `/course`。`OrderRequest` 加 `return_path`：课程回 `/course/<slug>`，打赏回打赏的页面。Stripe 付款成功仍回 `/me/orders`。
+
+### DT4 打赏随 `payments` 编译，不设 `tips` feature
+
+订单、网关、购买弹窗都在 `module-course` 的 `payments` 下。单独的 `tips` feature 要把订单代码搬出课程 crate，换来的是「有打赏无课程」「有课程无打赏」两种组合，目前没有这样的部署。门控：`payments` 开且服务端配置了网关时才显示打赏按钮（`payment_providers()` 为空则不显示）。
+重估条件：出现开 `accounts` 不开 `course` 的部署配置（与 DL3 同一条命令）——`grep -rhoE 'APP_FEATURES=[^ ]*"?[^"]*' docker-compose*.yml .github deploy 2>/dev/null | grep accounts | grep -v course` 有输出。
+
+### DT5 管理后台不另做打赏列表
+
+现有「订单 / 退款」列表加一列种类，打赏行显示来源页面。打赏量大到需要单独统计时再做。
+
+任务：
+- **T1** 迁移（改名 + 加列）+ `ProductKind` + `on_paid` 收快照 + `deliver()` 分派 + 退款按种类。验收：课程购买行为不变（现有单测 + pipeline / 对账单测改用快照）；新单测：tip 不发权益、未知种类失败。
+- **T2** `create_tip_order(tier, source, provider, scene, region)` + 档位常量 + 来源校验 + `return_path`；与 `create_order` 共用建单与调网关。验收：单测覆盖 4 档 × 地区 × 网关报价、非法来源 / 档位被拒。
+- **T3** 打赏卡片（博客文章末尾、播客页底部）、购买弹窗支持打赏（档位选择 + 付款后显示感谢）、我的订单显示打赏、中英文案。验收：浏览器验证未登录 / 登录 / 地区切换。
+- **T4** 管理后台订单列表显示种类与来源。
+- **T5** Stripe 测试模式端到端：海外 $3、大陆 ¥10 各付一笔，我的订单与后台显示正确，退款一笔打赏不影响课程权益。

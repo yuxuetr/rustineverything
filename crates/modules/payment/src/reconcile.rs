@@ -15,7 +15,7 @@
 //! 安全性：关单只覆盖 `pending`；即使误关，迟到的合法回调仍能经原子认领
 //! `status != 'paid'` 把 closed 单认领为 paid 并发货——不会丢钱、不会双发货。
 
-use crate::pipeline::{process_event, NotifyOutcome, OrderStore, StaleOrder};
+use crate::pipeline::{process_event, NotifyOutcome, OrderSnapshot, OrderStore, StaleOrder};
 use crate::PaymentEvent;
 
 /// 对账策略。
@@ -65,7 +65,7 @@ pub fn decide_reconcile(
 
 /// 对账处理一笔滞留订单（`event` 为已查单得到的中立事件）。
 ///
-/// `on_paid` 与回调链路同一发货回调（幂等 upsert 权益）。
+/// `on_paid` 与回调链路同一发货回调（调用方按商品种类发货，须幂等）。
 pub async fn reconcile_order<S, F, Fut>(
   store: &S,
   order: &StaleOrder,
@@ -76,7 +76,7 @@ pub async fn reconcile_order<S, F, Fut>(
 ) -> ReconcileAction
 where
   S: OrderStore + Sync,
-  F: FnOnce(i32, String) -> Fut,
+  F: FnOnce(OrderSnapshot) -> Fut,
   Fut: std::future::Future<Output = Result<(), String>>,
 {
   match decide_reconcile(event.is_success(), order.created_at, now, policy) {
@@ -182,7 +182,8 @@ mod tests {
   fn snapshot(status: &str) -> OrderSnapshot {
     OrderSnapshot {
       user_id: 7,
-      course_slug: "rust-basics".into(),
+      product_kind: "course".into(),
+      product_ref: "rust-basics".into(),
       amount_cents: 9900,
       status: status.into(),
     }
@@ -195,7 +196,7 @@ mod tests {
   ) -> (ReconcileAction, usize) {
     let delivered = Arc::new(AtomicUsize::new(0));
     let d = delivered.clone();
-    let action = reconcile_order(store, order, ev, now(), &policy(), |_uid, _slug| async move {
+    let action = reconcile_order(store, order, ev, now(), &policy(), |_order| async move {
       d.fetch_add(1, Ordering::SeqCst);
       Ok(())
     })

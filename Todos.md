@@ -512,7 +512,18 @@
   - 完成（5c3343d；前置 78be668 清掉 web 端 5 个既有 dead-code warning，门禁才能把 warning 当失败）：`scripts/check_tiers.sh [档位…]` 对 basic / accounts / course / full 各跑 server、web 两次 `cargo check -p app`，有 error 或 warning 即退出 1（本机全量约 33s）。CI 用它替换原先的完整版 + 两条 no-payments 检查。反向验证：无门控 `use module_forum` → basic 两端 error 变红；去掉课程专用 import 的 cfg → accounts/server 因 unused import 变红；还原后全绿。Dockerfile 加 `ARG APP_FEATURES` 传给 `dx bundle`；README「功能分层」表 + 提交前检查、DEPLOY_GUIDE 档位构建说明
 - [x] L7 — 测 basic 与完整版的二进制大小 / 依赖数 / 冷构建时间，决定是否拆 app-core（DL5），结论写回设计文档
   - 完成：server 端依赖 515（完整）/ 488（basic）/ 382（basic 若拆 core 并去掉 migration，`cargo tree --prune` 估算）；release 二进制 50.0 MB / 30.9 MB，basic 里 sea-orm / sqlx / migration 约 2.3 MB、jwt / oauth2 / reqwest / rustls 约 0.6 MB（`nm` 符号间距估算）。结论：当前版本不拆 core——basic 已能无库运行，收益只有约 22% 依赖数与约 3 MB，代价是 core 两个新 feature + search 重建索引接口门控 + migration 依赖改走 core。重估条件（可执行）与数据表写在 FEATURE_TIERS.md DL5
-- [ ] T — 打赏（T1–T4，见设计文档 §6）：**待作者确认 DL6 后开工**
+- [x] T — 打赏（见 FEATURE_TIERS.md §6，DT1–DT5；2026-10-20 作者确认：登录、固定档位 ¥5/10/20/50，海外 $1/3/5/10）
+  - [x] T1 — 订单 `course_slug` → `product_ref` + `product_kind`；`on_paid` 收快照，`deliver()` 按种类分派；退款按种类撤权益
+    - 完成（ad65a9a）：迁移 000009（改名 + 加列，存量默认 course）；`course::product::ProductKind`（`grants_entitlement`）；`pipeline::process_event` / `reconcile_order` 的 `on_paid` 改收 `OrderSnapshot`，三个回调 + 对账共用 `deliver()`（未知种类返回错误）；退款只对课程撤权益；`OrderInfo` / `AdminOrderInfo` 带种类与 `product_ref`（未知种类留痕后不列出）。验证：本地库迁移后 5 条旧订单均为 course，`/api/orders/mine` 与后台列表返回新字段；工作区 615 测、四档门禁、clippy 通过。`deliver()` 的未知种类分支要连库，没有单测，靠 `ProductKind::parse` 单测覆盖
+  - [x] T2 — `create_tip_order` + 档位 + 来源校验 + `OrderRequest.return_path`
+    - 完成（f261cfc）：`product::{TIP_TIERS, tip_pricing, is_tip_source}`，报价直接走 `Pricing::quote`；`/api/orders/tip`；课程与打赏共用 `checkout_preamble` / `start_payment`；支付宝 `return_url`、Stripe `cancel_url` 改为订单的 `return_path`（课程 `/course/<slug>`，打赏回原页面）。单测：4 档 × 地区 × 网关报价、来源白名单（含 `/blog/../x`、外链）、Stripe cancel_url、支付宝 return_url；去掉 slug 校验或改报价规则时对应测试变红。本地实测：Stripe 海外第 2 档建单 $3（product_ref `/blog/welcome`），档位 9 / 外链来源 / 未登录被拒，课程下单不变
+  - [x] T3 — 打赏卡片（博客文章末尾、播客页）+ 弹窗支持打赏 + 我的订单显示 + 中英文案
+    - 完成（52313be）：`pay_ui::TipJar`（无网关不显示；未登录点按钮开登录弹窗，登录状态由 app 的 `TipCard` 传入）；`PurchaseForm` 改收 `Item`（课程 / 打赏），打赏多一排档位、按地区显示 ¥ 或 $，付款后显示感谢不刷新；我的订单「内容」列显示「打赏 · 来源页」；`PodcastPage` 加 `footer` 插槽；`pay.tip.*` 中英文案。浏览器验证：未登录卡片 + 提示 + 登录弹窗；登录后弹窗 ¥5/10/20/50，选 ¥20 金额跟着变，切到海外变 $1/3/5/10；播客页有卡片；我的订单显示打赏行；控制台只有已知的 dx 字体与 B 站嵌入报错。注意：工作区测试要 `--test-threads=1`（widgets 组件注册表是全局的，并行时偶发失败，CI 已这样跑）
+  - [x] T4 — 管理后台订单列表显示种类与来源
+    - 完成（e9b76df）：`/admin/entitlements` 订单表「课程」列改为「内容」，显示「课程 · slug」/「打赏 · 来源页」；打赏同样可全额退款（DT5：不另做打赏列表）。浏览器验证：管理员看到课程行与 `/blog/welcome` 的 $3 打赏行
+  - [x] T5 — Stripe 测试模式端到端（海外 $3、大陆 ¥10、退款一笔打赏）
+    - 完成（2026-10-20，顺带 8291784 改后台退款说明）：用户 1 海外在 `/blog/welcome` 打赏 $3，Stripe 收银台显示「Tip · Rust in Everything $3.00」，测试卡 4242 付款后回到我的订单显示已支付，回调写入 `pi_`，没有生成权益；用户 2（已购课）大陆在 `/podcast` 打赏，收银台「打赏 · Rust in Everything CN¥10.00」，点 Back 回到 `/podcast`（cancel_url 生效），再付一次成功；管理员退这笔 ¥10，Stripe 退款 succeeded（带 out_trade_no），本地订单 refunded，用户 2 的 rust-basics 权益仍在。未验证：支付宝 / 微信直连打赏（无商户号）
+- 打赏（T）完成：T1–T5
 
 ### 阶段 I — 海外支付（Stripe + 按地区给出支付方式，2026-10-20）
 设计见 [`docs/PAYMENT_SPEC.md`](docs/PAYMENT_SPEC.md) §15。作者决定：接 Stripe；课程另设美元价，海外按美元付。打赏（T）继续留在待办。

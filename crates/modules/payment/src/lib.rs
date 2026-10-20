@@ -64,13 +64,16 @@ pub struct OrderRequest {
   pub subject: String,
   /// 金额（分）。
   pub amount_cents: i64,
-  /// 货币代码（当前仅 CNY）。
+  /// 货币代码（CNY / USD）。
   pub currency: String,
   /// 支付场景：`page` | `wap` | `qr`（支付宝）/ `native` | `h5`（微信）。
   pub scene: String,
   /// 付款用户 IP（微信 h5 必填；其余场景可空）。
   #[serde(default)]
   pub client_ip: Option<String>,
+  /// 付款后（支付宝同步返回）/ 取消时（Stripe）回到的站内路径，如 `/course/rust-basics`。
+  #[serde(default)]
+  pub return_path: String,
 }
 
 /// 需要宿主发出的网关 HTTP 请求（Provider 只构造，不发送）。

@@ -158,7 +158,7 @@ impl PaymentProvider for StripeProvider {
       ("line_items[0][price_data][unit_amount]".into(), req.amount_cents.to_string()),
       ("line_items[0][price_data][product_data][name]".into(), req.subject.clone()),
       ("success_url".into(), format!("{base}/me/orders")),
-      ("cancel_url".into(), format!("{base}/course")),
+      ("cancel_url".into(), format!("{base}{}", req.return_path)),
     ];
     Ok(OrderCall::Http(pr))
   }
@@ -315,6 +315,7 @@ mod tests {
       currency: "USD".into(),
       scene: "page".into(),
       client_ip: None,
+      return_path: "/course/rust-basics".into(),
     };
     let OrderCall::Http(pr) = provider().build_order(&req).unwrap() else {
       panic!("Stripe 下单需要 HTTP");
@@ -329,6 +330,7 @@ mod tests {
     assert_eq!(form_get(&pr, "client_reference_id"), Some("RIE1"));
     assert_eq!(form_get(&pr, "payment_intent_data[metadata][out_trade_no]"), Some("RIE1"));
     assert_eq!(form_get(&pr, "success_url"), Some("https://example.com/me/orders"));
+    assert_eq!(form_get(&pr, "cancel_url"), Some("https://example.com/course/rust-basics"));
   }
 
   #[test]
@@ -340,6 +342,7 @@ mod tests {
       currency: "USD".into(),
       scene: "page".into(),
       client_ip: None,
+      return_path: String::new(),
     };
     let p = provider();
     assert_eq!(

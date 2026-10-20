@@ -171,7 +171,7 @@ fn OrdersSection() -> Element {
         div { class: "mt-12",
             h2 { class: "text-lg font-bold text-slate-900 dark:text-white mb-2", "订单 / 退款" }
             p { class: "text-sm text-slate-500 dark:text-slate-400 mb-4",
-                "最近 100 笔订单。已支付订单可全额退款：网关受理后订单置为已退款并撤销购买来源的课程权益（微信为异步到账）。"
+                "最近 100 笔订单。已支付订单可全额退款：网关受理后订单置为已退款；课程订单同时撤销购买来源的权益，打赏不涉及权益（微信为异步到账）。"
             }
             if !msg().is_empty() {
                 p { class: "mb-3 text-sm text-slate-600 dark:text-slate-300", "{msg}" }
@@ -189,7 +189,7 @@ fn OrdersSection() -> Element {
                             TableRow {
                                 TableHead { class: "h-10 px-4", "订单号" }
                                 TableHead { class: "h-10 px-4", "用户" }
-                                TableHead { class: "h-10 px-4", "课程" }
+                                TableHead { class: "h-10 px-4", "内容" }
                                 TableHead { class: "h-10 px-4", "金额" }
                                 TableHead { class: "h-10 px-4", "渠道" }
                                 TableHead { class: "h-10 px-4", "状态" }
@@ -203,11 +203,18 @@ fn OrdersSection() -> Element {
                                     let amount = module_course::pricing::Price { amount: o.amount, currency: o.currency.clone() }.label();
                                     let chan = app_core::i18n::t(app_core::i18n::Language::Zh, module_course::pricing::channel_key(&o.provider));
                                     let paid = o.status == "paid";
+                                    let kind = match o.product_kind {
+                                        module_course::product::ProductKind::Course => "课程",
+                                        module_course::product::ProductKind::Tip => "打赏",
+                                    };
                                     rsx! {
                                         TableRow { key: "{o.out_trade_no}",
                                             TableCell { class: "px-4 py-2 font-mono text-xs", "{o.out_trade_no}" }
                                             TableCell { class: "px-4 py-2", "{o.nickname} #{o.user_id}" }
-                                            TableCell { class: "px-4 py-2 font-mono text-xs", "{o.course_slug}" }
+                                            TableCell { class: "px-4 py-2 text-xs",
+                                                span { class: "mr-1", "{kind} ·" }
+                                                span { class: "font-mono", "{o.product_ref}" }
+                                            }
                                             TableCell { class: "px-4 py-2 font-medium", "{amount}" }
                                             TableCell { class: "px-4 py-2 text-slate-400", "{chan}" }
                                             TableCell { class: "px-4 py-2 text-xs", "{o.status}" }
