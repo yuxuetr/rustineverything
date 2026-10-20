@@ -171,7 +171,7 @@ fn OrdersSection() -> Element {
         div { class: "mt-12",
             h2 { class: "text-lg font-bold text-slate-900 dark:text-white mb-2", "订单 / 退款" }
             p { class: "text-sm text-slate-500 dark:text-slate-400 mb-4",
-                "最近 100 笔订单。已支付订单可全额退款：网关受理后订单置为已退款并撤销购买来源的课程权益（微信为异步到账）。"
+                "最近 100 笔订单。已支付订单可全额退款：网关受理后订单置为已退款；课程订单同时撤销购买来源的权益，打赏不涉及权益（微信为异步到账）。"
             }
             if !msg().is_empty() {
                 p { class: "mb-3 text-sm text-slate-600 dark:text-slate-300", "{msg}" }
