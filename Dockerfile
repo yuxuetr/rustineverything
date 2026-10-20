@@ -80,6 +80,8 @@ COPY crates/board/Cargo.toml crates/board/Cargo.toml
 COPY crates/app/Cargo.toml crates/app/Cargo.toml
 COPY crates/app/build.rs crates/app/build.rs
 COPY crates/app/Dioxus.toml crates/app/Dioxus.toml
+# 自定义页面模板（G2：<html lang="zh-CN">），dx 按 crate 根目录的 index.html 生成页面骨架
+COPY crates/app/index.html crates/app/index.html
 COPY crates/app/package.json crates/app/package.json
 COPY crates/app/package-lock.json crates/app/package-lock.json
 COPY crates/app/tailwind-input.css crates/app/tailwind-input.css

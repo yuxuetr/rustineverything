@@ -132,6 +132,11 @@ rsx! {
 - ⏳ `DocPage` / `Lesson` / `CaseDetail` / `TopicDetail` / `PodcastPage`
   — 同模式可直接套用，详见 [`Blog` 实现](../crates/app/src/routes/mod.rs)
 
+### 3.1 页面语言与多语言收录（2026-10-20）
+
+- `crates/app/index.html` 是 dx 的页面模板，只比默认模板多 `<html lang="zh-CN">`；SSR 始终渲染中文，英文是 hydration 后按 `site_lang` cookie 切换的界面语言。
+- 不做英文独立 URL / hreflang：内容全部是中文，开英文 URL 收录到的也是中文正文。重估条件与命令见 [`AUDIT_2026-10-20.md`](AUDIT_2026-10-20.md) §4。
+
 ## 4. Sitemap.xml
 
 由 `build_sitemap_xml(entries, static_paths, base_url)` 生成
