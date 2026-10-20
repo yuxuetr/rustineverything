@@ -47,7 +47,7 @@ fn derive_key_v2() -> [u8; 32] {
   match std::env::var("DATA_ENCRYPTION_KEY") {
     Ok(k) if !k.is_empty() => {
       crate::session::assert_not_placeholder("DATA_ENCRYPTION_KEY", &k);
-      derive_32(b"rustineverything::data-encryption-v2", &k)
+      key_v2_from(&k)
     }
     _ => {
       // 只在首次回退时 warn 一次，避免日志刷屏。
@@ -57,9 +57,15 @@ fn derive_key_v2() -> [u8; 32] {
           "crypto: DATA_ENCRYPTION_KEY 未配置，回退到 JWT_SECRET 派生。建议配置独立密钥以支持分开轮换"
         );
       });
-      derive_32(b"rustineverything::data-encryption-v2", &crate::session::get_jwt_secret())
+      key_v2_from(&crate::session::get_jwt_secret())
     }
   }
+}
+
+/// v2 密钥派生本身（不读 env），轮换语义的测试直接用它，避免改写进程级 env
+/// 与并行测试互相干扰。
+fn key_v2_from(secret: &str) -> [u8; 32] {
+  derive_32(b"rustineverything::data-encryption-v2", secret)
 }
 
 fn encrypt_with_key(key_bytes: &[u8; 32], plaintext: &str) -> Result<Vec<u8>, String> {
@@ -155,28 +161,19 @@ mod tests {
     assert_eq!(decoded, plaintext);
   }
 
-  /// S5：配置独立 DATA_ENCRYPTION_KEY 后，v2 密钥与 JWT_SECRET 解耦：
-  /// 用独立密钥加密的密文，在密钥变更后无法解密（轮换语义）。
+  /// S5：v2 密钥只由 DATA_ENCRYPTION_KEY 决定（与 JWT_SECRET 解耦）：
+  /// 用密钥 A 加密的密文，轮换到密钥 B 后无法解密（而非静默解出错误明文）。
+  ///
+  /// 不改写 env：`set_var` 是进程级的，会让并行运行的往返测试在加密与解密
+  /// 之间换了密钥而偶发失败。
   #[test]
   fn test_independent_key_rotation_semantics() {
-    ensure_secret();
-    // SAFETY: 单测序列化运行（--test-threads=1）
-    unsafe {
-      std::env::set_var("DATA_ENCRYPTION_KEY", "independent-data-key-A-0123456789ab");
-    }
-    let cipher = encrypt_token("rotate-me").expect("encrypt with key A");
-    assert!(decrypt_token(&cipher).is_ok());
-
-    // 轮换到密钥 B → 旧密文应拒绝（而非静默解出错误明文）
-    unsafe {
-      std::env::set_var("DATA_ENCRYPTION_KEY", "independent-data-key-B-0123456789ab");
-    }
-    assert!(decrypt_token(&cipher).is_err(), "密钥轮换后旧 v2 密文应解密失败");
-
-    // 清理：恢复回退路径，不影响其它测试
-    unsafe {
-      std::env::remove_var("DATA_ENCRYPTION_KEY");
-    }
+    let key_a = key_v2_from("independent-data-key-A-0123456789ab");
+    let key_b = key_v2_from("independent-data-key-B-0123456789ab");
+    let raw = encrypt_with_key(&key_a, "rotate-me").expect("encrypt with key A");
+    let cipher = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
+    assert!(decrypt_with_key(&key_a, &cipher).is_ok());
+    assert!(decrypt_with_key(&key_b, &cipher).is_err(), "密钥轮换后旧 v2 密文应解密失败");
   }
 
   #[test]
