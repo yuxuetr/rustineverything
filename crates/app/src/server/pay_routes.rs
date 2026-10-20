@@ -48,4 +48,19 @@ pub fn mount(router: Router) -> Router {
         (status, resp)
       }),
     )
+    // 阶段 I：Stripe webhook（JSON）。验签同样需要原始 body。
+    .route(
+      "/api/pay/stripe/notify",
+      post(|headers: HeaderMap, body: axum::body::Bytes| async move {
+        let signature = headers
+          .get("stripe-signature")
+          .and_then(|v| v.to_str().ok())
+          .unwrap_or_default()
+          .to_string();
+        let body_str = String::from_utf8_lossy(&body).to_string();
+        let code = module_course::server::handle_stripe_notify(signature, body_str).await;
+        axum::http::StatusCode::from_u16(code)
+          .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+      }),
+    )
 }

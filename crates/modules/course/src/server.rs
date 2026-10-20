@@ -1577,6 +1577,8 @@ pub struct OrderInfo {
   pub course_slug: String,
   pub provider: String,
   pub amount: i64,
+  #[serde(default = "default_currency")]
+  pub currency: String,
   pub status: String,
   pub created_at: String,
   pub paid_at: Option<String>,
@@ -1605,14 +1607,30 @@ fn pay_err(e: module_payment::PayError) -> ServerFnError {
   }
 }
 
-/// 创建课程购买订单。校验登录 / 课程付费 / 未拥有，快照价格，建 pending 订单，
-/// 再经 PaymentProvider + host 执行器生成支付凭据（PM4）。
+/// 服务端已配置的网关（购买弹窗按地区取交集后展示，DI4）。
+#[cfg(feature = "payments")]
+#[post("/api/orders/providers")]
+pub async fn payment_providers() -> Result<Vec<String>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    Ok(module_payment::host::configured())
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
+}
+
+/// 创建课程购买订单。校验登录 / 课程付费 / 未拥有，按网关与地区报价
+/// （`Pricing::quote`，阶段 I），建 pending 订单，再经 PaymentProvider + host
+/// 执行器生成支付凭据（PM4）。
 #[cfg(feature = "payments")]
 #[post("/api/orders/create")]
 pub async fn create_order(
   course_slug: String,
   provider: String,
   scene: String,
+  region: String,
 ) -> Result<OrderInit, ServerFnError> {
   #[cfg(feature = "server")]
   {
@@ -1622,19 +1640,21 @@ pub async fn create_order(
 
     // 写路径：回查 token_version（SEC-13）。
     let user = app_core::session::require_session_verified().await?;
-    let provider = match provider.as_str() {
-      "wechat" | "alipay" => provider,
-      _ => return Err(ServerFnError::new("不支持的支付方式".to_string())),
-    };
     let scene = match scene.as_str() {
       "native" | "h5" | "page" | "wap" | "qr" => scene,
       _ => return Err(ServerFnError::new("不支持的支付场景".to_string())),
     };
+    let region = crate::pricing::Region::parse(&region)
+      .ok_or_else(|| ServerFnError::new("不支持的地区".to_string()))?;
     let course =
       read_course(&course_slug).ok_or_else(|| ServerFnError::new("课程不存在".to_string()))?;
     if !course.is_paid() {
       return Err(ServerFnError::new("该课程无需购买".to_string()));
     }
+    let price =
+      course.pricing().quote(&provider, region).map_err(|m| ServerFnError::new(m.to_string()))?;
+    // 先确认网关已配置再建单，免得留下一张永远付不了的 pending 单。
+    let gateway = module_payment::host::from_env(&provider).map_err(pay_err)?;
     let db = open_db().await?;
     if has_entitlement(&db, user.id, &course_slug).await {
       return Err(ServerFnError::new("你已拥有该课程".to_string()));
@@ -1647,8 +1667,8 @@ pub async fn create_order(
       course_slug: Set(course_slug),
       provider: Set(provider.clone()),
       scene: Set(scene.clone()),
-      amount: Set(course.price),
-      currency: Set(course.currency.clone()),
+      amount: Set(price.amount),
+      currency: Set(price.currency.clone()),
       status: Set("pending".to_string()),
       provider_txn: Set(None),
       created_at: Set(Utc::now().fixed_offset()),
@@ -1661,26 +1681,14 @@ pub async fn create_order(
     let pay_req = PayOrderRequest {
       out_trade_no: out_trade_no.clone(),
       subject: course.title.clone(),
-      amount_cents: course.price,
-      currency: course.currency.clone(),
+      amount_cents: price.amount,
+      currency: price.currency.clone(),
       scene: scene.clone(),
       // H5 需付款用户 IP；生产应从请求头 X-Forwarded-For 取，这里占位
       // （None → provider 内缺省 0.0.0.0，同旧实现）。
       client_ip: None,
     };
-    let action = match provider.as_str() {
-      "alipay" => {
-        let p = module_payment::alipay::AlipayProvider::from_env()
-          .map_err(|_| ServerFnError::new("支付宝未配置（缺 ALIPAY_* 环境变量）".to_string()))?;
-        host::execute_order(&p, &pay_req).await.map_err(pay_err)?
-      }
-      "wechat" => {
-        let p = module_payment::wechat::WechatProvider::from_env()
-          .map_err(|_| ServerFnError::new("微信支付未配置（缺 WECHAT_* 环境变量）".to_string()))?;
-        host::execute_order(&p, &pay_req).await.map_err(pay_err)?
-      }
-      _ => return Err(ServerFnError::new("该支付方式暂未开通".to_string())),
-    };
+    let action = host::execute_order(gateway.as_ref(), &pay_req).await.map_err(pay_err)?;
     // kind 标签保持旧协议：二维码 → qrcode；微信 h5 → h5；其余跳转 → redirect。
     let (kind, payload) = match action {
       PayAction::QrCode(qr) => ("qrcode".to_string(), qr),
@@ -1692,15 +1700,15 @@ pub async fn create_order(
       out_trade_no,
       provider,
       scene,
-      amount: course.price,
-      currency: course.currency,
+      amount: price.amount,
+      currency: price.currency,
       kind,
       payload,
     })
   }
   #[cfg(not(feature = "server"))]
   {
-    let _ = (course_slug, provider, scene);
+    let _ = (course_slug, provider, scene, region);
     Err(ServerFnError::new("server only".to_string()))
   }
 }
@@ -1761,6 +1769,7 @@ pub async fn list_my_orders() -> Result<Vec<OrderInfo>, ServerFnError> {
           course_slug: o.course_slug,
           provider: o.provider,
           amount: o.amount,
+          currency: o.currency,
           status: o.status,
           created_at: o.created_at.to_rfc3339(),
           paid_at: o.paid_at.map(|t| t.to_rfc3339()),
@@ -1944,6 +1953,61 @@ pub async fn handle_wechat_notify(
   }
 }
 
+/// 处理 Stripe webhook（由 app 的 Axum 路由 `/api/pay/stripe/notify` 调用；阶段 I）。
+///
+/// 入参：`Stripe-Signature` 头 + 原始 body（验签需逐字节一致）。流程：验签（含
+/// ±300s 时间戳，宿主侧，DI6）→ 只处理 `checkout.session.*` 事件 →
+/// `parse_notify` 中立化 → 统一流水线。返回 HTTP 状态：200 确认；验签失败 400；
+/// 处理失败 500（Stripe 会重试）。
+#[cfg(all(feature = "server", feature = "payments"))]
+pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
+  use module_payment::{pipeline, NotifyPayload, PaymentProvider};
+
+  let Ok(provider) = module_payment::stripe::StripeProvider::from_env() else {
+    return 500;
+  };
+  let now = chrono::Utc::now().timestamp();
+  if !module_payment::stripe::verify_notify(provider.config(), &signature, &body, now) {
+    tracing::warn!(target: "pay_audit", "stripe notify: signature verify failed");
+    return 400;
+  }
+  let Ok(event) = serde_json::from_str::<serde_json::Value>(&body) else {
+    return 400;
+  };
+  let kind = event["type"].as_str().unwrap_or("");
+  tracing::info!(
+    target: "pay_audit",
+    provider = "stripe",
+    event_type = %kind,
+    out_trade_no = %event["data"]["object"]["client_reference_id"].as_str().unwrap_or(""),
+    amount_total = event["data"]["object"]["amount_total"].as_i64().unwrap_or(-1),
+    "notify received"
+  );
+  // 其他事件（订阅了但不处理的）确认收到，免得 Stripe 重试。
+  if !kind.starts_with("checkout.session.") {
+    return 200;
+  }
+  let event = match provider.parse_notify(&NotifyPayload::Json(event)) {
+    Ok(e) => e,
+    Err(_) => return 400,
+  };
+  let Ok(db) = open_db().await else {
+    return 500;
+  };
+  let outcome = pipeline::process_event(&db, &event, |user_id, slug| {
+    let db = db.clone();
+    async move {
+      grant_entitlement_internal(&db, user_id, slug, "purchase").await.map_err(|e| e.to_string())
+    }
+  })
+  .await;
+  if outcome.is_ok() {
+    200
+  } else {
+    500
+  }
+}
+
 // =============================================================
 // M5e 对账：滞留 pending 单定时核对（gateway query 回填 / 关单）
 // =============================================================
@@ -1988,16 +2052,9 @@ pub async fn reconcile_pending_orders_once() -> (u32, u32) {
   };
   let (mut delivered, mut closed) = (0u32, 0u32);
   for order in stale {
-    let event = match order.provider.as_str() {
-      "alipay" => match module_payment::alipay::AlipayProvider::from_env() {
-        Ok(p) => host::execute_query(&p, &order.out_trade_no).await,
-        Err(e) => Err(e),
-      },
-      "wechat" => match module_payment::wechat::WechatProvider::from_env() {
-        Ok(p) => host::execute_query(&p, &order.out_trade_no).await,
-        Err(e) => Err(e),
-      },
-      _ => continue,
+    let event = match host::from_env(&order.provider) {
+      Ok(p) => host::execute_query(p.as_ref(), &order.out_trade_no).await,
+      Err(e) => Err(e),
     };
     let event = match event {
       Ok(ev) => ev,
@@ -2044,6 +2101,8 @@ pub struct AdminOrderInfo {
   pub course_slug: String,
   pub provider: String,
   pub amount: i64,
+  #[serde(default = "default_currency")]
+  pub currency: String,
   pub status: String,
   pub created_at: String,
   pub paid_at: Option<String>,
@@ -2085,6 +2144,7 @@ pub async fn admin_list_orders() -> Result<Vec<AdminOrderInfo>, ServerFnError> {
           course_slug: o.course_slug,
           provider: o.provider,
           amount: o.amount,
+          currency: o.currency,
           status: o.status,
           created_at: o.created_at.to_rfc3339(),
           paid_at: o.paid_at.map(|t| t.to_rfc3339()),
@@ -2133,19 +2193,8 @@ pub async fn admin_refund_order(out_trade_no: String) -> Result<(), ServerFnErro
       reason: "管理员退款".to_string(),
       txn_id: row.provider_txn.clone(),
     };
-    let result = match row.provider.as_str() {
-      "alipay" => {
-        let p = module_payment::alipay::AlipayProvider::from_env()
-          .map_err(|_| ServerFnError::new("支付宝未配置（缺 ALIPAY_* 环境变量）".to_string()))?;
-        host::execute_refund(&p, &refund_req).await.map_err(pay_err)?
-      }
-      "wechat" => {
-        let p = module_payment::wechat::WechatProvider::from_env()
-          .map_err(|_| ServerFnError::new("微信支付未配置（缺 WECHAT_* 环境变量）".to_string()))?;
-        host::execute_refund(&p, &refund_req).await.map_err(pay_err)?
-      }
-      _ => return Err(ServerFnError::new("该支付方式不支持退款".to_string())),
-    };
+    let gateway = host::from_env(&row.provider).map_err(pay_err)?;
+    let result = host::execute_refund(gateway.as_ref(), &refund_req).await.map_err(pay_err)?;
     if !result.is_accepted() {
       tracing::warn!(
         target: "pay_audit",

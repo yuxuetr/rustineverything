@@ -80,7 +80,9 @@ fn PurchaseForm(course_slug: String, price: i64) -> Element {
     status.set("loading".to_string());
     message.set(String::new());
     spawn(async move {
-      match create_order(slug, prov, scene.to_string()).await {
+      match create_order(slug, prov, scene.to_string(), Region::default().as_str().to_string())
+        .await
+      {
         Ok(init) => match init.kind.as_str() {
           "redirect" | "h5" => {
             widgets::browser::navigate(&init.payload);
