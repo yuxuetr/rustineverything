@@ -581,7 +581,8 @@
   - 完成（015aca9）：`grant_entitlement_internal` 对 `purchase` 用 `ON CONFLICT DO NOTHING`（`exec_without_returning`，冲突不报错），管理员授予仍覆盖。本地自签 webhook 实测：已有 admin_grant 的课付款后来源仍为 admin_grant，退款后权限保留；无权益的课付款写 purchase，退款后删除；退款后重放成功回调订单仍为 refunded、不再发货（顺带端到端验证 H1）。未做旧代码下的反向运行：旧代码 `update_columns(Source)` 会把来源改成 purchase，退款按 source=purchase 删除
 - [x] H4 — `/api/orders/create`、`/api/orders/tip` 归入严格限流桶。验收：`classify_path` 单测
   - 完成（cf69a20）：`classify_path` 的严格前缀加上两条下单路径（默认 5 rps / 15 突发，每 IP）。单测新增三条断言，旧代码下变红；`/api/orders/mine` 仍走默认桶
-- [ ] H5 — compose 里应用端口只绑 127.0.0.1，DEPLOY_GUIDE 说明。验收：`docker compose config` 输出 host_ip 127.0.0.1
+- [x] H5 — compose 里应用端口只绑 127.0.0.1，DEPLOY_GUIDE 说明。验收：`docker compose config` 输出 host_ip 127.0.0.1
+  - 完成（fba9c59）：ports 改为 `${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080`（网关上游本来就是 127.0.0.1:8080）；`.env.example` 加 `APP_BIND` 说明；`DEPLOY_GUIDE.md` §11 安全 checklist 加一行。本机没有 docker，未跑 `docker compose config`，只用 YAML 解析确认了端口串
 - [ ] H6 — 依赖升级到修复版本（rustls ≥0.23.46、h2 ≥0.4.16、quinn-proto ≥0.11.18 等）。验收：`cargo audit` 只剩无修复版本的条目
 - [ ] H7 — YouTube / Bilibili 嵌入 id 只允许 `[A-Za-z0-9_-]`。验收：单测，带 `?` / `&` / `/` 的 id 不渲染 iframe
 
