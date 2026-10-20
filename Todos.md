@@ -508,6 +508,7 @@
   - 注意：本地两档共用 `crates/app/data/search-index`，basic 启动刷新会删掉话题 / 课程条目；切回完整版前删掉该目录让它全量重建。生产只部署一档，不受影响
 - [x] L5 — About 页：`/about` 渲染 `assets/pages/about.md`，不存在时 404，页脚按存在与否显示
   - 完成（1cce4d9）：`/about` 读 `assets/pages/about.md`，frontmatter 的 title / description 经 `PageMeta` 进 head（`关于 - Rust in Everything`），文件不存在 404、读失败 500。`about` 作为内置模块登记：页脚「社区」列链接与 sitemap 条目随 site.json 开关。默认内容只描述站点覆盖的内容，需作者按需改写。顺带发现：`widgets::Markdown` 会用 frontmatter 标题覆盖页面 `<title>`，所以 About 传入去掉 frontmatter 的正文（博客文章页的 `<title>` 也因此不带站名，未改）。验收：200 / 标题 / description / sitemap 1 条 / 页脚链接；移走文件 404、放回 200；标题脚本通过
-- [ ] L6 — 分层门禁 `scripts/check_tiers.sh`（四档 × server / web 两端 `cargo check`）接入 CI，Dockerfile `ARG FEATURES`，文档。验收：反向验证（故意加一处无门控引用，脚本失败）
+- [x] L6 — 分层门禁 `scripts/check_tiers.sh`（四档 × server / web 两端 `cargo check`）接入 CI，Dockerfile `ARG FEATURES`，文档。验收：反向验证（故意加一处无门控引用，脚本失败）
+  - 完成（5c3343d；前置 78be668 清掉 web 端 5 个既有 dead-code warning，门禁才能把 warning 当失败）：`scripts/check_tiers.sh [档位…]` 对 basic / accounts / course / full 各跑 server、web 两次 `cargo check -p app`，有 error 或 warning 即退出 1（本机全量约 33s）。CI 用它替换原先的完整版 + 两条 no-payments 检查。反向验证：无门控 `use module_forum` → basic 两端 error 变红；去掉课程专用 import 的 cfg → accounts/server 因 unused import 变红；还原后全绿。Dockerfile 加 `ARG APP_FEATURES` 传给 `dx bundle`；README「功能分层」表 + 提交前检查、DEPLOY_GUIDE 档位构建说明
 - [ ] L7 — 测 basic 与完整版的二进制大小 / 依赖数 / 冷构建时间，决定是否拆 app-core（DL5），结论写回设计文档
 - [ ] T — 打赏（T1–T4，见设计文档 §6）：**待作者确认 DL6 后开工**
