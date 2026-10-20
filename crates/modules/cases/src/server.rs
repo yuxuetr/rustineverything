@@ -1,6 +1,7 @@
+use crate::text::CaseSortable;
+#[cfg(feature = "server")]
 use crate::text::{
   compare_cases, humanize_slug, is_known_tag, matches_query, normalize_category, normalize_tags,
-  CaseSortable,
 };
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -315,6 +316,7 @@ pub fn scan_cases() -> Vec<Case> {
   scan_cases_from_root(&get_cases_root())
 }
 
+#[cfg(feature = "server")]
 fn filter_summaries(
   mut cases: Vec<CaseSummary>,
   tags: Option<Vec<String>>,

@@ -55,6 +55,7 @@ fn get_podcasts_root() -> PathBuf {
 }
 
 /// 受支持的音频文件扩展名
+#[cfg(feature = "server")]
 const AUDIO_EXTENSIONS: &[&str] = &["m4a", "mp3", "wav", "ogg", "flac", "aac", "opus", "mpeg"];
 
 /// server-only: 扫描节目目录中的音频文件，按文件名升序返回第一个

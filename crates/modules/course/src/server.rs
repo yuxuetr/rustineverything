@@ -436,6 +436,7 @@ fn rewrite_one_url(url: &str, base: &str) -> String {
 }
 
 /// 解析 markdown 中的 frontmatter (YAML between ---)
+#[cfg(feature = "server")]
 pub(crate) fn parse_frontmatter_lesson(content: &str) -> (LessonFrontmatter, String) {
   if !content.starts_with("---") {
     return (LessonFrontmatter::default(), content.to_string());
