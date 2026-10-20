@@ -15,6 +15,16 @@
 
 镜像 runtime 基于 `debian:trixie-slim`（glibc）+ 非 root 用户 `app`，绑定 `0.0.0.0:8080`。
 
+**功能分层**：镜像默认是完整站点。要部署其他档位（见 [FEATURE_TIERS.md](FEATURE_TIERS.md)），构建时传
+`--build-arg APP_FEATURES="..."`，例如只要博客 / 文档 / 播客、不要数据库：
+
+```bash
+docker build --build-arg APP_FEATURES="--no-default-features" -t rie-app:basic .
+```
+
+basic 档只需要 `BASE_URL`，不连库、不要求 `JWT_SECRET`，`/healthz` 返回 `"db":"disabled"`（正常）；搜索索引在启动时增量刷新。
+带 `accounts` 的档位与完整站点一样需要 Postgres 和 `JWT_SECRET`。
+
 ## 2. 前置条件
 
 - Docker 24+（含 buildx 与 compose v2）
