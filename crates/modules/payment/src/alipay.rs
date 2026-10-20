@@ -31,6 +31,10 @@ pub struct AlipayConfig {
   pub return_base: String,
 }
 
+/// [`config`] 必读的变量（`ALIPAY_GATEWAY` 有默认值，不在其中），启动自检用。
+pub(crate) const REQUIRED_ENV: &[&str] =
+  &["ALIPAY_APP_ID", "ALIPAY_APP_PRIVATE_KEY", "ALIPAY_PUBLIC_KEY", "PAY_NOTIFY_BASE"];
+
 /// 加载配置；任一关键项缺失/无法解析 → None（支付宝下单将报「未配置」）。
 pub fn config() -> Option<AlipayConfig> {
   let app_id = env_nonempty("ALIPAY_APP_ID")?;

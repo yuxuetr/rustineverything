@@ -33,6 +33,10 @@ pub struct StripeConfig {
   pub return_base: String,
 }
 
+/// [`config`] 必读的变量，启动自检用。
+pub(crate) const REQUIRED_ENV: &[&str] =
+  &["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "PAY_NOTIFY_BASE"];
+
 /// 加载配置；任一项缺失 → None（Stripe 下单将报「未配置」）。
 pub fn config() -> Option<StripeConfig> {
   Some(StripeConfig {

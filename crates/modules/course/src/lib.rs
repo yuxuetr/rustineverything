@@ -6,6 +6,10 @@ pub mod pricing;
 pub mod product;
 pub mod server;
 
+/// 宿主启动时用（`host::log_config_status`）。
+#[cfg(all(feature = "payments", feature = "server"))]
+pub use module_payment;
+
 use sdk::AppModule;
 
 pub struct CourseModule;

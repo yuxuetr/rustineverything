@@ -298,6 +298,8 @@ fn main() {
     // 向网关查单回填发货（回调丢失兜底）/ 超窗关单；网关未配置时每轮
     // 空跑（零成本）。PAY_RECONCILE_DISABLED=1 关闭。
     #[cfg(feature = "payments")]
+    module_course::module_payment::host::log_config_status();
+    #[cfg(feature = "payments")]
     if std::env::var("PAY_RECONCILE_DISABLED").ok().as_deref() != Some("1") {
       let interval_secs = std::env::var("PAY_RECONCILE_INTERVAL_SECS")
         .ok()

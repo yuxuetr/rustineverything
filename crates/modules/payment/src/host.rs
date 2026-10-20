@@ -107,9 +107,124 @@ pub fn configured() -> Vec<String> {
     .collect()
 }
 
+/// 启动自检（D1）里一个网关的配置状态。只带变量名，不带值。
+#[derive(Debug, PartialEq)]
+pub enum ConfigStatus {
+  Enabled,
+  /// 网关自己的变量一个都没设（`PAY_NOTIFY_BASE` 是共用的，不算）。
+  Off,
+  /// 设了一部分，缺这些。
+  Missing(Vec<&'static str>),
+  /// 都设了仍加载失败：某个值格式不对（密钥不是 base64、APIv3 密钥不是 32 字节等）。
+  Invalid,
+}
+
+fn classify(
+  loaded: bool,
+  required: &[&'static str],
+  is_set: impl Fn(&str) -> bool,
+) -> ConfigStatus {
+  if loaded {
+    return ConfigStatus::Enabled;
+  }
+  if !required.iter().any(|v| *v != "PAY_NOTIFY_BASE" && is_set(v)) {
+    return ConfigStatus::Off;
+  }
+  let missing: Vec<_> = required.iter().copied().filter(|v| !is_set(v)).collect();
+  if missing.is_empty() {
+    ConfigStatus::Invalid
+  } else {
+    ConfigStatus::Missing(missing)
+  }
+}
+
+/// 已编译进来的网关各自的配置状态。
+pub fn config_status() -> Vec<(&'static str, ConfigStatus)> {
+  type Gateway = (&'static str, fn() -> bool, &'static [&'static str]);
+  let gateways: &[Gateway] = &[
+    #[cfg(feature = "alipay")]
+    ("alipay", || crate::alipay::config().is_some(), crate::alipay::REQUIRED_ENV),
+    #[cfg(feature = "wechat")]
+    ("wechat", || crate::wechat::config().is_some(), crate::wechat::REQUIRED_ENV),
+    #[cfg(feature = "stripe")]
+    ("stripe", || crate::stripe::config().is_some(), crate::stripe::REQUIRED_ENV),
+  ];
+  let is_set = |v: &str| crate::crypto::env_nonempty(v).is_some();
+  gateways
+    .iter()
+    .map(|&(name, loaded, required)| (name, classify(loaded(), required, is_set)))
+    .collect()
+}
+
+/// 启动时每个网关打一行日志：配错的用 warn，免得只在用户下单时才看到「未配置」。
+pub fn log_config_status() {
+  for (name, status) in config_status() {
+    match status {
+      ConfigStatus::Enabled => tracing::info!(gateway = name, "payment gateway enabled"),
+      ConfigStatus::Off => tracing::info!(gateway = name, "payment gateway not configured"),
+      ConfigStatus::Missing(vars) => tracing::warn!(
+        gateway = name,
+        missing = vars.join(","),
+        "payment gateway partly configured; disabled"
+      ),
+      ConfigStatus::Invalid => tracing::warn!(
+        gateway = name,
+        "payment gateway variables set but a value is malformed; disabled"
+      ),
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn classify_states() {
+    let req = &["A_KEY", "A_SECRET", "PAY_NOTIFY_BASE"];
+    let set = |names: &'static [&'static str]| move |v: &str| names.contains(&v);
+    assert_eq!(classify(true, req, set(&[])), ConfigStatus::Enabled);
+    assert_eq!(classify(false, req, set(&[])), ConfigStatus::Off);
+    // 只有共用的回调地址，不算配了这个网关
+    assert_eq!(classify(false, req, set(&["PAY_NOTIFY_BASE"])), ConfigStatus::Off);
+    assert_eq!(
+      classify(false, req, set(&["A_KEY"])),
+      ConfigStatus::Missing(vec!["A_SECRET", "PAY_NOTIFY_BASE"])
+    );
+    assert_eq!(
+      classify(false, req, set(&["A_KEY", "A_SECRET", "PAY_NOTIFY_BASE"])),
+      ConfigStatus::Invalid
+    );
+  }
+
+  /// 自检列表必须和 `config()` 实际读的变量一致，否则会报错缺项或漏报。
+  #[cfg(all(feature = "alipay", feature = "wechat", feature = "stripe"))]
+  #[test]
+  fn required_env_matches_config_readers() {
+    fn read_by_config(src: &str) -> Vec<&str> {
+      let body = src.split("pub fn config()").nth(1).unwrap_or("");
+      let body = body.split("\n}\n").next().unwrap_or("");
+      body
+        .split("env_nonempty(\"")
+        .skip(1)
+        .filter_map(|s| s.split('"').next())
+        .filter(|v| *v != "ALIPAY_GATEWAY") // 有默认值
+        .collect()
+    }
+    let cases: [(&str, &[&str]); 3] = [
+      (include_str!("alipay.rs"), crate::alipay::REQUIRED_ENV),
+      (include_str!("wechat.rs"), crate::wechat::REQUIRED_ENV),
+      (include_str!("stripe.rs"), crate::stripe::REQUIRED_ENV),
+    ];
+    for (src, required) in cases {
+      let mut read = read_by_config(src);
+      let mut required = required.to_vec();
+      read.sort_unstable();
+      required.sort_unstable();
+      assert!(!read.is_empty());
+      assert_eq!(read, required);
+    }
+  }
 
   #[test]
   fn unknown_gateway_is_unsupported() {
