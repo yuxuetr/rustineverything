@@ -601,6 +601,7 @@
   - 完成（33ec1c3）：tower-http 加 `compression-gzip` / `compression-br`，router 挂 `CompressionLayer`（默认判定跳过图片与 SSE）。本地实测 br：首页 81.5KB → 15.4KB，`/blog/welcome` 82.4KB → 18.7KB，sitemap 4.9KB → 0.6KB，prism.min.js 19.7KB → 7.5KB；tailwind css 按 gzip 返回；不带 `Accept-Encoding` 时不压缩；404 状态码不变
 - [x] G5 — 静态资源缓存头：先在 release 下测，带哈希的资源若不是长缓存再改。验收：release 实测记录
   - 完成（2026-10-20，无代码改动）：`dx serve --release` 实测，`/assets/*-dxh<hash>.*`（app.js、wasm、css、favicon）已是 `public, max-age=31536000, immutable`，由 dioxus 自带；`/js/*` 文件名不带哈希，`no-cache` + 304 复验是有意的（`static_assets.rs` 注释），保持。顺带量了 G4：release wasm 7.09MB → br 1.54MB（66ms）/ gzip 1.74MB
-- [ ] G6 — sitemap 补 `/ecosystem/*` 与免费试看课节。验收：sitemap 含这些 URL
+- [x] G6 — sitemap 补 `/ecosystem/*` 与免费试看课节。验收：sitemap 含这些 URL
+  - 完成（a18a876）：sitemap 加 `taxonomy::ecosystems()` 的落地页；`Course::open_lesson_paths()`（复用 `can_access_lesson`，免费课程全部、付费课程只有试看）加入详情路径。单测：`open_lesson_paths_follow_access_rules`；O4 计数测试加上课节，并断言试看课节在、付费课节不在。实测 sitemap 65 → 68 个 URL（两个生态页 + `01-what-is-rust`）。`SEO_SPEC.md` §4 写明收录范围
 - [ ] G7 — `/blog` 加 h1、案例详情正文标题降级、尾斜杠 301、Atom 日期改 RFC 3339。验收：curl 实测
 - [ ] G8 — JSON-LD：课程详情 Course、首页 WebSite。验收：SSR 输出含对应 `@type`，JSON 可解析
