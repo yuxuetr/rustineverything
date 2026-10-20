@@ -608,3 +608,11 @@
 - [x] G8 — JSON-LD：课程详情 Course、首页 WebSite。验收：SSR 输出含对应 `@type`，JSON 可解析
   - 完成（7fa9657）：`PageMeta` 加可选 `schema`，`page_json_ld` 补 `@context` / `url`；首页 `website_schema()`，课程详情 `Course::schema()`（CNY / USD 各一条 Offer）。JSON-LD 文本统一经 `ld_json_text` 把 `<` 转义（文章页的 Article 也用它）。单测 2 个（先红后绿）。curl 实测首页、课程详情、博客文章的 JSON-LD 都能解析且字段正确。`SEO_SPEC.md` §3.2
 - 阶段 G 完成：G1–G8
+
+### 阶段 W — 前端 wasm 体积（2026-10-20 实验）
+问题：release 的 `app_bg.wasm` 原始 7.10MB（代码 4.8MB、数据 0.8MB、DWARF 调试信息 1.4MB），br 传输 1.55MB。仓库没有任何 `[profile.*]`。
+- [x] W1 — 前端 wasm 按体积优化
+  - 完成（1f098fc）：根 `Cargo.toml` 加 `[profile.wasm-release]`（opt-level z、fat LTO、codegen-units 1、无调试信息）。dx 的 web release 构建自动用这个 profile 编译前端（`--verbose` 输出路径为 `wasm32-unknown-unknown/wasm-release/app.wasm`），服务端仍用 release，Dockerfile 不用改
+  - 实验（`dx bundle --platform web --release`，大小为原始 / brotli-11 / gzip-9）：基线 7.10MB / 1.21MB / 1.74MB；z + LTO 3.78MB / 0.92MB / 1.29MB；s + LTO 4.63MB / 1.01MB / 1.48MB；O3 + LTO 7.34MB / 1.22MB / 2.02MB（比基线还大）。经服务端压缩实际传输：br 1.55MB → 1.19MB，gzip 1.75MB → 1.30MB
+  - 运行时：两个 release 服务端并排，Chromium 冷加载各 6 次取中位数，主线程脚本时间首页 66 → 53ms、课节页 65 → 51ms；node 编译时间 6.6 → 4.4ms。B 版本控制台无错误，站内跳转正常（课程目录的课节链接本来就是整页跳转，两版一致）
+  - 顺带发现：本机 dx 内置的 wasm-opt 每次都崩溃（SIGBUS / SIGSEGV），构建照常完成但 wasm 未经 wasm-opt。手动用 Homebrew wasm-opt 对 z 版再跑 -Oz：原始再小 14%，brotli 反而大 2%，所以不处理。Linux（Docker）上是否同样崩溃未验证
