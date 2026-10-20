@@ -515,7 +515,8 @@
 - [ ] T — 打赏（见 FEATURE_TIERS.md §6，DT1–DT5；2026-10-20 作者确认：登录、固定档位 ¥5/10/20/50，海外 $1/3/5/10）
   - [x] T1 — 订单 `course_slug` → `product_ref` + `product_kind`；`on_paid` 收快照，`deliver()` 按种类分派；退款按种类撤权益
     - 完成（ad65a9a）：迁移 000009（改名 + 加列，存量默认 course）；`course::product::ProductKind`（`grants_entitlement`）；`pipeline::process_event` / `reconcile_order` 的 `on_paid` 改收 `OrderSnapshot`，三个回调 + 对账共用 `deliver()`（未知种类返回错误）；退款只对课程撤权益；`OrderInfo` / `AdminOrderInfo` 带种类与 `product_ref`（未知种类留痕后不列出）。验证：本地库迁移后 5 条旧订单均为 course，`/api/orders/mine` 与后台列表返回新字段；工作区 615 测、四档门禁、clippy 通过。`deliver()` 的未知种类分支要连库，没有单测，靠 `ProductKind::parse` 单测覆盖
-  - [ ] T2 — `create_tip_order` + 档位 + 来源校验 + `OrderRequest.return_path`
+  - [x] T2 — `create_tip_order` + 档位 + 来源校验 + `OrderRequest.return_path`
+    - 完成（f261cfc）：`product::{TIP_TIERS, tip_pricing, is_tip_source}`，报价直接走 `Pricing::quote`；`/api/orders/tip`；课程与打赏共用 `checkout_preamble` / `start_payment`；支付宝 `return_url`、Stripe `cancel_url` 改为订单的 `return_path`（课程 `/course/<slug>`，打赏回原页面）。单测：4 档 × 地区 × 网关报价、来源白名单（含 `/blog/../x`、外链）、Stripe cancel_url、支付宝 return_url；去掉 slug 校验或改报价规则时对应测试变红。本地实测：Stripe 海外第 2 档建单 $3（product_ref `/blog/welcome`），档位 9 / 外链来源 / 未登录被拒，课程下单不变
   - [ ] T3 — 打赏卡片（博客文章末尾、播客页）+ 弹窗支持打赏 + 我的订单显示 + 中英文案
   - [ ] T4 — 管理后台订单列表显示种类与来源
   - [ ] T5 — Stripe 测试模式端到端（海外 $3、大陆 ¥10、退款一笔打赏）
