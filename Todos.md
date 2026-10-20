@@ -526,5 +526,6 @@
   - 完成（c0b95b9）：`pricing::use_region()`（全局信号；SSR 与首帧按大陆默认，hydration 后读 localStorage 的手动选择，没有则按 `widgets::browser::time_zone()`）+ `set_region`。课程详情、付费墙、购买按钮、首页课程卡按地区报价；弹窗列 `methods_for(地区, 已配置网关)`，金额按所选网关的 `quote`，底部「🌐 海外 · 切换到中国大陆」；我的订单与管理订单按订单币种显示金额与渠道名。Chromium 实测：Asia/Shanghai → ¥99，America/New_York → $14.99；切换后价格与方式随之变化，刷新后保留。本地只配了 Stripe，所以大陆也只列出「银行卡 / 国际支付」（三网关排序见单测）
 - [x] I5 — 购买弹窗与我的订单 i18n（阶段 O 的重估条件已触发）。验收：EN 下弹窗与订单页无中文
   - 完成（10d8286）：购买弹窗、付费墙、「在线购买未开通」提示、我的订单接入中英文；`create_order` / `query_order` 面向用户的错误改返回 `pay.err.*` key，弹窗经 `t()` 翻译（非 key 的网关原文原样显示）。`site_lang=en` 实测：弹窗、付费墙、订单页无中文，未登录点支付显示 “Please sign in to buy.”。仍为中文（当前版本不做）：课时页外框（如「← 返回课程目录」）与标注——课时内容本身是中文；网关返回的错误原文（如「Stripe 下单失败: …」）面向运维
-- [ ] I6 — Stripe 测试模式端到端（下单 → 支付 → 回调发货 → 对账 → 退款）。**需要作者提供 `sk_test_` 密钥与 webhook secret**
+- [x] I6 — Stripe 测试模式端到端（下单 → 支付 → 回调发货 → 对账 → 退款）。**需要作者提供 `sk_test_` 密钥与 webhook secret**
+  - 完成（2026-10-20，本地 dx + Stripe 测试模式，`stripe listen` 转发 webhook）：纽约时区英文界面购买 → 跳 Stripe Checkout（$14.99）→ 测试卡 4242 付款 → 回到我的订单显示 Paid，课程显示已拥有、锁定课节解锁；订单 USD 1499、存 `pi_` 流水号、写 purchase 权益，webhook 应答 200。停掉 webhook 转发后再付一单：订单停在 pending，约 2 分钟后对账经 PaymentIntent 搜索回填并发货。管理员退款：Stripe 上退款 succeeded（1499 usd，metadata 带单号），本地订单 refunded、purchase 权益撤销，重复退款被拒。未付款的单对账时保持 pending，无告警。尚未验证：支付宝 / 微信渠道下的 Stripe（需在 Stripe 后台开通）与生产域名的 webhook
 
