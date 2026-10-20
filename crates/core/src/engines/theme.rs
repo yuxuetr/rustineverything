@@ -72,15 +72,17 @@ mod tests {
     }
   }
 
-  /// Tailwind v4 的 stone 色阶。站点把手写的 `slate-*` 类映射到 stone，
-  /// 默认主题的中性色 token 也取 stone，组件和手写区域才不会冷暖不一。
-  const STONE_50: &str = "oklch(98.5% 0.001 106.423)";
-  const STONE_200: &str = "oklch(92.3% 0.003 48.717)";
-  const STONE_400: &str = "oklch(70.9% 0.01 56.259)";
-  const STONE_600: &str = "oklch(44.4% 0.011 73.639)";
-  const STONE_800: &str = "oklch(26.8% 0.007 34.298)";
-  const STONE_900: &str = "oklch(21.6% 0.006 56.043)";
-  const STONE_950: &str = "oklch(14.7% 0.004 49.25)";
+  /// Tailwind v4 的 zinc 色阶。站点把手写的 `slate-*` 类映射到 zinc，
+  /// 默认主题的中性色 token 也取 zinc，组件和手写区域才不会冷暖不一。
+  const ZINC_50: &str = "oklch(98.5% 0 0)";
+  const ZINC_200: &str = "oklch(92% 0.004 286.32)";
+  const ZINC_400: &str = "oklch(70.5% 0.015 286.067)";
+  const ZINC_600: &str = "oklch(44.2% 0.017 285.786)";
+  const ZINC_800: &str = "oklch(27.4% 0.006 286.033)";
+  const ZINC_900: &str = "oklch(21% 0.006 285.885)";
+  const ZINC_950: &str = "oklch(14.1% 0.005 285.823)";
+  const CYAN_400: &str = "oklch(78.9% 0.154 211.53)";
+  const CYAN_700: &str = "oklch(52% 0.105 223.128)";
 
   fn value_of(block: &str, token: &str) -> String {
     let decl = format!("{token}:");
@@ -92,37 +94,37 @@ mod tests {
   }
 
   #[test]
-  fn ocean_neutral_tokens_use_the_stone_scale() {
+  fn ocean_neutral_tokens_use_the_zinc_scale() {
     let css = find_theme("ocean").map(|t| t.css).unwrap_or_default();
     let (light, dark) = css.split_once(".dark {").expect(".dark block");
     let light_expected = [
-      ("--foreground", STONE_900),
-      ("--card-foreground", STONE_900),
-      ("--popover-foreground", STONE_900),
-      ("--secondary", STONE_50),
-      ("--secondary-foreground", STONE_900),
-      ("--muted", STONE_50),
-      ("--muted-foreground", STONE_600),
-      ("--accent", STONE_50),
-      ("--accent-foreground", STONE_900),
-      ("--border", STONE_200),
-      ("--input", STONE_200),
+      ("--foreground", ZINC_900),
+      ("--card-foreground", ZINC_900),
+      ("--popover-foreground", ZINC_900),
+      ("--secondary", ZINC_50),
+      ("--secondary-foreground", ZINC_900),
+      ("--muted", ZINC_50),
+      ("--muted-foreground", ZINC_600),
+      ("--accent", ZINC_50),
+      ("--accent-foreground", ZINC_900),
+      ("--border", ZINC_200),
+      ("--input", ZINC_200),
     ];
     let dark_expected = [
-      ("--background", STONE_950),
-      ("--foreground", STONE_50),
-      ("--card", STONE_900),
-      ("--card-foreground", STONE_50),
-      ("--popover", STONE_900),
-      ("--popover-foreground", STONE_50),
-      ("--secondary", STONE_800),
-      ("--secondary-foreground", STONE_50),
-      ("--muted", STONE_800),
-      ("--muted-foreground", STONE_400),
-      ("--accent", STONE_800),
-      ("--accent-foreground", STONE_50),
-      ("--border", STONE_800),
-      ("--input", STONE_800),
+      ("--background", ZINC_950),
+      ("--foreground", ZINC_50),
+      ("--card", ZINC_900),
+      ("--card-foreground", ZINC_50),
+      ("--popover", ZINC_900),
+      ("--popover-foreground", ZINC_50),
+      ("--secondary", ZINC_800),
+      ("--secondary-foreground", ZINC_50),
+      ("--muted", ZINC_800),
+      ("--muted-foreground", ZINC_400),
+      ("--accent", ZINC_800),
+      ("--accent-foreground", ZINC_50),
+      ("--border", ZINC_800),
+      ("--input", ZINC_800),
     ];
     for (token, want) in light_expected {
       assert_eq!(value_of(light, token), want, "light {token}");
@@ -133,8 +135,12 @@ mod tests {
   }
 
   #[test]
-  fn ocean_primary_stays_brand_orange() {
+  fn ocean_primary_is_cyan() {
     let css = find_theme("ocean").map(|t| t.css).unwrap_or_default();
-    assert_eq!(css.matches("--primary: oklch(64.6% 0.222 41.116);").count(), 2);
+    let (light, dark) = css.split_once(".dark {").expect(".dark block");
+    assert_eq!(value_of(light, "--primary"), CYAN_700);
+    assert_eq!(value_of(light, "--primary-foreground"), "#ffffff");
+    assert_eq!(value_of(dark, "--primary"), CYAN_400);
+    assert_eq!(value_of(dark, "--primary-foreground"), ZINC_950);
   }
 }

@@ -1,43 +1,44 @@
 /* shadcn 语义 token（docs/THEME_SPEC.md「Token 契约」）：组件与旧 --color-* 别名都读这些变量。
-   中性色取 Tailwind stone 色阶，与站点 slate→stone 映射后的手写类名一致。 */
+   石墨 + 青色：中性色取 Tailwind zinc 色阶，与站点 slate→zinc 映射后的手写类名一致；
+   主色亮色 cyan-700（白字），暗色 cyan-400（深色字）。 */
 :root {
   --background: #ffffff;
-  --foreground: oklch(21.6% 0.006 56.043);
+  --foreground: oklch(21% 0.006 285.885);
   --card: #ffffff;
-  --card-foreground: oklch(21.6% 0.006 56.043);
+  --card-foreground: oklch(21% 0.006 285.885);
   --popover: #ffffff;
-  --popover-foreground: oklch(21.6% 0.006 56.043);
-  --primary: oklch(64.6% 0.222 41.116);
+  --popover-foreground: oklch(21% 0.006 285.885);
+  --primary: oklch(52% 0.105 223.128);
   --primary-foreground: #ffffff;
-  --secondary: oklch(98.5% 0.001 106.423);
-  --secondary-foreground: oklch(21.6% 0.006 56.043);
-  --muted: oklch(98.5% 0.001 106.423);
-  --muted-foreground: oklch(44.4% 0.011 73.639);
-  --accent: oklch(98.5% 0.001 106.423);
-  --accent-foreground: oklch(21.6% 0.006 56.043);
-  --border: oklch(92.3% 0.003 48.717);
-  --input: oklch(92.3% 0.003 48.717);
-  --ring: oklch(70.5% 0.213 47.604);
+  --secondary: oklch(98.5% 0 0);
+  --secondary-foreground: oklch(21% 0.006 285.885);
+  --muted: oklch(98.5% 0 0);
+  --muted-foreground: oklch(44.2% 0.017 285.786);
+  --accent: oklch(98.5% 0 0);
+  --accent-foreground: oklch(21% 0.006 285.885);
+  --border: oklch(92% 0.004 286.32);
+  --input: oklch(92% 0.004 286.32);
+  --ring: oklch(60.9% 0.126 221.723);
 }
 
 .dark {
-  --background: oklch(14.7% 0.004 49.25);
-  --foreground: oklch(98.5% 0.001 106.423);
-  --card: oklch(21.6% 0.006 56.043);
-  --card-foreground: oklch(98.5% 0.001 106.423);
-  --popover: oklch(21.6% 0.006 56.043);
-  --popover-foreground: oklch(98.5% 0.001 106.423);
-  --primary: oklch(64.6% 0.222 41.116);
-  --primary-foreground: #ffffff;
-  --secondary: oklch(26.8% 0.007 34.298);
-  --secondary-foreground: oklch(98.5% 0.001 106.423);
-  --muted: oklch(26.8% 0.007 34.298);
-  --muted-foreground: oklch(70.9% 0.01 56.259);
-  --accent: oklch(26.8% 0.007 34.298);
-  --accent-foreground: oklch(98.5% 0.001 106.423);
-  --border: oklch(26.8% 0.007 34.298);
-  --input: oklch(26.8% 0.007 34.298);
-  --ring: oklch(70.5% 0.213 47.604);
+  --background: oklch(14.1% 0.005 285.823);
+  --foreground: oklch(98.5% 0 0);
+  --card: oklch(21% 0.006 285.885);
+  --card-foreground: oklch(98.5% 0 0);
+  --popover: oklch(21% 0.006 285.885);
+  --popover-foreground: oklch(98.5% 0 0);
+  --primary: oklch(78.9% 0.154 211.53);
+  --primary-foreground: oklch(14.1% 0.005 285.823);
+  --secondary: oklch(27.4% 0.006 286.033);
+  --secondary-foreground: oklch(98.5% 0 0);
+  --muted: oklch(27.4% 0.006 286.033);
+  --muted-foreground: oklch(70.5% 0.015 286.067);
+  --accent: oklch(27.4% 0.006 286.033);
+  --accent-foreground: oklch(98.5% 0 0);
+  --border: oklch(27.4% 0.006 286.033);
+  --input: oklch(27.4% 0.006 286.033);
+  --ring: oklch(78.9% 0.154 211.53);
 }
 
 /* 强制 Body 背景跟随变量 */

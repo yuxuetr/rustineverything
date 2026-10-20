@@ -6,7 +6,7 @@
 
 - **全栈 Rust**：Dioxus 0.7 fullstack（SSR + 水合）+ Axum，SeaORM + PostgreSQL。
 - **UI 组件**：[`dioxus-shadcn`](https://github.com/yuxuetr/dioxus-ui) 0.6（自研，shadcn/ui 的 Dioxus 实现）。
-  全站界面基于它重新开发，shadcn token 是唯一的配色来源，暖色（stone）中性色。
+  全站界面基于它重新开发，shadcn token 是唯一的配色来源，石墨（zinc）中性色 + 青色主色。
 - **样式**：Tailwind CSS v4 + 深色模式；内置主题 ocean / sunset / catppuccin，访客可切换。
 - **安全**：严格 CSP（无 `'unsafe-eval'`），用户内容经白名单清洗，删除类管理操作先确认。
 - **全站搜索**：Tantivy 嵌入式搜索引擎，支持中英文分词。
