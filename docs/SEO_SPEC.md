@@ -173,6 +173,8 @@ build_sitemap_xml(
 
 XML 1.0 转义内置（`xml_escape` 处理 `&`、`<`、`>`、`"`、`'`）。
 
+收录范围（`app/src/server/seo.rs`）：首页、各模块列表页（`ModuleSpec.static_path`）、生态落地页 `/ecosystem/{rust,ai}`、带日期的内容（博客 / 板块文章，带 lastmod）、文档 / 案例 / 课程详情，以及访客能读的课节（`Course::open_lesson_paths`：免费课程全部、付费课程的试看课节，判定复用 `can_access_lesson`）。需要购买的课节不收录。
+
 > 注：当前仅收录博客内容页 + 7 个静态路径。其它模块（doc / lesson /
 > case / topic）将在 **Phase 3.4** ModuleEngine 接入路由层后批量补全。
 

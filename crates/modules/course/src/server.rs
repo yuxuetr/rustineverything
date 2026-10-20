@@ -168,6 +168,21 @@ impl Course {
     self.access_tier != "free"
   }
 
+  /// 未登录访客能读的课节路径（免费课程全部；付费课程只有试看课节），
+  /// 直接用 `can_access_lesson` 判定。供 sitemap 收录（G6）。
+  pub fn open_lesson_paths(&self) -> Vec<String> {
+    self
+      .chapters
+      .iter()
+      .flat_map(|ch| {
+        ch.lessons
+          .iter()
+          .filter(|l| can_access_lesson(&self.access_tier, l.preview, false, false, false))
+          .map(move |l| format!("/course/{}/{}/{}", self.slug, ch.slug, l.slug))
+      })
+      .collect()
+  }
+
   pub fn pricing(&self) -> crate::pricing::Pricing {
     crate::pricing::Pricing {
       price: self.price,
@@ -2927,6 +2942,42 @@ mod tests {
 
   fn lock_cwd() -> std::sync::MutexGuard<'static, ()> {
     CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+  }
+
+  /// G6：免费课程的课节全部公开；付费课程只有试看课节公开。
+  #[test]
+  fn open_lesson_paths_follow_access_rules() {
+    let lesson = |slug: &str, preview: bool| LessonSummary {
+      slug: slug.into(),
+      title: slug.into(),
+      kind: LessonKind::Doc,
+      order: 0,
+      duration: None,
+      preview,
+    };
+    let mut course = Course {
+      slug: "c".into(),
+      title: "C".into(),
+      description: String::new(),
+      cover: None,
+      tags: vec![],
+      level: None,
+      order: 0,
+      access_tier: "paid".into(),
+      price: 100,
+      currency: default_currency(),
+      price_usd: None,
+      chapters: vec![Chapter {
+        slug: "ch".into(),
+        title: "Ch".into(),
+        description: String::new(),
+        order: 0,
+        lessons: vec![lesson("a", true), lesson("b", false)],
+      }],
+    };
+    assert_eq!(course.open_lesson_paths(), vec!["/course/c/ch/a"]);
+    course.access_tier = "free".into();
+    assert_eq!(course.open_lesson_paths(), vec!["/course/c/ch/a", "/course/c/ch/b"]);
   }
 
   #[test]

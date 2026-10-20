@@ -52,8 +52,8 @@ async fn collect_content_entries(is_on: impl Fn(&str) -> bool) -> Vec<ContentEnt
   entries
 }
 
-/// 没有日期的详情页（文档 / 案例 / 课程详情）：只进 sitemap（不带 lastmod），不进 feed。
-/// 课时是付费内容，不收录。
+/// 没有日期的详情页（文档 / 案例 / 课程详情与公开课节）：只进 sitemap（不带 lastmod），
+/// 不进 feed。需要购买的课节不收录。
 async fn collect_detail_paths(is_on: impl Fn(&str) -> bool) -> Vec<String> {
   let mut paths = Vec::new();
   if is_on("docs") {
@@ -66,7 +66,13 @@ async fn collect_detail_paths(is_on: impl Fn(&str) -> bool) -> Vec<String> {
   #[cfg(feature = "course")]
   if is_on("course") {
     let courses = module_course::server::list_courses().await.unwrap_or_default();
-    paths.extend(courses.into_iter().map(|c| format!("/course/{}", c.slug)));
+    for c in courses {
+      paths.push(format!("/course/{}", c.slug));
+      // G6：访客能读的课节（免费课程全部、付费课程的试看课节）
+      if let Some(course) = module_course::server::read_course(&c.slug) {
+        paths.extend(course.open_lesson_paths());
+      }
+    }
   }
   paths
 }
@@ -109,6 +115,8 @@ async fn sitemap_handler(base: String) -> axum::response::Response {
       static_paths.push(p.to_string());
     }
   }
+  // G6：生态落地页不是模块，不在 ModuleSpec 里，单独列出。
+  static_paths.extend(crate::taxonomy::ecosystems().iter().map(|e| format!("/ecosystem/{}", e.id)));
   static_paths.extend(collect_detail_paths(is_on).await);
   let static_paths_ref: Vec<&str> = static_paths.iter().map(String::as_str).collect();
 
@@ -231,7 +239,15 @@ mod tests {
 
     let paths = collect_detail_paths(|_| true).await;
     let courses = if cfg!(feature = "course") { count_dirs("courses") } else { 0 };
-    assert_eq!(paths.len(), docs + count_dirs("cases") + courses);
+    let open_lessons =
+      paths.iter().filter(|p| p.starts_with("/course/") && p.matches('/').count() == 4).count();
+    assert_eq!(paths.len(), docs + count_dirs("cases") + courses + open_lessons);
+    // G6：示例付费课程只有第一课是试看。
+    if cfg!(feature = "course") {
+      let has = |p: &str| paths.iter().any(|x| x == p);
+      assert!(has("/course/rust-basics/01-fundamentals/01-what-is-rust"));
+      assert!(!has("/course/rust-basics/02-ownership/01-borrow-rules"), "付费课节不收录");
+    }
     assert_eq!(collect_detail_paths(|_| false).await, Vec::<String>::new());
   }
 
