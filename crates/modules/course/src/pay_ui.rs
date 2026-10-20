@@ -15,8 +15,14 @@ use dioxus_shadcn::{
   TableCell, TableHead, TableHeader, TableRow, ToggleGroup, ToggleGroupItem, UiDensity,
 };
 
-use crate::pricing::{Pricing, Region};
-use crate::server::{create_order, list_my_orders, my_membership, query_order, OrderInfo};
+use app_core::i18n::t;
+
+use crate::pricing::{
+  channel_key, methods_for, region_key, set_region, switch_key, use_region, Price, Pricing, Region,
+};
+use crate::server::{
+  create_order, list_my_orders, my_membership, payment_providers, query_order, OrderInfo,
+};
 
 /// 由 fast_qr 把支付链接渲染成 SVG 二维码字符串。
 fn qr_svg(data: &str) -> String {
@@ -28,6 +34,10 @@ fn qr_svg(data: &str) -> String {
   }
 }
 
+fn current_lang() -> app_core::i18n::Language {
+  try_consume_context::<Signal<app_core::i18n::Language>>().map(|s| s()).unwrap_or_default()
+}
+
 /// 清洗 server fn 错误信息（去掉框架前缀，仅留中文提示）。
 fn clean_err(e: &ServerFnError) -> String {
   let s = e.to_string();
@@ -35,12 +45,11 @@ fn clean_err(e: &ServerFnError) -> String {
   s.split(" (details:").next().unwrap_or(s).trim().to_string()
 }
 
-/// 购买按钮：点击弹出购买弹窗。放在 Paywall / 课程详情。
+/// 购买按钮：点击弹出购买弹窗。放在 Paywall / 课程详情。按钮上的价格随地区变化。
 #[component]
 pub fn PurchaseButton(course_slug: String, pricing: Pricing) -> Element {
   let mut open = use_signal(|| false);
-  let price = pricing.list_price(Region::default()).label();
-  let price_cny = pricing.price;
+  let price = pricing.list_price(use_region()).label();
   rsx! {
       Dialog { open: open(), on_open_change: move |v| open.set(v),
           DialogTrigger {
@@ -56,7 +65,7 @@ pub fn PurchaseButton(course_slug: String, pricing: Pricing) -> Element {
               }
               // 内容只在打开时挂载：每次重新打开都从选择支付方式开始。
               if open() {
-                  PurchaseForm { course_slug: course_slug.clone(), price: price_cny }
+                  PurchaseForm { course_slug: course_slug.clone(), pricing: pricing.clone() }
               }
           }
       }
@@ -64,25 +73,37 @@ pub fn PurchaseButton(course_slug: String, pricing: Pricing) -> Element {
 }
 
 #[component]
-fn PurchaseForm(course_slug: String, price: i64) -> Element {
-  let mut provider = use_signal(|| "alipay".to_string());
+fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
+  let lang = current_lang();
+  let region = use_region();
+  // 服务端已配置的网关；与地区取交集（DI4）。
+  let configured = use_resource(|| async move { payment_providers().await.unwrap_or_default() });
+  let methods = methods_for(region, &configured.read().clone().unwrap_or_default());
+  let mut chosen = use_signal(|| None::<String>);
+  // 用户选过且仍在本地区列表里就用它，否则用列表第一个（切换地区后自动换）。
+  let provider = chosen().filter(|p| methods.contains(p)).or_else(|| methods.first().cloned());
+  let price = provider
+    .as_deref()
+    .and_then(|p| pricing.quote(p, region).ok())
+    .unwrap_or_else(|| pricing.list_price(region))
+    .label();
   let mut status = use_signal(|| "idle".to_string()); // idle | loading | qr | paid | error
   let mut message = use_signal(String::new);
   let mut qr = use_signal(String::new);
   let mut out_trade_no = use_signal(String::new);
-  let yuan = price / 100;
 
+  let pay_with = provider.clone();
   let start_pay = move |_| {
+    let Some(prov) = pay_with.clone() else {
+      return;
+    };
     let slug = course_slug.clone();
-    let prov = provider();
-    // PC 默认：支付宝跳转收银台(page)、微信 Native 扫码。
-    let scene = if prov == "alipay" { "page" } else { "native" };
+    // PC 默认：支付宝跳转收银台(page)、微信 Native 扫码；Stripe 跳转托管收银台。
+    let scene = if prov == "wechat" { "native" } else { "page" };
     status.set("loading".to_string());
     message.set(String::new());
     spawn(async move {
-      match create_order(slug, prov, scene.to_string(), Region::default().as_str().to_string())
-        .await
-      {
+      match create_order(slug, prov, scene.to_string(), region.as_str().to_string()).await {
         Ok(init) => match init.kind.as_str() {
           "redirect" | "h5" => {
             widgets::browser::navigate(&init.payload);
@@ -123,19 +144,24 @@ fn PurchaseForm(course_slug: String, price: i64) -> Element {
     });
   };
 
-  let provider_label = if provider() == "alipay" { "支付宝" } else { "微信" };
+  let provider_label = provider.as_deref().map(|p| t(lang, channel_key(p))).unwrap_or_default();
+  let selected = provider.clone();
   let option_class = move |val: &str| {
-    if provider() == val {
+    if selected.as_deref() == Some(val) {
       "flex-1 border border-primary bg-primary/5 text-primary hover:bg-primary/10"
     } else {
       "flex-1 border border-input"
     }
   };
+  let other_region = match region {
+    Region::Mainland => Region::Overseas,
+    Region::Overseas => Region::Mainland,
+  };
 
   rsx! {
       match status().as_str() {
           "qr" => rsx! {
-              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "请使用{provider_label}扫码支付 ¥{yuan}" }
+              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "请使用{provider_label}扫码支付 {price}" }
               div {
                   class: "mx-auto w-48 [&>svg]:w-48 [&>svg]:h-48",
                   dangerous_inner_html: "{qr}"
@@ -156,24 +182,41 @@ fn PurchaseForm(course_slug: String, price: i64) -> Element {
               }
           },
           _ => rsx! {
-              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "选择支付方式，金额 ¥{yuan}" }
-              // 受控单选：再点已选项时 ToggleGroup 会报空值，忽略它，保证总有一个网关被选中。
-              ToggleGroup {
-                  class: "flex w-full gap-3 mb-4",
-                  "aria-label": "支付方式",
-                  value: provider(),
-                  on_value_change: move |v: String| if !v.is_empty() { provider.set(v) },
-                  ToggleGroupItem { value: "alipay", class: option_class("alipay"), "支付宝" }
-                  ToggleGroupItem { value: "wechat", class: option_class("wechat"), "微信支付" }
-              }
-              Button {
-                  class: "w-full font-semibold",
-                  disabled: status() == "loading",
-                  onclick: start_pay,
-                  if status() == "loading" { "处理中…" } else { "立即支付 ¥{yuan}" }
+              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "选择支付方式，金额 {price}" }
+              if configured.read().is_none() {
+                  div { class: "flex justify-center py-4", Spinner { size: SpinnerSize::Md } }
+              } else if methods.is_empty() {
+                  p { class: "mb-4 text-sm text-amber-600", "{t(lang, \"pay.no_methods\")}" }
+              } else {
+                  // 受控单选：再点已选项时 ToggleGroup 会报空值，忽略它，保证总有一个网关被选中。
+                  ToggleGroup {
+                      class: "flex w-full gap-3 mb-4",
+                      "aria-label": "支付方式",
+                      value: provider.clone().unwrap_or_default(),
+                      on_value_change: move |v: String| if !v.is_empty() { chosen.set(Some(v)) },
+                      for m in methods.iter() {
+                          ToggleGroupItem { key: "{m}", value: "{m}", class: option_class(m), "{t(lang, channel_key(m))}" }
+                      }
+                  }
+                  Button {
+                      class: "w-full font-semibold",
+                      disabled: status() == "loading",
+                      onclick: start_pay,
+                      if status() == "loading" { "处理中…" } else { "立即支付 {price}" }
+                  }
               }
               if status() == "error" && !message().is_empty() {
                   p { class: "mt-3 text-sm text-rose-600", "{message}" }
+              }
+              // 地区按时区判断，可能不准（如出差、改过系统时区）：允许手动切换。
+              p { class: "mt-4 text-center text-xs text-slate-500 dark:text-slate-400",
+                  span { "🌐 {t(lang, region_key(region))} · " }
+                  button {
+                      r#type: "button",
+                      class: "font-medium text-primary hover:underline",
+                      onclick: move |_| set_region(other_region),
+                      "{t(lang, switch_key(other_region))}"
+                  }
               }
           },
       }
@@ -194,6 +237,7 @@ fn status_badge(status: &str) -> (&'static str, BadgeVariant) {
 /// 个人中心「我的订单」页（`/me/orders`）。
 #[component]
 pub fn MyOrdersPage() -> Element {
+  let lang = current_lang();
   let res = use_resource(|| async move { list_my_orders().await.unwrap_or_default() });
   let orders: Vec<OrderInfo> = res.read().clone().unwrap_or_default();
   let loaded = res.read().is_some();
@@ -254,15 +298,15 @@ pub fn MyOrdersPage() -> Element {
                               for o in orders.into_iter() {
                                   {
                                       let (label, badge) = status_badge(&o.status);
-                                      let yuan = o.amount / 100;
-                                      let chan = if o.provider == "alipay" { "支付宝" } else { "微信" };
+                                      let amount = Price { amount: o.amount, currency: o.currency.clone() }.label();
+                                      let chan = t(lang, channel_key(&o.provider));
                                       let date = o.created_at.split('T').next().unwrap_or(&o.created_at).to_string();
                                       rsx! {
                                           TableRow { key: "{o.out_trade_no}",
                                               TableCell { class: "px-4 py-2",
                                                   Link { to: format!("/course/{}", o.course_slug), class: "hover:text-primary", "{o.course_slug}" }
                                               }
-                                              TableCell { class: "px-4 py-2 font-medium", "¥{yuan}" }
+                                              TableCell { class: "px-4 py-2 font-medium", "{amount}" }
                                               TableCell { class: "px-4 py-2 text-slate-400", "{chan}" }
                                               TableCell { class: "px-4 py-2",
                                                   Badge { variant: badge, "{label}" }

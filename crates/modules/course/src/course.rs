@@ -14,7 +14,7 @@ use widgets::Markdown;
 
 use app_core::i18n::{t, Language};
 
-use crate::pricing::{Pricing, Region};
+use crate::pricing::{use_region, Pricing};
 
 /// 当前语言（缺省 Zh）。O11：课程列表 / 详情 / 目录文案随语言切换。
 fn current_lang() -> Language {
@@ -263,7 +263,7 @@ fn CourseDetailBody(
   let owned_res =
     use_resource(|| async move { crate::server::list_my_entitlements().await.unwrap_or_default() });
   let owned = owned_res.read().clone().unwrap_or_default().iter().any(|s| s == &course.slug);
-  let price_label = course.pricing().list_price(Region::default()).label();
+  let price_label = course.pricing().list_price(use_region()).label();
   rsx! {
       // Hero
       div { class: "grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12",
@@ -596,7 +596,7 @@ fn LessonContent(
 /// 付费墙：锁定课节的占位卡片 + 购买入口（M5d）。
 #[component]
 fn LessonPaywall(course_slug: String, pricing: Pricing) -> Element {
-  let price = pricing.list_price(Region::default());
+  let price = pricing.list_price(use_region());
   rsx! {
       div { class: card_class("rounded-2xl p-10 text-center max-w-xl mx-auto"),
           div { class: "w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center text-3xl mb-5",

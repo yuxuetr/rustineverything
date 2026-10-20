@@ -153,6 +153,17 @@ pub fn set_class(root: bool, class: &str, on: bool) {
   let _ = (root, class, on);
 }
 
+/// 浏览器时区（IANA 名，如 `Asia/Shanghai`）；服务端或取不到时为 None。
+pub fn time_zone() -> Option<String> {
+  #[cfg(target_arch = "wasm32")]
+  {
+    let format = js_sys::Intl::DateTimeFormat::new(&js_sys::Array::new(), &js_sys::Object::new());
+    js_sys::Reflect::get(&format.resolved_options(), &"timeZone".into()).ok()?.as_string()
+  }
+  #[cfg(not(target_arch = "wasm32"))]
+  None
+}
+
 /// 用户的暗色偏好：`localStorage.theme`，没有则跟随系统。
 pub fn dark_mode_preference() -> bool {
   #[cfg(target_arch = "wasm32")]

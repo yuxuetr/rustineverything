@@ -285,3 +285,14 @@ comment.submitting = Posting…
 comment.submit = Post comment
 comment.login_hint = Sign in to leave a comment
 comment.loading = Loading comments…
+
+# 支付（阶段 I）
+pay.channel.alipay = Alipay
+pay.channel.wechat = WeChat Pay
+pay.channel.stripe = Card & more
+pay.channel.other = Other
+pay.region.mainland = Mainland China
+pay.region.overseas = Outside mainland China
+pay.region.switch_to_mainland = Switch to mainland China
+pay.region.switch_to_overseas = Switch to outside mainland China
+pay.no_methods = No payment method is available for this region. Try switching region.

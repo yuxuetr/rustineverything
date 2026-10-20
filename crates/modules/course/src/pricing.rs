@@ -110,6 +110,64 @@ pub fn methods_for(region: Region, configured: &[String]) -> Vec<String> {
   order.iter().filter(|m| configured.iter().any(|c| c == *m)).map(|m| m.to_string()).collect()
 }
 
+/// 支付渠道名的 i18n key。
+pub fn channel_key(provider: &str) -> &'static str {
+  match provider {
+    "alipay" => "pay.channel.alipay",
+    "wechat" => "pay.channel.wechat",
+    "stripe" => "pay.channel.stripe",
+    _ => "pay.channel.other",
+  }
+}
+
+/// 地区名的 i18n key。
+pub fn region_key(region: Region) -> &'static str {
+  match region {
+    Region::Mainland => "pay.region.mainland",
+    Region::Overseas => "pay.region.overseas",
+  }
+}
+
+/// 「切换到某地区」按钮文案的 i18n key。
+pub fn switch_key(target: Region) -> &'static str {
+  match target {
+    Region::Mainland => "pay.region.switch_to_mainland",
+    Region::Overseas => "pay.region.switch_to_overseas",
+  }
+}
+
+// ------------------------------------------------------------
+// 当前访客的地区（界面状态）
+// ------------------------------------------------------------
+
+/// `None` = 还没判断（SSR 与 hydration 前），按默认地区渲染，保证两端首帧一致。
+static REGION: dioxus::prelude::GlobalSignal<Option<Region>> =
+  dioxus::prelude::Signal::global(|| None);
+
+/// 记住手动切换的地区（每位访客自己的偏好，丢了就回到按时区判断）。
+const REGION_STORAGE_KEY: &str = "pay_region";
+
+/// 当前地区。hydration 后取手动选择，没有则按浏览器时区判断（DI2）。
+pub fn use_region() -> Region {
+  use dioxus::prelude::*;
+  use_effect(|| {
+    if REGION.peek().is_none() {
+      let stored = widgets::browser::storage_get(REGION_STORAGE_KEY);
+      let region = stored.as_deref().and_then(Region::parse).unwrap_or_else(|| {
+        widgets::browser::time_zone().map(|tz| Region::from_timezone(&tz)).unwrap_or_default()
+      });
+      *REGION.write() = Some(region);
+    }
+  });
+  REGION().unwrap_or_default()
+}
+
+/// 手动切换地区（购买弹窗里的「切换地区」）。
+pub fn set_region(region: Region) {
+  *REGION.write() = Some(region);
+  widgets::browser::storage_set(REGION_STORAGE_KEY, region.as_str());
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

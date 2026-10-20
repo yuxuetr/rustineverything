@@ -285,3 +285,14 @@ comment.submitting = 提交中…
 comment.submit = 发布评论
 comment.login_hint = 登录后即可发表评论
 comment.loading = 加载评论中…
+
+# 支付（阶段 I）
+pay.channel.alipay = 支付宝
+pay.channel.wechat = 微信支付
+pay.channel.stripe = 银行卡 / 国际支付
+pay.channel.other = 其他
+pay.region.mainland = 中国大陆
+pay.region.overseas = 海外
+pay.region.switch_to_mainland = 切换到中国大陆
+pay.region.switch_to_overseas = 切换到海外
+pay.no_methods = 该地区暂无可用的支付方式，可以切换地区试试。
