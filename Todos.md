@@ -616,3 +616,9 @@
   - 实验（`dx bundle --platform web --release`，大小为原始 / brotli-11 / gzip-9）：基线 7.10MB / 1.21MB / 1.74MB；z + LTO 3.78MB / 0.92MB / 1.29MB；s + LTO 4.63MB / 1.01MB / 1.48MB；O3 + LTO 7.34MB / 1.22MB / 2.02MB（比基线还大）。经服务端压缩实际传输：br 1.55MB → 1.19MB，gzip 1.75MB → 1.30MB
   - 运行时：两个 release 服务端并排，Chromium 冷加载各 6 次取中位数，主线程脚本时间首页 66 → 53ms、课节页 65 → 51ms；node 编译时间 6.6 → 4.4ms。B 版本控制台无错误，站内跳转正常（课程目录的课节链接本来就是整页跳转，两版一致）
   - 顺带发现：本机 dx 内置的 wasm-opt 每次都崩溃（SIGBUS / SIGSEGV），构建照常完成但 wasm 未经 wasm-opt。手动用 Homebrew wasm-opt 对 z 版再跑 -Oz：原始再小 14%，brotli 反而大 2%，所以不处理。Linux（Docker）上是否同样崩溃未验证
+
+### 阶段 X — Markdown 图片 alt（2026-10-20 走查）
+问题：`mdx.rs` 渲染图片时只用地址和 title，`![描述](x.png)` 方括号里的描述被丢掉，`<img>` 没有 alt。读屏读不出图片，搜索引擎也拿不到描述。10 个主要页面的无障碍扫描里，这是唯一的问题（按钮 / 链接名称、表单标签都正常）。
+- [x] X1 — 图片描述作为 alt 输出（含 `*强调*` 等内联格式时取纯文本）。验收：单测在旧代码下变红；`/blog/welcome` 的图片有 alt
+  - 完成（6c1d803）：`render_stream` 遇到图片时把子事件的纯文本收成 alt（按嵌套深度找到配对的结束事件），图片渲染从 `render_tag` 抽成 `render_image`。单测 `image_description_becomes_alt`（可信 / 不可信内容各一遍，含内联格式和空描述），旧代码下变红。实测 `/blog/welcome` 的图片输出 `alt="图片"`。clippy、629 个测试、四档检查通过
+- 阶段 X 完成：X1
