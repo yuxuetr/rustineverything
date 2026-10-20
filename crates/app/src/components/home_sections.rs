@@ -220,11 +220,12 @@ fn CourseCard(course: CourseSummary) -> Element {
   let lang = use_i18n();
   let first = course.title.chars().next().unwrap_or('R');
   let lessons = format!("{} {}", course.lesson_count, lang().pick("节课", "lessons"));
-  // 价格/层级徽章：pro → "Pro"，paid 且有价 → "¥{元}"，free → 无。
+  let region = module_course::pricing::use_region();
+  // 价格/层级徽章：pro → "Pro"，paid 且有价 → 按地区的标价，free → 无。
   let price_label = if course.access_tier == "pro" {
     Some("Pro".to_string())
   } else if course.access_tier == "paid" && course.price > 0 {
-    Some(format!("¥{}", course.price / 100))
+    Some(course.pricing().list_price(region).label())
   } else {
     None
   };

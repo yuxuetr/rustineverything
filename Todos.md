@@ -493,7 +493,7 @@
   - 注意：索引在启动时只复用、不重扫（设计如此，见 OPERATIONS.md）；已部署环境要看到课程结果，需 admin 调一次 `POST /api/search/reindex`——本次分词器改名会让存量索引在下次启动时自动全量重建，所以这次部署无需手动操作
 - [x] O11 — 其余硬编码文案接入 i18n：博客 / 文档 / 课程不存在提示，播客 6 处（E15）。验收：切到 EN 后上述页面无中文残留
   - 完成：`widgets::LoadFailed` 改为调用方传文案（widgets 无 i18n）；博客 / 文档（首页、卡片、侧栏、不存在）/ 课程（列表、详情、目录、不存在）/ 播客（筛选、翻页 aria、PodcastCard 3 处）/ 评论区（10 处）/ 关联讨论面板（4 处）接入中英文。浏览器 EN 验收 9 个路径：剩余中文只有内容本身（文档 / 课程 / 播客数据）与下面刻意不做的支付弹窗
-  - 有意不做（当前版本）：课时页、付费墙、标注、`pay_ui`（购买弹窗 / 我的订单）仍为中文——支付只有支付宝 / 微信、以人民币计价，面向中文用户；课时内容本身也是中文。重估条件：出现非人民币支付渠道（`grep -rn 'provider ==' crates/modules/course/src/pay_ui.rs` 出现 alipay / wechat 之外的值），或 `assets/courses/*/` 下出现英文课程（`course.yaml` 含 `lang: en`）
+  - 有意不做（当前版本）：课时页、付费墙、标注、`pay_ui`（购买弹窗 / 我的订单）仍为中文（2026-10-20 重估条件触发：Stripe 上线，付费墙与 `pay_ui` 已在 I5 翻译）——支付只有支付宝 / 微信、以人民币计价，面向中文用户；课时内容本身也是中文。重估条件：出现非人民币支付渠道（`grep -rn 'provider ==' crates/modules/course/src/pay_ui.rs` 出现 alipay / wechat 之外的值），或 `assets/courses/*/` 下出现英文课程（`course.yaml` 含 `lang: en`）
 
 ### 阶段 L — 功能分层（Cargo features，2026-10-20）
 设计与证据见 [`docs/FEATURE_TIERS.md`](docs/FEATURE_TIERS.md)。四层：basic（无 feature）→ `accounts` → `course` → `payments`；`tips` 待 DL6 确认。默认构建（`web` + `payments`）行为不变。作者未答复的三个问题按推荐处理：做成通用框架（basic 不需要数据库）、标注归课程层（DL3）、打赏需登录且待确认后开工（DL6）。
@@ -513,3 +513,19 @@
 - [x] L7 — 测 basic 与完整版的二进制大小 / 依赖数 / 冷构建时间，决定是否拆 app-core（DL5），结论写回设计文档
   - 完成：server 端依赖 515（完整）/ 488（basic）/ 382（basic 若拆 core 并去掉 migration，`cargo tree --prune` 估算）；release 二进制 50.0 MB / 30.9 MB，basic 里 sea-orm / sqlx / migration 约 2.3 MB、jwt / oauth2 / reqwest / rustls 约 0.6 MB（`nm` 符号间距估算）。结论：当前版本不拆 core——basic 已能无库运行，收益只有约 22% 依赖数与约 3 MB，代价是 core 两个新 feature + search 重建索引接口门控 + migration 依赖改走 core。重估条件（可执行）与数据表写在 FEATURE_TIERS.md DL5
 - [ ] T — 打赏（T1–T4，见设计文档 §6）：**待作者确认 DL6 后开工**
+
+### 阶段 I — 海外支付（Stripe + 按地区给出支付方式，2026-10-20）
+设计见 [`docs/PAYMENT_SPEC.md`](docs/PAYMENT_SPEC.md) §15。作者决定：接 Stripe；课程另设美元价，海外按美元付。打赏（T）继续留在待办。
+- [x] I1 — `price_usd` 字段 + `Region` + `quote(course, provider, region)` + `methods_for(region, configured)`。验收：单测覆盖大陆 / 海外 × 三个网关 × 有无美元价
+  - 完成（e23e396）：`course::pricing` 模块：`Region`（时区判断，港澳台按海外）、`Price::label`（`¥99` `¥99.50` `$14.99`，原来按整元截断）、`Pricing::{list_price, quote}`、`methods_for`；`course.yaml` 加 `price_usd`，课时改带整份 `Pricing`。单测 7 个（含读 yaml）；把 Stripe 报价改成忽略地区时 `quote_matrix` 变红。示例课程设 `price_usd: 1499`
+- [x] I2 — `StripeProvider`（`stripe` feature）：Checkout Session 下单、webhook 解析、PaymentIntent 搜索查单、退款；`verify_signature`。验收：单测（独立 HMAC 向量；篡改 body、过期时间戳必须失败）
+  - 完成（726c21c）：`module-payment::stripe`（默认开启的 `stripe` feature，依赖 hmac + sha2）。回调只有 `checkout.session.completed` / `async_payment_succeeded` 且 `payment_status == paid` 才算成功；查单无结果 → `not_found`（对账超窗关单）；退款要 PaymentIntent id，`RefundRequest` 加 `txn_id`。单测 8 个；验签向量由 Python 独立算出；删掉时间戳检查或让 HMAC 比较恒真都会让测试变红
+- [x] I3 — 接线：`create_order(region)`、`payment_providers()`、对账 / 退款分派、`/api/pay/stripe/notify`、订单带币种、`.env.example`。验收：未配 Stripe 时行为与现在一致；用测试签名构造的 webhook 走通流水线
+  - 完成：`host::from_env(name)` 取代下单 / 对账 / 退款三处 `match provider`（host 执行器改收 `?Sized`）；`create_order` 加 `region`，金额与币种取自 `Pricing::quote`，并在建单前确认网关已配置（原来未配置时会留下一张 pending 单）；`payment_providers()`；订单列表（我的 / 管理）带币种。本地实测（假密钥 + 自签 webhook）：错 secret / 过期时间戳 400，无关事件与 unpaid 200 不发货，金额不符 500 不发货，paid → 订单 paid、存 `pi_` 流水号、写 purchase 权益，重放幂等；测试数据已清理。四档检查、clippy、613 个测试通过
+- [x] I4 — 界面：时区判断地区，课程详情 / 付费墙 / 首页课程卡 / 购买弹窗按地区报价与列支付方式，可手动切换；我的订单按币种显示。验收：浏览器模拟两个时区截图
+  - 完成（c0b95b9）：`pricing::use_region()`（全局信号；SSR 与首帧按大陆默认，hydration 后读 localStorage 的手动选择，没有则按 `widgets::browser::time_zone()`）+ `set_region`。课程详情、付费墙、购买按钮、首页课程卡按地区报价；弹窗列 `methods_for(地区, 已配置网关)`，金额按所选网关的 `quote`，底部「🌐 海外 · 切换到中国大陆」；我的订单与管理订单按订单币种显示金额与渠道名。Chromium 实测：Asia/Shanghai → ¥99，America/New_York → $14.99；切换后价格与方式随之变化，刷新后保留。本地只配了 Stripe，所以大陆也只列出「银行卡 / 国际支付」（三网关排序见单测）
+- [x] I5 — 购买弹窗与我的订单 i18n（阶段 O 的重估条件已触发）。验收：EN 下弹窗与订单页无中文
+  - 完成（10d8286）：购买弹窗、付费墙、「在线购买未开通」提示、我的订单接入中英文；`create_order` / `query_order` 面向用户的错误改返回 `pay.err.*` key，弹窗经 `t()` 翻译（非 key 的网关原文原样显示）。`site_lang=en` 实测：弹窗、付费墙、订单页无中文，未登录点支付显示 “Please sign in to buy.”。仍为中文（当前版本不做）：课时页外框（如「← 返回课程目录」）与标注——课时内容本身是中文；网关返回的错误原文（如「Stripe 下单失败: …」）面向运维
+- [x] I6 — Stripe 测试模式端到端（下单 → 支付 → 回调发货 → 对账 → 退款）。**需要作者提供 `sk_test_` 密钥与 webhook secret**
+  - 完成（2026-10-20，本地 dx + Stripe 测试模式，`stripe listen` 转发 webhook）：纽约时区英文界面购买 → 跳 Stripe Checkout（$14.99）→ 测试卡 4242 付款 → 回到我的订单显示 Paid，课程显示已拥有、锁定课节解锁；订单 USD 1499、存 `pi_` 流水号、写 purchase 权益，webhook 应答 200。停掉 webhook 转发后再付一单：订单停在 pending，约 2 分钟后对账经 PaymentIntent 搜索回填并发货。管理员退款：Stripe 上退款 succeeded（1499 usd，metadata 带单号），本地订单 refunded、purchase 权益撤销，重复退款被拒。未付款的单对账时保持 pending，无告警。尚未验证：支付宝 / 微信渠道下的 Stripe（需在 Stripe 后台开通）与生产域名的 webhook
+

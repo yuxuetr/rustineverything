@@ -26,6 +26,8 @@ rand = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 url = { version = "2", optional = true }
 sea-orm = { workspace = true, optional = true }
+hmac = { version = "0.12", optional = true }
+sha2 = { workspace = true, optional = true }
 app-core = { path = "../../core", optional = true }
 
 [dev-dependencies]
@@ -36,9 +38,11 @@ tokio = { workspace = true, features = ["macros", "rt"] }
 
 [features]
 # 网关按 feature 选装，默认全开；关闭其一可裁剪对应协议实现。
-default = ["alipay", "wechat"]
+default = ["alipay", "wechat", "stripe"]
 alipay = []
 wechat = []
+# 阶段 I：信用卡与海外支付方式（Checkout Session，PAYMENT_SPEC §15）
+stripe = []
 # server：启用网关实现 + crypto 工具 + notify 流水线（重依赖只进 server 目标，
 # 保证 web/wasm 目标只编译中立类型与 trait）。由调用方（module-course）的
 # server feature 经弱依赖 `module-payment?/server` 级联开启。
@@ -52,6 +56,8 @@ server = [
     "dep:reqwest",
     "dep:url",
     "dep:sea-orm",
+    "dep:hmac",
+    "dep:sha2",
     "dep:app-core",
     "app-core/server",
 ]

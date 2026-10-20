@@ -200,15 +200,15 @@ fn OrdersSection() -> Element {
                             for o in rows.into_iter() {
                                 {
                                     let otn = o.out_trade_no.clone();
-                                    let yuan = o.amount / 100;
-                                    let chan = if o.provider == "alipay" { "支付宝" } else { "微信" };
+                                    let amount = module_course::pricing::Price { amount: o.amount, currency: o.currency.clone() }.label();
+                                    let chan = app_core::i18n::t(app_core::i18n::Language::Zh, module_course::pricing::channel_key(&o.provider));
                                     let paid = o.status == "paid";
                                     rsx! {
                                         TableRow { key: "{o.out_trade_no}",
                                             TableCell { class: "px-4 py-2 font-mono text-xs", "{o.out_trade_no}" }
                                             TableCell { class: "px-4 py-2", "{o.nickname} #{o.user_id}" }
                                             TableCell { class: "px-4 py-2 font-mono text-xs", "{o.course_slug}" }
-                                            TableCell { class: "px-4 py-2 font-medium", "¥{yuan}" }
+                                            TableCell { class: "px-4 py-2 font-medium", "{amount}" }
                                             TableCell { class: "px-4 py-2 text-slate-400", "{chan}" }
                                             TableCell { class: "px-4 py-2 text-xs", "{o.status}" }
                                             TableCell { class: "px-4 py-2 text-right",

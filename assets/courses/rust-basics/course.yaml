@@ -7,3 +7,5 @@ tags: [rust, basics]
 access_tier: paid
 price: 9900
 currency: CNY
+# 海外价格（美分）：海外访客经 Stripe 按美元付；不写则海外也按人民币收。
+price_usd: 1499

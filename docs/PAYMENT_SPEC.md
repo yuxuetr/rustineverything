@@ -8,7 +8,7 @@
 ## 1. 定位与范围
 - **网关**：支付宝（电脑网站 / 手机网站 / 扫码）+ 微信支付 v3（Native 扫码 / H5）。
 - **商品**：一次性购买单门课程（`orders.course_slug`）。订阅会员留 [M6]。
-- **不在范围**：发票开具、优惠券、分账、跨境（国内主体收款，税务/开票自理）。
+- **不在范围**：发票开具、优惠券、分账。信用卡与海外支付方式见 §15（Stripe，阶段 I）。
 - **前置条件（业务侧）**：支付宝开放平台应用 + 网页支付能力；微信支付商户号（v3）。
   两者均需**企业资质**与备案域名；本规范假定已具备。
 
@@ -238,3 +238,75 @@ trait 边界 = 未来 WASM ABI 边界，两路线不冲突。若把 Provider 下
    协议字段中立化，无 DB / 无发货能力。
 5. **强制 SHA256 lock**（`plugins_lock` 已随插件运行时在 R5 移除，届时需重建）：支付插件必须进 `plugins_lock`（Phase 9.2）且不允许
    warn-only 降级——hash 不匹配直接拒载。
+
+## 15. 海外支付：Stripe + 按地区给出支付方式（阶段 I，2026-10-20）
+
+作者决定：信用卡与国外支付方式接 **Stripe**（作者有可开 Stripe 的海外主体）；课程可**另设美元价**，海外访客按美元付，没设美元价的课程仍按人民币收。
+
+### 15.1 现状（证据）
+
+- 网关经 `PaymentProvider` trait 接入（§14），Provider 只构造请求 / 解析响应，签名与 HTTP 在宿主。Stripe 的「建 Checkout Session → 跳转 → webhook」正好是 `OrderCall::Http` + `PayAction::PayUrl` + `parse_notify`，trait 不用改。
+- 网关分派写死在 4 处 `match provider`：`create_order`、`reconcile_pending_orders_once`、`admin_refund_order` 与回调路由。
+- 每门课只有一个价格（`price` + `currency`，实际都是 CNY）。
+- 部署是自建 Pingora 网关直接终结 TLS，前面没有 CDN，拿不到 CDN 给的国家头。
+- `pay_ui` 全中文。阶段 O 给它写过重估条件：出现支付宝 / 微信之外的渠道时重新评估 i18n。Stripe 正好触发这一条。
+
+### 15.2 设计决定
+
+**DI1 用 Stripe Checkout（托管收银台），不用 Elements。** 卡号不经过本站（PCI 最轻的 SAQ A）；Checkout 按 Stripe 后台配置自动展示卡、Apple Pay、Google Pay、Link 以及各国本地方式（包括 Stripe 渠道的支付宝 / 微信），新增方式不用改代码；Elements 要加载 Stripe.js 并放宽 CSP。
+
+**DI2 地区按浏览器时区判断，不按 IP。** 时区为中国大陆（`Asia/Shanghai` `Asia/Urumqi` `Asia/Chongqing` `Asia/Harbin` `PRC`）记为「中国大陆」，其余为「海外」；弹窗里可以手动切换。不用 IP 的原因：一是要随镜像带 GeoIP 库并按月更新；二是本站读者（Rust 开发者）开代理很常见，按 IP 会把大陆用户判成海外。地区只决定展示哪些方式、按哪种货币报价，金额永远由服务端从课程数据算出，所以客户端声明地区不构成绕过。
+重估条件：网关前加了会注入国家头的 CDN——`grep -rniE 'cf-ipcountry|x-country-code' crates/gateway deploy docker-compose*.yml 2>/dev/null` 有输出。
+
+**DI3 报价是纯函数 `quote(course, provider, region)`。**
+- 支付宝 / 微信：只收 CNY，按 `price`；课程币种不是 CNY 时拒绝。
+- Stripe：海外且设了 `price_usd`，按 USD；否则按 `price` + `currency`。
+
+`course.yaml` 只加一个可选字段 `price_usd`（美分）。只有第二种货币，不做通用的多币种价格表。
+
+**DI4 地区 → 支付方式。**
+- 中国大陆：支付宝、微信、银行卡（Stripe）。
+- 海外：Stripe。
+
+列表再与服务端实际配置的网关取交集（新 server fn `payment_providers()`），没配的网关不出现，免得用户点了才报「未配置」。
+
+**DI5 对账与退款。**
+- 对账用 PaymentIntent 搜索：`metadata['out_trade_no']`。下单时把单号写进 `payment_intent_data[metadata]`。
+- 没搜到（用户没完成支付）按未支付处理，超出支付窗口后关单。
+- 退款按 PaymentIntent id（回调时存进 `orders.provider_txn`）。为此 `RefundRequest` 加 `txn_id`。
+- 搜索接口有约 1 分钟的延迟，对账最小单龄是 300s，不受影响。
+
+**DI6 webhook 验签**：`Stripe-Signature` 的 `t` / `v1`，HMAC-SHA256(`{t}.{body}`, webhook secret)，常数时间比较，时间戳 ±300s（与微信一致）。
+- 处理的事件：`checkout.session.completed`、`checkout.session.async_payment_succeeded`，两者都要求 `payment_status == "paid"` 才算成功。
+- 其他事件确认收到，不发货。
+- 验签失败回 400；处理失败回 500，让 Stripe 重试。
+
+**DI7 流水线不加币种核验。** Session 由服务端用订单的币种创建，回调经我方 webhook secret 验签，币种不可能与订单不同。
+重估条件：新增网关（可能由客户端或第三方创建支付会话）——`find crates/modules/payment/src -maxdepth 1 -name '*.rs' -exec basename {} \; | grep -vxE '(lib|crypto|host|pipeline|reconcile|alipay|wechat|stripe)\.rs'` 有输出。
+
+**DI8 API 版本固定。** 请求头带 `Stripe-Version: 2024-06-20`，响应结构不随账户默认版本漂移。
+
+### 15.3 配置
+
+```
+STRIPE_SECRET_KEY=sk_live_...      # 测试用 sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...    # Dashboard webhook 或 `stripe listen` 给出
+# 复用 PAY_NOTIFY_BASE：success / cancel 回到 {base}/course/{slug}
+```
+
+Webhook 地址：`{PAY_NOTIFY_BASE}/api/pay/stripe/notify`，订阅上面两个事件。
+
+### 15.4 任务（Todos 阶段 I）
+
+1. **I1 报价与地区**：`price_usd`、`Region`、`quote`、`methods_for(region, configured)`，均为纯函数加单测。
+2. **I2 `StripeProvider`**（`module-payment` 的 `stripe` feature）：下单、回调解析、查单、退款，外加 `verify_signature`。单测用 Stripe 文档形状的样本，验签用独立算出的 HMAC 向量，并反向验证篡改 body / 过期时间戳会失败。
+3. **I3 接线**：
+   - `create_order` 加 `region` 参数；
+   - 新增 `payment_providers()`；
+   - 对账、退款分派 Stripe；
+   - `/api/pay/stripe/notify` 路由；
+   - 订单列表带币种；
+   - `.env.example`。
+4. **I4 界面**：时区判断地区；按地区显示价格（课程详情、付费墙、首页课程卡）和支付方式；可手动切换；我的订单按币种显示金额。
+5. **I5 支付界面 i18n**：购买弹窗与我的订单接入中英文（阶段 O 写下的重估条件已触发）。
+6. **I6 端到端验证**：用 Stripe 测试模式（`sk_test_` + `stripe listen`）走完下单、支付、回调发货、对账、退款。**需要作者提供测试密钥**，未提供前保持未完成。
