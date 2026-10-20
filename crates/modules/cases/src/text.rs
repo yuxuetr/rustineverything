@@ -110,9 +110,51 @@ pub fn humanize_slug(slug: &str) -> String {
     .join(" ")
 }
 
+/// 把 Markdown 的一级标题（ATX `# `）降为二级（G7）。案例详情页自己有 h1，
+/// README 开头的 `# 项目名` 会成为第二个 h1。围栏代码块里的行不动。
+pub fn demote_h1(md: &str) -> String {
+  let mut fence: Option<&str> = None;
+  let lines: Vec<String> = md
+    .split('\n')
+    .map(|line| {
+      let body = line.trim_start_matches(' ');
+      let indent = line.len() - body.len();
+      if let Some(marker) = ["```", "~~~"].into_iter().find(|m| body.starts_with(m)) {
+        match fence {
+          None => fence = Some(marker),
+          Some(open) if open == marker => fence = None,
+          Some(_) => {}
+        }
+        return line.to_string();
+      }
+      let is_h1 = indent <= 3
+        && body.starts_with('#')
+        && body[1..].chars().next().is_none_or(|c| c == ' ' || c == '\t');
+      if fence.is_none() && is_h1 {
+        format!("{}#{}", &line[..indent], body)
+      } else {
+        line.to_string()
+      }
+    })
+    .collect();
+  lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// G7：README 的 `#` 降为 `##`，代码块里的 `#` 不动。
+  #[test]
+  fn readme_h1_is_demoted_outside_code_fences() {
+    let md = "# ripgrep\n\n## Install\n\n```sh\n# comment\n```\n\n#hashtag\n  # indented\n";
+    assert_eq!(
+      demote_h1(md),
+      "## ripgrep\n\n## Install\n\n```sh\n# comment\n```\n\n#hashtag\n  ## indented\n"
+    );
+    assert_eq!(demote_h1("#"), "##");
+    assert_eq!(demote_h1("~~~\n# x\n~~~\n# y"), "~~~\n# x\n~~~\n## y");
+  }
 
   #[derive(Debug)]
   struct SortCase {

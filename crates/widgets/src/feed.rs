@@ -119,7 +119,7 @@ pub fn build_atom_feed(
   // 取第一条 entry 的 date 作为 feed 最新更新；若全空回退到 1970-01-01。
   let updated = entries
     .iter()
-    .find_map(|e| if e.date.is_empty() { None } else { Some(e.date.clone()) })
+    .find_map(|e| if e.date.is_empty() { None } else { Some(atom_date(&e.date)) })
     .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_string());
   out.push_str(&format!("  <updated>{}</updated>\n", xml_escape(&updated)));
 
@@ -130,7 +130,7 @@ pub fn build_atom_feed(
     out.push_str(&format!("    <link href=\"{}\"/>\n", xml_escape(&url)));
     out.push_str(&format!("    <id>{}</id>\n", xml_escape(&url)));
     if !e.date.is_empty() {
-      out.push_str(&format!("    <updated>{}</updated>\n", xml_escape(&e.date)));
+      out.push_str(&format!("    <updated>{}</updated>\n", xml_escape(&atom_date(&e.date))));
     }
     if !e.description.is_empty() {
       out.push_str(&format!("    <summary>{}</summary>\n", xml_escape(&e.description)));
@@ -149,6 +149,16 @@ pub fn build_atom_feed(
 pub fn build_robots_txt(base_url: &str) -> String {
   let sitemap = join_url(base_url, "/sitemap.xml");
   format!("User-agent: *\nAllow: /\n\nSitemap: {}\n", sitemap)
+}
+
+/// Atom 的 `<updated>` 必须是 RFC 3339 日期时间（G7）。内容 frontmatter 多为
+/// `YYYY-MM-DD`，补成当天 0 点 UTC；已带时间的原样输出。
+fn atom_date(date: &str) -> String {
+  if chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok() {
+    format!("{date}T00:00:00Z")
+  } else {
+    date.to_string()
+  }
 }
 
 #[cfg(test)]
@@ -221,8 +231,10 @@ mod tests {
     // entries
     assert!(xml.contains("<title>Post A</title>"));
     assert!(xml.contains("<title>Post B</title>"));
-    // updated 取最新（首条）
-    assert!(xml.contains("<updated>2026-02-15</updated>"));
+    // updated 取最新（首条）；Atom 要求 RFC 3339，纯日期补成当天 0 点 UTC（G7）
+    assert!(xml.contains("<updated>2026-02-15T00:00:00Z</updated>"));
+    assert!(!xml.contains("<updated>2026-01-10</updated>"));
+    assert!(xml.contains("<updated>2026-01-10T00:00:00Z</updated>"));
     // category from tags
     assert!(xml.contains("<category term=\"rust\"/>"));
     assert!(xml.ends_with("</feed>\n"));

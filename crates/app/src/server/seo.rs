@@ -185,6 +185,38 @@ pub fn mount(router: Router, base_url: &str) -> Router {
     )
 }
 
+/// 带尾斜杠的页面地址对应的无斜杠地址（G7）：`/blog/` 与 `/blog` 返回同一页，
+/// 爬虫会当成两个 URL。根路径和 `/api/*` 不处理；去掉斜杠后以 `//` 开头的
+/// 不跳（浏览器会把 `//host` 当成别的站点，即开放重定向）。
+fn slash_redirect_target(path: &str, query: Option<&str>) -> Option<String> {
+  if path == "/" || !path.ends_with('/') || path.starts_with("/api/") {
+    return None;
+  }
+  let trimmed = path.trim_end_matches('/');
+  if trimmed.is_empty() || trimmed.starts_with("//") {
+    return None;
+  }
+  Some(match query {
+    Some(q) => format!("{trimmed}?{q}"),
+    None => trimmed.to_string(),
+  })
+}
+
+/// GET / HEAD 的尾斜杠地址 301 到无斜杠地址。
+pub async fn trailing_slash_mw(
+  req: axum::extract::Request,
+  next: axum::middleware::Next,
+) -> axum::response::Response {
+  use axum::http::Method;
+  use axum::response::{IntoResponse, Redirect};
+  if matches!(*req.method(), Method::GET | Method::HEAD) {
+    if let Some(to) = slash_redirect_target(req.uri().path(), req.uri().query()) {
+      return Redirect::permanent(&to).into_response();
+    }
+  }
+  next.run(req).await
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -199,6 +231,21 @@ mod tests {
       description: String::new(),
       children,
     }
+  }
+
+  /// G7：尾斜杠 301 到无斜杠地址；根路径、API 与会变成 `//host` 的路径不跳。
+  #[test]
+  fn trailing_slash_redirect_targets() {
+    assert_eq!(slash_redirect_target("/blog/", None).as_deref(), Some("/blog"));
+    assert_eq!(
+      slash_redirect_target("/docs/axum//", Some("a=1")).as_deref(),
+      Some("/docs/axum?a=1")
+    );
+    assert_eq!(slash_redirect_target("/", None), None);
+    assert_eq!(slash_redirect_target("/blog", None), None);
+    assert_eq!(slash_redirect_target("/api/orders/", None), None);
+    assert_eq!(slash_redirect_target("//evil.com/", None), None, "不能变成开放重定向");
+    assert_eq!(slash_redirect_target("///", None), None);
   }
 
   #[test]

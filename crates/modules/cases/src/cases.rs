@@ -578,7 +578,7 @@ fn CaseDetailBody(case: Case, footer: Element) -> Element {
           div { class: "mt-10 grid grid-cols-1 lg:grid-cols-[1fr_20rem] gap-8",
               article { class: "min-w-0 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/30 p-6 md:p-8",
                   if let Some(readme) = case.readme_md.as_ref() {
-                      Markdown { content: readme.clone(), blog_id: markdown_id }
+                      Markdown { content: crate::text::demote_h1(readme), blog_id: markdown_id }
                   } else {
                       div { class: "text-slate-500 dark:text-slate-400", "{tc(lang, \"case.no_readme\")}" }
                   }

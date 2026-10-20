@@ -358,6 +358,9 @@ fn main() {
     // gateway 限流仍是第一道防线；这里是 app 裸跑时的兑底。
     let router = router.layer(axum::middleware::from_fn(crate::server::rate_limit::rate_limit_mw));
 
+    // G7：`/blog/` 这类尾斜杠地址 301 到 `/blog`，避免重复 URL。
+    let router = router.layer(axum::middleware::from_fn(crate::server::seo::trailing_slash_mw));
+
     // G4：按 Accept-Encoding 压缩响应（br / gzip）。HTML、CSS、JS、wasm、
     // sitemap / feed 都受益；图片和流式 SSE 由默认判定跳过，已带
     // Content-Encoding 的响应不重复压缩。
