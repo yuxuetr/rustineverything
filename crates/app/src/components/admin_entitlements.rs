@@ -207,7 +207,7 @@ fn OrdersSection() -> Element {
                                         TableRow { key: "{o.out_trade_no}",
                                             TableCell { class: "px-4 py-2 font-mono text-xs", "{o.out_trade_no}" }
                                             TableCell { class: "px-4 py-2", "{o.nickname} #{o.user_id}" }
-                                            TableCell { class: "px-4 py-2 font-mono text-xs", "{o.course_slug}" }
+                                            TableCell { class: "px-4 py-2 font-mono text-xs", "{o.product_ref}" }
                                             TableCell { class: "px-4 py-2 font-medium", "{amount}" }
                                             TableCell { class: "px-4 py-2 text-slate-400", "{chan}" }
                                             TableCell { class: "px-4 py-2 text-xs", "{o.status}" }

@@ -9,8 +9,8 @@
 //! 4. 幂等快路径：已 `paid` 直接确认；
 //! 5. **原子认领**：`UPDATE … WHERE out_trade_no = ? AND status != 'paid'`，
 //!    `rows_affected = 0` 视为已处理——并发回调 / 重放只有一次发货生效；
-//! 6. 发货：**注入回调** `on_paid(user_id, course_slug)`——payment crate 不
-//!    反向依赖 course 的 entitlement（§11 依赖方向：db 句柄由调用方提供，
+//! 6. 发货：**注入回调** `on_paid(snapshot)`，按商品种类发货由调用方决定——payment
+//!    crate 不认识商品，也不反向依赖 course 的 entitlement（§11 依赖方向：db 句柄由调用方提供，
 //!    订单实体下沉 app-core）；
 //! 7. `target=pay_audit` 审计日志（关键字段留痕，不含买家敏感信息）。
 //!
@@ -25,7 +25,9 @@ use crate::PaymentEvent;
 #[derive(Debug, Clone, PartialEq)]
 pub struct OrderSnapshot {
   pub user_id: i32,
-  pub course_slug: String,
+  /// `course` | `tip`（发货回调据此分派；本 crate 不解释）。
+  pub product_kind: String,
+  pub product_ref: String,
   /// 下单时快照的金额（分）——金额核验以此为准。
   pub amount_cents: i64,
   pub status: String,
@@ -82,7 +84,8 @@ impl OrderStore for sea_orm::DatabaseConnection {
       .map(|row| {
         row.map(|m| OrderSnapshot {
           user_id: m.user_id,
-          course_slug: m.course_slug,
+          product_kind: m.product_kind,
+          product_ref: m.product_ref,
           amount_cents: m.amount,
           status: m.status,
         })
@@ -192,13 +195,13 @@ impl NotifyOutcome {
 /// 处理一条**已验签（及解密）**的支付事件：查单 → 金额核验 → 原子认领 →
 /// 发货回调 → 审计日志。
 ///
-/// `on_paid(user_id, course_slug)`：认领成功后的发货动作（幂等要求由回调方
+/// `on_paid(snapshot)`：认领成功后的发货动作（幂等要求由回调方
 /// 保证，如 upsert 权益）；返回 `Err` 时应答失败，网关将重试（认领已落库，
 /// 重试进幂等快路径后不再二次发货——与 S6 前行为一致，发货失败需人工对账）。
 pub async fn process_event<S, F, Fut>(store: &S, event: &PaymentEvent, on_paid: F) -> NotifyOutcome
 where
   S: OrderStore + Sync,
-  F: FnOnce(i32, String) -> Fut,
+  F: FnOnce(OrderSnapshot) -> Fut,
   Fut: Future<Output = Result<(), String>>,
 {
   let provider = event.provider.as_str();
@@ -232,13 +235,15 @@ where
     Err(_) => return NotifyOutcome::Failed("update failed"),
   }
   // 6) 发货：注入回调（course 侧写权益，幂等 upsert）。
-  if on_paid(snapshot.user_id, snapshot.course_slug).await.is_err() {
+  let kind = snapshot.product_kind.clone();
+  if on_paid(snapshot).await.is_err() {
     return NotifyOutcome::Failed("grant failed");
   }
   tracing::info!(
     target: "pay_audit",
-    "{} notify: order {} paid + entitlement granted",
+    "{} notify: {} order {} paid + delivered",
     provider,
+    kind,
     event.out_trade_no
   );
   NotifyOutcome::Ok
@@ -264,7 +269,8 @@ mod tests {
   fn snapshot(amount: i64, status: &str) -> OrderSnapshot {
     OrderSnapshot {
       user_id: 7,
-      course_slug: "rust-basics".into(),
+      product_kind: "course".into(),
+      product_ref: "rust-basics".into(),
       amount_cents: amount,
       status: status.into(),
     }
@@ -312,8 +318,8 @@ mod tests {
   async fn run(store: &MockStore, ev: PaymentEvent, deliver_ok: bool) -> (NotifyOutcome, usize) {
     let delivered = Arc::new(AtomicUsize::new(0));
     let d = delivered.clone();
-    let outcome = process_event(store, &ev, |user_id, slug| async move {
-      assert_eq!((user_id, slug.as_str()), (7, "rust-basics"));
+    let outcome = process_event(store, &ev, |order| async move {
+      assert_eq!((order.user_id, order.product_ref.as_str()), (7, "rust-basics"));
       d.fetch_add(1, Ordering::SeqCst);
       if deliver_ok {
         Ok(())

@@ -2,6 +2,8 @@ pub mod course;
 #[cfg(feature = "payments")]
 pub mod pay_ui;
 pub mod pricing;
+#[cfg(feature = "payments")]
+pub mod product;
 pub mod server;
 
 use sdk::AppModule;

@@ -1574,7 +1574,9 @@ pub struct OrderStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OrderInfo {
   pub out_trade_no: String,
-  pub course_slug: String,
+  pub product_kind: crate::product::ProductKind,
+  /// 课程 slug，或打赏发生的页面路径。
+  pub product_ref: String,
   pub provider: String,
   pub amount: i64,
   #[serde(default = "default_currency")]
@@ -1591,6 +1593,34 @@ fn gen_out_trade_no(user_id: i32) -> String {
   let ts = chrono::Utc::now().timestamp_millis();
   let r: u32 = rand::rng().random();
   format!("RIE{ts}{user_id}{r:08x}")
+}
+
+/// server-only：订单行的商品种类。不认识的种类（只会来自更新版本写入的数据）
+/// 留痕后不列出，免得界面按错误种类展示。
+#[cfg(all(feature = "server", feature = "payments"))]
+fn known_kind(o: &app_core::entities::order::Model) -> Option<crate::product::ProductKind> {
+  let kind = crate::product::ProductKind::parse(&o.product_kind);
+  if kind.is_none() {
+    tracing::warn!(target: "pay_audit", "order {} has unknown product kind {}", o.out_trade_no, o.product_kind);
+  }
+  kind
+}
+
+/// server-only：付款成功后的发货（三个回调与对账共用，须幂等）。课程写权益，
+/// 打赏不发货；不认识的种类返回错误，网关会重试并留下 pay_audit 记录。
+#[cfg(all(feature = "server", feature = "payments"))]
+async fn deliver(
+  db: &sea_orm::DatabaseConnection,
+  order: module_payment::pipeline::OrderSnapshot,
+) -> Result<(), String> {
+  let kind = crate::product::ProductKind::parse(&order.product_kind)
+    .ok_or_else(|| format!("unknown product kind {}", order.product_kind))?;
+  if !kind.grants_entitlement() {
+    return Ok(());
+  }
+  grant_entitlement_internal(db, order.user_id, order.product_ref, "purchase")
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// server-only：把 PayError 展开为用户可读错误（取内层文案，与重构前
@@ -1669,7 +1699,8 @@ pub async fn create_order(
       id: NotSet,
       out_trade_no: Set(out_trade_no.clone()),
       user_id: Set(user.id),
-      course_slug: Set(course_slug),
+      product_kind: Set(crate::product::ProductKind::Course.as_str().to_string()),
+      product_ref: Set(course_slug),
       provider: Set(provider.clone()),
       scene: Set(scene.clone()),
       amount: Set(price.amount),
@@ -1770,15 +1801,18 @@ pub async fn list_my_orders() -> Result<Vec<OrderInfo>, ServerFnError> {
     Ok(
       rows
         .into_iter()
-        .map(|o| OrderInfo {
-          out_trade_no: o.out_trade_no,
-          course_slug: o.course_slug,
-          provider: o.provider,
-          amount: o.amount,
-          currency: o.currency,
-          status: o.status,
-          created_at: o.created_at.to_rfc3339(),
-          paid_at: o.paid_at.map(|t| t.to_rfc3339()),
+        .filter_map(|o| {
+          Some(OrderInfo {
+            product_kind: known_kind(&o)?,
+            out_trade_no: o.out_trade_no,
+            product_ref: o.product_ref,
+            provider: o.provider,
+            amount: o.amount,
+            currency: o.currency,
+            status: o.status,
+            created_at: o.created_at.to_rfc3339(),
+            paid_at: o.paid_at.map(|t| t.to_rfc3339()),
+          })
         })
         .collect(),
     )
@@ -1837,13 +1871,7 @@ pub async fn handle_alipay_notify(
   let Ok(db) = open_db().await else {
     return "failure";
   };
-  let outcome = pipeline::process_event(&db, &event, |user_id, slug| {
-    let db = db.clone();
-    async move {
-      grant_entitlement_internal(&db, user_id, slug, "purchase").await.map_err(|e| e.to_string())
-    }
-  })
-  .await;
+  let outcome = pipeline::process_event(&db, &event, |order| deliver(&db, order)).await;
   if outcome.is_ok() {
     "success"
   } else {
@@ -1946,13 +1974,7 @@ pub async fn handle_wechat_notify(
   let Ok(db) = open_db().await else {
     return fail("db");
   };
-  let outcome = pipeline::process_event(&db, &event, |user_id, slug| {
-    let db = db.clone();
-    async move {
-      grant_entitlement_internal(&db, user_id, slug, "purchase").await.map_err(|e| e.to_string())
-    }
-  })
-  .await;
+  let outcome = pipeline::process_event(&db, &event, |order| deliver(&db, order)).await;
   match outcome {
     pipeline::NotifyOutcome::Ok => ok(),
     pipeline::NotifyOutcome::Failed(m) => fail(m),
@@ -2000,13 +2022,7 @@ pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
   let Ok(db) = open_db().await else {
     return 500;
   };
-  let outcome = pipeline::process_event(&db, &event, |user_id, slug| {
-    let db = db.clone();
-    async move {
-      grant_entitlement_internal(&db, user_id, slug, "purchase").await.map_err(|e| e.to_string())
-    }
-  })
-  .await;
+  let outcome = pipeline::process_event(&db, &event, |order| deliver(&db, order)).await;
   if outcome.is_ok() {
     200
   } else {
@@ -2071,13 +2087,8 @@ pub async fn reconcile_pending_orders_once() -> (u32, u32) {
         continue;
       }
     };
-    let action = reconcile_order(&db, &order, &event, now, &policy, |user_id, slug| {
-      let db = db.clone();
-      async move {
-        grant_entitlement_internal(&db, user_id, slug, "purchase").await.map_err(|e| e.to_string())
-      }
-    })
-    .await;
+    let action =
+      reconcile_order(&db, &order, &event, now, &policy, |order| deliver(&db, order)).await;
     match action {
       ReconcileAction::Delivered => delivered += 1,
       ReconcileAction::Closed => closed += 1,
@@ -2104,7 +2115,8 @@ pub struct AdminOrderInfo {
   pub out_trade_no: String,
   pub user_id: i32,
   pub nickname: String,
-  pub course_slug: String,
+  pub product_kind: crate::product::ProductKind,
+  pub product_ref: String,
   pub provider: String,
   pub amount: i64,
   #[serde(default = "default_currency")]
@@ -2143,17 +2155,20 @@ pub async fn admin_list_orders() -> Result<Vec<AdminOrderInfo>, ServerFnError> {
     Ok(
       rows
         .into_iter()
-        .map(|o| AdminOrderInfo {
-          nickname: name_of(o.user_id),
-          out_trade_no: o.out_trade_no,
-          user_id: o.user_id,
-          course_slug: o.course_slug,
-          provider: o.provider,
-          amount: o.amount,
-          currency: o.currency,
-          status: o.status,
-          created_at: o.created_at.to_rfc3339(),
-          paid_at: o.paid_at.map(|t| t.to_rfc3339()),
+        .filter_map(|o| {
+          Some(AdminOrderInfo {
+            product_kind: known_kind(&o)?,
+            nickname: name_of(o.user_id),
+            out_trade_no: o.out_trade_no,
+            user_id: o.user_id,
+            product_ref: o.product_ref,
+            provider: o.provider,
+            amount: o.amount,
+            currency: o.currency,
+            status: o.status,
+            created_at: o.created_at.to_rfc3339(),
+            paid_at: o.paid_at.map(|t| t.to_rfc3339()),
+          })
         })
         .collect(),
     )
@@ -2218,20 +2233,26 @@ pub async fn admin_refund_order(out_trade_no: String) -> Result<(), ServerFnErro
       .exec(&db)
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?;
-    // 撤销购买来源的权益（不动 admin_grant 等其它来源）。
-    entitlement::Entity::delete_many()
-      .filter(entitlement::Column::UserId.eq(row.user_id))
-      .filter(entitlement::Column::CourseSlug.eq(row.course_slug.clone()))
-      .filter(entitlement::Column::Source.eq("purchase"))
-      .exec(&db)
-      .await
-      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    // 课程订单撤销购买来源的权益（不动 admin_grant 等其它来源）；打赏没发过货。
+    let revoke =
+      crate::product::ProductKind::parse(&row.product_kind).is_some_and(|k| k.grants_entitlement());
+    if revoke {
+      entitlement::Entity::delete_many()
+        .filter(entitlement::Column::UserId.eq(row.user_id))
+        .filter(entitlement::Column::CourseSlug.eq(row.product_ref.clone()))
+        .filter(entitlement::Column::Source.eq("purchase"))
+        .exec(&db)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    }
     tracing::info!(
       target: "pay_audit",
-      "refund: order {} refunded (gateway status {}, by admin {}) + purchase entitlement revoked",
+      "refund: {} order {} refunded (gateway status {}, by admin {}){}",
+      row.product_kind,
       out_trade_no,
       result.status,
-      admin.id
+      admin.id,
+      if revoke { " + purchase entitlement revoked" } else { "" }
     );
     Ok(())
   }

@@ -7,7 +7,7 @@
 
 ## 1. 定位与范围
 - **网关**：支付宝（电脑网站 / 手机网站 / 扫码）+ 微信支付 v3（Native 扫码 / H5）。
-- **商品**：一次性购买单门课程（`orders.course_slug`）。订阅会员留 [M6]。
+- **商品**：一次性购买单门课程；打赏（FEATURE_TIERS.md §6，`orders.product_kind` 区分）。订阅会员留 [M6]。
 - **不在范围**：发票开具、优惠券、分账。信用卡与海外支付方式见 §15（Stripe，阶段 I）。
 - **前置条件（业务侧）**：支付宝开放平台应用 + 网页支付能力；微信支付商户号（v3）。
   两者均需**企业资质**与备案域名；本规范假定已具备。
@@ -21,10 +21,11 @@ orders(
   id            bigserial PK,
   out_trade_no  varchar(64) UNIQUE,   -- 我方订单号（下单时生成，传给网关）
   user_id       int  FK users(id) ON DELETE CASCADE,
-  course_slug   varchar(128),
-  provider      varchar(16),          -- wechat | alipay
+  product_ref   varchar(128),         -- 课程 slug；打赏为页面路径（原名 course_slug，000009 改名）
+  product_kind  varchar(16) default 'course',  -- course | tip
+  provider      varchar(16),          -- alipay | wechat | stripe
   scene         varchar(16),          -- native | h5 | page | wap | qr
-  amount        bigint,               -- 分；下单时从 course.price 快照，回调时核验
+  amount        bigint,               -- 最小货币单位；下单时报价快照，回调时核验
   currency      varchar(8) default 'CNY',
   status        varchar(16) default 'pending',  -- pending|paid|failed|closed|refunded
   provider_txn  varchar(64) null,     -- 网关流水号（transaction_id / trade_no）
@@ -34,8 +35,9 @@ orders(
 索引：idx_orders_user(user_id)、idx_orders_status(status, created_at desc)
 ```
 
-**与 entitlements 的关系**：订单 `paid` 时，幂等写入 `entitlements(user_id, course_slug,
-source='purchase')`（复用 M4 的 grant 逻辑）。`get_lesson` 鉴权天然解锁，无需改动。
+**与 entitlements 的关系**：课程订单 `paid` 时，幂等写入 `entitlements(user_id, course_slug,
+source='purchase')`（复用 M4 的 grant 逻辑）；打赏订单不发货。发货由 course 的 `deliver()`
+按 `product_kind` 分派，`pipeline` 只把订单快照交给它。`get_lesson` 鉴权天然解锁，无需改动。
 
 ## 3. 整体流程（时序）
 

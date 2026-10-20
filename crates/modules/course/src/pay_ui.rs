@@ -306,7 +306,7 @@ pub fn MyOrdersPage() -> Element {
                                       rsx! {
                                           TableRow { key: "{o.out_trade_no}",
                                               TableCell { class: "px-4 py-2",
-                                                  Link { to: format!("/course/{}", o.course_slug), class: "hover:text-primary", "{o.course_slug}" }
+                                                  Link { to: format!("/course/{}", o.product_ref), class: "hover:text-primary", "{o.product_ref}" }
                                               }
                                               TableCell { class: "px-4 py-2 font-medium", "{amount}" }
                                               TableCell { class: "px-4 py-2 text-slate-400", "{chan}" }
