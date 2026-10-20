@@ -358,6 +358,11 @@ fn main() {
     // gateway 限流仍是第一道防线；这里是 app 裸跑时的兑底。
     let router = router.layer(axum::middleware::from_fn(crate::server::rate_limit::rate_limit_mw));
 
+    // G4：按 Accept-Encoding 压缩响应（br / gzip）。HTML、CSS、JS、wasm、
+    // sitemap / feed 都受益；图片和流式 SSE 由默认判定跳过，已带
+    // Content-Encoding 的响应不重复压缩。
+    let router = router.layer(tower_http::compression::CompressionLayer::new());
+
     // S1（风险 R6）：全站安全响应头（CSP / nosniff / Referrer-Policy / X-Frame-Options）。
     // 挂在最外层，覆盖页面、server fn、静态资源与上面全部自定义路由（含 429 响应）。
     let router =
