@@ -61,3 +61,15 @@ tantivy-jieba = "0.19"
 aes-gcm = "0.10"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# dx 的 web release 构建会自动用名为 wasm-release 的 profile 编译前端 wasm
+# （服务端仍用 release），所以这里只影响浏览器下载的 wasm。按体积优化：
+# 实测（2026-10-20）原始 7.10MB → 3.78MB，br 传输 1.55MB → 1.19MB，
+# 主线程脚本时间不增反降。opt-level 3 + LTO 反而变大（7.34MB），见 Todos 阶段 W。
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+debug = false
+strip = "debuginfo"
