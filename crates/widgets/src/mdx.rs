@@ -154,7 +154,7 @@ fn render_stream<'a>(
                 // X1：图片的描述是它的子事件，取纯文本作 alt（不当正文渲染）。
                 let mut alt = String::new();
                 let mut depth = 0usize;
-                while let Some(event) = it.next() {
+                for event in it.by_ref() {
                     match event {
                         Event::Start(_) => depth += 1,
                         Event::End(_) if depth == 0 => break,
