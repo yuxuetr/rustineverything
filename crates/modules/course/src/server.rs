@@ -2131,6 +2131,7 @@ pub async fn admin_refund_order(out_trade_no: String) -> Result<(), ServerFnErro
       amount_cents: row.amount,
       total_cents: row.amount,
       reason: "管理员退款".to_string(),
+      txn_id: row.provider_txn.clone(),
     };
     let result = match row.provider.as_str() {
       "alipay" => {

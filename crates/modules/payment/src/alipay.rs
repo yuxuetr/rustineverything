@@ -591,6 +591,7 @@ mod tests {
       amount_cents: 9900,
       total_cents: 9900,
       reason: "管理员退款".into(),
+      txn_id: None,
     };
     let pr = p.build_refund(&req).unwrap();
     assert!(pr.body_is_form);

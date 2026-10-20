@@ -138,6 +138,9 @@ pub struct RefundRequest {
   pub total_cents: i64,
   /// 退款原因（网关侧展示 / 对账备注）。
   pub reason: String,
+  /// 网关流水号（`orders.provider_txn`）；Stripe 按 PaymentIntent id 退款，其余网关不用。
+  #[serde(default)]
+  pub txn_id: Option<String>,
 }
 
 /// 退款结果（中立形态）。
@@ -249,6 +252,9 @@ pub mod alipay;
 #[cfg(all(feature = "server", feature = "wechat"))]
 pub mod wechat;
 
+#[cfg(all(feature = "server", feature = "stripe"))]
+pub mod stripe;
+
 #[cfg(feature = "server")]
 pub mod pipeline;
 
@@ -305,6 +311,7 @@ mod tests {
       amount_cents: 100,
       total_cents: 100,
       reason: "test".into(),
+      txn_id: None,
     };
     assert!(matches!(p.build_refund(&req), Err(PayError::Unsupported(_))));
     assert!(matches!(p.parse_refund("{}"), Err(PayError::Unsupported(_))));
