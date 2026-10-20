@@ -597,7 +597,8 @@
   - 完成（b70a26f）：新增 `crates/app/index.html`（dx 默认模板 + `lang="zh-CN"`），Dockerfile 补 COPY；`SEO_SPEC.md` §3.1 记录语言策略。实测 SSR 输出 `<html lang="zh-CN">`，浏览器里 wasm 加载、Prism 高亮正常，控制台无错误
 - [x] G3 — 头部脚本 `defer`，mermaid 只在页面出现 `.mermaid` 时加载。验收：无图表页不请求 mermaid；含图表与代码的页面仍正常渲染
   - 完成（e422c39）：prism 七个脚本与 annotations.js 加 `defer`；去掉 head 里的 mermaid，引导脚本在首次发现 `.mermaid` 块时注入一次、加载完再扫。Chromium 实测：课节页不请求 mermaid，Prism 高亮正常，`RIE_ANNO` 就绪；`/blog/welcome` 直接打开与从 `/blog` 站内跳转都只请求一次 mermaid，2 张图渲染成 svg。控制台仅有 B 站播放器 iframe 自身的报错
-- [ ] G4 — 响应压缩（tower-http `CompressionLayer`）。验收：带 `Accept-Encoding` 时 HTML / CSS 返回压缩
+- [x] G4 — 响应压缩（tower-http `CompressionLayer`）。验收：带 `Accept-Encoding` 时 HTML / CSS 返回压缩
+  - 完成（33ec1c3）：tower-http 加 `compression-gzip` / `compression-br`，router 挂 `CompressionLayer`（默认判定跳过图片与 SSE）。本地实测 br：首页 81.5KB → 15.4KB，`/blog/welcome` 82.4KB → 18.7KB，sitemap 4.9KB → 0.6KB，prism.min.js 19.7KB → 7.5KB；tailwind css 按 gzip 返回；不带 `Accept-Encoding` 时不压缩；404 状态码不变
 - [ ] G5 — 静态资源缓存头：先在 release 下测，带哈希的资源若不是长缓存再改。验收：release 实测记录
 - [ ] G6 — sitemap 补 `/ecosystem/*` 与免费试看课节。验收：sitemap 含这些 URL
 - [ ] G7 — `/blog` 加 h1、案例详情正文标题降级、尾斜杠 301、Atom 日期改 RFC 3339。验收：curl 实测
