@@ -585,7 +585,9 @@
   - 完成（fba9c59）：ports 改为 `${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080`（网关上游本来就是 127.0.0.1:8080）；`.env.example` 加 `APP_BIND` 说明；`DEPLOY_GUIDE.md` §11 安全 checklist 加一行。本机没有 docker，未跑 `docker compose config`，只用 YAML 解析确认了端口串
 - [x] H6 — 依赖升级到修复版本（rustls ≥0.23.46、h2 ≥0.4.16、quinn-proto ≥0.11.18 等）。验收：`cargo audit` 只剩无修复版本的条目
   - 完成（3196c58）：`cargo update -p`：rustls 0.23.46、h2 0.4.20、quinn-proto 0.11.19、crossbeam-epoch 0.9.21、webbrowser 1.2.4，只动 Cargo.lock。`cargo audit` 由 14 个降到 2 个：rsa（Marvin，无修复版，只用于支付宝 / 微信签名）、rkyv 0.7（rust_decimal 的可选依赖，`cargo tree --all-features --target all -i rkyv` 为空，未参与编译）。clippy、621 个测试、四档检查通过
-- [ ] H7 — YouTube / Bilibili 嵌入 id 只允许 `[A-Za-z0-9_-]`。验收：单测，带 `?` / `&` / `/` 的 id 不渲染 iframe
+- [x] H7 — YouTube / Bilibili 嵌入 id 只允许 `[A-Za-z0-9_-]`。验收：单测，带 `?` / `&` / `/` 的 id 不渲染 iframe
+  - 完成（2b97a46）：`components::embed_id`，不合规（含空串）不渲染。单测 `embed_id_rejects_url_syntax`。仓库内容里实际用到的 BV 号都合规
+- 阶段 H 完成：H1–H7
 
 ### 阶段 G — SEO 与加载性能（2026-10-20 审计）
 评估与设计见 [`docs/AUDIT_2026-10-20.md`](docs/AUDIT_2026-10-20.md) §3。英文独立 URL 不做（§4，内容全为中文，带可执行重估条件）。
