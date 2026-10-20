@@ -61,6 +61,7 @@ footer.tagline = 专注 Rust 工业实战与 AI 生态：案例、课程、文�
 footer.col.content = 内容
 footer.col.community = 社区
 footer.col.topics = 专题
+footer.about = 关于
 footer.rss = RSS 订阅
 
 # ── 首页 Hero ──
@@ -251,6 +252,7 @@ search.kind.topic = 话题
 
 # O11：通用 / 文档 / 课程
 common.load_failed = 加载失败，请稍后再试
+common.not_found = 页面不存在
 blog.not_found = 文章不存在
 docs.title = 文档
 docs.subtitle = 从基础语法到全栈实战，系统化学习 Rust 生态。选择一个主题开始探索。

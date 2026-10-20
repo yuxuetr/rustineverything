@@ -1,15 +1,16 @@
 //! S7（风险 R8）：静态资源目录服务。从 `main.rs` 拆出，行为不变。
 
-use axum::extract::Request;
-use axum::http::{header, HeaderValue, StatusCode};
-use axum::middleware::{self, Next};
-use axum::response::{IntoResponse, Response};
+use axum::http::{header, HeaderValue};
+use axum::middleware;
+use axum::response::Response;
 use axum::Router;
+#[cfg(feature = "course")]
+use axum::{extract::Request, http::StatusCode, middleware::Next, response::IntoResponse};
 use tower_http::services::ServeDir;
 
 /// 挂载静态资源目录。`assets_root` 为资产根目录（启动期解析）。
 pub fn mount(router: Router, assets_root: &str) -> Router {
-  router
+  let router = router
     .nest_service("/images", ServeDir::new(format!("{}/images", assets_root)))
     .nest_service("/posts", ServeDir::new(format!("{}/posts", assets_root)))
     // 脚本文件名不带哈希：每次使用前向服务端确认（未变时 304），改版后立即生效
@@ -22,16 +23,19 @@ pub fn mount(router: Router, assets_root: &str) -> Router {
     .nest_service("/uploads", ServeDir::new(format!("{}/uploads", assets_root)))
     .nest_service("/audio", ServeDir::new(format!("{}/audio", assets_root)))
     .nest_service("/podcasts", ServeDir::new(format!("{}/podcasts", assets_root)))
-    .nest(
-      "/courses",
-      Router::new()
-        .fallback_service(ServeDir::new(format!("{}/courses", assets_root)))
-        .layer(middleware::from_fn(guard_course_file))
-        // 按用户鉴权的内容：共享缓存（CDN / 反代）不得存，浏览器每次复验
-        .layer(middleware::map_response(cache_control("private, no-cache"))),
-    )
     .nest_service("/cases", ServeDir::new(format!("{}/cases", assets_root)))
-    .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)))
+    .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)));
+  // 课时文件只在 course 层提供（未编译课程时整个目录不对外）。
+  #[cfg(feature = "course")]
+  let router = router.nest(
+    "/courses",
+    Router::new()
+      .fallback_service(ServeDir::new(format!("{}/courses", assets_root)))
+      .layer(middleware::from_fn(guard_course_file))
+      // 按用户鉴权的内容：共享缓存（CDN / 反代）不得存，浏览器每次复验
+      .layer(middleware::map_response(cache_control("private, no-cache"))),
+  );
+  router
 }
 
 /// 给响应设置固定的 `Cache-Control`
@@ -42,6 +46,7 @@ fn cache_control(value: &'static str) -> impl Fn(Response) -> std::future::Ready
   }
 }
 
+#[cfg(feature = "course")]
 /// SEC-02：课时目录里的正文 / 音视频 / 代码 / 附件与 `get_lesson` 同权限，
 /// 无权时按不存在处理，不暴露付费课时的文件名。
 async fn guard_course_file(req: Request, next: Next) -> Response {
@@ -82,6 +87,7 @@ mod tests {
   }
 
   /// 课时文件按用户鉴权，共享缓存（CDN / 反代）不得存，否则会把付费内容发给未购用户。
+  #[cfg(feature = "course")]
   #[tokio::test]
   async fn course_files_are_private() {
     let tmp = tempfile::TempDir::new().unwrap();

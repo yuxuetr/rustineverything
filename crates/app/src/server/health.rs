@@ -13,8 +13,9 @@
 
 use std::sync::OnceLock;
 
-/// 迁移执行结果。
+/// 迁移执行结果。basic 层（无 accounts）不连库，只会构造 `Skipped`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(feature = "accounts"), allow(dead_code))]
 pub enum MigrationStatus {
   /// 迁移成功应用（或已是最新）。
   Applied,

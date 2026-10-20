@@ -179,7 +179,7 @@ pub fn SearchModal() -> Element {
                               "all" => kind_filter.set(None),
                               _ => kind_filter.set(Some(v)),
                           },
-                          for (value, key) in KINDS {
+                          for (value, key) in KINDS.iter().filter(|(v, _)| kind_compiled(v)) {
                               ToggleGroupItem { value: *value, class: kind_chip_class(kind_filter().as_deref().unwrap_or("all") == *value), "{t(lang, key)}" }
                           }
                       }
@@ -226,6 +226,12 @@ const KINDS: &[(&str, &str)] = &[
   ("wasm", "wasm.label"),
   ("cli", "cli.label"),
 ];
+
+/// 只列编译进来的模块（docs/FEATURE_TIERS.md DL2）；`all` 始终在。
+fn kind_compiled(kind: &str) -> bool {
+  crate::module_of_kind(kind)
+    .is_none_or(|m| app_core::engines::module::default_module_specs().iter().any(|s| s.id == m))
+}
 
 fn kind_chip_class(active: bool) -> &'static str {
   if active {

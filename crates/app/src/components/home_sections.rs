@@ -9,13 +9,16 @@ use dioxus::prelude::*;
 use dioxus::router::Link;
 use dioxus_shadcn::{Spinner, SpinnerSize};
 
+use crate::components::module_gate::use_enabled_modules;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
 use crate::taxonomy::{ecosystem_by_id, ecosystem_of_case_category, ecosystems};
 use module_blog::server::{list_blog_posts, BlogPostSummary};
 use module_cases::server::{list_cases, CaseSummary};
+#[cfg(feature = "course")]
 use module_course::server::{list_courses, CourseSummary};
+#[cfg(feature = "accounts")]
 use module_forum::server::{list_topics, TopicSummary};
 
 /// 两大生态 pillars：Rust 生态 | AI 生态，各列子领域 chips（链接到领域路由）。
@@ -168,6 +171,7 @@ fn CaseCard(case: CaseSummary) -> Element {
 // ── 课程 ──────────────────────────────────────────────────
 
 /// 课程分区：体系化 Rust / AI 实战课程（付费层级/资源徽章见 M4）。
+#[cfg(feature = "course")]
 #[component]
 pub fn CourseShowcase() -> Element {
   let lang = use_i18n();
@@ -189,6 +193,7 @@ pub fn CourseShowcase() -> Element {
   }
 }
 
+#[cfg(feature = "course")]
 #[component]
 fn CourseShowcaseInner() -> Element {
   let lang = use_i18n();
@@ -209,6 +214,7 @@ fn CourseShowcaseInner() -> Element {
   }
 }
 
+#[cfg(feature = "course")]
 #[component]
 fn CourseCard(course: CourseSummary) -> Element {
   let lang = use_i18n();
@@ -253,9 +259,12 @@ fn CourseCard(course: CourseSummary) -> Element {
 // ── 社区动态 ──────────────────────────────────────────────
 
 /// 社区动态：左「最新博客」（SSR 预取）+ 右「论坛热帖」（DB，use_resource）。
+/// `blog` / `forum`：对应模块是否启用，关掉的一栏不渲染。
 #[component]
-pub fn CommunityFeed() -> Element {
+pub fn CommunityFeed(blog: bool, forum: bool) -> Element {
   let lang = use_i18n();
+  let grid =
+    if blog && forum { "grid grid-cols-1 lg:grid-cols-2 gap-6" } else { "grid grid-cols-1 gap-6" };
   rsx! {
       section { class: "py-20 bg-white dark:bg-slate-950",
           Container {
@@ -263,20 +272,24 @@ pub fn CommunityFeed() -> Element {
                   h2 { class: "text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white", "{t(lang(), \"home.community.title\")}" }
                   p { class: "mt-2 text-slate-600 dark:text-slate-400", "{t(lang(), \"home.community.subtitle\")}" }
               }
-              div { class: "grid grid-cols-1 lg:grid-cols-2 gap-6",
-                  div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-5",
-                      div { class: "flex items-center justify-between mb-3",
-                          h3 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200", "{t(lang(), \"home.community.blog\")}" }
-                          Link { to: Route::BlogIndex {}, class: "text-xs text-[var(--color-primary)] hover:underline", "{t(lang(), \"home.community.blog_all\")}" }
+              div { class: grid,
+                  if blog {
+                      div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-5",
+                          div { class: "flex items-center justify-between mb-3",
+                              h3 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200", "{t(lang(), \"home.community.blog\")}" }
+                              Link { to: Route::BlogIndex {}, class: "text-xs text-[var(--color-primary)] hover:underline", "{t(lang(), \"home.community.blog_all\")}" }
+                          }
+                          SuspenseBoundary { fallback: |_| loading_spinner(), BlogColumn {} }
                       }
-                      SuspenseBoundary { fallback: |_| loading_spinner(), BlogColumn {} }
                   }
-                  div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-5",
-                      div { class: "flex items-center justify-between mb-3",
-                          h3 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200", "{t(lang(), \"home.community.forum\")}" }
-                          Link { to: Route::TopicsIndex {}, class: "text-xs text-[var(--color-primary)] hover:underline", "{t(lang(), \"home.community.forum_all\")}" }
+                  if forum {
+                      div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 p-5",
+                          div { class: "flex items-center justify-between mb-3",
+                              h3 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200", "{t(lang(), \"home.community.forum\")}" }
+                              Link { to: Route::TopicsIndex {}, class: "text-xs text-[var(--color-primary)] hover:underline", "{t(lang(), \"home.community.forum_all\")}" }
+                          }
+                          {forum_column()}
                       }
-                      ForumColumn {}
                   }
               }
           }
@@ -311,6 +324,19 @@ fn BlogColumn() -> Element {
   }
 }
 
+/// 论坛热帖栏（accounts 层）；未编译论坛时为空（`forum` 恒为 false，不会渲染到这里）。
+fn forum_column() -> Element {
+  #[cfg(feature = "accounts")]
+  {
+    rsx! { ForumColumn {} }
+  }
+  #[cfg(not(feature = "accounts"))]
+  {
+    rsx! {}
+  }
+}
+
+#[cfg(feature = "accounts")]
 #[component]
 fn ForumColumn() -> Element {
   let lang = use_i18n();
@@ -358,6 +384,7 @@ fn ForumColumn() -> Element {
 #[component]
 pub fn EcosystemPage(id: String) -> Element {
   let lang = use_i18n();
+  let enabled = use_enabled_modules();
   let Some(eco) = ecosystem_by_id(&id) else {
     return rsx! { widgets::NotFound { message: t(lang(), "eco.not_found") } };
   };
@@ -381,7 +408,7 @@ pub fn EcosystemPage(id: String) -> Element {
           Container {
               h2 { class: "text-xl font-bold text-slate-900 dark:text-white mb-6", "{t(lang(), \"mega.col.domains\")}" }
               div { class: "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4",
-                  for d in eco.domains.iter() {
+                  for d in eco.domains.iter().filter(|d| enabled.iter().any(|e| e == d.module_id)) {
                       Link {
                           key: "{d.id}",
                           to: d.route.clone(),
@@ -397,17 +424,19 @@ pub fn EcosystemPage(id: String) -> Element {
       }
 
       // 该生态精选案例
-      section { class: "py-16 bg-slate-50/60 dark:bg-slate-900/40 border-t border-slate-200/70 dark:border-slate-800",
-          Container {
-              SectionHeader {
-                  title: t(lang(), "home.featured.title"),
-                  subtitle: t(lang(), "home.featured.subtitle"),
-                  all_label: t(lang(), "home.featured.all"),
-                  to: Route::Cases {},
-              }
-              SuspenseBoundary {
-                  fallback: |_| loading_spinner(),
-                  EcosystemCasesInner { eco_id: id.clone() }
+      if enabled.iter().any(|e| e == "cases") {
+          section { class: "py-16 bg-slate-50/60 dark:bg-slate-900/40 border-t border-slate-200/70 dark:border-slate-800",
+              Container {
+                  SectionHeader {
+                      title: t(lang(), "home.featured.title"),
+                      subtitle: t(lang(), "home.featured.subtitle"),
+                      all_label: t(lang(), "home.featured.all"),
+                      to: Route::Cases {},
+                  }
+                  SuspenseBoundary {
+                      fallback: |_| loading_spinner(),
+                      EcosystemCasesInner { eco_id: id.clone() }
+                  }
               }
           }
       }

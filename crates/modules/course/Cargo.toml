@@ -13,7 +13,6 @@ chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
 sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
-module-blog = { path = "../blog" }
 app-core = { path = "../../core" }
 # 购买二维码渲染（client + server 均可用，纯 Rust → SVG；仅 payments UI 用）
 fast_qr = { version = "0.13", default-features = false, features = ["svg"], optional = true }
@@ -45,7 +44,6 @@ server = [
     "dep:percent-encoding",
     "module-payment?/server",
     "widgets/server",
-    "module-blog/server",
     "app-core/server",
     "dep:module-moderation",
 ]

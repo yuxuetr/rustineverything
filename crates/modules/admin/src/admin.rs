@@ -60,6 +60,9 @@ pub fn ForbiddenPanel() -> Element {
 /// 渲染跨模块管理页（如课程权益）而无需让 admin 模块反向依赖业务模块。
 #[component]
 pub fn AdminShell(active: String, children: Element) -> Element {
+  // 课程权益页只在编译了课程层时存在（docs/FEATURE_TIERS.md）。
+  let has_course =
+    app_core::engines::module::default_module_specs().iter().any(|s| s.id == "course");
   rsx! {
       section { class: "min-h-screen bg-slate-50 dark:bg-slate-950",
           div { class: "max-w-7xl mx-auto flex",
@@ -74,7 +77,9 @@ pub fn AdminShell(active: String, children: Element) -> Element {
                       AdminNavLink { href: "/admin/topics", label: "话题".to_string(), key_id: "topics".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/moderation", label: "审核".to_string(), key_id: "moderation".to_string(), active: active.clone() }
                       AdminNavLink { href: "/admin/moderation/settings", label: "审核设置".to_string(), key_id: "moderation-settings".to_string(), active: active.clone() }
-                      AdminNavLink { href: "/admin/entitlements", label: "课程权益".to_string(), key_id: "entitlements".to_string(), active: active.clone() }
+                      if has_course {
+                          AdminNavLink { href: "/admin/entitlements", label: "课程权益".to_string(), key_id: "entitlements".to_string(), active: active.clone() }
+                      }
                   }
               }
               div { class: "flex-1 min-w-0 px-6 lg:px-10 py-8",

@@ -25,6 +25,19 @@
 
 主题、登录方式、审核都是编译进宿主的普通 Rust 代码，不加载运行时插件。
 
+## 功能分层
+
+同一套代码按 Cargo feature 编译出四档站点（设计见 [docs/FEATURE_TIERS.md](docs/FEATURE_TIERS.md)）：
+
+| 档位 | feature 参数 | 内容 | 需要 |
+| --- | --- | --- | --- |
+| basic | `--no-default-features` | 博客、文档、播客、案例、专题、搜索、About、主题 / 明暗 / 中英 | 只要 `BASE_URL`，不用数据库 |
+| 账号 | `--no-default-features --features accounts` | + 登录、论坛、评论、上传、管理后台 | + Postgres、`JWT_SECRET` |
+| 课程 | `--no-default-features --features course` | + 课程、标注、权益后台、Pro 会员 | 同上 |
+| 完整（默认） | 无 | + 在线支付（微信 / 支付宝） | + 商户密钥 |
+
+本地运行某一档：`cd crates/app && dx serve --web --no-default-features --features accounts`（不用默认 feature 时要加 `--web`，否则 dx 判断不出平台）。
+
 ## 快速开始
 
 ```bash
@@ -57,6 +70,7 @@ cargo fmt --all
 cargo clippy --workspace --features server --all-targets -- -D warnings
 cargo test --features server --workspace -- --test-threads=1
 cargo check -p app --target wasm32-unknown-unknown --features web
+scripts/check_tiers.sh   # 四档 × server / web 都要编译通过且无 warning
 ```
 
 ## Tailwind CSS 构建

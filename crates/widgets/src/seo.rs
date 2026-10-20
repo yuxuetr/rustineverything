@@ -59,7 +59,7 @@ pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
   let json_ld = build_json_ld(meta, &canonical);
 
   rsx! {
-      crate::browser::PageTitle { title: meta.title.clone() }
+      crate::browser::PageTitle { title: page_title(&meta.title) }
       if let Some(desc) = meta.description.as_ref() {
           if !desc.is_empty() {
               document::Meta { name: "description", content: "{desc}" }
@@ -110,7 +110,7 @@ pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
   }
 }
 
-/// 站名，作为非文章页 `<title>` 的后缀（与 `Dioxus.toml` / `site.json` 一致）。
+/// 站名，作为所有页面 `<title>` 的后缀（与 `Dioxus.toml` / `site.json` 一致）。
 pub const SITE_NAME: &str = "Rust in Everything";
 
 /// 列表 / 落地页的元信息：`<title>`（`{title} - 站名`）、description、

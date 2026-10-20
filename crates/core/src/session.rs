@@ -125,6 +125,11 @@ pub fn verify_jwt(token: &str) -> crate::error::AppResult<SessionUser> {
   use crate::error::AppError;
   use jsonwebtoken::{decode, DecodingKey, Validation};
 
+  // 不带登录的部署（basic 层）不配 JWT_SECRET：任何 cookie 都按未登录处理（fail closed），
+  // 而不是在请求里 panic。带登录的部署由启动门禁保证已配置。
+  if std::env::var("JWT_SECRET").map_or(true, |s| s.is_empty()) {
+    return Err(AppError::auth("JWT_SECRET 未配置，登录未启用"));
+  }
   let token_data = decode::<Claims>(
     token,
     &DecodingKey::from_secret(get_jwt_secret().as_bytes()),

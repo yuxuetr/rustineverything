@@ -8,7 +8,6 @@ use dioxus_shadcn::{
   badge_class, button_class, card_class, BadgeVariant, Button, ButtonSize, ButtonVariant, Empty,
   EmptyDescription, Input, Spinner, SpinnerSize, UiDensity,
 };
-use module_forum::forum::DiscussionPanel;
 use widgets::Markdown;
 
 fn use_language_ctx() -> Language {
@@ -461,14 +460,17 @@ fn CaseCard(case: CaseSummary) -> Element {
 
 /// 重构 B5：案例详情页拆为 SuspenseBoundary 外壳 + `CaseDetailLoaded`；案例内容
 /// （get_case）由 use_server_future 服务端预取（随 SSR HTML 下发，SEO）。
+///
+/// `footer` 插槽：讨论面板属于论坛模块，由组合根 app 注入（与 docs 同），
+/// cases 不依赖 forum；只在案例存在时渲染。
 #[component]
-pub fn CaseDetailPage(slug: String) -> Element {
+pub fn CaseDetailPage(slug: String, footer: Element) -> Element {
   rsx! {
       section { class: "py-12 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
               SuspenseBoundary {
                   fallback: |_| rsx! { Loading {} },
-                  CaseDetailLoaded { slug: slug.clone() }
+                  CaseDetailLoaded { slug: slug.clone(), footer: footer.clone() }
               }
           }
       }
@@ -476,7 +478,7 @@ pub fn CaseDetailPage(slug: String) -> Element {
 }
 
 #[component]
-fn CaseDetailLoaded(slug: String) -> Element {
+fn CaseDetailLoaded(slug: String, footer: Element) -> Element {
   let lang = use_language_ctx();
   let case_res = use_server_future(use_reactive!(|slug| async move { get_case(slug).await }))?;
 
@@ -487,7 +489,7 @@ fn CaseDetailLoaded(slug: String) -> Element {
             description: case.description.clone(),
             path: format!("/case/{}", case.slug),
         }
-        CaseDetailBody { case }
+        CaseDetailBody { case, footer: footer.clone() }
     },
     Some(Err(_)) => rsx! { widgets::LoadFailed { message: tc(lang, "case.load_failed") } },
     _ => rsx! {
@@ -502,7 +504,7 @@ fn CaseDetailLoaded(slug: String) -> Element {
 }
 
 #[component]
-fn CaseDetailBody(case: Case) -> Element {
+fn CaseDetailBody(case: Case, footer: Element) -> Element {
   let lang = use_language_ctx();
   let category = category_label(lang, &case.category);
   let markdown_id = format!("case:{}", case.slug);
@@ -604,12 +606,7 @@ fn CaseDetailBody(case: Case) -> Element {
               }
           }
 
-          div { class: "mt-10",
-              DiscussionPanel {
-                  resource_kind: "case".to_string(),
-                  resource_path: case.slug,
-              }
-          }
+          div { class: "mt-10", {footer} }
       }
   }
 }

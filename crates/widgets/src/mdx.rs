@@ -101,7 +101,7 @@ pub fn Markdown(props: MarkdownProps) -> Element {
   rsx! {
       // 没有 frontmatter 标题时不设置，免得把页面自己的标题（如文档页）覆盖成空串
       if !metadata.title.is_empty() {
-          crate::browser::PageTitle { title: metadata.title.clone() }
+          crate::browser::PageTitle { title: crate::seo::page_title(&metadata.title) }
       }
 
       div { class: "prose prose-slate dark:prose-invert max-w-none",

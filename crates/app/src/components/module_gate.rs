@@ -18,7 +18,19 @@ use dioxus::router::Link;
 
 use crate::components::view::Container;
 use crate::routes::Route;
-use crate::server::is_module_enabled;
+use crate::server::{enabled_module_ids, is_module_enabled};
+
+/// 已启用模块 id：编译进来（FEATURE_TIERS DL2）且 site.json 未关。
+/// server fn 返回前按编译进来的全集渲染，SSR 与 hydration 首帧一致、不闪烁。
+pub fn use_enabled_modules() -> Vec<String> {
+  fn compiled() -> Vec<String> {
+    app_core::engines::module::default_module_specs().into_iter().map(|s| s.id).collect()
+  }
+  let res =
+    use_resource(|| async move { enabled_module_ids().await.unwrap_or_else(|_| compiled()) });
+  let enabled = res.read().as_ref().cloned().unwrap_or_else(compiled);
+  enabled
+}
 
 #[component]
 pub fn ModuleGate(id: String, children: Element) -> Element {

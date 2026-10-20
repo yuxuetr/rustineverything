@@ -16,12 +16,12 @@ use dioxus_shadcn::{
 
 use crate::components::ecosystem_menu::EcosystemMenu;
 use crate::components::lang_picker::LangPicker;
+use crate::components::module_gate::use_enabled_modules;
 use crate::components::theme_picker::ThemePicker;
 use crate::components::user_menu::UserMenu;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
-use crate::server::enabled_module_ids;
 use crate::taxonomy::ecosystems;
 use module_search::search::SearchButton;
 
@@ -42,25 +42,15 @@ pub fn ClassicShell() -> Element {
   let t_podcast = t(lang(), "nav.podcast");
   let t_forum = t(lang(), "nav.forum");
 
-  // Phase 3.4：站点模块开关。默认全开（避免首屏闪烁）。
-  //
-  // Phase 8.7：fallback 列表改从 `default_module_specs()` 单一源派生，
-  // 不再在 navbar 里硬编码 11 个 module id —— 加 12th 模块只动 ModuleSpec
-  // 一处即可在 nav 出现。
-  fn all_default_ids() -> Vec<String> {
-    app_core::engines::module::default_module_specs().into_iter().map(|s| s.id).collect()
-  }
-  let enabled_res =
-    use_resource(
-      || async move { enabled_module_ids().await.unwrap_or_else(|_| all_default_ids()) },
-    );
-  let enabled: Vec<String> = enabled_res.read().as_ref().cloned().unwrap_or_else(all_default_ids);
+  // Phase 3.4：站点模块开关（编译进来且 site.json 未关）。
+  let enabled = use_enabled_modules();
   let on_blog = enabled.iter().any(|s| s == "blog");
   let on_podcast = enabled.iter().any(|s| s == "podcast");
   let on_cases = enabled.iter().any(|s| s == "cases");
   let on_course = enabled.iter().any(|s| s == "course");
   let on_forum = enabled.iter().any(|s| s == "forum");
   let on_docs = enabled.iter().any(|s| s == "docs");
+  let on_about = enabled.iter().any(|s| s == "about");
   // 页脚「专题」列：5 个内容板块（与 taxonomy 的领域入口一致，按开关显示）。
   let boards: Vec<(Route, &'static str)> = [
     ("embedded", Route::Embedded {}, "nav.embedded"),
@@ -196,7 +186,7 @@ pub fn ClassicShell() -> Element {
                           // User avatar / Sign In
                           if let Some(ref u) = session_user() {
                               UserMenu { user: u.clone(), compact: false, show_my_topics: on_forum }
-                          } else {
+                          } else if cfg!(feature = "accounts") {
                               Button {
                                   r#type: "button",
                                   variant: ButtonVariant::Ghost,
@@ -332,6 +322,9 @@ pub fn ClassicShell() -> Element {
                               }
                               // /feed.xml 是服务端路由，不走客户端 Router
                               a { href: "/feed.xml", class: "hover:text-[var(--color-primary)] transition-colors", "{t(lang(), \"footer.rss\")}" }
+                              if on_about {
+                                  Link { to: Route::About {}, class: "hover:text-[var(--color-primary)] transition-colors", "{t(lang(), \"footer.about\")}" }
+                              }
                           }
                       }
                   }

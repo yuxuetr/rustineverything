@@ -108,7 +108,12 @@ RUN cd crates/app && npm run build
 
 # 2. dx bundle：web 全栈 + release 优化，
 #    产物在 /tmp/target/dx/app/release/web/{public,server}
-RUN cd crates/app && dx bundle --platform web --release --package app
+#    功能分层（docs/FEATURE_TIERS.md）：默认完整站点；其他档位用 build-arg 传 feature 参数，如
+#      --build-arg APP_FEATURES="--no-default-features"                     # basic（无库）
+#      --build-arg APP_FEATURES="--no-default-features --features accounts" # 博客 + 论坛
+#      --build-arg APP_FEATURES="--no-default-features --features course"   # + 课程（无在线支付）
+ARG APP_FEATURES=""
+RUN cd crates/app && dx bundle --platform web --release --package app ${APP_FEATURES}
 
 # 3. 收敛产物到统一目录，方便 runtime 阶段单层 COPY
 RUN mkdir -p /out \

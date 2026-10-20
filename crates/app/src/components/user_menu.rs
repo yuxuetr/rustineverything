@@ -48,7 +48,10 @@ pub fn UserMenu(user: SessionUser, compact: bool, show_my_topics: bool) -> Eleme
               if show_my_topics {
                   DropdownItem { onclick: move |_| { nav.push(Route::MyTopics {}); }, "{t(lang(), \"user.my_topics\")}" }
               }
-              DropdownItem { onclick: move |_| { nav.push(Route::MyAnnotations {}); }, "{t(lang(), \"user.my_annotations\")}" }
+              // 标注属于 course 层（FEATURE_TIERS DL3）。
+              if cfg!(feature = "course") {
+                  DropdownItem { onclick: move |_| { nav.push(Route::MyAnnotations {}); }, "{t(lang(), \"user.my_annotations\")}" }
+              }
               // PM4：在线支付关闭时隐藏「我的订单」入口（路由保留）。
               if cfg!(feature = "payments") {
                   DropdownItem { onclick: move |_| { nav.push(Route::MyOrders {}); }, "{t(lang(), \"user.my_orders\")}" }

@@ -323,6 +323,7 @@ fn topic_to_summary(
 // Server functions
 // =============================================================
 
+#[cfg(feature = "server")]
 const PAGE_SIZE: u64 = 20;
 
 #[post("/api/topics/list")]

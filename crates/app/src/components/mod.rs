@@ -1,5 +1,8 @@
+#[cfg(feature = "course")]
 pub mod admin_entitlements;
+#[cfg(feature = "accounts")]
 pub mod auth_modal;
+#[cfg(feature = "accounts")]
 pub mod comment;
 pub mod ecosystem_menu;
 pub mod hero;

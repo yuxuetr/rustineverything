@@ -13,7 +13,7 @@ mod taxonomy;
 use crate::components::theme_picker::use_theme_version_provider;
 use crate::i18n::init_i18n;
 use crate::routes::Route;
-use crate::server::{get_aggregated_theme_css, get_current_user};
+use crate::server::get_aggregated_theme_css;
 use app_core::session::SessionUser;
 use module_search::search::{use_search_open_provider, SearchModal};
 
@@ -85,7 +85,22 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
 })();
 "#;
 
+/// 本次编译带进来的模块 id（docs/FEATURE_TIERS.md DL2）。导航 / ModuleGate / sitemap /
+/// 搜索只认这个集合；site.json 的模块开关只能在其中再关。
+fn compiled_modules() -> Vec<&'static str> {
+  let mut ids =
+    vec!["blog", "podcast", "cases", "docs", "embedded", "ai", "web3", "wasm", "cli", "about"];
+  if cfg!(feature = "accounts") {
+    ids.push("forum");
+  }
+  if cfg!(feature = "course") {
+    ids.push("course");
+  }
+  ids
+}
+
 fn main() {
+  app_core::engines::module::register_compiled_modules(compiled_modules());
   // Phase 2.1 / 2.2: 启动期一次性注册 MDX 嵌入组件。
   // 在 server 和 client 两边都调用，用于 SSR + hydration 双边 registry 一致。
   // 1) widgets 内置 9 个默认组件 (YouTube / Bilibili / 5 色 / Underline / Strikethrough)
@@ -121,7 +136,7 @@ fn main() {
   });
 
   // O10：课程同样经注册表进索引。只收标题 / 简介 / 标签——课时正文是付费内容，不进公开搜索。
-  #[cfg(feature = "server")]
+  #[cfg(all(feature = "server", feature = "course"))]
   app_core::engines::doc_source::register_doc_source(|| {
     module_course::server::scan_courses(&module_course::server::get_courses_root())
       .into_iter()
@@ -160,7 +175,9 @@ fn main() {
       .try_init();
 
     // 安全门禁：启动时必须提供关键环境变量，避免 fallback 到不安全默认值
-    // 1) JWT_SECRET 必须配置且非 placeholder（panic on missing / 命中模板片段）
+    // 1) JWT_SECRET 必须配置且非 placeholder（panic on missing / 命中模板片段）。
+    //    只有带登录的构建（accounts 层）需要；basic 层不签发也不认 JWT。
+    #[cfg(feature = "accounts")]
     let _ = app_core::session::get_jwt_secret();
     // 2) BASE_URL 必须配置为可访问的公网 / 内网地址，且不能仍是 .env.example 占位
     // S9 豁免：启动门禁有意 fail-fast，缺失即 panic 是安全策略而非疏忽。
@@ -168,82 +185,112 @@ fn main() {
     let base_url =
       std::env::var("BASE_URL").expect("BASE_URL 未配置，请在环境变量或 .env 中设置 BASE_URL");
     app_core::session::assert_not_placeholder("BASE_URL", &base_url);
+    #[cfg(feature = "accounts")]
     let cookie_is_secure = base_url.starts_with("https://");
     // S5（风险 R2）：独立数据加密密钥。可选；配了就不能是占位值。
     // 未配置时 crypto 模块会回退到 JWT_SECRET 派生并 warn。
+    #[cfg(feature = "accounts")]
     if let Ok(dek) = std::env::var("DATA_ENCRYPTION_KEY") {
       if !dek.is_empty() {
         app_core::session::assert_not_placeholder("DATA_ENCRYPTION_KEY", &dek);
       }
     }
 
-    // 3) 提前初始化数据库连接池，后续 server fn 都走共享连接。
-    //    DATABASE_URL 也按 placeholder 校验，避免「忘了改 docker-compose 密码」
-    //    导致 sqlx 拒绝认证的难以排查的失败。
-    //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
-    //    成功连上数据库后再跑 sea-orm-migration（Phase 7.1）。
-    // S3（风险 R3）：启动结果记入健康快照（/healthz 暴露）；
-    // `STRICT_MIGRATION=1` 时迁移/连接失败 fail-fast，避免带着不一致
-    // schema 静默接受写请求（生产推荐开启）。
-    use crate::server::health::{set_startup_health, MigrationStatus, StartupHealth};
-    let strict_migration = std::env::var("STRICT_MIGRATION").map(|v| v == "1").unwrap_or(false);
+    // 3) 数据库只在 accounts 层使用（登录 / 论坛 / 评论 / 课程）。
+    #[cfg(feature = "accounts")]
+    {
+      // 3) 提前初始化数据库连接池，后续 server fn 都走共享连接。
+      //    DATABASE_URL 也按 placeholder 校验，避免「忘了改 docker-compose 密码」
+      //    导致 sqlx 拒绝认证的难以排查的失败。
+      //    连接失败仅在日志提示，不阻塞启动，以保证静态页面仍可访问。
+      //    成功连上数据库后再跑 sea-orm-migration（Phase 7.1）。
+      // S3（风险 R3）：启动结果记入健康快照（/healthz 暴露）；
+      // `STRICT_MIGRATION=1` 时迁移/连接失败 fail-fast，避免带着不一致
+      // schema 静默接受写请求（生产推荐开启）。
+      use crate::server::health::{set_startup_health, MigrationStatus, StartupHealth};
+      let strict_migration = std::env::var("STRICT_MIGRATION").map(|v| v == "1").unwrap_or(false);
 
-    if let Ok(db_url) = std::env::var("DATABASE_URL") {
-      app_core::session::assert_not_placeholder("DATABASE_URL", &db_url);
-      match app_core::db::init_pool(&db_url).await {
-        Err(e) => {
-          tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)");
-          if strict_migration {
-            panic!("STRICT_MIGRATION=1：DB 连接失败，拒绝启动: {}", e);
+      if let Ok(db_url) = std::env::var("DATABASE_URL") {
+        app_core::session::assert_not_placeholder("DATABASE_URL", &db_url);
+        match app_core::db::init_pool(&db_url).await {
+          Err(e) => {
+            tracing::error!(error = %e, "startup: DB pool init failed (will retry on demand)");
+            if strict_migration {
+              panic!("STRICT_MIGRATION=1：DB 连接失败，拒绝启动: {}", e);
+            }
+            set_startup_health(StartupHealth {
+              db_configured: true,
+              db_connected: false,
+              migrations: MigrationStatus::Skipped,
+            });
           }
-          set_startup_health(StartupHealth {
-            db_configured: true,
-            db_connected: false,
-            migrations: MigrationStatus::Skipped,
-          });
-        }
-        Ok(()) => {
-          tracing::info!("startup: DB pool initialized");
-          // 自动迁移：用同一连接池跑 sea-orm-migration。
-          // 默认失败仅日志 + /healthz 报 degraded；STRICT_MIGRATION=1 时退出。
-          let mig_status = match app_core::db::get_or_init_pool().await {
-            Err(e) => {
-              tracing::error!(error = %e, "startup: cannot get pool for migration");
-              if strict_migration {
-                panic!("STRICT_MIGRATION=1：迁移前取连接池失败，拒绝启动: {}", e);
-              }
-              MigrationStatus::Skipped
-            }
-            Ok(db) => {
-              use migration::MigratorTrait;
-              match migration::Migrator::up(&db, None).await {
-                Ok(()) => {
-                  tracing::info!("startup: schema migrations applied");
-                  MigrationStatus::Applied
+          Ok(()) => {
+            tracing::info!("startup: DB pool initialized");
+            // 自动迁移：用同一连接池跑 sea-orm-migration。
+            // 默认失败仅日志 + /healthz 报 degraded；STRICT_MIGRATION=1 时退出。
+            let mig_status = match app_core::db::get_or_init_pool().await {
+              Err(e) => {
+                tracing::error!(error = %e, "startup: cannot get pool for migration");
+                if strict_migration {
+                  panic!("STRICT_MIGRATION=1：迁移前取连接池失败，拒绝启动: {}", e);
                 }
-                Err(e) => {
-                  tracing::error!(error = %e, "startup: migration failed");
-                  if strict_migration {
-                    panic!("STRICT_MIGRATION=1：schema 迁移失败，拒绝启动: {}", e);
+                MigrationStatus::Skipped
+              }
+              Ok(db) => {
+                use migration::MigratorTrait;
+                match migration::Migrator::up(&db, None).await {
+                  Ok(()) => {
+                    tracing::info!("startup: schema migrations applied");
+                    MigrationStatus::Applied
                   }
-                  MigrationStatus::Failed
+                  Err(e) => {
+                    tracing::error!(error = %e, "startup: migration failed");
+                    if strict_migration {
+                      panic!("STRICT_MIGRATION=1：schema 迁移失败，拒绝启动: {}", e);
+                    }
+                    MigrationStatus::Failed
+                  }
                 }
               }
-            }
-          };
-          set_startup_health(StartupHealth {
-            db_configured: true,
-            db_connected: true,
-            migrations: mig_status,
-          });
+            };
+            set_startup_health(StartupHealth {
+              db_configured: true,
+              db_connected: true,
+              migrations: mig_status,
+            });
+          }
         }
+      } else {
+        tracing::warn!(
+          "startup: DATABASE_URL not set; DB-backed features will error on first call"
+        );
+        set_startup_health(StartupHealth {
+          db_configured: false,
+          db_connected: false,
+          migrations: MigrationStatus::Skipped,
+        });
       }
-    } else {
-      tracing::warn!("startup: DATABASE_URL not set; DB-backed features will error on first call");
+    }
+    // basic 层：不连库（/healthz 报 db=disabled，属正常）；也没有管理员能触发
+    // `/api/search/reindex`，启动时增量刷新一次索引（按 mtime 差分，开销小）。
+    #[cfg(not(feature = "accounts"))]
+    {
+      use crate::server::health::{set_startup_health, MigrationStatus, StartupHealth};
+      tracing::info!("startup: built without the accounts feature; no database");
       set_startup_health(StartupHealth {
         db_configured: false,
         db_connected: false,
         migrations: MigrationStatus::Skipped,
+      });
+      tokio::spawn(async {
+        match module_search::engine::reindex_incremental().await {
+          Ok(r) => tracing::info!(
+            upserts = r.upserts,
+            deletes = r.deletes,
+            "startup: search index refreshed"
+          ),
+          Err(e) => tracing::warn!(error = %e, "startup: search index refresh failed"),
+        }
       });
     }
 
@@ -284,6 +331,7 @@ fn main() {
     let router = dioxus::server::router(App)
       // S3：健康检查（ok/degraded），供 LB / 监控 / 部署脚本判活。
       .route("/healthz", get(crate::server::health::healthz));
+    #[cfg(feature = "accounts")]
     let router = crate::server::auth_routes::mount(router, cookie_is_secure);
     let router = crate::server::static_assets::mount(router, assets_root);
     let router = crate::server::pay_routes::mount(router);
@@ -385,6 +433,19 @@ fn HeadAssets() -> Element {
   }
 }
 
+/// 登录弹窗（accounts 层）；basic 层没有登录入口，渲染为空。
+fn auth_modal(show: Signal<bool>) -> Element {
+  #[cfg(feature = "accounts")]
+  {
+    rsx! { crate::components::auth_modal::AuthModal { show } }
+  }
+  #[cfg(not(feature = "accounts"))]
+  {
+    let _ = show;
+    rsx! {}
+  }
+}
+
 #[component]
 fn App() -> Element {
   init_i18n();
@@ -428,14 +489,17 @@ fn App() -> Element {
   // use_server_future。理由：`get_current_user` 是每请求的登录态（读 session
   // cookie）；若随 SSR 预渲染会把个性化用户信息烘进页面 HTML，与 CDN /
   // 代理层的公共缓存（sitemap/feed 已用 public Cache-Control）相冲，且有信息泄露风险。
-  let mut user_signal = user;
-  use_effect(move || {
-    spawn(async move {
-      if let Ok(Some(u)) = get_current_user().await {
-        user_signal.set(Some(u));
-      }
+  #[cfg(feature = "accounts")]
+  {
+    let mut user_signal = user;
+    use_effect(move || {
+      spawn(async move {
+        if let Ok(Some(u)) = crate::server::get_current_user().await {
+          user_signal.set(Some(u));
+        }
+      });
     });
-  });
+  }
 
   // 拉取当前主题 CSS（内置主题）。订阅 theme_version 以便切换重拉。
   //
@@ -482,7 +546,7 @@ fn App() -> Element {
       Router::<Route> {}
 
       // Auth modal (rendered at root level to avoid stacking context issues)
-      crate::components::auth_modal::AuthModal { show: show_auth }
+      {auth_modal(show_auth)}
 
       // 全局搜索模态框(在根挂一次,任意页面都可 Cmd+K 拉起)
       SearchModal {}

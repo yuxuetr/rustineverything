@@ -12,8 +12,6 @@ chrono = { workspace = true, features = ["serde"] }
 sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
 app-core = { path = "../../core" }
-module-blog = { path = "../blog" }
-module-forum = { path = "../forum" }
 tracing = { workspace = true }
 
 [dev-dependencies]
@@ -24,5 +22,4 @@ server = [
     "dioxus/server",
     "dep:serde_yaml",
     "widgets/server",
-    "module-forum/server",
 ]
