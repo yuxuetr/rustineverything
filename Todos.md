@@ -159,7 +159,7 @@
 - [x] `cases.category` → 生态派生映射（taxonomy::ecosystem_of_case_category，单一来源）— 提交 `feat(taxonomy): ecosystem landing pages`
 - [x] 生态落地页 `/ecosystem/:id`（生态简介 + 领域入口 + 该生态精选案例过滤）；pillars 加「进入生态」入口
 - [x] 领域 board（/embedded /ai /web3 /wasm /cli）保留为领域落地页（M1 起即由导航/pillars 指向）
-- [ ] 延后（内容相关）：`ecosystem/domain` 标签贯通 docs/blog/course；`/ai` 子领域 tag 化筛选（需先给 ai 文章打 llm/inference/agent/rust-ai 标签）
+- 不做（当前版本，2026-10-20 重估）：`ecosystem/domain` 标签贯通 docs/blog/course、`/ai` 子领域 tag 筛选。`/ai` 只有 1 篇文章（candle-local-llm，已带 llm/inference 标签），各领域 1–2 篇、博客 2 篇、课程 1 门，筛选没有可筛的东西。重估条件：`[ "$(find assets/topics/ai -name index.md | wc -l)" -ge 8 ]` 退出码为 0（4 个子领域各约 2 篇）。已反向验证：现状为 1，造 8 篇时为 0
 
 ## M4 — 课程付费地基（不接网关也能线下售卖）
 - [x] `course.yaml` 加 `access_tier`(free|paid|pro)/`price`/`currency`；Lesson frontmatter 加 `preview`（首页 CourseCard 显价格徽章；rust-basics 示例 paid）— 提交 `feat(course): access tier + preview metadata`
@@ -185,7 +185,7 @@
 ## M6 — Pro 订阅会员 ✅
 - [x] **M6a** memberships 表 + 实体 + 迁移；is_pro_member；纯函数 can_access_lesson（pro 课程允许有效会员）接入 get_lesson；单测 — 提交 `feat(course): Pro membership model + access control`
 - [x] **M6b** my_membership + admin 授予/续期/撤销/列表 + Admin「Pro 会员」区块 + 我的订单页会员横幅 — 提交 `feat(pay): Pro membership management + display`
-- [ ] 余项（需网关/订阅模型）：会员**自助购买**（订阅下单，扩展 order 产品类型）+ 自动续费
+- 不做（当前版本，2026-10-20 重估）：会员自助购买与自动续费。Pro 会员只解锁 `access_tier: pro` 的课程，而现在没有这种课程（唯一的付费课 rust-basics 是 `paid`），卖会员等于卖一个什么也不解锁的东西。下单地基已就绪（`orders.product_kind`，打赏阶段加的），到时做一次性购买 N 个月只需加一个 `ProductKind`。重估条件：`grep -lqE '^access_tier: *pro' assets/courses/*/course.yaml` 退出码为 0。已反向验证：现状为 1，加一门 pro 课时为 0
 - 当前可用：运营在 /admin/entitlements 手动开通 Pro 会员（解锁全部 pro 课程）。
 
 ### 依赖与排序
@@ -539,4 +539,11 @@
   - 完成（10d8286）：购买弹窗、付费墙、「在线购买未开通」提示、我的订单接入中英文；`create_order` / `query_order` 面向用户的错误改返回 `pay.err.*` key，弹窗经 `t()` 翻译（非 key 的网关原文原样显示）。`site_lang=en` 实测：弹窗、付费墙、订单页无中文，未登录点支付显示 “Please sign in to buy.”。仍为中文（当前版本不做）：课时页外框（如「← 返回课程目录」）与标注——课时内容本身是中文；网关返回的错误原文（如「Stripe 下单失败: …」）面向运维
 - [x] I6 — Stripe 测试模式端到端（下单 → 支付 → 回调发货 → 对账 → 退款）。**需要作者提供 `sk_test_` 密钥与 webhook secret**
   - 完成（2026-10-20，本地 dx + Stripe 测试模式，`stripe listen` 转发 webhook）：纽约时区英文界面购买 → 跳 Stripe Checkout（$14.99）→ 测试卡 4242 付款 → 回到我的订单显示 Paid，课程显示已拥有、锁定课节解锁；订单 USD 1499、存 `pi_` 流水号、写 purchase 权益，webhook 应答 200。停掉 webhook 转发后再付一单：订单停在 pending，约 2 分钟后对账经 PaymentIntent 搜索回填并发货。管理员退款：Stripe 上退款 succeeded（1499 usd，metadata 带单号），本地订单 refunded、purchase 权益撤销，重复退款被拒。未付款的单对账时保持 pending，无告警。尚未验证：支付宝 / 微信渠道下的 Stripe（需在 Stripe 后台开通）与生产域名的 webhook
+
+### 阶段 D — 上线配置补全（2026-10-20 重估）
+重估结论：功能侧没有现在该做的（M3、M6 见上，均写了重估条件）。剩下的上线阻碍是外部条件（商户号、公网域名、Stripe 正式 webhook），但照着仓库文档部署时有两处会卡住，属于现在能修的：
+1. **支付宝 / 微信的环境变量没有写进部署文档。** `.env.example` 只有 Stripe 段；`PAYMENT_SPEC.md` §8 漏了 `WECHAT_PLATFORM_PUBLIC_KEY`（代码必填，缺了微信不启用）；`DEPLOY_GUIDE.md` 完全没提支付（回调地址、Stripe webhook 事件、后台开通支付宝 / 微信）。
+2. **配置错了没有任何提示。** 三个网关的 `config()` 在缺项或值非法（如 `WECHAT_API_V3_KEY` 不是 32 字节、密钥不是 base64）时都只返回 `None`，启动日志不说哪些网关启用了，下单时只报「未配置」，运维无从知道是哪一项。
+- [ ] D1 — 启动时按网关打一行日志：已启用 / 未配置（相关变量都没设）/ 配置有误（设了一部分，列出缺的变量名；都设了仍失败则说值无效）。只输出变量名，不输出值。验收：单测覆盖三种状态；本地启动日志能看到 stripe 已启用
+- [ ] D2 — 文档：`.env.example` 补支付宝 / 微信段；`PAYMENT_SPEC.md` §8 补 `WECHAT_PLATFORM_PUBLIC_KEY` 与密钥格式；`DEPLOY_GUIDE.md` 新增「在线支付」一节（features、回调地址、Stripe webhook、上线前检查）。验收：文档里的变量名与代码中读取的完全一致（`grep` 对比）
 
