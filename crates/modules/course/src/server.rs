@@ -1310,6 +1310,7 @@ pub async fn list_entitlements() -> Result<Vec<EntitlementInfo>, ServerFnError> 
 }
 
 /// server-only：写入/刷新权益（幂等）。供 admin 授予与支付回调发货共用，不做鉴权。
+/// 管理员授予覆盖已有来源；购买（`purchase`）已有权益时不动。
 #[cfg(feature = "server")]
 async fn grant_entitlement_internal(
   db: &sea_orm::DatabaseConnection,
@@ -1326,13 +1327,18 @@ async fn grant_entitlement_internal(
     source: Set(source.to_string()),
     granted_at: Set(Utc::now().fixed_offset()),
   };
+  let mut on_conflict =
+    OnConflict::columns([entitlement::Column::UserId, entitlement::Column::CourseSlug]);
+  // H3：购买不覆盖已有来源。退款只删 source=purchase，若购买把 admin_grant
+  // 改成了 purchase，退款会连管理员授予的权限一起删掉。
+  if source == "purchase" {
+    on_conflict.do_nothing();
+  } else {
+    on_conflict.update_columns([entitlement::Column::Source, entitlement::Column::GrantedAt]);
+  }
   entitlement::Entity::insert(am)
-    .on_conflict(
-      OnConflict::columns([entitlement::Column::UserId, entitlement::Column::CourseSlug])
-        .update_columns([entitlement::Column::Source, entitlement::Column::GrantedAt])
-        .to_owned(),
-    )
-    .exec(db)
+    .on_conflict(on_conflict)
+    .exec_without_returning(db)
     .await
     .map_err(|e| ServerFnError::new(e.to_string()))?;
   Ok(())
