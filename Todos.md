@@ -573,7 +573,8 @@
 
 ### 阶段 H — 支付与安全加固（2026-10-20 审计）
 评估与设计见 [`docs/AUDIT_2026-10-20.md`](docs/AUDIT_2026-10-20.md) §2；不做的项与重估条件见 §4。
-- [ ] H1 — 退款订单不得被成功回调改回 paid：`claim_paid` 只认领 `pending` / `closed`，`decide` 对 `refunded` 返回 `AckRefunded`。验收：单测在旧逻辑下变红
+- [x] H1 — 退款订单不得被成功回调改回 paid：`claim_paid` 只认领 `pending` / `closed`，`decide` 对 `refunded` 返回 `AckRefunded`。验收：单测在旧逻辑下变红
+  - 完成（b162734）：新增 `NotifyDecision::AckRefunded`（确认收到 + pay_audit 告警，不认领不发货）；认领条件 UPDATE 由 `!= paid` 改为 `IN (pending, closed)`。单测 `refunded_order_acks_without_claim_or_delivery` 在旧逻辑下编译失败 / 会认领并发货。`PAYMENT_SPEC.md` §9 同步
 - [ ] H2 — Stripe `charge.refunded`（全额）与 `charge.dispute.created` → 订单 `paid → refunded` + 撤销 purchase 权益；与管理员退款共用 `mark_refunded`；DEPLOY_GUIDE / PAYMENT_SPEC 补 webhook 事件。验收：本地自签 webhook 实测两种事件撤销权益，重放幂等，部分退款不撤销
 - [ ] H3 — 购买发货冲突时不覆盖已有权益来源（保护 admin_grant）。验收：先赠后买再退款，权限仍在
 - [ ] H4 — `/api/orders/create`、`/api/orders/tip` 归入严格限流桶。验收：`classify_path` 单测
