@@ -549,3 +549,20 @@
 - [x] D2 — 文档：`.env.example` 补支付宝 / 微信段；`PAYMENT_SPEC.md` §8 补 `WECHAT_PLATFORM_PUBLIC_KEY` 与密钥格式；`DEPLOY_GUIDE.md` 新增「在线支付」一节（features、回调地址、Stripe webhook、上线前检查）。验收：文档里的变量名与代码中读取的完全一致（`grep` 对比）
   - 完成（0cbaa55）：`.env.example` 支付段重写（原 Stripe 段错放在 LLM 设置下，移回来；补支付宝 / 微信全部变量、密钥格式、32 字节约束）；`PAYMENT_SPEC.md` §8 补 `WECHAT_PLATFORM_PUBLIC_KEY`，标题里不实的「启动期 assert_not_placeholder 校验」改为启动日志；`DEPLOY_GUIDE.md` 新增 §7 在线支付（各网关变量与回调地址、启动日志怎么看、Stripe 正式模式 webhook 与开通支付宝 / 微信、上线检查），原 §7–§12 顺延，安全 checklist 加一行。三份文档里的变量名与 `crates/modules/payment/src` 读取的逐一比对一致
 - 阶段 D 完成：D1–D2。余下上线事项都要外部条件：支付宝 / 微信商户号与真实付款验证、生产域名与 Stripe 正式 webhook、公网环境的 CSP / healthz / XFF 检查、关于页文案
+
+### 阶段 C — 默认配色改为石墨 + 青色（2026-10-20）
+作者在四套候选（现状橘色 / 石墨 + 青色 / 板岩 + 靛蓝 / 石墨 + 深铁锈红）的亮暗截图里选了石墨 + 青色。现状的问题：
+1. **整站偏暖。** 中性色是 stone（暖灰），主色 orange-600 饱和度高，观感偏生活类站点；科技感主要来自冷灰中性色。
+2. **默认主题名不副实。** 主题菜单显示 "Ocean"，实际是橘色。换成青色后名字正好对上，id 与 label 不改（site.json 与访客 cookie 照旧有效）。
+3. **换主题换不干净。** `tailwind-input.css` 把所有 `blue-*` 类映射成橘色，另有几处手写的橘色 / 蓝色强调。这些不跟随 `--primary`，切到 Catppuccin 等主题后仍是橘色。
+
+设计：
+- 中性色 stone → zinc：`tailwind-input.css` 的 `slate-*` 映射改指 zinc，`:root` / `.dark` 默认 token 与 `ocean.css` 的中性色取 zinc 同一档位（档位不变，只换色阶）。
+- 主色：亮色 cyan-700（白字，对白底 ≥ 4.5:1），暗色 cyan-400（字用 zinc-950）。ring、chart-1、sidebar-primary 同步换。
+- 删掉 `blue → orange` 映射，`blue-*` 恢复为真正的蓝色：NOTE 提示框、标注色板里的「blue」本来就该是蓝色。
+- 手写的「强调色」改用 `primary`（标题悬停、案例详情分类标签、正文链接）。分类徽章（案例分类、搜索结果类型）是分类色，不是强调色，保持原样；amber 用作警告提示的也保持原样。
+- sunset / catppuccin 两个主题不动。手写的 `slate-*` 类在这两个主题下会从 stone 变成 zinc，差别很小，可以接受。
+
+- [ ] C1 — 默认 token、`ocean.css`、中性色映射改为 zinc + cyan，删掉 blue→orange 映射；`theme.rs` 单测改为断言 zinc / cyan；`THEME_SPEC.md` 同步。验收：单测在旧值下变红；重建 Tailwind 后课程页主按钮亮色为 cyan-700、暗色为 cyan-400
+- [ ] C2 — 手写强调色改用 `primary`（`routes/mod.rs` 标题悬停、`cases.rs` 详情分类标签、`mdx.rs` 正文链接）。验收：仓库里除分类徽章和警告提示外，不再有 `orange-*` / `blue-*` 的手写强调色
+- [ ] C3 — 走查：首页、生态页、课程详情 / 课时、案例、博客正文、搜索、论坛、购买弹窗、管理后台，亮暗各截图；检查主按钮、链接、焦点环对比度。验收：无残留橘色强调，暗色下主按钮文字清晰
