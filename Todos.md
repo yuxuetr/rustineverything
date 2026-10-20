@@ -506,7 +506,8 @@
 - [x] L4 — `accounts` 层：论坛 / 评论 / 上传 / 管理后台可选依赖，页面 404 桩，登录入口与启动校验按 feature。验收：basic 不配 `DATABASE_URL` / `JWT_SECRET` 能启动并浏览内容页，`/topics` `/admin` 404；完整构建不变
   - 完成（06ab3dc）：论坛 / 评论 / 管理后台 / 上传改可选依赖，`accounts` feature，`course` 隐含它，默认构建不变。basic 层：启动不校验 `JWT_SECRET` / `DATA_ENCRYPTION_KEY`、不连库不迁移（`/healthz` 报 `db=disabled`，原设计即视为正常）；不注册登录路由与 auth server fn，无登录按钮 / 弹窗；论坛与管理后台路由 404（`routes/accounts.rs` + `absent_pages!`）；文档 / 博客 / 案例的讨论面板与博客评论区不渲染。顺带修两处 basic 才暴露的问题：搜索在论坛关闭时仍去连库取话题（改为先看模块开关）；basic 没有管理员能调 `/api/search/reindex`，启动时做一次增量刷新（实测旧索引落后 17 篇）。`verify_jwt` 在未配 `JWT_SECRET` 时返回错误而不是在请求里 panic（伪造 session cookie 能走到这条路径）。验收：停 `rie-postgres`、`JWT_SECRET` / `DATABASE_URL` 置空跑 basic，内容页 200，论坛 / 管理 / 课程 404，论坛 API 未注册，伪造 cookie 返回错误、日志无 panic，浏览器无登录 / 评论 / 讨论 / 「话题」筛选；完整构建对照：同样路径 200、评论 / 讨论 / 登录都在，标题脚本通过，工作区测试与 clippy 通过
   - 注意：本地两档共用 `crates/app/data/search-index`，basic 启动刷新会删掉话题 / 课程条目；切回完整版前删掉该目录让它全量重建。生产只部署一档，不受影响
-- [ ] L5 — About 页：`/about` 渲染 `assets/pages/about.md`，不存在时 404，页脚按存在与否显示
+- [x] L5 — About 页：`/about` 渲染 `assets/pages/about.md`，不存在时 404，页脚按存在与否显示
+  - 完成（1cce4d9）：`/about` 读 `assets/pages/about.md`，frontmatter 的 title / description 经 `PageMeta` 进 head（`关于 - Rust in Everything`），文件不存在 404、读失败 500。`about` 作为内置模块登记：页脚「社区」列链接与 sitemap 条目随 site.json 开关。默认内容只描述站点覆盖的内容，需作者按需改写。顺带发现：`widgets::Markdown` 会用 frontmatter 标题覆盖页面 `<title>`，所以 About 传入去掉 frontmatter 的正文（博客文章页的 `<title>` 也因此不带站名，未改）。验收：200 / 标题 / description / sitemap 1 条 / 页脚链接；移走文件 404、放回 200；标题脚本通过
 - [ ] L6 — 分层门禁 `scripts/check_tiers.sh`（四档 × server / web 两端 `cargo check`）接入 CI，Dockerfile `ARG FEATURES`，文档。验收：反向验证（故意加一处无门控引用，脚本失败）
 - [ ] L7 — 测 basic 与完整版的二进制大小 / 依赖数 / 冷构建时间，决定是否拆 app-core（DL5），结论写回设计文档
 - [ ] T — 打赏（T1–T4，见设计文档 §6）：**待作者确认 DL6 后开工**
