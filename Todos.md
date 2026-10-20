@@ -605,4 +605,6 @@
   - 完成（a18a876）：sitemap 加 `taxonomy::ecosystems()` 的落地页；`Course::open_lesson_paths()`（复用 `can_access_lesson`，免费课程全部、付费课程只有试看）加入详情路径。单测：`open_lesson_paths_follow_access_rules`；O4 计数测试加上课节，并断言试看课节在、付费课节不在。实测 sitemap 65 → 68 个 URL（两个生态页 + `01-what-is-rust`）。`SEO_SPEC.md` §4 写明收录范围
 - [x] G7 — `/blog` 加 h1、案例详情正文标题降级、尾斜杠 301、Atom 日期改 RFC 3339。验收：curl 实测
   - 完成（4961985）：`/blog`、`/podcast`、`/course` 列表标题 h2 → h1（审计只发现 `/blog`，逐页数 h1 时又发现后两个）；案例 README 经 `text::demote_h1`（跳过围栏代码块）把 `#` 降为 `##`；用户内容（`untrusted`）的标题最高 h2；`trailing_slash_mw`：GET / HEAD 的尾斜杠地址永久重定向（axum `Redirect::permanent`，308）到无斜杠地址，根路径、`/api/*`、去掉斜杠后以 `//` 开头的不跳；Atom `<updated>` 纯日期补 `T00:00:00Z`。单测 4 个（先红后绿）。curl 实测：`/blog/` → 308 `/blog`，查询串保留，`//evil.com/` 404 不跳；上述页面与两个案例详情各 1 个 h1；feed 日期为 RFC 3339
-- [ ] G8 — JSON-LD：课程详情 Course、首页 WebSite。验收：SSR 输出含对应 `@type`，JSON 可解析
+- [x] G8 — JSON-LD：课程详情 Course、首页 WebSite。验收：SSR 输出含对应 `@type`，JSON 可解析
+  - 完成（7fa9657）：`PageMeta` 加可选 `schema`，`page_json_ld` 补 `@context` / `url`；首页 `website_schema()`，课程详情 `Course::schema()`（CNY / USD 各一条 Offer）。JSON-LD 文本统一经 `ld_json_text` 把 `<` 转义（文章页的 Article 也用它）。单测 2 个（先红后绿）。curl 实测首页、课程详情、博客文章的 JSON-LD 都能解析且字段正确。`SEO_SPEC.md` §3.2
+- 阶段 G 完成：G1–G8
