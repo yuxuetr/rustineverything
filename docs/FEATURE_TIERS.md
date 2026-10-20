@@ -53,7 +53,7 @@ server   = [..., "module-forum?/server", "module-course?/server", ...]   # 弱�
 ### DL3 标注归课程层（当前版本不搬代码）
 
 标注实现在 `module-course`，博客 / 文档也在用。只开 `accounts` 时博客 / 文档没有标注。不把标注拆成独立 crate：目前没有「要标注、不要课程」的部署。
-重估条件：出现只开 `accounts` 不开 `course` 的部署配置——`grep -rhoE 'FEATURES=[^ ]*' Dockerfile .github docker-compose*.yml | grep accounts | grep -v course` 有输出。
+重估条件：出现只开 `accounts` 不开 `course` 的部署配置——`grep -rhoE 'APP_FEATURES=[^ ]*"?[^"]*' docker-compose*.yml .github deploy 2>/dev/null | grep accounts | grep -v course` 有输出（不查 Dockerfile：其中的档位示例是注释）。
 
 ### DL4 数据库迁移不拆
 
@@ -61,7 +61,22 @@ server   = [..., "module-forum?/server", "module-course?/server", ...]   # 弱�
 
 ### DL5 app-core 当前不拆 feature
 
-basic 层仍编译 core 的 sea-orm / oauth2 / jsonwebtoken，但运行时不需要数据库和 `JWT_SECRET`。拆 core 的收益只有构建体积与时间，先在 L7 测数再定。
+basic 层仍编译 core 的 sea-orm / oauth2 / jsonwebtoken，但运行时不需要数据库和 `JWT_SECRET`。拆 core 的收益只有构建体积与时间。
+
+**L7 实测（2026-10-20，macOS arm64，release，server 端）**：
+
+| | 完整 | basic | basic 若拆 core（估算） |
+| --- | --- | --- | --- |
+| 依赖 crate 数（`cargo tree -e normal` 去重） | 515 | 488 | 382（`--prune` sea-orm / oauth2 / jsonwebtoken / aes-gcm / reqwest / migration） |
+| 二进制文件 | 50.0 MB | 30.9 MB | 约 28 MB |
+| 其中 sea-orm / sqlx / migration 代码段 | 6.6 MB | 2.3 MB | 0 |
+| 其中 jwt / aes-gcm / oauth2 / reqwest / rustls 代码段 | 1.5 MB | 0.6 MB | 0 |
+| 增量 release 构建（依赖已缓存） | 90 s | 37 s | — |
+
+代码段按 `nm -n` 符号间距估算（脚本思路：符号名含对应 crate 名的累加），是近似值。web 端不受影响：core 的 client 侧本来就不带这些依赖（完整 253 / basic 246 个 crate）。
+
+**结论（当前版本不拆）**：basic 已经能不连库运行，拆 core 只换来约 22% 的依赖数与约 3 MB 二进制，代价是 core 加 `db` / `auth` 两个 feature、search 的 `/api/search/reindex`（要 `require_admin` 查库）另行门控、app 的 `migration` 依赖改为只在 accounts 下编译（它只能挂在 server 端，现有 feature 表达不了「server 且 accounts」，得经 core 的 `db` feature 间接带入）。没有使用者为体积或构建时间提出要求前不做。
+重估条件：仓库里出现 basic 档的部署配置——`grep -rhoE 'APP_FEATURES=[^ ]*"?[^"]*' docker-compose*.yml .github deploy 2>/dev/null | grep -- --no-default-features | grep -v -e accounts -e course` 有输出；届时以上表为收益基线。
 
 ## 4. 任务（Todos 阶段 L）
 
