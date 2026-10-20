@@ -89,14 +89,15 @@ impl Pricing {
   }
 
   /// 下单报价（DI3）：支付宝 / 微信只收人民币；Stripe 收该地区的标价。
+  /// 错误是 i18n key（`pay.err.*`）。
   pub fn quote(&self, provider: &str, region: Region) -> Result<Price, &'static str> {
     match provider {
       "alipay" | "wechat" if self.currency == "CNY" => {
         Ok(Price { amount: self.price, currency: "CNY".to_string() })
       }
-      "alipay" | "wechat" => Err("该课程不支持人民币支付"),
+      "alipay" | "wechat" => Err("pay.err.no_cny"),
       "stripe" => Ok(self.list_price(region)),
-      _ => Err("不支持的支付方式"),
+      _ => Err("pay.err.bad_request"),
     }
   }
 }

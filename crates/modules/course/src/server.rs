@@ -1622,6 +1622,7 @@ pub async fn payment_providers() -> Result<Vec<String>, ServerFnError> {
 }
 
 /// 创建课程购买订单。校验登录 / 课程付费 / 未拥有，按网关与地区报价
+/// （面向用户的错误返回 `pay.err.*` i18n key，购买弹窗按界面语言翻译）
 /// （`Pricing::quote`，阶段 I），建 pending 订单，再经 PaymentProvider + host
 /// 执行器生成支付凭据（PM4）。
 #[cfg(feature = "payments")]
@@ -1639,25 +1640,29 @@ pub async fn create_order(
     use sea_orm::{ActiveValue::NotSet, ActiveValue::Set, EntityTrait};
 
     // 写路径：回查 token_version（SEC-13）。
-    let user = app_core::session::require_session_verified().await?;
+    let user = app_core::session::require_session_verified()
+      .await
+      .map_err(|_| ServerFnError::new("pay.err.sign_in".to_string()))?;
     let scene = match scene.as_str() {
       "native" | "h5" | "page" | "wap" | "qr" => scene,
-      _ => return Err(ServerFnError::new("不支持的支付场景".to_string())),
+      _ => return Err(ServerFnError::new("pay.err.bad_request".to_string())),
     };
     let region = crate::pricing::Region::parse(&region)
-      .ok_or_else(|| ServerFnError::new("不支持的地区".to_string()))?;
-    let course =
-      read_course(&course_slug).ok_or_else(|| ServerFnError::new("课程不存在".to_string()))?;
+      .ok_or_else(|| ServerFnError::new("pay.err.bad_request".to_string()))?;
+    let course = read_course(&course_slug)
+      .ok_or_else(|| ServerFnError::new("pay.err.no_course".to_string()))?;
     if !course.is_paid() {
-      return Err(ServerFnError::new("该课程无需购买".to_string()));
+      return Err(ServerFnError::new("pay.err.free".to_string()));
     }
-    let price =
-      course.pricing().quote(&provider, region).map_err(|m| ServerFnError::new(m.to_string()))?;
+    let price = course
+      .pricing()
+      .quote(&provider, region)
+      .map_err(|key| ServerFnError::new(key.to_string()))?;
     // 先确认网关已配置再建单，免得留下一张永远付不了的 pending 单。
     let gateway = module_payment::host::from_env(&provider).map_err(pay_err)?;
     let db = open_db().await?;
     if has_entitlement(&db, user.id, &course_slug).await {
-      return Err(ServerFnError::new("你已拥有该课程".to_string()));
+      return Err(ServerFnError::new("pay.err.owned".to_string()));
     }
     let out_trade_no = gen_out_trade_no(user.id);
     let am = order::ActiveModel {
@@ -1721,7 +1726,8 @@ pub async fn query_order(out_trade_no: String) -> Result<OrderStatus, ServerFnEr
   {
     use app_core::entities::order;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-    let user = current_session_user().ok_or_else(|| ServerFnError::new("请先登录".to_string()))?;
+    let user =
+      current_session_user().ok_or_else(|| ServerFnError::new("pay.err.sign_in".to_string()))?;
     let db = open_db().await?;
     let row = order::Entity::find()
       .filter(order::Column::OutTradeNo.eq(&out_trade_no))
@@ -1732,7 +1738,7 @@ pub async fn query_order(out_trade_no: String) -> Result<OrderStatus, ServerFnEr
       Some(o) if o.user_id == user.id => {
         Ok(OrderStatus { paid: o.status == "paid", out_trade_no: o.out_trade_no, status: o.status })
       }
-      _ => Err(ServerFnError::new("订单不存在".to_string())),
+      _ => Err(ServerFnError::new("pay.err.no_order".to_string())),
     }
   }
   #[cfg(not(feature = "server"))]

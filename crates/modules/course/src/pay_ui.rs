@@ -38,7 +38,8 @@ fn current_lang() -> app_core::i18n::Language {
   try_consume_context::<Signal<app_core::i18n::Language>>().map(|s| s()).unwrap_or_default()
 }
 
-/// 清洗 server fn 错误信息（去掉框架前缀，仅留中文提示）。
+/// 清洗 server fn 错误信息（去掉框架前缀）。下单 / 查单的用户错误是 i18n key，
+/// 调用方再过一遍 `t()`；其余（网关原文）`t()` 原样返回。
 fn clean_err(e: &ServerFnError) -> String {
   let s = e.to_string();
   let s = s.rsplit("error running server function: ").next().unwrap_or(&s);
@@ -48,20 +49,21 @@ fn clean_err(e: &ServerFnError) -> String {
 /// 购买按钮：点击弹出购买弹窗。放在 Paywall / 课程详情。按钮上的价格随地区变化。
 #[component]
 pub fn PurchaseButton(course_slug: String, pricing: Pricing) -> Element {
+  let lang = current_lang();
   let mut open = use_signal(|| false);
   let price = pricing.list_price(use_region()).label();
   rsx! {
       Dialog { open: open(), on_open_change: move |v| open.set(v),
           DialogTrigger {
               class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "px-6 font-semibold"),
-              "购买 {price}"
+              "{t(lang, \"pay.buy\")} {price}"
           }
           DialogOverlay { class: "z-[60]" }
           DialogContent { class: "z-[60] max-w-sm gap-0 rounded-2xl",
-              DialogTitle { class: "mb-4 pr-8", "购买课程" }
+              DialogTitle { class: "mb-4 pr-8", "{t(lang, \"pay.dialog_title\")}" }
               DialogClose { class: "text-xl leading-none text-muted-foreground",
                   span { "aria-hidden": "true", "×" }
-                  span { class: "sr-only", "关闭" }
+                  span { class: "sr-only", "{t(lang, \"pay.close\")}" }
               }
               // 内容只在打开时挂载：每次重新打开都从选择支付方式开始。
               if open() {
@@ -115,12 +117,12 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
           }
           _ => {
             status.set("error".to_string());
-            message.set("不支持的支付凭据".to_string());
+            message.set(t(lang, "pay.bad_credential"));
           }
         },
         Err(e) => {
           status.set("error".to_string());
-          message.set(clean_err(&e));
+          message.set(t(lang, &clean_err(&e)));
         }
       }
     });
@@ -138,8 +140,8 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
           widgets::browser::sleep_ms(800).await;
           widgets::browser::reload();
         }
-        Ok(_) => message.set("尚未到账；完成支付后再点刷新".to_string()),
-        Err(e) => message.set(clean_err(&e)),
+        Ok(_) => message.set(t(lang, "pay.not_yet")),
+        Err(e) => message.set(t(lang, &clean_err(&e))),
       }
     });
   };
@@ -161,7 +163,7 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
   rsx! {
       match status().as_str() {
           "qr" => rsx! {
-              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "请使用{provider_label}扫码支付 {price}" }
+              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "{t(lang, \"pay.scan\")} · {provider_label} · {price}" }
               div {
                   class: "mx-auto w-48 [&>svg]:w-48 [&>svg]:h-48",
                   dangerous_inner_html: "{qr}"
@@ -169,7 +171,7 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
               Button {
                   class: "mt-4 w-full font-semibold",
                   onclick: check_status,
-                  "我已支付，刷新状态"
+                  "{t(lang, \"pay.i_paid\")}"
               }
               if !message().is_empty() {
                   p { class: "mt-2 text-xs text-amber-600", "{message}" }
@@ -178,11 +180,11 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
           "paid" => rsx! {
               div { class: "py-8 text-center",
                   div { class: "text-4xl mb-3", "✅" }
-                  p { class: "font-semibold text-slate-900 dark:text-white", "支付成功，正在解锁…" }
+                  p { class: "font-semibold text-slate-900 dark:text-white", "{t(lang, \"pay.success\")}" }
               }
           },
           _ => rsx! {
-              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "选择支付方式，金额 {price}" }
+              p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "{t(lang, \"pay.choose\")} {price}" }
               if configured.read().is_none() {
                   div { class: "flex justify-center py-4", Spinner { size: SpinnerSize::Md } }
               } else if methods.is_empty() {
@@ -191,7 +193,7 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
                   // 受控单选：再点已选项时 ToggleGroup 会报空值，忽略它，保证总有一个网关被选中。
                   ToggleGroup {
                       class: "flex w-full gap-3 mb-4",
-                      "aria-label": "支付方式",
+                      "aria-label": t(lang, "pay.methods"),
                       value: provider.clone().unwrap_or_default(),
                       on_value_change: move |v: String| if !v.is_empty() { chosen.set(Some(v)) },
                       for m in methods.iter() {
@@ -202,7 +204,7 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
                       class: "w-full font-semibold",
                       disabled: status() == "loading",
                       onclick: start_pay,
-                      if status() == "loading" { "处理中…" } else { "立即支付 {price}" }
+                      if status() == "loading" { "{t(lang, \"pay.processing\")}" } else { "{t(lang, \"pay.pay_now\")} {price}" }
                   }
               }
               if status() == "error" && !message().is_empty() {
@@ -223,14 +225,14 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
   }
 }
 
-/// 订单状态 → (中文, 徽章样式)。
+/// 订单状态 → (i18n key, 徽章样式)。
 fn status_badge(status: &str) -> (&'static str, BadgeVariant) {
   match status {
-    "paid" => ("已支付", BadgeVariant::Success),
-    "pending" => ("待支付", BadgeVariant::Warning),
-    "closed" => ("已关闭", BadgeVariant::Secondary),
-    "refunded" => ("已退款", BadgeVariant::Info),
-    _ => ("失败", BadgeVariant::Destructive),
+    "paid" => ("pay.status.paid", BadgeVariant::Success),
+    "pending" => ("pay.status.pending", BadgeVariant::Warning),
+    "closed" => ("pay.status.closed", BadgeVariant::Secondary),
+    "refunded" => ("pay.status.refunded", BadgeVariant::Info),
+    _ => ("pay.status.failed", BadgeVariant::Destructive),
   }
 }
 
@@ -248,7 +250,7 @@ pub fn MyOrdersPage() -> Element {
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950 min-h-[60vh]",
           div { class: "mx-auto max-w-4xl px-4 sm:px-6 lg:px-8",
-              h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "我的订单" }
+              h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "{t(lang, \"pay.orders.title\")}" }
 
               // Pro 会员横幅
               if let Some(m) = membership {
@@ -258,16 +260,16 @@ pub fn MyOrdersPage() -> Element {
                           rsx! {
                               div { class: "mb-6 flex items-center justify-between gap-4 rounded-xl border border-primary/30 bg-primary/5 px-5 py-4",
                                   div {
-                                      span { class: "font-bold text-primary", "Pro 会员" }
-                                      span { class: "ml-2 text-sm text-slate-500 dark:text-slate-400", "有效期至 {date}" }
+                                      span { class: "font-bold text-primary", "{t(lang, \"pay.pro\")}" }
+                                      span { class: "ml-2 text-sm text-slate-500 dark:text-slate-400", "{t(lang, \"pay.pro_until\")} {date}" }
                                   }
-                                  Badge { variant: BadgeVariant::Success, "有效" }
+                                  Badge { variant: BadgeVariant::Success, "{t(lang, \"pay.pro_active\")}" }
                               }
                           }
                       } else {
                           rsx! {
                               div { class: "mb-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 px-5 py-4 text-sm text-slate-500",
-                                  "Pro 会员已于 {date} 到期。"
+                                  "{t(lang, \"pay.pro_expired\")} {date}"
                               }
                           }
                       }
@@ -279,19 +281,19 @@ pub fn MyOrdersPage() -> Element {
                   }
               } else if orders.is_empty() {
                   div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 p-12 text-center",
-                      p { class: "text-slate-400", "还没有订单。" }
-                      Link { to: "/course", class: "inline-block mt-4 text-sm font-medium text-primary hover:underline", "去看看课程 →" }
+                      p { class: "text-slate-400", "{t(lang, \"pay.orders.empty\")}" }
+                      Link { to: "/course", class: "inline-block mt-4 text-sm font-medium text-primary hover:underline", "{t(lang, \"pay.orders.browse\")}" }
                   }
               } else {
                   div { class: "overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800",
                       Table {
                           TableHeader { class: "bg-muted/50",
                               TableRow {
-                                  TableHead { class: "h-10 px-4", "课程" }
-                                  TableHead { class: "h-10 px-4", "金额" }
-                                  TableHead { class: "h-10 px-4", "渠道" }
-                                  TableHead { class: "h-10 px-4", "状态" }
-                                  TableHead { class: "h-10 px-4", "下单时间" }
+                                  TableHead { class: "h-10 px-4", "{t(lang, \"pay.orders.course\")}" }
+                                  TableHead { class: "h-10 px-4", "{t(lang, \"pay.orders.amount\")}" }
+                                  TableHead { class: "h-10 px-4", "{t(lang, \"pay.orders.channel\")}" }
+                                  TableHead { class: "h-10 px-4", "{t(lang, \"pay.orders.status\")}" }
+                                  TableHead { class: "h-10 px-4", "{t(lang, \"pay.orders.created\")}" }
                               }
                           }
                           TableBody {
@@ -309,7 +311,7 @@ pub fn MyOrdersPage() -> Element {
                                               TableCell { class: "px-4 py-2 font-medium", "{amount}" }
                                               TableCell { class: "px-4 py-2 text-slate-400", "{chan}" }
                                               TableCell { class: "px-4 py-2",
-                                                  Badge { variant: badge, "{label}" }
+                                                  Badge { variant: badge, "{t(lang, label)}" }
                                               }
                                               TableCell { class: "px-4 py-2 text-slate-400 text-xs", "{date}" }
                                           }

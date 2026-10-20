@@ -596,15 +596,16 @@ fn LessonContent(
 /// 付费墙：锁定课节的占位卡片 + 购买入口（M5d）。
 #[component]
 fn LessonPaywall(course_slug: String, pricing: Pricing) -> Element {
+  let lang = current_lang();
   let price = pricing.list_price(use_region());
   rsx! {
       div { class: card_class("rounded-2xl p-10 text-center max-w-xl mx-auto"),
           div { class: "w-14 h-14 mx-auto rounded-full bg-primary/10 flex items-center justify-center text-3xl mb-5",
               "🔒"
           }
-          h2 { class: "text-xl font-bold text-slate-900 dark:text-white", "本课节为付费内容" }
+          h2 { class: "text-xl font-bold text-slate-900 dark:text-white", "{t(lang, \"pay.paywall.title\")}" }
           p { class: "mt-3 text-slate-600 dark:text-slate-400 leading-relaxed",
-              "开通本课程后即可解锁全部课节，含文档、视频、音频与代码资源。"
+              "{t(lang, \"pay.paywall.body\")}"
           }
           if price.amount > 0 {
               div { class: "mt-5 text-3xl font-extrabold text-primary", "{price.label()}" }
@@ -613,7 +614,7 @@ fn LessonPaywall(course_slug: String, pricing: Pricing) -> Element {
               PurchaseEntry { course_slug, pricing }
           }
           p { class: "mt-4 text-sm text-slate-400",
-              "需登录后购买；试看课节免费开放。"
+              "{t(lang, \"pay.paywall.hint\")}"
           }
       }
   }
@@ -633,9 +634,10 @@ fn PurchaseEntry(course_slug: String, pricing: Pricing) -> Element {
   #[cfg(not(feature = "payments"))]
   {
     let _ = (course_slug, pricing);
+    let lang = current_lang();
     rsx! {
         span { class: "inline-flex items-center rounded-md bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-500 dark:text-slate-400",
-            "在线购买未开通，请联系管理员开通课程权益"
+            "{t(lang, \"pay.offline\")}"
         }
     }
   }
