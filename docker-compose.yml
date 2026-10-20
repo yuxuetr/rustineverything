@@ -104,7 +104,10 @@ services:
       # 搜索索引（Phase 7.3）：跨重启保留 tantivy 索引 + manifest.json
       - app-search-index:/app/data/search-index
     ports:
-      - "${APP_PORT:-8080}:8080"
+      # 只绑本机（H5）：限流按 X-Forwarded-For 区分客户端，该头由宿主上的
+      # 网关 / 反代覆盖写入；端口对公网开放时，直连者每个请求换一个 XFF
+      # 就能绕过限流。不经反代、需要直接对外时设 APP_BIND=0.0.0.0。
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080"
     networks:
       - rie-net
 

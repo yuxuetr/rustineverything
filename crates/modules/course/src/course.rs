@@ -34,7 +34,7 @@ fn LocalContainer(children: Element) -> Element {
 fn LocalSectionTitle(title: String, subtitle: Option<String>) -> Element {
   rsx! {
       div { class: "text-center mb-10",
-          h2 { class: "text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl",
+          h1 { class: "text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl",
               "{title}" }
           if let Some(s) = subtitle {
               p { class: "mt-4 text-lg leading-8 text-[var(--color-text-muted)]", "{s}" }
@@ -216,6 +216,7 @@ fn CourseDetailLoaded(slug: String) -> Element {
               title: c.title.clone(),
               description: c.description.clone(),
               path: format!("/course/{}", slug),
+              schema: c.schema(),
           }
           CourseDetailBody { course: c, progress: progress.clone(), last: last.clone() }
       }
@@ -507,6 +508,11 @@ fn LessonLoaded(slug: String, chapter: String, lesson: String) -> Element {
 
   match lesson_res() {
     Some(Some(l)) => rsx! {
+        widgets::PageMeta {
+            title: l.title.clone(),
+            description: l.doc.as_ref().map(|d| d.description.clone()).unwrap_or_default(),
+            path: format!("/course/{slug}/{chapter}/{lesson}"),
+        }
         LessonContent {
             lesson: l,
             blog_id: blog_id.clone(),
@@ -516,7 +522,7 @@ fn LessonLoaded(slug: String, chapter: String, lesson: String) -> Element {
         }
     },
     _ => rsx! {
-        div { class: "text-center py-20 text-slate-500", "课节未找到。" }
+        widgets::NotFound { message: t(current_lang(), "course.lesson_not_found") }
     },
   }
 }

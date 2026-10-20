@@ -282,6 +282,7 @@ pub fn Home() -> Element {
           title: t(lang(), "hero.title"),
           description: t(lang(), "hero.subtitle"),
           path: "/".to_string(),
+          schema: widgets::website_schema(),
       }
       Hero { enabled: enabled.clone() }
 
@@ -359,7 +360,7 @@ fn BlogIndexInner() -> Element {
           div { class: "mx-auto max-w-7xl px-4 sm:px-6 lg:px-8",
               // 页面标题（静态，始终展示）
               div { class: "text-center mb-10",
-                  h2 { class: "text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl", "{t(lang(), \"blog.title\")}" }
+                  h1 { class: "text-3xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-4xl", "{t(lang(), \"blog.title\")}" }
                   p { class: "mt-4 text-lg text-slate-500 dark:text-slate-400", "{t(lang(), \"blog.subtitle\")}" }
               }
 

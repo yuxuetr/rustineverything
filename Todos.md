@@ -570,3 +570,41 @@
 - [x] C3 — 走查：首页、生态页、课程详情 / 课时、案例、博客正文、搜索、论坛、购买弹窗、管理后台，亮暗各截图；检查主按钮、链接、焦点环对比度。验收：无残留橘色强调，暗色下主按钮文字清晰
   - 完成（2026-10-20）：首页、生态页、课程详情、课时、案例列表 / 详情、博客正文、论坛、我的订单、管理后台订单，亮暗各截图，并用脚本扫描页面上色相 20°–50° 的可见元素：剩下的只有代码高亮（Prism）与分类徽章，没有橘色强调。对比度：亮色白字 / cyan-700 5.28:1，暗色 zinc-950 字 / cyan-400 11:1，cyan-400 链接在 zinc-900 卡片上 9.8:1，都过 WCAG AA（原橘色按钮白字只有 3.58:1）。暗色截图里标签发灰是 150ms 颜色过渡没走完，稳定后为白字 zinc-800 底。clippy、619 个测试、四档检查通过。未走查：购买弹窗（与课程页同用 primary token）
 - 阶段 C 完成：C1–C3
+
+### 阶段 H — 支付与安全加固（2026-10-20 审计）
+评估与设计见 [`docs/AUDIT_2026-10-20.md`](docs/AUDIT_2026-10-20.md) §2；不做的项与重估条件见 §4。
+- [x] H1 — 退款订单不得被成功回调改回 paid：`claim_paid` 只认领 `pending` / `closed`，`decide` 对 `refunded` 返回 `AckRefunded`。验收：单测在旧逻辑下变红
+  - 完成（b162734）：新增 `NotifyDecision::AckRefunded`（确认收到 + pay_audit 告警，不认领不发货）；认领条件 UPDATE 由 `!= paid` 改为 `IN (pending, closed)`。单测 `refunded_order_acks_without_claim_or_delivery` 在旧逻辑下编译失败 / 会认领并发货。`PAYMENT_SPEC.md` §9 同步
+- [x] H2 — Stripe `charge.refunded`（全额）与 `charge.dispute.created` → 订单 `paid → refunded` + 撤销 purchase 权益；与管理员退款共用 `mark_refunded`；DEPLOY_GUIDE / PAYMENT_SPEC 补 webhook 事件。验收：本地自签 webhook 实测两种事件撤销权益，重放幂等，部分退款不撤销
+  - 完成（ae6bcb9）：`stripe::reversed_payment_intent`（纯函数，单测覆盖全额 / 部分退款 / 拒付 / 无关事件）；`handle_stripe_notify` 先分流到 `stripe_reversal`，按 `provider_txn` 找订单后调用从管理员退款抽出的 `mark_refunded`。本地 dx + 自签 webhook 实测：部分退款 200 不变；全额退款 → 订单 refunded、purchase 权益删除；重放 200 无变化；拒付同样撤销；未知 PaymentIntent 200 + 告警。测试数据已清理。`DEPLOY_GUIDE.md`、`PAYMENT_SPEC.md` §15、`.env.example` 的 webhook 事件补上两项
+- [x] H3 — 购买发货冲突时不覆盖已有权益来源（保护 admin_grant）。验收：先赠后买再退款，权限仍在
+  - 完成（015aca9）：`grant_entitlement_internal` 对 `purchase` 用 `ON CONFLICT DO NOTHING`（`exec_without_returning`，冲突不报错），管理员授予仍覆盖。本地自签 webhook 实测：已有 admin_grant 的课付款后来源仍为 admin_grant，退款后权限保留；无权益的课付款写 purchase，退款后删除；退款后重放成功回调订单仍为 refunded、不再发货（顺带端到端验证 H1）。未做旧代码下的反向运行：旧代码 `update_columns(Source)` 会把来源改成 purchase，退款按 source=purchase 删除
+- [x] H4 — `/api/orders/create`、`/api/orders/tip` 归入严格限流桶。验收：`classify_path` 单测
+  - 完成（cf69a20）：`classify_path` 的严格前缀加上两条下单路径（默认 5 rps / 15 突发，每 IP）。单测新增三条断言，旧代码下变红；`/api/orders/mine` 仍走默认桶
+- [x] H5 — compose 里应用端口只绑 127.0.0.1，DEPLOY_GUIDE 说明。验收：`docker compose config` 输出 host_ip 127.0.0.1
+  - 完成（fba9c59）：ports 改为 `${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080`（网关上游本来就是 127.0.0.1:8080）；`.env.example` 加 `APP_BIND` 说明；`DEPLOY_GUIDE.md` §11 安全 checklist 加一行。本机没有 docker，未跑 `docker compose config`，只用 YAML 解析确认了端口串
+- [x] H6 — 依赖升级到修复版本（rustls ≥0.23.46、h2 ≥0.4.16、quinn-proto ≥0.11.18 等）。验收：`cargo audit` 只剩无修复版本的条目
+  - 完成（3196c58）：`cargo update -p`：rustls 0.23.46、h2 0.4.20、quinn-proto 0.11.19、crossbeam-epoch 0.9.21、webbrowser 1.2.4，只动 Cargo.lock。`cargo audit` 由 14 个降到 2 个：rsa（Marvin，无修复版，只用于支付宝 / 微信签名）、rkyv 0.7（rust_decimal 的可选依赖，`cargo tree --all-features --target all -i rkyv` 为空，未参与编译）。clippy、621 个测试、四档检查通过
+- [x] H7 — YouTube / Bilibili 嵌入 id 只允许 `[A-Za-z0-9_-]`。验收：单测，带 `?` / `&` / `/` 的 id 不渲染 iframe
+  - 完成（2b97a46）：`components::embed_id`，不合规（含空串）不渲染。单测 `embed_id_rejects_url_syntax`。仓库内容里实际用到的 BV 号都合规
+- 阶段 H 完成：H1–H7
+
+### 阶段 G — SEO 与加载性能（2026-10-20 审计）
+评估与设计见 [`docs/AUDIT_2026-10-20.md`](docs/AUDIT_2026-10-20.md) §3。英文独立 URL 不做（§4，内容全为中文，带可执行重估条件）。
+- [x] G1 — 课节页加 `PageMeta`（标题、描述、canonical），不存在的课节返回 404。验收：curl 实测
+  - 完成（c6483f9）：`LessonLoaded` 加 `PageMeta`（标题取课节标题，描述取正文 frontmatter 的 description，锁定课节没有正文时不输出描述）；找不到时改用 `widgets::NotFound`，新增 `course.lesson_not_found`（中英）。curl 实测：`01-what-is-rust` 标题「什么是 Rust - Rust in Everything」、有描述与 canonical；锁定课节有标题与 canonical；`/01-fundamentals/zz` 返回 404
+- [x] G2 — `<html lang="zh-CN">`。验收：SSR 输出含 lang
+  - 完成（b70a26f）：新增 `crates/app/index.html`（dx 默认模板 + `lang="zh-CN"`），Dockerfile 补 COPY；`SEO_SPEC.md` §3.1 记录语言策略。实测 SSR 输出 `<html lang="zh-CN">`，浏览器里 wasm 加载、Prism 高亮正常，控制台无错误
+- [x] G3 — 头部脚本 `defer`，mermaid 只在页面出现 `.mermaid` 时加载。验收：无图表页不请求 mermaid；含图表与代码的页面仍正常渲染
+  - 完成（e422c39）：prism 七个脚本与 annotations.js 加 `defer`；去掉 head 里的 mermaid，引导脚本在首次发现 `.mermaid` 块时注入一次、加载完再扫。Chromium 实测：课节页不请求 mermaid，Prism 高亮正常，`RIE_ANNO` 就绪；`/blog/welcome` 直接打开与从 `/blog` 站内跳转都只请求一次 mermaid，2 张图渲染成 svg。控制台仅有 B 站播放器 iframe 自身的报错
+- [x] G4 — 响应压缩（tower-http `CompressionLayer`）。验收：带 `Accept-Encoding` 时 HTML / CSS 返回压缩
+  - 完成（33ec1c3）：tower-http 加 `compression-gzip` / `compression-br`，router 挂 `CompressionLayer`（默认判定跳过图片与 SSE）。本地实测 br：首页 81.5KB → 15.4KB，`/blog/welcome` 82.4KB → 18.7KB，sitemap 4.9KB → 0.6KB，prism.min.js 19.7KB → 7.5KB；tailwind css 按 gzip 返回；不带 `Accept-Encoding` 时不压缩；404 状态码不变
+- [x] G5 — 静态资源缓存头：先在 release 下测，带哈希的资源若不是长缓存再改。验收：release 实测记录
+  - 完成（2026-10-20，无代码改动）：`dx serve --release` 实测，`/assets/*-dxh<hash>.*`（app.js、wasm、css、favicon）已是 `public, max-age=31536000, immutable`，由 dioxus 自带；`/js/*` 文件名不带哈希，`no-cache` + 304 复验是有意的（`static_assets.rs` 注释），保持。顺带量了 G4：release wasm 7.09MB → br 1.54MB（66ms）/ gzip 1.74MB
+- [x] G6 — sitemap 补 `/ecosystem/*` 与免费试看课节。验收：sitemap 含这些 URL
+  - 完成（a18a876）：sitemap 加 `taxonomy::ecosystems()` 的落地页；`Course::open_lesson_paths()`（复用 `can_access_lesson`，免费课程全部、付费课程只有试看）加入详情路径。单测：`open_lesson_paths_follow_access_rules`；O4 计数测试加上课节，并断言试看课节在、付费课节不在。实测 sitemap 65 → 68 个 URL（两个生态页 + `01-what-is-rust`）。`SEO_SPEC.md` §4 写明收录范围
+- [x] G7 — `/blog` 加 h1、案例详情正文标题降级、尾斜杠 301、Atom 日期改 RFC 3339。验收：curl 实测
+  - 完成（4961985）：`/blog`、`/podcast`、`/course` 列表标题 h2 → h1（审计只发现 `/blog`，逐页数 h1 时又发现后两个）；案例 README 经 `text::demote_h1`（跳过围栏代码块）把 `#` 降为 `##`；用户内容（`untrusted`）的标题最高 h2；`trailing_slash_mw`：GET / HEAD 的尾斜杠地址永久重定向（axum `Redirect::permanent`，308）到无斜杠地址，根路径、`/api/*`、去掉斜杠后以 `//` 开头的不跳；Atom `<updated>` 纯日期补 `T00:00:00Z`。单测 4 个（先红后绿）。curl 实测：`/blog/` → 308 `/blog`，查询串保留，`//evil.com/` 404 不跳；上述页面与两个案例详情各 1 个 h1；feed 日期为 RFC 3339
+- [x] G8 — JSON-LD：课程详情 Course、首页 WebSite。验收：SSR 输出含对应 `@type`，JSON 可解析
+  - 完成（7fa9657）：`PageMeta` 加可选 `schema`，`page_json_ld` 补 `@context` / `url`；首页 `website_schema()`，课程详情 `Course::schema()`（CNY / USD 各一条 Offer）。JSON-LD 文本统一经 `ld_json_text` 把 `<` 转义（文章页的 Article 也用它）。单测 2 个（先红后绿）。curl 实测首页、课程详情、博客文章的 JSON-LD 都能解析且字段正确。`SEO_SPEC.md` §3.2
+- 阶段 G 完成：G1–G8

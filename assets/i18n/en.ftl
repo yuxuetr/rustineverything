@@ -269,6 +269,7 @@ course.chapters = chapters
 course.lessons = lessons
 course.not_found = Course not found
 course.not_found_detail = This course does not exist or has not been published yet.
+course.lesson_not_found = Lesson not found
 course.back = Back to courses
 course.continue = Continue learning
 course.start = Start learning

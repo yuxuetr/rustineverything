@@ -133,7 +133,9 @@ PAY_NOTIFY_BASE=https://<公网域名>   # 拼 notify/return URL；必须 HTTPS
 ## 9. 幂等 / 安全 / 对账
 - **验签是发货前提**：任何未通过验签的回调一律拒绝，绝不据此发货。
 - **金额核验**：回调金额必须 == `order.amount`，币种 CNY；不符记异常、不发货。
-- **幂等**：以 `out_trade_no` 为键；`order.status==paid` 直接成功返回；entitlement 用
+- **幂等**：以 `out_trade_no` 为键；`order.status==paid` 直接成功返回；`refunded` 的订单收到成功回调
+  只确认、记 pay_audit 告警，不认领不发货（H1，否则退款后网关重试会把订单改回 paid）；认领的条件
+  UPDATE 只接受 `pending` / `closed`；entitlement 用
   `ON CONFLICT DO NOTHING/UPDATE`（M4 已是幂等）。
 - **回调可重复**：网关会重试直到收到成功响应 → 处理器必须可重入。
 - **对账（M5e，已实现）**：启动期定时任务（默认 300s 一轮，`PAY_RECONCILE_*`
@@ -284,6 +286,7 @@ trait 边界 = 未来 WASM ABI 边界，两路线不冲突。若把 Provider 下
 
 **DI6 webhook 验签**：`Stripe-Signature` 的 `t` / `v1`，HMAC-SHA256(`{t}.{body}`, webhook secret)，常数时间比较，时间戳 ±300s（与微信一致）。
 - 处理的事件：`checkout.session.completed`、`checkout.session.async_payment_succeeded`，两者都要求 `payment_status == "paid"` 才算成功。
+- 全额退款与拒付（H2）：`charge.refunded` 且 `refunded == true`、`charge.dispute.created` → 按 `payment_intent` 找 `provider_txn` 相同的订单，`paid → refunded` 并撤销 `source=purchase` 权益（与管理员退款共用 `mark_refunded`）。部分退款不处理；拒付按退款处理，赢了拒付由管理员重新授予。我方管理员退款同样会触发 `charge.refunded`，订单已是 refunded，直接确认。找不到订单也确认收到。
 - 其他事件确认收到，不发货。
 - 验签失败回 400；处理失败回 500，让 Stripe 重试。
 

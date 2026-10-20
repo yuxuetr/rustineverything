@@ -235,7 +235,8 @@ fn render_tag(
   let has_bid = !bid.is_empty();
   match tag {
     Tag::Heading { level, .. } => {
-      let l = level as u32;
+      // 用户内容最高到 h2：h1 留给页面标题（G7）。
+      let l = if untrusted { (level as u32).max(2) } else { level as u32 };
       match l {
         1 => rsx! { h1 {
             id: if has_bid { "{bid}" },
@@ -706,6 +707,14 @@ mod tests {
   fn render_markdown(content: &str, untrusted: bool) -> String {
     let content = content.to_string();
     dioxus_ssr::render_element(rsx! { Markdown { content, blog_id: "t", untrusted } })
+  }
+
+  /// G7：用户内容（评论 / 话题）不产生 h1，页面只有自己的一个 h1。
+  #[test]
+  fn untrusted_h1_renders_as_h2() {
+    assert!(render_markdown("# 标题", false).contains("<h1"));
+    let html = render_markdown("# 标题", true);
+    assert!(!html.contains("<h1") && html.contains("<h2"), "{html}");
   }
 
   #[test]

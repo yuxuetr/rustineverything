@@ -115,24 +115,36 @@ pub const SITE_NAME: &str = "Rust in Everything";
 
 /// 列表 / 落地页的元信息：`<title>`（`{title} - 站名`）、description、
 /// og:title / og:description / og:url 与 canonical。文章页用 [`inject_seo`]。
+/// `schema` 是可选的 schema.org 对象（G8），输出为 JSON-LD，`@context` 与 `url` 自动补上。
 ///
 /// 自带 SuspenseBoundary（等 `BASE_URL` 时不渲染任何东西），调用方直接放进页面即可。
 #[component]
-pub fn PageMeta(title: String, description: String, path: String) -> Element {
+pub fn PageMeta(
+  title: String,
+  description: String,
+  path: String,
+  #[props(default)] schema: Option<serde_json::Value>,
+) -> Element {
   rsx! {
       SuspenseBoundary { fallback: |_| VNode::empty(),
-          PageMetaInner { title, description, path }
+          PageMetaInner { title, description, path, schema }
       }
   }
 }
 
 #[component]
-fn PageMetaInner(title: String, description: String, path: String) -> Element {
+fn PageMetaInner(
+  title: String,
+  description: String,
+  path: String,
+  schema: Option<serde_json::Value>,
+) -> Element {
   let base_url_res =
     use_server_future(|| async move { get_seo_base_url().await.unwrap_or_default() })?;
   let base_url = base_url_res().unwrap_or_default();
   let canonical = build_canonical(None, &path, &base_url);
   let full_title = page_title(&title);
+  let json_ld = schema.as_ref().and_then(|v| page_json_ld(v, &canonical));
   rsx! {
       crate::browser::PageTitle { title: full_title.clone() }
       if !description.is_empty() {
@@ -143,7 +155,30 @@ fn PageMetaInner(title: String, description: String, path: String) -> Element {
       document::Meta { property: "og:type", content: "website" }
       document::Meta { property: "og:url", content: "{canonical}" }
       document::Link { rel: "canonical", href: "{canonical}" }
+      if let Some(ld) = json_ld {
+          document::Script { r#type: "application/ld+json", "{ld}" }
+      }
   }
+}
+
+/// 首页的 schema.org `WebSite`（G8）。
+pub fn website_schema() -> serde_json::Value {
+  serde_json::json!({ "@type": "WebSite", "name": SITE_NAME, "inLanguage": "zh-CN" })
+}
+
+/// PageMeta 的 JSON-LD：补 `@context` 与 `url`，序列化后转义 `<`。只接受对象。
+fn page_json_ld(schema: &serde_json::Value, canonical: &str) -> Option<String> {
+  let mut value = schema.clone();
+  let obj = value.as_object_mut()?;
+  obj.insert("@context".into(), "https://schema.org".into());
+  obj.insert("url".into(), canonical.into());
+  ld_json_text(&value)
+}
+
+/// 序列化为可直接放进 `<script>` 的 JSON：`<` 写成 `\u003c`，内容里的
+/// `</script>` 不会提前结束脚本，JSON 语义不变。
+fn ld_json_text(value: &serde_json::Value) -> Option<String> {
+  serde_json::to_string(value).ok().map(|s| s.replace('<', "\\u003c"))
 }
 
 /// `{title} - 站名`；空标题只用站名。
@@ -213,7 +248,7 @@ fn build_json_ld(meta: &PostMetadata, canonical: &str) -> Option<String> {
     obj.insert("keywords".to_string(), serde_json::Value::String(meta.tags.join(", ")));
   }
 
-  serde_json::to_string(&value).ok()
+  ld_json_text(&value)
 }
 
 #[cfg(test)]
@@ -273,6 +308,20 @@ mod tests {
     // 空字符串视为未提供
     let url = build_canonical(Some(""), "/blog/foo", "https://example.com");
     assert_eq!(url, "https://example.com/blog/foo");
+  }
+
+  /// G8：PageMeta 的 schema 补上 @context 与 url；`<` 转义，正文里的
+  /// `</script>` 不会提前结束脚本。
+  #[test]
+  fn page_json_ld_adds_context_url_and_escapes_lt() {
+    let schema = serde_json::json!({ "@type": "Course", "name": "A</script><b>" });
+    let ld = page_json_ld(&schema, "https://example.com/course/a").expect("json-ld");
+    assert!(ld.contains("\"@context\":\"https://schema.org\""));
+    assert!(ld.contains("\"url\":\"https://example.com/course/a\""));
+    assert!(!ld.contains('<'), "{ld}");
+    let back: serde_json::Value = serde_json::from_str(&ld).expect("still valid json");
+    assert_eq!(back["name"], "A</script><b>");
+    assert_eq!(page_json_ld(&serde_json::json!("x"), "u"), None, "只接受对象");
   }
 
   #[test]

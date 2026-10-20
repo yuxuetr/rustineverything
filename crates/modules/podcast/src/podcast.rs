@@ -70,7 +70,7 @@ fn LocalContainer(children: Element) -> Element {
 fn LocalSectionTitle(title: String, subtitle: Option<String>) -> Element {
   rsx! {
       div { class: "text-center mb-10",
-          h2 { class: "text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl", "{title}" }
+          h1 { class: "text-3xl font-bold tracking-tight text-[var(--color-text)] sm:text-4xl", "{title}" }
           if let Some(s) = subtitle {
               p { class: "mt-4 text-lg leading-8 text-[var(--color-text-muted)]", "{s}" }
           }

@@ -423,7 +423,7 @@ docker compose logs app | grep 'payment gateway'
 
 1. 后台切到正式模式，`STRIPE_SECRET_KEY` 填 `sk_live_…`。测试密钥只留在本地；贴到过聊天或工单里的测试密钥在后台 roll 掉。
 2. Developers → Webhooks 添加端点 `https://<域名>/api/pay/stripe/notify`，订阅
-   `checkout.session.completed` 与 `checkout.session.async_payment_succeeded`；把该端点的 signing secret（`whsec_…`）填进 `STRIPE_WEBHOOK_SECRET`。正式与测试模式的 secret 不同。
+   `checkout.session.completed`、`checkout.session.async_payment_succeeded`、`charge.refunded`、`charge.dispute.created`（后两个用于在 Stripe 后台退款或买家拒付时撤销课程权限）；把该端点的 signing secret（`whsec_…`）填进 `STRIPE_WEBHOOK_SECRET`。正式与测试模式的 secret 不同。
 3. 要在 Stripe 收银台出现支付宝 / 微信支付：在 Settings → Payment methods 里开通。代码不指定支付方式，收银台显示后台已开通的全部方式。Stripe 账户须在中国大陆以外注册。
 
 ### 7.3 上线检查
@@ -511,6 +511,7 @@ docker compose logs -f app | grep "schema migrations"
 | postgres 密码 | 强密码；不暴露 5432 端口到公网（compose 默认仅 127.0.0.1） |
 | Cookie Secure | `BASE_URL` 以 `https://` 起首时自动启用（main.rs cookie_is_secure） |
 | 反向代理 | TLS 终止 + `X-Forwarded-Proto: https` |
+| app 端口 | compose 默认只绑 `127.0.0.1:8080`（`APP_BIND`）；对外只开网关 / 反代。限流按 `X-Forwarded-For` 区分客户端，直连 app 的请求可伪造该头绕过限流 |
 | `RUST_LOG=info` | 而非 `debug`，避免敏感请求参数进日志 |
 | 在线支付 | 启动日志里要用的网关都是 `payment gateway enabled`；Stripe 用 `sk_live_` 且 webhook 已建（§7） |
 | Admin 升级 | 创建第一个 admin 后**移除** `users` 表的开放写权限脚本 |

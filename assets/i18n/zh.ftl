@@ -269,6 +269,7 @@ course.chapters = 章
 course.lessons = 节
 course.not_found = 课程未找到
 course.not_found_detail = 该课程不存在或尚未发布。
+course.lesson_not_found = 课节未找到
 course.back = 返回课程列表
 course.continue = 继续学习
 course.start = 开始学习

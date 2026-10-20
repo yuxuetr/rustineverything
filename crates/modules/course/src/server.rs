@@ -168,6 +168,51 @@ impl Course {
     self.access_tier != "free"
   }
 
+  /// schema.org `Course`（G8，课程详情页 JSON-LD；`url` 由 PageMeta 补）。
+  /// 付费课程每个币种一条 Offer；免费课程标 `isAccessibleForFree`。
+  pub fn schema(&self) -> serde_json::Value {
+    let mut v = serde_json::json!({
+      "@type": "Course",
+      "name": self.title,
+      "description": self.description,
+      "inLanguage": "zh-CN",
+      "provider": { "@type": "Organization", "name": widgets::SITE_NAME },
+    });
+    if self.is_paid() {
+      let offer = |amount: i64, currency: &str| {
+        serde_json::json!({
+          "@type": "Offer",
+          "category": "Paid",
+          "price": format!("{}.{:02}", amount / 100, amount % 100),
+          "priceCurrency": currency,
+        })
+      };
+      let mut offers = vec![offer(self.price, &self.currency)];
+      if let Some(usd) = self.price_usd {
+        offers.push(offer(usd, "USD"));
+      }
+      v["offers"] = offers.into();
+    } else {
+      v["isAccessibleForFree"] = true.into();
+    }
+    v
+  }
+
+  /// 未登录访客能读的课节路径（免费课程全部；付费课程只有试看课节），
+  /// 直接用 `can_access_lesson` 判定。供 sitemap 收录（G6）。
+  pub fn open_lesson_paths(&self) -> Vec<String> {
+    self
+      .chapters
+      .iter()
+      .flat_map(|ch| {
+        ch.lessons
+          .iter()
+          .filter(|l| can_access_lesson(&self.access_tier, l.preview, false, false, false))
+          .map(move |l| format!("/course/{}/{}/{}", self.slug, ch.slug, l.slug))
+      })
+      .collect()
+  }
+
   pub fn pricing(&self) -> crate::pricing::Pricing {
     crate::pricing::Pricing {
       price: self.price,
@@ -1310,6 +1355,7 @@ pub async fn list_entitlements() -> Result<Vec<EntitlementInfo>, ServerFnError> 
 }
 
 /// server-only：写入/刷新权益（幂等）。供 admin 授予与支付回调发货共用，不做鉴权。
+/// 管理员授予覆盖已有来源；购买（`purchase`）已有权益时不动。
 #[cfg(feature = "server")]
 async fn grant_entitlement_internal(
   db: &sea_orm::DatabaseConnection,
@@ -1326,13 +1372,18 @@ async fn grant_entitlement_internal(
     source: Set(source.to_string()),
     granted_at: Set(Utc::now().fixed_offset()),
   };
+  let mut on_conflict =
+    OnConflict::columns([entitlement::Column::UserId, entitlement::Column::CourseSlug]);
+  // H3：购买不覆盖已有来源。退款只删 source=purchase，若购买把 admin_grant
+  // 改成了 purchase，退款会连管理员授予的权限一起删掉。
+  if source == "purchase" {
+    on_conflict.do_nothing();
+  } else {
+    on_conflict.update_columns([entitlement::Column::Source, entitlement::Column::GrantedAt]);
+  }
   entitlement::Entity::insert(am)
-    .on_conflict(
-      OnConflict::columns([entitlement::Column::UserId, entitlement::Column::CourseSlug])
-        .update_columns([entitlement::Column::Source, entitlement::Column::GrantedAt])
-        .to_owned(),
-    )
-    .exec(db)
+    .on_conflict(on_conflict)
+    .exec_without_returning(db)
     .await
     .map_err(|e| ServerFnError::new(e.to_string()))?;
   Ok(())
@@ -1621,6 +1672,39 @@ async fn deliver(
   grant_entitlement_internal(db, order.user_id, order.product_ref, "purchase")
     .await
     .map_err(|e| e.to_string())
+}
+
+/// server-only：钱已退回买家后的落库（管理员退款与 Stripe 退款 / 拒付回调共用）：
+/// 条件 UPDATE `paid → refunded`，课程订单再撤销 `source=purchase` 的权益
+/// （admin_grant 等其它来源不动；打赏没发过货）。重复调用无副作用。
+/// 返回是否撤销了权益（供日志）。
+#[cfg(all(feature = "server", feature = "payments"))]
+async fn mark_refunded(
+  db: &sea_orm::DatabaseConnection,
+  row: &app_core::entities::order::Model,
+) -> Result<bool, String> {
+  use app_core::entities::{entitlement, order};
+  use sea_orm::sea_query::Expr;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+  order::Entity::update_many()
+    .col_expr(order::Column::Status, Expr::value("refunded"))
+    .filter(order::Column::OutTradeNo.eq(&row.out_trade_no))
+    .filter(order::Column::Status.eq("paid"))
+    .exec(db)
+    .await
+    .map_err(|e| e.to_string())?;
+  let revoke =
+    crate::product::ProductKind::parse(&row.product_kind).is_some_and(|k| k.grants_entitlement());
+  if revoke {
+    entitlement::Entity::delete_many()
+      .filter(entitlement::Column::UserId.eq(row.user_id))
+      .filter(entitlement::Column::CourseSlug.eq(row.product_ref.clone()))
+      .filter(entitlement::Column::Source.eq("purchase"))
+      .exec(db)
+      .await
+      .map_err(|e| e.to_string())?;
+  }
+  Ok(revoke)
 }
 
 /// server-only：把 PayError 展开为用户可读错误（取内层文案，与重构前
@@ -2071,8 +2155,8 @@ pub async fn handle_wechat_notify(
 /// 处理 Stripe webhook（由 app 的 Axum 路由 `/api/pay/stripe/notify` 调用；阶段 I）。
 ///
 /// 入参：`Stripe-Signature` 头 + 原始 body（验签需逐字节一致）。流程：验签（含
-/// ±300s 时间戳，宿主侧，DI6）→ 只处理 `checkout.session.*` 事件 →
-/// `parse_notify` 中立化 → 统一流水线。返回 HTTP 状态：200 确认；验签失败 400；
+/// ±300s 时间戳，宿主侧，DI6）→ 全额退款 / 拒付走 `stripe_reversal`（H2）→
+/// 其余只处理 `checkout.session.*` 事件 → `parse_notify` 中立化 → 统一流水线。返回 HTTP 状态：200 确认；验签失败 400；
 /// 处理失败 500（Stripe 会重试）。
 #[cfg(all(feature = "server", feature = "payments"))]
 pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
@@ -2098,6 +2182,10 @@ pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
     amount_total = event["data"]["object"]["amount_total"].as_i64().unwrap_or(-1),
     "notify received"
   );
+  // H2：在 Stripe 后台全额退款或买家拒付 → 订单 refunded、撤销购买权益。
+  if let Some(intent) = module_payment::stripe::reversed_payment_intent(&event) {
+    return stripe_reversal(&intent, kind).await;
+  }
   // 其他事件（订阅了但不处理的）确认收到，免得 Stripe 重试。
   if !kind.starts_with("checkout.session.") {
     return 200;
@@ -2114,6 +2202,48 @@ pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
     200
   } else {
     500
+  }
+}
+
+/// H2：按 PaymentIntent 找 Stripe 订单并标记退款。找不到订单（非本站付款）也
+/// 确认收到；只有数据库出错返回 500 让 Stripe 重试。
+#[cfg(all(feature = "server", feature = "payments"))]
+async fn stripe_reversal(intent: &str, kind: &str) -> u16 {
+  use app_core::entities::order;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+  let Ok(db) = open_db().await else {
+    return 500;
+  };
+  let row = match order::Entity::find()
+    .filter(order::Column::Provider.eq("stripe"))
+    .filter(order::Column::ProviderTxn.eq(intent))
+    .one(&db)
+    .await
+  {
+    Ok(Some(row)) => row,
+    Ok(None) => {
+      tracing::warn!(target: "pay_audit", event_type = %kind, "stripe reversal: no order for payment intent");
+      return 200;
+    }
+    Err(_) => return 500,
+  };
+  if row.status != "paid" {
+    // 我方管理员退款也会收到 charge.refunded，此时订单已是 refunded。
+    return 200;
+  }
+  match mark_refunded(&db, &row).await {
+    Ok(revoked) => {
+      tracing::warn!(
+        target: "pay_audit",
+        "stripe {}: {} order {} refunded{}",
+        kind,
+        row.product_kind,
+        row.out_trade_no,
+        if revoked { " + purchase entitlement revoked" } else { "" }
+      );
+      200
+    }
+    Err(_) => 500,
   }
 }
 
@@ -2277,9 +2407,8 @@ pub async fn admin_list_orders() -> Result<Vec<AdminOrderInfo>, ServerFnError> {
 pub async fn admin_refund_order(out_trade_no: String) -> Result<(), ServerFnError> {
   #[cfg(feature = "server")]
   {
-    use app_core::entities::{entitlement, order};
+    use app_core::entities::order;
     use module_payment::{host, RefundRequest};
-    use sea_orm::sea_query::Expr;
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
     let admin = app_core::session::require_admin().await?;
@@ -2312,26 +2441,7 @@ pub async fn admin_refund_order(out_trade_no: String) -> Result<(), ServerFnErro
       );
       return Err(ServerFnError::new(format!("网关退款未受理（状态 {}）", result.status)));
     }
-    // 条件 UPDATE：paid → refunded（并发防护；rows=0 表示已被处理，幂等）。
-    order::Entity::update_many()
-      .col_expr(order::Column::Status, Expr::value("refunded"))
-      .filter(order::Column::OutTradeNo.eq(&out_trade_no))
-      .filter(order::Column::Status.eq("paid"))
-      .exec(&db)
-      .await
-      .map_err(|e| ServerFnError::new(e.to_string()))?;
-    // 课程订单撤销购买来源的权益（不动 admin_grant 等其它来源）；打赏没发过货。
-    let revoke =
-      crate::product::ProductKind::parse(&row.product_kind).is_some_and(|k| k.grants_entitlement());
-    if revoke {
-      entitlement::Entity::delete_many()
-        .filter(entitlement::Column::UserId.eq(row.user_id))
-        .filter(entitlement::Column::CourseSlug.eq(row.product_ref.clone()))
-        .filter(entitlement::Column::Source.eq("purchase"))
-        .exec(&db)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-    }
+    let revoke = mark_refunded(&db, &row).await.map_err(ServerFnError::new)?;
     tracing::info!(
       target: "pay_audit",
       "refund: {} order {} refunded (gateway status {}, by admin {}){}",
@@ -2862,6 +2972,79 @@ mod tests {
 
   fn lock_cwd() -> std::sync::MutexGuard<'static, ()> {
     CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+  }
+
+  /// G8：schema.org Course。付费课程每个币种一条 Offer，免费课程标 isAccessibleForFree。
+  #[test]
+  fn schema_lists_offers_per_currency() {
+    let mut course = read_course_fixture();
+    let v = course.schema();
+    assert_eq!(v["@type"], "Course");
+    assert_eq!(v["name"], "C");
+    assert_eq!(v["provider"]["name"], widgets::SITE_NAME);
+    assert_eq!(v["offers"][0]["price"], "99.50");
+    assert_eq!(v["offers"][0]["priceCurrency"], "CNY");
+    assert_eq!(v["offers"][1]["price"], "14.99");
+    assert_eq!(v["offers"][1]["priceCurrency"], "USD");
+    course.price_usd = None;
+    assert_eq!(course.schema()["offers"].as_array().map(Vec::len), Some(1));
+    course.access_tier = "free".into();
+    let free = course.schema();
+    assert_eq!(free["isAccessibleForFree"], true);
+    assert!(free.get("offers").is_none());
+  }
+
+  fn read_course_fixture() -> Course {
+    Course {
+      slug: "c".into(),
+      title: "C".into(),
+      description: "d".into(),
+      cover: None,
+      tags: vec![],
+      level: None,
+      order: 0,
+      access_tier: "paid".into(),
+      price: 9950,
+      currency: "CNY".into(),
+      price_usd: Some(1499),
+      chapters: vec![],
+    }
+  }
+
+  /// G6：免费课程的课节全部公开；付费课程只有试看课节公开。
+  #[test]
+  fn open_lesson_paths_follow_access_rules() {
+    let lesson = |slug: &str, preview: bool| LessonSummary {
+      slug: slug.into(),
+      title: slug.into(),
+      kind: LessonKind::Doc,
+      order: 0,
+      duration: None,
+      preview,
+    };
+    let mut course = Course {
+      slug: "c".into(),
+      title: "C".into(),
+      description: String::new(),
+      cover: None,
+      tags: vec![],
+      level: None,
+      order: 0,
+      access_tier: "paid".into(),
+      price: 100,
+      currency: default_currency(),
+      price_usd: None,
+      chapters: vec![Chapter {
+        slug: "ch".into(),
+        title: "Ch".into(),
+        description: String::new(),
+        order: 0,
+        lessons: vec![lesson("a", true), lesson("b", false)],
+      }],
+    };
+    assert_eq!(course.open_lesson_paths(), vec!["/course/c/ch/a"]);
+    course.access_tier = "free".into();
+    assert_eq!(course.open_lesson_paths(), vec!["/course/c/ch/a", "/course/c/ch/b"]);
   }
 
   #[test]
