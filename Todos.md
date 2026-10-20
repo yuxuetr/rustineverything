@@ -570,3 +570,24 @@
 - [x] C3 — 走查：首页、生态页、课程详情 / 课时、案例、博客正文、搜索、论坛、购买弹窗、管理后台，亮暗各截图；检查主按钮、链接、焦点环对比度。验收：无残留橘色强调，暗色下主按钮文字清晰
   - 完成（2026-10-20）：首页、生态页、课程详情、课时、案例列表 / 详情、博客正文、论坛、我的订单、管理后台订单，亮暗各截图，并用脚本扫描页面上色相 20°–50° 的可见元素：剩下的只有代码高亮（Prism）与分类徽章，没有橘色强调。对比度：亮色白字 / cyan-700 5.28:1，暗色 zinc-950 字 / cyan-400 11:1，cyan-400 链接在 zinc-900 卡片上 9.8:1，都过 WCAG AA（原橘色按钮白字只有 3.58:1）。暗色截图里标签发灰是 150ms 颜色过渡没走完，稳定后为白字 zinc-800 底。clippy、619 个测试、四档检查通过。未走查：购买弹窗（与课程页同用 primary token）
 - 阶段 C 完成：C1–C3
+
+### 阶段 H — 支付与安全加固（2026-10-20 审计）
+评估与设计见 [`docs/AUDIT_2026-10-20.md`](docs/AUDIT_2026-10-20.md) §2；不做的项与重估条件见 §4。
+- [ ] H1 — 退款订单不得被成功回调改回 paid：`claim_paid` 只认领 `pending` / `closed`，`decide` 对 `refunded` 返回 `AckRefunded`。验收：单测在旧逻辑下变红
+- [ ] H2 — Stripe `charge.refunded`（全额）与 `charge.dispute.created` → 订单 `paid → refunded` + 撤销 purchase 权益；与管理员退款共用 `mark_refunded`；DEPLOY_GUIDE / PAYMENT_SPEC 补 webhook 事件。验收：本地自签 webhook 实测两种事件撤销权益，重放幂等，部分退款不撤销
+- [ ] H3 — 购买发货冲突时不覆盖已有权益来源（保护 admin_grant）。验收：先赠后买再退款，权限仍在
+- [ ] H4 — `/api/orders/create`、`/api/orders/tip` 归入严格限流桶。验收：`classify_path` 单测
+- [ ] H5 — compose 里应用端口只绑 127.0.0.1，DEPLOY_GUIDE 说明。验收：`docker compose config` 输出 host_ip 127.0.0.1
+- [ ] H6 — 依赖升级到修复版本（rustls ≥0.23.46、h2 ≥0.4.16、quinn-proto ≥0.11.18 等）。验收：`cargo audit` 只剩无修复版本的条目
+- [ ] H7 — YouTube / Bilibili 嵌入 id 只允许 `[A-Za-z0-9_-]`。验收：单测，带 `?` / `&` / `/` 的 id 不渲染 iframe
+
+### 阶段 G — SEO 与加载性能（2026-10-20 审计）
+评估与设计见 [`docs/AUDIT_2026-10-20.md`](docs/AUDIT_2026-10-20.md) §3。英文独立 URL 不做（§4，内容全为中文，带可执行重估条件）。
+- [ ] G1 — 课节页加 `PageMeta`（标题、描述、canonical），不存在的课节返回 404。验收：curl 实测
+- [ ] G2 — `<html lang="zh-CN">`。验收：SSR 输出含 lang
+- [ ] G3 — 头部脚本 `defer`，mermaid 只在页面出现 `.mermaid` 时加载。验收：无图表页不请求 mermaid；含图表与代码的页面仍正常渲染
+- [ ] G4 — 响应压缩（tower-http `CompressionLayer`）。验收：带 `Accept-Encoding` 时 HTML / CSS 返回压缩
+- [ ] G5 — 静态资源缓存头：先在 release 下测，带哈希的资源若不是长缓存再改。验收：release 实测记录
+- [ ] G6 — sitemap 补 `/ecosystem/*` 与免费试看课节。验收：sitemap 含这些 URL
+- [ ] G7 — `/blog` 加 h1、案例详情正文标题降级、尾斜杠 301、Atom 日期改 RFC 3339。验收：curl 实测
+- [ ] G8 — JSON-LD：课程详情 Course、首页 WebSite。验收：SSR 输出含对应 `@type`，JSON 可解析
