@@ -493,7 +493,7 @@
   - 注意：索引在启动时只复用、不重扫（设计如此，见 OPERATIONS.md）；已部署环境要看到课程结果，需 admin 调一次 `POST /api/search/reindex`——本次分词器改名会让存量索引在下次启动时自动全量重建，所以这次部署无需手动操作
 - [x] O11 — 其余硬编码文案接入 i18n：博客 / 文档 / 课程不存在提示，播客 6 处（E15）。验收：切到 EN 后上述页面无中文残留
   - 完成：`widgets::LoadFailed` 改为调用方传文案（widgets 无 i18n）；博客 / 文档（首页、卡片、侧栏、不存在）/ 课程（列表、详情、目录、不存在）/ 播客（筛选、翻页 aria、PodcastCard 3 处）/ 评论区（10 处）/ 关联讨论面板（4 处）接入中英文。浏览器 EN 验收 9 个路径：剩余中文只有内容本身（文档 / 课程 / 播客数据）与下面刻意不做的支付弹窗
-  - 有意不做（当前版本）：课时页、付费墙、标注、`pay_ui`（购买弹窗 / 我的订单）仍为中文——支付只有支付宝 / 微信、以人民币计价，面向中文用户；课时内容本身也是中文。重估条件：出现非人民币支付渠道（`grep -rn 'provider ==' crates/modules/course/src/pay_ui.rs` 出现 alipay / wechat 之外的值），或 `assets/courses/*/` 下出现英文课程（`course.yaml` 含 `lang: en`）
+  - 有意不做（当前版本）：课时页、付费墙、标注、`pay_ui`（购买弹窗 / 我的订单）仍为中文（2026-10-20 重估条件触发：Stripe 上线，付费墙与 `pay_ui` 已在 I5 翻译）——支付只有支付宝 / 微信、以人民币计价，面向中文用户；课时内容本身也是中文。重估条件：出现非人民币支付渠道（`grep -rn 'provider ==' crates/modules/course/src/pay_ui.rs` 出现 alipay / wechat 之外的值），或 `assets/courses/*/` 下出现英文课程（`course.yaml` 含 `lang: en`）
 
 ### 阶段 L — 功能分层（Cargo features，2026-10-20）
 设计与证据见 [`docs/FEATURE_TIERS.md`](docs/FEATURE_TIERS.md)。四层：basic（无 feature）→ `accounts` → `course` → `payments`；`tips` 待 DL6 确认。默认构建（`web` + `payments`）行为不变。作者未答复的三个问题按推荐处理：做成通用框架（basic 不需要数据库）、标注归课程层（DL3）、打赏需登录且待确认后开工（DL6）。
@@ -524,6 +524,7 @@
   - 完成：`host::from_env(name)` 取代下单 / 对账 / 退款三处 `match provider`（host 执行器改收 `?Sized`）；`create_order` 加 `region`，金额与币种取自 `Pricing::quote`，并在建单前确认网关已配置（原来未配置时会留下一张 pending 单）；`payment_providers()`；订单列表（我的 / 管理）带币种。本地实测（假密钥 + 自签 webhook）：错 secret / 过期时间戳 400，无关事件与 unpaid 200 不发货，金额不符 500 不发货，paid → 订单 paid、存 `pi_` 流水号、写 purchase 权益，重放幂等；测试数据已清理。四档检查、clippy、613 个测试通过
 - [x] I4 — 界面：时区判断地区，课程详情 / 付费墙 / 首页课程卡 / 购买弹窗按地区报价与列支付方式，可手动切换；我的订单按币种显示。验收：浏览器模拟两个时区截图
   - 完成（c0b95b9）：`pricing::use_region()`（全局信号；SSR 与首帧按大陆默认，hydration 后读 localStorage 的手动选择，没有则按 `widgets::browser::time_zone()`）+ `set_region`。课程详情、付费墙、购买按钮、首页课程卡按地区报价；弹窗列 `methods_for(地区, 已配置网关)`，金额按所选网关的 `quote`，底部「🌐 海外 · 切换到中国大陆」；我的订单与管理订单按订单币种显示金额与渠道名。Chromium 实测：Asia/Shanghai → ¥99，America/New_York → $14.99；切换后价格与方式随之变化，刷新后保留。本地只配了 Stripe，所以大陆也只列出「银行卡 / 国际支付」（三网关排序见单测）
-- [ ] I5 — 购买弹窗与我的订单 i18n（阶段 O 的重估条件已触发）。验收：EN 下弹窗与订单页无中文
+- [x] I5 — 购买弹窗与我的订单 i18n（阶段 O 的重估条件已触发）。验收：EN 下弹窗与订单页无中文
+  - 完成（10d8286）：购买弹窗、付费墙、「在线购买未开通」提示、我的订单接入中英文；`create_order` / `query_order` 面向用户的错误改返回 `pay.err.*` key，弹窗经 `t()` 翻译（非 key 的网关原文原样显示）。`site_lang=en` 实测：弹窗、付费墙、订单页无中文，未登录点支付显示 “Please sign in to buy.”。仍为中文（当前版本不做）：课时页外框（如「← 返回课程目录」）与标注——课时内容本身是中文；网关返回的错误原文（如「Stripe 下单失败: …」）面向运维
 - [ ] I6 — Stripe 测试模式端到端（下单 → 支付 → 回调发货 → 对账 → 退款）。**需要作者提供 `sk_test_` 密钥与 webhook secret**
 
