@@ -125,6 +125,34 @@ fn annotation_layer(resource_kind: &str, resource_path: String) -> Element {
   }
 }
 
+/// 打赏卡片（payments 层，FEATURE_TIERS.md §6）；未编译支付时为空。
+fn tip_jar(source: String) -> Element {
+  #[cfg(feature = "payments")]
+  {
+    rsx! { TipCard { source } }
+  }
+  #[cfg(not(feature = "payments"))]
+  {
+    let _ = source;
+    rsx! {}
+  }
+}
+
+/// 给打赏卡片接上 app 层的登录状态与登录弹窗。
+#[cfg(feature = "payments")]
+#[component]
+fn TipCard(source: String) -> Element {
+  let session_user = crate::use_session_user();
+  let mut show_auth_modal = crate::use_auth_modal();
+  rsx! {
+      module_course::pay_ui::TipJar {
+          source,
+          signed_in: session_user.read().is_some(),
+          on_sign_in: move |_| show_auth_modal.set(true),
+      }
+  }
+}
+
 /// 首页课程区（course 层）；未编译课程时为空。
 fn course_showcase() -> Element {
   #[cfg(feature = "course")]
@@ -565,6 +593,7 @@ fn BlogArticle(id: String) -> Element {
         // `blog_id` 在 widgets::Markdown 内仅用于拼图片相对路径 `/posts/<id>/...`，
         // **必须传纯 slug**（如 "welcome"）。
         Markdown { content: content.clone(), blog_id: id.clone() }
+        {tip_jar(blog_path.clone())}
         // 标注层（resource_kind="blog"，path = 博客 id）
         {annotation_layer("blog", anno_path.clone())}
         // 评论与关联讨论只挂在存在的文章下
@@ -702,6 +731,8 @@ fn AboutBody() -> Element {
 #[component]
 pub fn Podcast() -> Element {
   rsx! {
-      ModuleGate { id: "podcast".to_string(), PodcastPage {} }
+      ModuleGate { id: "podcast".to_string(),
+          PodcastPage { footer: tip_jar("/podcast".to_string()) }
+      }
   }
 }

@@ -1,6 +1,6 @@
-//! 购买 UI（M5d）：购买按钮 + 弹窗。
+//! 购买 UI（M5d）：购买按钮 + 弹窗；打赏卡片复用同一个弹窗（FEATURE_TIERS.md §6）。
 //!
-//! 流程：选网关 → `create_order` →
+//! 流程：选网关 → `create_order` / `create_tip_order` →
 //!   - redirect/h5（支付宝 page/wap、微信 h5）：浏览器跳转收银台；
 //!   - qrcode（支付宝扫码、微信 native）：渲染二维码，用户扫码后点「刷新状态」
 //!     → `query_order`，已支付则刷新页面解锁。
@@ -20,8 +20,10 @@ use app_core::i18n::t;
 use crate::pricing::{
   channel_key, methods_for, region_key, set_region, switch_key, use_region, Price, Pricing, Region,
 };
+use crate::product::{tip_pricing, ProductKind, TIP_TIERS};
 use crate::server::{
-  create_order, list_my_orders, my_membership, payment_providers, query_order, OrderInfo,
+  create_order, create_tip_order, list_my_orders, my_membership, payment_providers, query_order,
+  OrderInfo,
 };
 
 /// 由 fast_qr 把支付链接渲染成 SVG 二维码字符串。
@@ -46,6 +48,19 @@ fn clean_err(e: &ServerFnError) -> String {
   s.split(" (details:").next().unwrap_or(s).trim().to_string()
 }
 
+/// 弹窗里买的东西。
+#[derive(Debug, Clone, PartialEq)]
+enum Item {
+  Course {
+    slug: String,
+  },
+  /// `tier` 是 [`TIP_TIERS`] 的序号，`source` 是打赏发生的页面。
+  Tip {
+    source: String,
+    tier: u32,
+  },
+}
+
 /// 购买按钮：点击弹出购买弹窗。放在 Paywall / 课程详情。按钮上的价格随地区变化。
 #[component]
 pub fn PurchaseButton(course_slug: String, pricing: Pricing) -> Element {
@@ -67,7 +82,7 @@ pub fn PurchaseButton(course_slug: String, pricing: Pricing) -> Element {
               }
               // 内容只在打开时挂载：每次重新打开都从选择支付方式开始。
               if open() {
-                  PurchaseForm { course_slug: course_slug.clone(), pricing: pricing.clone() }
+                  PurchaseForm { item: Item::Course { slug: course_slug.clone() }, pricing: pricing.clone() }
               }
           }
       }
@@ -75,7 +90,7 @@ pub fn PurchaseButton(course_slug: String, pricing: Pricing) -> Element {
 }
 
 #[component]
-fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
+fn PurchaseForm(item: Item, pricing: Pricing) -> Element {
   let lang = current_lang();
   let region = use_region();
   // 服务端已配置的网关；与地区取交集（DI4）。
@@ -94,18 +109,25 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
   let mut qr = use_signal(String::new);
   let mut out_trade_no = use_signal(String::new);
 
+  // 课程付款后刷新页面解锁；打赏没有要解锁的，停在感谢页。
+  let is_tip = matches!(item, Item::Tip { .. });
   let pay_with = provider.clone();
   let start_pay = move |_| {
     let Some(prov) = pay_with.clone() else {
       return;
     };
-    let slug = course_slug.clone();
+    let item = item.clone();
     // PC 默认：支付宝跳转收银台(page)、微信 Native 扫码；Stripe 跳转托管收银台。
-    let scene = if prov == "wechat" { "native" } else { "page" };
+    let scene = if prov == "wechat" { "native" } else { "page" }.to_string();
+    let region = region.as_str().to_string();
     status.set("loading".to_string());
     message.set(String::new());
     spawn(async move {
-      match create_order(slug, prov, scene.to_string(), region.as_str().to_string()).await {
+      let created = match item {
+        Item::Course { slug } => create_order(slug, prov, scene, region).await,
+        Item::Tip { source, tier } => create_tip_order(tier, source, prov, scene, region).await,
+      };
+      match created {
         Ok(init) => match init.kind.as_str() {
           "redirect" | "h5" => {
             widgets::browser::navigate(&init.payload);
@@ -137,8 +159,10 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
       match query_order(otn).await {
         Ok(s) if s.paid => {
           status.set("paid".to_string());
-          widgets::browser::sleep_ms(800).await;
-          widgets::browser::reload();
+          if !is_tip {
+            widgets::browser::sleep_ms(800).await;
+            widgets::browser::reload();
+          }
         }
         Ok(_) => message.set(t(lang, "pay.not_yet")),
         Err(e) => message.set(t(lang, &clean_err(&e))),
@@ -180,7 +204,9 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
           "paid" => rsx! {
               div { class: "py-8 text-center",
                   div { class: "text-4xl mb-3", "✅" }
-                  p { class: "font-semibold text-slate-900 dark:text-white", "{t(lang, \"pay.success\")}" }
+                  p { class: "font-semibold text-slate-900 dark:text-white",
+                      if is_tip { "{t(lang, \"pay.tip.thanks\")}" } else { "{t(lang, \"pay.success\")}" }
+                  }
               }
           },
           _ => rsx! {
@@ -221,6 +247,88 @@ fn PurchaseForm(course_slug: String, pricing: Pricing) -> Element {
                   }
               }
           },
+      }
+  }
+}
+
+/// 打赏卡片（博客文章末尾、播客页底部）。服务端没配网关时不显示（DT4）。
+/// 登录状态与登录弹窗在 app 层，由调用方传入：未登录点按钮打开登录弹窗。
+#[component]
+pub fn TipJar(source: String, signed_in: bool, on_sign_in: EventHandler<()>) -> Element {
+  let lang = current_lang();
+  let mut open = use_signal(|| false);
+  let configured = use_resource(|| async move { payment_providers().await.unwrap_or_default() });
+  if configured.read().as_ref().is_none_or(|c| c.is_empty()) {
+    return rsx! {};
+  }
+  rsx! {
+      div { class: "mt-12 flex flex-col items-center gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 px-6 py-8 text-center",
+          p { class: "font-semibold text-slate-900 dark:text-white", "{t(lang, \"pay.tip.title\")}" }
+          p { class: "text-sm text-slate-500 dark:text-slate-400", "{t(lang, \"pay.tip.body\")}" }
+          if signed_in {
+              Dialog { open: open(), on_open_change: move |v| open.set(v),
+                  DialogTrigger {
+                      class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-2 px-6 font-semibold"),
+                      "{t(lang, \"pay.tip.button\")}"
+                  }
+                  DialogOverlay { class: "z-[60]" }
+                  DialogContent { class: "z-[60] max-w-sm gap-0 rounded-2xl",
+                      DialogTitle { class: "mb-4 pr-8", "{t(lang, \"pay.tip.dialog_title\")}" }
+                      DialogClose { class: "text-xl leading-none text-muted-foreground",
+                          span { "aria-hidden": "true", "×" }
+                          span { class: "sr-only", "{t(lang, \"pay.close\")}" }
+                      }
+                      if open() {
+                          TipForm { source: source.clone() }
+                      }
+                  }
+              }
+          } else {
+              Button {
+                  class: "mt-2 px-6 font-semibold",
+                  onclick: move |_| on_sign_in.call(()),
+                  "{t(lang, \"pay.tip.button\")}"
+              }
+              p { class: "text-xs text-slate-400", "{t(lang, \"pay.tip.sign_in\")}" }
+          }
+      }
+  }
+}
+
+/// 档位选择 + 购买表单。换档位时表单重新挂载（`key`），从选支付方式开始。
+#[component]
+fn TipForm(source: String) -> Element {
+  let lang = current_lang();
+  let region = use_region();
+  let mut tier = use_signal(|| 1u32);
+  let item_class = move |i: u32| {
+    if tier() == i {
+      "flex-1 border border-primary bg-primary/5 text-primary hover:bg-primary/10"
+    } else {
+      "flex-1 border border-input"
+    }
+  };
+  // 档位在常量表内，取不到只可能是表被改空了；那样就不渲染表单。
+  let Some(pricing) = tip_pricing(tier() as usize) else {
+    return rsx! {};
+  };
+  rsx! {
+      p { class: "text-sm text-slate-600 dark:text-slate-400 mb-3", "{t(lang, \"pay.tip.amount\")}" }
+      ToggleGroup {
+          class: "flex w-full gap-2 mb-5",
+          "aria-label": t(lang, "pay.tip.amount"),
+          value: tier().to_string(),
+          on_value_change: move |v: String| if let Ok(i) = v.parse() { tier.set(i) },
+          for i in 0..TIP_TIERS.len() as u32 {
+              {
+                  let label = tip_pricing(i as usize).map(|p| p.list_price(region).label()).unwrap_or_default();
+                  rsx! { ToggleGroupItem { key: "{i}", value: "{i}", class: item_class(i), "{label}" } }
+              }
+          }
+      }
+      {
+          let tier = tier();
+          rsx! { PurchaseForm { key: "{tier}", item: Item::Tip { source: source.clone(), tier }, pricing } }
       }
   }
 }
@@ -289,7 +397,7 @@ pub fn MyOrdersPage() -> Element {
                       Table {
                           TableHeader { class: "bg-muted/50",
                               TableRow {
-                                  TableHead { class: "h-10 px-4", "{t(lang, \"pay.orders.course\")}" }
+                                  TableHead { class: "h-10 px-4", "{t(lang, \"pay.orders.item\")}" }
                                   TableHead { class: "h-10 px-4", "{t(lang, \"pay.orders.amount\")}" }
                                   TableHead { class: "h-10 px-4", "{t(lang, \"pay.orders.channel\")}" }
                                   TableHead { class: "h-10 px-4", "{t(lang, \"pay.orders.status\")}" }
@@ -306,7 +414,15 @@ pub fn MyOrdersPage() -> Element {
                                       rsx! {
                                           TableRow { key: "{o.out_trade_no}",
                                               TableCell { class: "px-4 py-2",
-                                                  Link { to: format!("/course/{}", o.product_ref), class: "hover:text-primary", "{o.product_ref}" }
+                                                  match o.product_kind {
+                                                      ProductKind::Course => rsx! {
+                                                          Link { to: format!("/course/{}", o.product_ref), class: "hover:text-primary", "{o.product_ref}" }
+                                                      },
+                                                      ProductKind::Tip => rsx! {
+                                                          span { "{t(lang, \"pay.orders.tip\")} · " }
+                                                          Link { to: o.product_ref.clone(), class: "text-slate-400 hover:text-primary", "{o.product_ref}" }
+                                                      },
+                                                  }
                                               }
                                               TableCell { class: "px-4 py-2 font-medium", "{amount}" }
                                               TableCell { class: "px-4 py-2 text-slate-400", "{chan}" }

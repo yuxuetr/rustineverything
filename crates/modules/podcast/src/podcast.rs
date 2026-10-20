@@ -82,8 +82,9 @@ const PAGE_SIZE: usize = 8;
 
 /// Podcast 主页面。节目来自 `assets/podcasts/`（SEO 内容），经 `use_server_future`
 /// 服务端预取并随 SSR HTML 下发（O6，理由同 B6 对内容页的结论）。
+/// `footer` 由 app 注入（如打赏卡片），放在节目列表之后。
 #[component]
-pub fn PodcastPage() -> Element {
+pub fn PodcastPage(footer: Element) -> Element {
   let lang = use_language_ctx();
   rsx! {
       widgets::PageMeta {
@@ -105,6 +106,7 @@ pub fn PodcastPage() -> Element {
                   },
                   PodcastBody {}
               }
+              div { class: "mx-auto max-w-2xl", {footer} }
           }
       }
   }
