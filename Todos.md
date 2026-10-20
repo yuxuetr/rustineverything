@@ -522,7 +522,8 @@
   - 完成（726c21c）：`module-payment::stripe`（默认开启的 `stripe` feature，依赖 hmac + sha2）。回调只有 `checkout.session.completed` / `async_payment_succeeded` 且 `payment_status == paid` 才算成功；查单无结果 → `not_found`（对账超窗关单）；退款要 PaymentIntent id，`RefundRequest` 加 `txn_id`。单测 8 个；验签向量由 Python 独立算出；删掉时间戳检查或让 HMAC 比较恒真都会让测试变红
 - [x] I3 — 接线：`create_order(region)`、`payment_providers()`、对账 / 退款分派、`/api/pay/stripe/notify`、订单带币种、`.env.example`。验收：未配 Stripe 时行为与现在一致；用测试签名构造的 webhook 走通流水线
   - 完成：`host::from_env(name)` 取代下单 / 对账 / 退款三处 `match provider`（host 执行器改收 `?Sized`）；`create_order` 加 `region`，金额与币种取自 `Pricing::quote`，并在建单前确认网关已配置（原来未配置时会留下一张 pending 单）；`payment_providers()`；订单列表（我的 / 管理）带币种。本地实测（假密钥 + 自签 webhook）：错 secret / 过期时间戳 400，无关事件与 unpaid 200 不发货，金额不符 500 不发货，paid → 订单 paid、存 `pi_` 流水号、写 purchase 权益，重放幂等；测试数据已清理。四档检查、clippy、613 个测试通过
-- [ ] I4 — 界面：时区判断地区，课程详情 / 付费墙 / 首页课程卡 / 购买弹窗按地区报价与列支付方式，可手动切换；我的订单按币种显示。验收：浏览器模拟两个时区截图
+- [x] I4 — 界面：时区判断地区，课程详情 / 付费墙 / 首页课程卡 / 购买弹窗按地区报价与列支付方式，可手动切换；我的订单按币种显示。验收：浏览器模拟两个时区截图
+  - 完成（c0b95b9）：`pricing::use_region()`（全局信号；SSR 与首帧按大陆默认，hydration 后读 localStorage 的手动选择，没有则按 `widgets::browser::time_zone()`）+ `set_region`。课程详情、付费墙、购买按钮、首页课程卡按地区报价；弹窗列 `methods_for(地区, 已配置网关)`，金额按所选网关的 `quote`，底部「🌐 海外 · 切换到中国大陆」；我的订单与管理订单按订单币种显示金额与渠道名。Chromium 实测：Asia/Shanghai → ¥99，America/New_York → $14.99；切换后价格与方式随之变化，刷新后保留。本地只配了 Stripe，所以大陆也只列出「银行卡 / 国际支付」（三网关排序见单测）
 - [ ] I5 — 购买弹窗与我的订单 i18n（阶段 O 的重估条件已触发）。验收：EN 下弹窗与订单页无中文
 - [ ] I6 — Stripe 测试模式端到端（下单 → 支付 → 回调发货 → 对账 → 退款）。**需要作者提供 `sk_test_` 密钥与 webhook secret**
 
