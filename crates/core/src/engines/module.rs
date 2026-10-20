@@ -121,7 +121,30 @@ pub struct ModuleEngine {
 ///
 /// 这里不填 `nav_label_key`；前端用 `nav-{id}` 作为 i18n key
 /// （见 `assets/i18n/{zh,en}.ftl`）。
+///
+/// 只返回本次编译带进来的模块（见 [`register_compiled_modules`]）。
 pub fn default_module_specs() -> Vec<ModuleSpec> {
+  only_compiled(builtin_module_specs(), COMPILED_MODULES.get().map(Vec::as_slice))
+}
+
+/// 本次编译带进来的模块 id（功能分层，docs/FEATURE_TIERS.md DL2）。
+static COMPILED_MODULES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+
+/// 组合根（app 的 `main`，client 与 server 两侧）登记按 Cargo feature 编译进来的模块。
+/// 之后导航、`ModuleGate`、sitemap、搜索看到的模块都限于这个集合，site.json 只能在其中再关。
+/// 只生效一次；未登记时视为全部内置模块都在。
+pub fn register_compiled_modules(ids: Vec<&'static str>) {
+  let _ = COMPILED_MODULES.set(ids);
+}
+
+fn only_compiled(specs: Vec<ModuleSpec>, compiled: Option<&[&'static str]>) -> Vec<ModuleSpec> {
+  match compiled {
+    Some(ids) => specs.into_iter().filter(|s| ids.contains(&s.id.as_str())).collect(),
+    None => specs,
+  }
+}
+
+fn builtin_module_specs() -> Vec<ModuleSpec> {
   vec![
     ModuleSpec::new("blog", "Blog")
       .with_routes(["/blog", "/blog/:id"])
@@ -480,6 +503,16 @@ mod tests {
       assert!(ids.contains(&id), "缺少内置模块: {}", id);
     }
     assert_eq!(specs.len(), 11);
+  }
+
+  #[test]
+  fn only_compiled_keeps_registered_ids() {
+    let ids: Vec<String> = only_compiled(builtin_module_specs(), Some(&["blog", "docs"][..]))
+      .into_iter()
+      .map(|s| s.id)
+      .collect();
+    assert_eq!(ids, ["blog", "docs"]);
+    assert_eq!(only_compiled(builtin_module_specs(), None).len(), 11);
   }
 
   #[test]

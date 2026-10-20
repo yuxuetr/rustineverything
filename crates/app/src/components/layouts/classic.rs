@@ -21,7 +21,7 @@ use crate::components::user_menu::UserMenu;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
-use crate::server::enabled_module_ids;
+use crate::components::module_gate::use_enabled_modules;
 use crate::taxonomy::ecosystems;
 use module_search::search::SearchButton;
 
@@ -42,19 +42,8 @@ pub fn ClassicShell() -> Element {
   let t_podcast = t(lang(), "nav.podcast");
   let t_forum = t(lang(), "nav.forum");
 
-  // Phase 3.4：站点模块开关。默认全开（避免首屏闪烁）。
-  //
-  // Phase 8.7：fallback 列表改从 `default_module_specs()` 单一源派生，
-  // 不再在 navbar 里硬编码 11 个 module id —— 加 12th 模块只动 ModuleSpec
-  // 一处即可在 nav 出现。
-  fn all_default_ids() -> Vec<String> {
-    app_core::engines::module::default_module_specs().into_iter().map(|s| s.id).collect()
-  }
-  let enabled_res =
-    use_resource(
-      || async move { enabled_module_ids().await.unwrap_or_else(|_| all_default_ids()) },
-    );
-  let enabled: Vec<String> = enabled_res.read().as_ref().cloned().unwrap_or_else(all_default_ids);
+  // Phase 3.4：站点模块开关（编译进来且 site.json 未关）。
+  let enabled = use_enabled_modules();
   let on_blog = enabled.iter().any(|s| s == "blog");
   let on_podcast = enabled.iter().any(|s| s == "podcast");
   let on_cases = enabled.iter().any(|s| s == "cases");

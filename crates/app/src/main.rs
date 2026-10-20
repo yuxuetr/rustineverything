@@ -85,7 +85,14 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
 })();
 "#;
 
+/// 本次编译带进来的模块 id（docs/FEATURE_TIERS.md DL2）。导航 / ModuleGate / sitemap /
+/// 搜索只认这个集合；site.json 的模块开关只能在其中再关。
+fn compiled_modules() -> Vec<&'static str> {
+  vec!["blog", "podcast", "cases", "docs", "embedded", "ai", "web3", "wasm", "cli", "forum", "course"]
+}
+
 fn main() {
+  app_core::engines::module::register_compiled_modules(compiled_modules());
   // Phase 2.1 / 2.2: 启动期一次性注册 MDX 嵌入组件。
   // 在 server 和 client 两边都调用，用于 SSR + hydration 双边 registry 一致。
   // 1) widgets 内置 9 个默认组件 (YouTube / Bilibili / 5 色 / Underline / Strikethrough)

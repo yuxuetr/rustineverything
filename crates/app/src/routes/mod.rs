@@ -10,11 +10,10 @@ use crate::components::hero::Hero;
 use crate::components::home_sections::{
   CommunityFeed, CourseShowcase, EcosystemPage, EcosystemPillars, FeaturedCases,
 };
-use crate::components::module_gate::ModuleGate;
+use crate::components::module_gate::{use_enabled_modules, ModuleGate};
 use crate::components::nav::Navbar;
 use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
-use crate::server::enabled_module_ids;
 use module_admin::admin::{
   AdminCommentsPage, AdminDashboardPage, AdminModerationPage, AdminModerationSettingsPage,
   AdminTopicsPage, AdminUsersPage,
@@ -142,16 +141,10 @@ pub enum Route {
 #[component]
 pub fn Home() -> Element {
   let lang = use_i18n();
-
-  // 与 navbar 共用「站点模块开关」：默认全开避免首屏闪烁，server fn 返回后收敛。
-  fn all_default_ids() -> Vec<String> {
-    app_core::engines::module::default_module_specs().into_iter().map(|s| s.id).collect()
-  }
-  let enabled_res =
-    use_resource(
-      || async move { enabled_module_ids().await.unwrap_or_else(|_| all_default_ids()) },
-    );
-  let enabled: Vec<String> = enabled_res.read().as_ref().cloned().unwrap_or_else(all_default_ids);
+  // 与 navbar 共用「站点模块开关」。
+  let enabled = use_enabled_modules();
+  let on = |id: &str| enabled.iter().any(|e| e == id);
+  let (on_blog, on_forum) = (on("blog"), on("forum"));
 
   rsx! {
       widgets::PageMeta {
@@ -159,17 +152,23 @@ pub fn Home() -> Element {
           description: t(lang(), "hero.subtitle"),
           path: "/".to_string(),
       }
-      Hero {}
+      Hero { enabled: enabled.clone() }
 
       // 两大生态支柱：直接体现「Rust 生态 + AI 生态」定位
       EcosystemPillars { enabled: enabled.clone() }
 
       // 精选案例（旗舰）+ 课程（变现）
-      FeaturedCases {}
-      CourseShowcase {}
+      if on("cases") {
+          FeaturedCases {}
+      }
+      if on("course") {
+          CourseShowcase {}
+      }
 
       // 社区动态：最新博客 + 论坛热帖
-      CommunityFeed {}
+      if on_blog || on_forum {
+          CommunityFeed { blog: on_blog, forum: on_forum }
+      }
   }
 }
 

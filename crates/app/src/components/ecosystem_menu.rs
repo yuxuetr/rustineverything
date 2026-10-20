@@ -24,6 +24,7 @@ pub fn EcosystemMenu(eco: Ecosystem, enabled: Vec<String>) -> Element {
   // 仅展示已启用模块对应的领域；全部关闭时仍渲染按钮（学习资源列仍有用）。
   let domains: Vec<_> =
     eco.domains.iter().filter(|d| enabled.iter().any(|e| e == d.module_id)).cloned().collect();
+  let on = |id: &str| enabled.iter().any(|e| e == id);
 
   let item_class = "block px-2 py-1.5 rounded-md text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors";
   let col_title =
@@ -59,9 +60,15 @@ pub fn EcosystemMenu(eco: Ecosystem, enabled: Vec<String>) -> Element {
                   div {
                       p { class: "{col_title}", "{t(lang(), \"mega.col.learn\")}" }
                       div { class: "flex flex-col",
-                          Link { to: Route::Docs {}, class: "{item_class}", "{t(lang(), \"mega.learn.docs\")}" }
-                          Link { to: Route::Courses {}, class: "{item_class}", "{t(lang(), \"mega.learn.courses\")}" }
-                          Link { to: Route::Cases {}, class: "{item_class}", "{t(lang(), \"mega.learn.cases\")}" }
+                          if on("docs") {
+                              Link { to: Route::Docs {}, class: "{item_class}", "{t(lang(), \"mega.learn.docs\")}" }
+                          }
+                          if on("course") {
+                              Link { to: Route::Courses {}, class: "{item_class}", "{t(lang(), \"mega.learn.courses\")}" }
+                          }
+                          if on("cases") {
+                              Link { to: Route::Cases {}, class: "{item_class}", "{t(lang(), \"mega.learn.cases\")}" }
+                          }
                       }
                   }
                   // 第三列：生态简介 + 精选案例 CTA（M2/M3 接 cases.favorite 实时数据）
@@ -70,10 +77,12 @@ pub fn EcosystemMenu(eco: Ecosystem, enabled: Vec<String>) -> Element {
                           p { class: "text-sm font-semibold text-slate-900 dark:text-white", "{label}" }
                           p { class: "text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed", "{t(lang(), eco.blurb_key)}" }
                       }
-                      Link { to: Route::Cases {}, class: "mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline",
-                          "{t(lang(), \"mega.featured.cta\")}"
-                          svg { class: "w-3.5 h-3.5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", stroke_width: "2",
-                              path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9 5l7 7-7 7" }
+                      if on("cases") {
+                          Link { to: Route::Cases {}, class: "mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--color-primary)] hover:underline",
+                              "{t(lang(), \"mega.featured.cta\")}"
+                              svg { class: "w-3.5 h-3.5", fill: "none", stroke: "currentColor", view_box: "0 0 24 24", stroke_width: "2",
+                                  path { stroke_linecap: "round", stroke_linejoin: "round", d: "M9 5l7 7-7 7" }
+                              }
                           }
                       }
                   }

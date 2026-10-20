@@ -315,15 +315,8 @@ pub async fn enabled_module_ids() -> Result<Vec<String>, ServerFnError> {
   }
   #[cfg(not(feature = "server"))]
   {
-    // 客户端 fallback：默认全开，避免 hydration 闪烁。
-    Ok(vec![
-      "blog".to_string(),
-      "podcast".to_string(),
-      "cases".to_string(),
-      "forum".to_string(),
-      "course".to_string(),
-      "docs".to_string(),
-    ])
+    // 客户端 fallback：编译进来的模块全开，避免 hydration 闪烁。
+    Ok(app_core::engines::module::default_module_specs().into_iter().map(|s| s.id).collect())
   }
 }
 
