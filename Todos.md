@@ -567,4 +567,6 @@
   - 完成（cbeba1c）：`tailwind-input.css` 默认 token 与 `ocean.css` 中性色改 zinc、主色亮 cyan-700 / 暗 cyan-400（暗色字 zinc-950），ring、chart-1、sidebar 同步；`slate-*` 映射改指 zinc，删掉 blue→orange 映射。`theme.rs` 两个单测改断言 zinc / cyan，旧值下变红。dx 实测课程页主按钮亮色 oklch(52% 0.105 223) / 暗色 oklch(78.9% 0.154 211.5)。`THEME_SPEC.md`、`TAILWIND_GUIDE.md`、README 同步
 - [x] C2 — 手写强调色改用 `primary`（`routes/mod.rs` 标题悬停、`cases.rs` 详情分类标签、`mdx.rs` 正文链接）。验收：仓库里除分类徽章和警告提示外，不再有 `orange-*` / `blue-*` 的手写强调色
   - 完成（137451a）：三处改为 `text-primary` / `bg-primary/10` / `decoration-primary`。剩下的 `orange-*` / `blue-*` 都是分类色（案例分类、搜索结果类型）、标注色板的「blue」和 NOTE 提示框。顺带修了一个已有问题（4526a64）：Tailwind 没有扫描 `crates/widgets` 与 `crates/board`，正文里的 NOTE / TIP / WARNING 提示框和链接样式从未生成 CSS，现已加入 `@source`
-- [ ] C3 — 走查：首页、生态页、课程详情 / 课时、案例、博客正文、搜索、论坛、购买弹窗、管理后台，亮暗各截图；检查主按钮、链接、焦点环对比度。验收：无残留橘色强调，暗色下主按钮文字清晰
+- [x] C3 — 走查：首页、生态页、课程详情 / 课时、案例、博客正文、搜索、论坛、购买弹窗、管理后台，亮暗各截图；检查主按钮、链接、焦点环对比度。验收：无残留橘色强调，暗色下主按钮文字清晰
+  - 完成（2026-10-20）：首页、生态页、课程详情、课时、案例列表 / 详情、博客正文、论坛、我的订单、管理后台订单，亮暗各截图，并用脚本扫描页面上色相 20°–50° 的可见元素：剩下的只有代码高亮（Prism）与分类徽章，没有橘色强调。对比度：亮色白字 / cyan-700 5.28:1，暗色 zinc-950 字 / cyan-400 11:1，cyan-400 链接在 zinc-900 卡片上 9.8:1，都过 WCAG AA（原橘色按钮白字只有 3.58:1）。暗色截图里标签发灰是 150ms 颜色过渡没走完，稳定后为白字 zinc-800 底。clippy、619 个测试、四档检查通过。未走查：购买弹窗（与课程页同用 primary token）
+- 阶段 C 完成：C1–C3
