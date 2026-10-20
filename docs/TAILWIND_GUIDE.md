@@ -84,22 +84,16 @@ token 类名自动跟随主题与暗色模式，不需要写 `dark:` 变体。
 
 ### 2.2 旧色阶映射（存量代码）
 
-在 `tailwind-input.css` 的 `@theme` 块中，项目做了两组颜色重映射：
+在 `tailwind-input.css` 的 `@theme` 块中，项目把 slate 色阶重映射为 zinc：
 
 ```css
-/* slate → stone（暖色调灰阶） */
---color-slate-*: var(--color-stone-*);
-
-/* blue → orange（Rust 品牌色） */
---color-blue-*: var(--color-orange-*);
+/* slate → zinc（石墨冷灰） */
+--color-slate-*: var(--color-zinc-*);
 ```
 
-**意味着：**
-- 代码中写 `bg-blue-600` 实际渲染为 **橙色**（orange-600）
-- 代码中写 `text-slate-900` 实际渲染为 **石灰色**（stone-900）
-- 如果需要真正的蓝色，使用 `sky-*`、`indigo-*` 或 `cyan-*`
+**意味着：**代码中写 `text-slate-900` 实际渲染为 zinc-900。`blue-*` 就是蓝色（原来的 blue→orange 映射已在阶段 C 删除，2026-10-20）。
 
-存量代码里还有约 1100 处 `slate-*`。映射只改色阶，**不跟随主题**：主题的中性色 token 若取冷色，组件会是冷色，旁边手写的 `dark:bg-slate-900` 却是暖色 stone。所以内置主题的中性色都取 stone 色阶（ocean 自 2026-10-08 起，`crates/core/src/engines/theme.rs` 有测试守住）。新代码不要再写 `slate-*` / `blue-*`，改用 2.1 的 token。
+存量代码里还有约 870 处 `slate-*`。映射只改色阶，**不跟随主题**：主题的中性色 token 与手写的 `dark:bg-slate-900` 若不是同一色阶，组件与手写区域会冷暖不一。所以默认主题 ocean 的中性色取 zinc 色阶（`crates/core/src/engines/theme.rs` 有测试守住）。新代码不要再写 `slate-*`，强调色不要写具体色相，改用 2.1 的 token。
 
 ### 2.3 主题
 
@@ -260,12 +254,12 @@ Dioxus 的 `rsx!` 支持 `{variable}` 直接插入到 class 字符串中。确�
 
 | 场景 | 新代码 | 存量写法 |
 |------|-------|---------|
-| 品牌主色 / CTA | `bg-primary` / `text-primary`，或 `Button` | `blue-*`（映射为 orange） |
+| 品牌主色 / CTA / 正文链接 | `bg-primary` / `text-primary`，或 `Button` | 无（已全部改为 token） |
 | 成功 / 开源标签 | `text-success`、`Badge { variant: Success }` | `emerald-*` |
 | 警告 | `text-warning`、`Badge { variant: Warning }` | `amber-*` |
 | 错误 / 危险操作 | `text-destructive`、`ButtonVariant::Destructive` | `rose-*` / `red-*` |
-| 中性文字 / 背景 / 边框 | `text-foreground`、`text-muted-foreground`、`bg-background`、`bg-card`、`bg-muted`、`border-border` | `slate-*`（映射为 stone） |
-| 分类配色（真正的蓝等） | `sky-*` / `indigo-*` / `cyan-*` | 同左，绕过 blue→orange 映射 |
+| 中性文字 / 背景 / 边框 | `text-foreground`、`text-muted-foreground`、`bg-background`、`bg-card`、`bg-muted`、`border-border` | `slate-*`（映射为 zinc） |
+| 分类配色（案例分类、搜索结果类型等） | 具体色相，如 `blue-*` / `amber-*` / `orange-*` | 同左 |
 
 ### 5.2 间距与布局
 
@@ -306,9 +300,9 @@ Dioxus 的 `rsx!` 支持 `{variable}` 直接插入到 class 字符串中。确�
 3. 重新运行 `cd crates/app && npm run build`
 4. 确认输出的 `assets/tailwind.css` 中包含该类名：`grep 'your-class' assets/tailwind.css`
 
-### Q2: `blue-600` 为什么渲染成橙色？
+### Q2: `slate-*` 为什么和 Tailwind 文档里的颜色不一样？
 
-这是主题映射，见 [2.2 旧色阶映射](#22-旧色阶映射存量代码)。如果需要真正的蓝色，使用 `sky-*`、`indigo-*` 或 `cyan-*`。
+这是色阶映射（slate → zinc），见 [2.2 旧色阶映射](#22-旧色阶映射存量代码)。
 
 ### Q3: 深色模式切换不生效？
 

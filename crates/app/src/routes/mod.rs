@@ -487,7 +487,7 @@ fn BlogList() -> Element {
                                           to: Route::Blog { id: post.slug.clone() },
                                           class: "group block px-5 py-4 hover:bg-white dark:hover:bg-slate-800/60 transition-all",
                                           div { class: "flex justify-between items-start gap-3",
-                                              h3 { class: "text-sm font-semibold text-slate-900 dark:text-white group-hover:text-blue-600 transition-colors leading-snug flex-1",
+                                              h3 { class: "text-sm font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors leading-snug flex-1",
                                                   "{post.title}"
                                               }
                                               if !post.date.is_empty() {

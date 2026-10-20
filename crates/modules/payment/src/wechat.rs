@@ -31,6 +31,17 @@ pub struct WechatConfig {
   pub notify_url: String,
 }
 
+/// [`config`] 必读的变量，启动自检用。
+pub(crate) const REQUIRED_ENV: &[&str] = &[
+  "WECHAT_MCHID",
+  "WECHAT_APP_ID",
+  "WECHAT_API_V3_KEY",
+  "WECHAT_MCH_PRIVATE_KEY",
+  "WECHAT_MCH_SERIAL_NO",
+  "WECHAT_PLATFORM_PUBLIC_KEY",
+  "PAY_NOTIFY_BASE",
+];
+
 /// 加载配置；任一关键项缺失/非法 → None（微信下单将报「未配置」）。
 pub fn config() -> Option<WechatConfig> {
   let mchid = env_nonempty("WECHAT_MCHID")?;

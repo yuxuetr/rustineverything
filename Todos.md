@@ -159,7 +159,7 @@
 - [x] `cases.category` → 生态派生映射（taxonomy::ecosystem_of_case_category，单一来源）— 提交 `feat(taxonomy): ecosystem landing pages`
 - [x] 生态落地页 `/ecosystem/:id`（生态简介 + 领域入口 + 该生态精选案例过滤）；pillars 加「进入生态」入口
 - [x] 领域 board（/embedded /ai /web3 /wasm /cli）保留为领域落地页（M1 起即由导航/pillars 指向）
-- [ ] 延后（内容相关）：`ecosystem/domain` 标签贯通 docs/blog/course；`/ai` 子领域 tag 化筛选（需先给 ai 文章打 llm/inference/agent/rust-ai 标签）
+- 不做（当前版本，2026-10-20 重估）：`ecosystem/domain` 标签贯通 docs/blog/course、`/ai` 子领域 tag 筛选。`/ai` 只有 1 篇文章（candle-local-llm，已带 llm/inference 标签），各领域 1–2 篇、博客 2 篇、课程 1 门，筛选没有可筛的东西。重估条件：`[ "$(find assets/topics/ai -name index.md | wc -l)" -ge 8 ]` 退出码为 0（4 个子领域各约 2 篇）。已反向验证：现状为 1，造 8 篇时为 0
 
 ## M4 — 课程付费地基（不接网关也能线下售卖）
 - [x] `course.yaml` 加 `access_tier`(free|paid|pro)/`price`/`currency`；Lesson frontmatter 加 `preview`（首页 CourseCard 显价格徽章；rust-basics 示例 paid）— 提交 `feat(course): access tier + preview metadata`
@@ -185,7 +185,7 @@
 ## M6 — Pro 订阅会员 ✅
 - [x] **M6a** memberships 表 + 实体 + 迁移；is_pro_member；纯函数 can_access_lesson（pro 课程允许有效会员）接入 get_lesson；单测 — 提交 `feat(course): Pro membership model + access control`
 - [x] **M6b** my_membership + admin 授予/续期/撤销/列表 + Admin「Pro 会员」区块 + 我的订单页会员横幅 — 提交 `feat(pay): Pro membership management + display`
-- [ ] 余项（需网关/订阅模型）：会员**自助购买**（订阅下单，扩展 order 产品类型）+ 自动续费
+- 不做（当前版本，2026-10-20 重估）：会员自助购买与自动续费。Pro 会员只解锁 `access_tier: pro` 的课程，而现在没有这种课程（唯一的付费课 rust-basics 是 `paid`），卖会员等于卖一个什么也不解锁的东西。下单地基已就绪（`orders.product_kind`，打赏阶段加的），到时做一次性购买 N 个月只需加一个 `ProductKind`。重估条件：`grep -lqE '^access_tier: *pro' assets/courses/*/course.yaml` 退出码为 0。已反向验证：现状为 1，加一门 pro 课时为 0
 - 当前可用：运营在 /admin/entitlements 手动开通 Pro 会员（解锁全部 pro 课程）。
 
 ### 依赖与排序
@@ -540,3 +540,33 @@
 - [x] I6 — Stripe 测试模式端到端（下单 → 支付 → 回调发货 → 对账 → 退款）。**需要作者提供 `sk_test_` 密钥与 webhook secret**
   - 完成（2026-10-20，本地 dx + Stripe 测试模式，`stripe listen` 转发 webhook）：纽约时区英文界面购买 → 跳 Stripe Checkout（$14.99）→ 测试卡 4242 付款 → 回到我的订单显示 Paid，课程显示已拥有、锁定课节解锁；订单 USD 1499、存 `pi_` 流水号、写 purchase 权益，webhook 应答 200。停掉 webhook 转发后再付一单：订单停在 pending，约 2 分钟后对账经 PaymentIntent 搜索回填并发货。管理员退款：Stripe 上退款 succeeded（1499 usd，metadata 带单号），本地订单 refunded、purchase 权益撤销，重复退款被拒。未付款的单对账时保持 pending，无告警。尚未验证：支付宝 / 微信渠道下的 Stripe（需在 Stripe 后台开通）与生产域名的 webhook
 
+### 阶段 D — 上线配置补全（2026-10-20 重估）
+重估结论：功能侧没有现在该做的（M3、M6 见上，均写了重估条件）。剩下的上线阻碍是外部条件（商户号、公网域名、Stripe 正式 webhook），但照着仓库文档部署时有两处会卡住，属于现在能修的：
+1. **支付宝 / 微信的环境变量没有写进部署文档。** `.env.example` 只有 Stripe 段；`PAYMENT_SPEC.md` §8 漏了 `WECHAT_PLATFORM_PUBLIC_KEY`（代码必填，缺了微信不启用）；`DEPLOY_GUIDE.md` 完全没提支付（回调地址、Stripe webhook 事件、后台开通支付宝 / 微信）。
+2. **配置错了没有任何提示。** 三个网关的 `config()` 在缺项或值非法（如 `WECHAT_API_V3_KEY` 不是 32 字节、密钥不是 base64）时都只返回 `None`，启动日志不说哪些网关启用了，下单时只报「未配置」，运维无从知道是哪一项。
+- [x] D1 — 启动时按网关打一行日志：已启用 / 未配置（相关变量都没设）/ 配置有误（设了一部分，列出缺的变量名；都设了仍失败则说值无效）。只输出变量名，不输出值。验收：单测覆盖三种状态；本地启动日志能看到 stripe 已启用
+  - 完成（0920338）：`host::config_status()` / `log_config_status()`，各网关在 `config()` 旁声明 `REQUIRED_ENV`；app 启动时调用（payments feature）。单测 2 个：四种状态；`REQUIRED_ENV` 与 `config()` 实际读取的变量一致（删掉 `WECHAT_PLATFORM_PUBLIC_KEY` 或让共用的 `PAY_NOTIFY_BASE` 算作已配置都会变红）。本地 dx 实测：正常为 alipay / wechat 未配置、stripe 已启用；临时只设 `ALIPAY_APP_ID` → warn 列出缺的两个密钥变量；微信六项都设但 APIv3 密钥长度不对 → warn 值无效。619 个测试通过，clippy 与四档检查通过
+- [x] D2 — 文档：`.env.example` 补支付宝 / 微信段；`PAYMENT_SPEC.md` §8 补 `WECHAT_PLATFORM_PUBLIC_KEY` 与密钥格式；`DEPLOY_GUIDE.md` 新增「在线支付」一节（features、回调地址、Stripe webhook、上线前检查）。验收：文档里的变量名与代码中读取的完全一致（`grep` 对比）
+  - 完成（0cbaa55）：`.env.example` 支付段重写（原 Stripe 段错放在 LLM 设置下，移回来；补支付宝 / 微信全部变量、密钥格式、32 字节约束）；`PAYMENT_SPEC.md` §8 补 `WECHAT_PLATFORM_PUBLIC_KEY`，标题里不实的「启动期 assert_not_placeholder 校验」改为启动日志；`DEPLOY_GUIDE.md` 新增 §7 在线支付（各网关变量与回调地址、启动日志怎么看、Stripe 正式模式 webhook 与开通支付宝 / 微信、上线检查），原 §7–§12 顺延，安全 checklist 加一行。三份文档里的变量名与 `crates/modules/payment/src` 读取的逐一比对一致
+- 阶段 D 完成：D1–D2。余下上线事项都要外部条件：支付宝 / 微信商户号与真实付款验证、生产域名与 Stripe 正式 webhook、公网环境的 CSP / healthz / XFF 检查、关于页文案
+
+### 阶段 C — 默认配色改为石墨 + 青色（2026-10-20）
+作者在四套候选（现状橘色 / 石墨 + 青色 / 板岩 + 靛蓝 / 石墨 + 深铁锈红）的亮暗截图里选了石墨 + 青色。现状的问题：
+1. **整站偏暖。** 中性色是 stone（暖灰），主色 orange-600 饱和度高，观感偏生活类站点；科技感主要来自冷灰中性色。
+2. **默认主题名不副实。** 主题菜单显示 "Ocean"，实际是橘色。换成青色后名字正好对上，id 与 label 不改（site.json 与访客 cookie 照旧有效）。
+3. **换主题换不干净。** `tailwind-input.css` 把所有 `blue-*` 类映射成橘色，另有几处手写的橘色 / 蓝色强调。这些不跟随 `--primary`，切到 Catppuccin 等主题后仍是橘色。
+
+设计：
+- 中性色 stone → zinc：`tailwind-input.css` 的 `slate-*` 映射改指 zinc，`:root` / `.dark` 默认 token 与 `ocean.css` 的中性色取 zinc 同一档位（档位不变，只换色阶）。
+- 主色：亮色 cyan-700（白字，对白底 ≥ 4.5:1），暗色 cyan-400（字用 zinc-950）。ring、chart-1、sidebar-primary 同步换。
+- 删掉 `blue → orange` 映射，`blue-*` 恢复为真正的蓝色：NOTE 提示框、标注色板里的「blue」本来就该是蓝色。
+- 手写的「强调色」改用 `primary`（标题悬停、案例详情分类标签、正文链接）。分类徽章（案例分类、搜索结果类型）是分类色，不是强调色，保持原样；amber 用作警告提示的也保持原样。
+- sunset / catppuccin 两个主题不动。手写的 `slate-*` 类在这两个主题下会从 stone 变成 zinc，差别很小，可以接受。
+
+- [x] C1 — 默认 token、`ocean.css`、中性色映射改为 zinc + cyan，删掉 blue→orange 映射；`theme.rs` 单测改为断言 zinc / cyan；`THEME_SPEC.md` 同步。验收：单测在旧值下变红；重建 Tailwind 后课程页主按钮亮色为 cyan-700、暗色为 cyan-400
+  - 完成（cbeba1c）：`tailwind-input.css` 默认 token 与 `ocean.css` 中性色改 zinc、主色亮 cyan-700 / 暗 cyan-400（暗色字 zinc-950），ring、chart-1、sidebar 同步；`slate-*` 映射改指 zinc，删掉 blue→orange 映射。`theme.rs` 两个单测改断言 zinc / cyan，旧值下变红。dx 实测课程页主按钮亮色 oklch(52% 0.105 223) / 暗色 oklch(78.9% 0.154 211.5)。`THEME_SPEC.md`、`TAILWIND_GUIDE.md`、README 同步
+- [x] C2 — 手写强调色改用 `primary`（`routes/mod.rs` 标题悬停、`cases.rs` 详情分类标签、`mdx.rs` 正文链接）。验收：仓库里除分类徽章和警告提示外，不再有 `orange-*` / `blue-*` 的手写强调色
+  - 完成（137451a）：三处改为 `text-primary` / `bg-primary/10` / `decoration-primary`。剩下的 `orange-*` / `blue-*` 都是分类色（案例分类、搜索结果类型）、标注色板的「blue」和 NOTE 提示框。顺带修了一个已有问题（4526a64）：Tailwind 没有扫描 `crates/widgets` 与 `crates/board`，正文里的 NOTE / TIP / WARNING 提示框和链接样式从未生成 CSS，现已加入 `@source`
+- [x] C3 — 走查：首页、生态页、课程详情 / 课时、案例、博客正文、搜索、论坛、购买弹窗、管理后台，亮暗各截图；检查主按钮、链接、焦点环对比度。验收：无残留橘色强调，暗色下主按钮文字清晰
+  - 完成（2026-10-20）：首页、生态页、课程详情、课时、案例列表 / 详情、博客正文、论坛、我的订单、管理后台订单，亮暗各截图，并用脚本扫描页面上色相 20°–50° 的可见元素：剩下的只有代码高亮（Prism）与分类徽章，没有橘色强调。对比度：亮色白字 / cyan-700 5.28:1，暗色 zinc-950 字 / cyan-400 11:1，cyan-400 链接在 zinc-900 卡片上 9.8:1，都过 WCAG AA（原橘色按钮白字只有 3.58:1）。暗色截图里标签发灰是 150ms 颜色过渡没走完，稳定后为白字 zinc-800 底。clippy、619 个测试、四档检查通过。未走查：购买弹窗（与课程页同用 primary token）
+- 阶段 C 完成：C1–C3

@@ -27,7 +27,7 @@ site.json "theme": "ocean"          访客 cookie site_theme=sunset（可选）
 
 | id | CSS 文件 | 颜色基调 |
 | --- | --- | --- |
-| `ocean` | `crates/core/src/engines/themes/ocean.css` | 默认：stone 中性色 + 橙色主色 |
+| `ocean` | `crates/core/src/engines/themes/ocean.css` | 默认：石墨（zinc）中性色 + 青色主色（亮 cyan-700 / 暗 cyan-400） |
 | `sunset` | `crates/core/src/engines/themes/sunset.css` | 暖色 |
 | `catppuccin` | `crates/core/src/engines/themes/catppuccin.css` | Latte / Macchiato |
 
@@ -111,7 +111,7 @@ RSX 渲染对应壳，Outlet::<Route> 嵌入主内容
 
 ## 8. Token 契约
 
-主题输出 [shadcn/ui](https://ui.shadcn.com/docs/theming) 语义 token，站点组件（dioxus-shadcn）与手写类名都从这些变量取色。默认值定义在 `crates/app/tailwind-input.css`（站点品牌：stone 中性色 + orange 主色），主题 CSS 以 `<style id="wasm-theme-style">` 在其后注入，同名变量覆盖默认值。
+主题输出 [shadcn/ui](https://ui.shadcn.com/docs/theming) 语义 token，站点组件（dioxus-shadcn）与手写类名都从这些变量取色。默认值定义在 `crates/app/tailwind-input.css`（站点品牌：zinc 中性色 + cyan 主色），主题 CSS 以 `<style id="wasm-theme-style">` 在其后注入，同名变量覆盖默认值。
 
 | token | 用途 |
 | --- | --- |

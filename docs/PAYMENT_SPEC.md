@@ -109,7 +109,7 @@ source='purchase')`（复用 M4 的 grant 逻辑）；打赏订单不发货。�
 - 支付成功（轮询到 paid 或 return_url 回站）→ 刷新权益 → 关闭 Paywall / 跳到课节。
 - 失败 / 超时（如 5 分钟）→ 提示重试；订单置 `closed`。
 
-## 8. 配置与密钥（`.env`，启动期 `assert_not_placeholder` 校验，不回显）
+## 8. 配置与密钥（`.env`，启动日志报告各网关状态，不回显）
 ```
 # 支付宝
 ALIPAY_APP_ID=
@@ -122,9 +122,13 @@ WECHAT_APP_ID=                 # 绑定的 appid（Native/H5 需要）
 WECHAT_API_V3_KEY=            # APIv3 密钥（回调解密）
 WECHAT_MCH_PRIVATE_KEY=       # 商户 API 私钥（PEM）
 WECHAT_MCH_SERIAL_NO=         # 商户证书序列号
+WECHAT_PLATFORM_PUBLIC_KEY=   # 微信支付公钥（公钥模式，验回调签名）
 # 公共
 PAY_NOTIFY_BASE=https://<公网域名>   # 拼 notify/return URL；必须 HTTPS
 ```
+- 密钥为 PEM（多行时加双引号）或去掉头尾行的单行 base64；`WECHAT_API_V3_KEY` 必须 32 字节。`ALIPAY_GATEWAY` 不填即正式网关。
+- 每个网关的变量缺一项或值格式不对，该网关就不启用。启动日志逐个网关报告（D1，`host::log_config_status`）：`payment gateway enabled` / `not configured` / `partly configured`（`missing=` 列出变量名）/ `value is malformed`。只输出变量名，不输出值。
+- Stripe 的变量见 §15.3。
 
 ## 9. 幂等 / 安全 / 对账
 - **验签是发货前提**：任何未通过验签的回调一律拒绝，绝不据此发货。
