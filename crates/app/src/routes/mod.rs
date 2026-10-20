@@ -527,7 +527,16 @@ pub fn Cases() -> Element {
 
 #[component]
 pub fn CaseDetail(slug: String) -> Element {
-  rsx! { ModuleGate { id: "cases".to_string(), CaseDetailPage { slug } } }
+  rsx! {
+      ModuleGate { id: "cases".to_string(),
+          CaseDetailPage {
+              slug: slug.clone(),
+              footer: rsx! {
+                  DiscussionPanel { resource_kind: "case".to_string(), resource_path: slug.clone() }
+              },
+          }
+      }
+  }
 }
 
 // ── Phase 6 内容板块路由（委派给各模块的页面组件，ModuleGate 控制开关）──
