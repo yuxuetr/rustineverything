@@ -520,7 +520,8 @@
   - 完成（e23e396）：`course::pricing` 模块：`Region`（时区判断，港澳台按海外）、`Price::label`（`¥99` `¥99.50` `$14.99`，原来按整元截断）、`Pricing::{list_price, quote}`、`methods_for`；`course.yaml` 加 `price_usd`，课时改带整份 `Pricing`。单测 7 个（含读 yaml）；把 Stripe 报价改成忽略地区时 `quote_matrix` 变红。示例课程设 `price_usd: 1499`
 - [x] I2 — `StripeProvider`（`stripe` feature）：Checkout Session 下单、webhook 解析、PaymentIntent 搜索查单、退款；`verify_signature`。验收：单测（独立 HMAC 向量；篡改 body、过期时间戳必须失败）
   - 完成（726c21c）：`module-payment::stripe`（默认开启的 `stripe` feature，依赖 hmac + sha2）。回调只有 `checkout.session.completed` / `async_payment_succeeded` 且 `payment_status == paid` 才算成功；查单无结果 → `not_found`（对账超窗关单）；退款要 PaymentIntent id，`RefundRequest` 加 `txn_id`。单测 8 个；验签向量由 Python 独立算出；删掉时间戳检查或让 HMAC 比较恒真都会让测试变红
-- [ ] I3 — 接线：`create_order(region)`、`payment_providers()`、对账 / 退款分派、`/api/pay/stripe/notify`、订单带币种、`.env.example`。验收：未配 Stripe 时行为与现在一致；用测试签名构造的 webhook 走通流水线
+- [x] I3 — 接线：`create_order(region)`、`payment_providers()`、对账 / 退款分派、`/api/pay/stripe/notify`、订单带币种、`.env.example`。验收：未配 Stripe 时行为与现在一致；用测试签名构造的 webhook 走通流水线
+  - 完成：`host::from_env(name)` 取代下单 / 对账 / 退款三处 `match provider`（host 执行器改收 `?Sized`）；`create_order` 加 `region`，金额与币种取自 `Pricing::quote`，并在建单前确认网关已配置（原来未配置时会留下一张 pending 单）；`payment_providers()`；订单列表（我的 / 管理）带币种。本地实测（假密钥 + 自签 webhook）：错 secret / 过期时间戳 400，无关事件与 unpaid 200 不发货，金额不符 500 不发货，paid → 订单 paid、存 `pi_` 流水号、写 purchase 权益，重放幂等；测试数据已清理。四档检查、clippy、613 个测试通过
 - [ ] I4 — 界面：时区判断地区，课程详情 / 付费墙 / 首页课程卡 / 购买弹窗按地区报价与列支付方式，可手动切换；我的订单按币种显示。验收：浏览器模拟两个时区截图
 - [ ] I5 — 购买弹窗与我的订单 i18n（阶段 O 的重估条件已触发）。验收：EN 下弹窗与订单页无中文
 - [ ] I6 — Stripe 测试模式端到端（下单 → 支付 → 回调发货 → 对账 → 退款）。**需要作者提供 `sk_test_` 密钥与 webhook secret**
