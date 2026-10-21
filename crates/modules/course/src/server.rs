@@ -2034,8 +2034,12 @@ pub async fn handle_alipay_notify(
     "notify received"
   );
 
-  let Ok(provider) = module_payment::alipay::AlipayProvider::from_env() else {
-    return "failure";
+  let provider = match module_payment::alipay::AlipayProvider::from_env() {
+    Ok(p) => p,
+    Err(e) => {
+      tracing::error!(target: "pay_audit", error = %e, "alipay notify: provider not configured");
+      return "failure";
+    }
   };
   // 1) 验签——一切发货的前提（宿主侧，不入 provider trait）。
   if !module_payment::alipay::verify_notify(provider.config(), &params) {
@@ -2054,11 +2058,19 @@ pub async fn handle_alipay_notify(
     return "success";
   }
   // 3) 中立化 → 统一流水线（找单 / 核金额 / 原子认领 / 发货 / 审计）。
-  let Ok(event) = provider.parse_notify(&NotifyPayload::Form(params)) else {
-    return "failure";
+  let event = match provider.parse_notify(&NotifyPayload::Form(params)) {
+    Ok(e) => e,
+    Err(e) => {
+      tracing::warn!(target: "pay_audit", error = %e, "alipay notify: parse failed");
+      return "failure";
+    }
   };
-  let Ok(db) = open_db().await else {
-    return "failure";
+  let db = match open_db().await {
+    Ok(db) => db,
+    Err(e) => {
+      tracing::error!(target: "pay_audit", error = %e, "alipay notify: database unavailable");
+      return "failure";
+    }
   };
   let outcome = pipeline::process_event(&db, &event, |order| deliver(&db, order)).await;
   if outcome.is_ok() {
@@ -2085,8 +2097,12 @@ pub async fn handle_wechat_notify(
   let ok = || (200u16, "{\"code\":\"SUCCESS\"}".to_string());
   let fail = |m: &str| (500u16, format!("{{\"code\":\"FAIL\",\"message\":\"{m}\"}}"));
 
-  let Ok(provider) = module_payment::wechat::WechatProvider::from_env() else {
-    return fail("unconfigured");
+  let provider = match module_payment::wechat::WechatProvider::from_env() {
+    Ok(p) => p,
+    Err(e) => {
+      tracing::error!(target: "pay_audit", error = %e, "wechat notify: provider not configured");
+      return fail("unconfigured");
+    }
   };
   let cfg = provider.config();
   let get = |k: &str| headers.get(k).map(|s| s.as_str()).unwrap_or("");
@@ -2113,8 +2129,12 @@ pub async fn handle_wechat_notify(
     return fail("bad signature");
   }
   // 2) 解密 resource（宿主侧）。
-  let Ok(envelope) = serde_json::from_str::<serde_json::Value>(&body) else {
-    return fail("bad body");
+  let envelope = match serde_json::from_str::<serde_json::Value>(&body) {
+    Ok(v) => v,
+    Err(e) => {
+      tracing::warn!(target: "pay_audit", error = %e, "wechat notify: bad body");
+      return fail("bad body");
+    }
   };
   let res = &envelope["resource"];
   let (ct, rnonce, aad) = (
@@ -2124,10 +2144,17 @@ pub async fn handle_wechat_notify(
   );
   let plain = match module_payment::wechat::decrypt_resource(cfg, rnonce, aad, ct) {
     Ok(p) => p,
-    Err(_) => return fail("decrypt failed"),
+    Err(e) => {
+      tracing::warn!(target: "pay_audit", error = %e, "wechat notify: decrypt failed");
+      return fail("decrypt failed");
+    }
   };
-  let Ok(tx) = serde_json::from_str::<serde_json::Value>(&plain) else {
-    return fail("bad plaintext");
+  let tx = match serde_json::from_str::<serde_json::Value>(&plain) {
+    Ok(v) => v,
+    Err(e) => {
+      tracing::warn!(target: "pay_audit", error = %e, "wechat notify: bad plaintext");
+      return fail("bad plaintext");
+    }
   };
   // 2.5) S6：appid / mchid 交叉校验（字段存在时强制一致），防跨商户/应用串单。
   if let Some(appid) = tx["appid"].as_str() {
@@ -2158,10 +2185,17 @@ pub async fn handle_wechat_notify(
   // 4) 中立化 → 统一流水线（找单 / 核金额 / 原子认领 / 发货 / 审计）。
   let event = match provider.parse_notify(&NotifyPayload::Json(tx)) {
     Ok(e) => e,
-    Err(_) => return fail("no out_trade_no"),
+    Err(e) => {
+      tracing::warn!(target: "pay_audit", error = %e, "wechat notify: parse failed");
+      return fail("no out_trade_no");
+    }
   };
-  let Ok(db) = open_db().await else {
-    return fail("db");
+  let db = match open_db().await {
+    Ok(db) => db,
+    Err(e) => {
+      tracing::error!(target: "pay_audit", error = %e, "wechat notify: database unavailable");
+      return fail("db");
+    }
   };
   let outcome = pipeline::process_event(&db, &event, |order| deliver(&db, order)).await;
   match outcome {
@@ -2180,16 +2214,24 @@ pub async fn handle_wechat_notify(
 pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
   use module_payment::{pipeline, NotifyPayload, PaymentProvider};
 
-  let Ok(provider) = module_payment::stripe::StripeProvider::from_env() else {
-    return 500;
+  let provider = match module_payment::stripe::StripeProvider::from_env() {
+    Ok(p) => p,
+    Err(e) => {
+      tracing::error!(target: "pay_audit", error = %e, "stripe notify: provider not configured");
+      return 500;
+    }
   };
   let now = chrono::Utc::now().timestamp();
   if !module_payment::stripe::verify_notify(provider.config(), &signature, &body, now) {
     tracing::warn!(target: "pay_audit", "stripe notify: signature verify failed");
     return 400;
   }
-  let Ok(event) = serde_json::from_str::<serde_json::Value>(&body) else {
-    return 400;
+  let event = match serde_json::from_str::<serde_json::Value>(&body) {
+    Ok(v) => v,
+    Err(e) => {
+      tracing::warn!(target: "pay_audit", error = %e, "stripe notify: bad body");
+      return 400;
+    }
   };
   let kind = event["type"].as_str().unwrap_or("");
   tracing::info!(
@@ -2210,10 +2252,17 @@ pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
   }
   let event = match provider.parse_notify(&NotifyPayload::Json(event)) {
     Ok(e) => e,
-    Err(_) => return 400,
+    Err(e) => {
+      tracing::warn!(target: "pay_audit", error = %e, "stripe notify: parse failed");
+      return 400;
+    }
   };
-  let Ok(db) = open_db().await else {
-    return 500;
+  let db = match open_db().await {
+    Ok(db) => db,
+    Err(e) => {
+      tracing::error!(target: "pay_audit", error = %e, "stripe notify: database unavailable");
+      return 500;
+    }
   };
   let outcome = pipeline::process_event(&db, &event, |order| deliver(&db, order)).await;
   if outcome.is_ok() {
@@ -2229,8 +2278,12 @@ pub async fn handle_stripe_notify(signature: String, body: String) -> u16 {
 async fn stripe_reversal(intent: &str, kind: &str) -> u16 {
   use app_core::entities::order;
   use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-  let Ok(db) = open_db().await else {
-    return 500;
+  let db = match open_db().await {
+    Ok(db) => db,
+    Err(e) => {
+      tracing::error!(target: "pay_audit", error = %e, event_type = %kind, "stripe reversal: database unavailable");
+      return 500;
+    }
   };
   let row = match order::Entity::find()
     .filter(order::Column::Provider.eq("stripe"))
@@ -2243,7 +2296,10 @@ async fn stripe_reversal(intent: &str, kind: &str) -> u16 {
       tracing::warn!(target: "pay_audit", event_type = %kind, "stripe reversal: no order for payment intent");
       return 200;
     }
-    Err(_) => return 500,
+    Err(e) => {
+      tracing::error!(target: "pay_audit", error = %e, event_type = %kind, "stripe reversal: order lookup failed");
+      return 500;
+    }
   };
   if row.status != "paid" {
     // 我方管理员退款也会收到 charge.refunded，此时订单已是 refunded。
@@ -2261,7 +2317,15 @@ async fn stripe_reversal(intent: &str, kind: &str) -> u16 {
       );
       200
     }
-    Err(_) => 500,
+    Err(e) => {
+      tracing::error!(
+        target: "pay_audit",
+        error = %e,
+        out_trade_no = %row.out_trade_no,
+        "stripe {kind}: marking order refunded failed"
+      );
+      500
+    }
   }
 }
 
