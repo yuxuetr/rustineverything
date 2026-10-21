@@ -72,6 +72,7 @@
 - **持久化目录**（Phase 7.3.1）：`MmapDirectory` + `Index::open_or_create`，路径由 `SEARCH_INDEX_DIR` 环境变量控制，默认 `data/search-index`。目录不存在自动 `create_dir_all`；schema 不匹配自动清空目录重建（schema 迁移）。
 - **启动期 `init_or_load`**：非空目录直接复用（不重新扫描磁盘）；空目录走 `full_populate_with_manifest`：全量扫描 + 写 `manifest.json` 作为后续增量的基线。
 - **增量重建**（Phase 7.3.3）：`engine::reindex_incremental` 读 `IndexManifest`，与当前磁盘 / DB 状态算差分（`indexer::diff_for_reindex` 纯函数），按 `delete_term + add_document` 应用，最后原子写新 manifest（`.tmp` → rename）。文件来源 mtime 差分；动态来源（cases/topics）全量 upsert + 上次 uid 集合差分检测删除。
+- **定时增量**（Y6）：服务端启动时跑一次 `reindex_incremental`，之后每 10 分钟一次，日志 `search: index refreshed`。索引目录在卷里跨部署保留，论坛发帖也不写索引，靠它把新镜像的内容和新主题收进来。
 - **强制全量**：`engine::rebuild`（或 `search_reindex` 传 `mode="full"`）走 `full_populate_with_manifest`，清空 + 重写 + 同步刷新 manifest。
 - **进程重启**:磁盘索引仍在，下次启动 `init_or_load` 直接复用。
 
@@ -98,4 +99,4 @@
 - 高亮 HTML(目前 snippet 是纯文本)
 - 同义词字典 / 关键词高亮的服务端 hl 标签
 - `scripts/reindex.sh` 通过 admin 接口触发(后续可加 curl 命令封装)
-- 监听文件系统事件（inotify / FSEvents）自动触发增量；当前只在 admin 调 `search_reindex` 时跑一次
+- 监听文件系统事件（inotify / FSEvents）自动触发增量；当前由定时增量刷新覆盖（见上）

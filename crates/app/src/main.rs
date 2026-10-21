@@ -284,8 +284,7 @@ fn main() {
         });
       }
     }
-    // basic 层：不连库（/healthz 报 db=disabled，属正常）；也没有管理员能触发
-    // `/api/search/reindex`，启动时增量刷新一次索引（按 mtime 差分，开销小）。
+    // basic 层：不连库（/healthz 报 db=disabled，属正常）。
     #[cfg(not(feature = "accounts"))]
     {
       use crate::server::health::{set_startup_health, MigrationStatus, StartupHealth};
@@ -295,17 +294,24 @@ fn main() {
         db_connected: false,
         migrations: MigrationStatus::Skipped,
       });
-      tokio::spawn(async {
+    }
+    // 搜索索引在卷里跨部署保留，且论坛发帖不写索引：启动时增量刷新一次（新镜像带来的
+    // 文章 / 文档 / 案例），之后每 10 分钟一次（新论坛主题）。按 mtime 差分，开销小（Y6）。
+    tokio::spawn(async {
+      let mut ticker = tokio::time::interval(std::time::Duration::from_secs(600));
+      loop {
+        ticker.tick().await;
         match module_search::engine::reindex_incremental().await {
           Ok(r) => tracing::info!(
             upserts = r.upserts,
             deletes = r.deletes,
-            "startup: search index refreshed"
+            elapsed_ms = r.elapsed_ms,
+            "search: index refreshed"
           ),
-          Err(e) => tracing::warn!(error = %e, "startup: search index refresh failed"),
+          Err(e) => tracing::warn!(error = %e, "search: index refresh failed"),
         }
-      });
-    }
+      }
+    });
 
     // M5e：支付对账定时任务（payments feature）。周期扫描滞留 pending 单，
     // 向网关查单回填发货（回调丢失兜底）/ 超窗关单；网关未配置时每轮
