@@ -247,6 +247,7 @@ docs.start_reading = Start reading
 docs.not_found = Doc not found
 docs.prev = Previous
 docs.next = Next
+docs.based_on = Based on
 course.title = Rust Courses
 course.subtitle = Structured learning paths, from fundamentals to full-stack practice
 course.empty = No courses yet

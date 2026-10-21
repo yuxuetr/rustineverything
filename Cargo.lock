@@ -4638,6 +4638,7 @@ dependencies = [
  "serde_yaml",
  "tempfile",
  "tokio",
+ "tracing",
  "widgets",
 ]
 

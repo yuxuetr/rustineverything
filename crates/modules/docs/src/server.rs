@@ -27,6 +27,18 @@ pub struct DocMeta {
   /// 适合：周报/日报等以递增编号但需要最新期优先的场景
   #[serde(default)]
   pub sort_children: Option<String>,
+  /// 这篇文档对着哪个库的哪个版本写的（S3），页面上显示为「基于 tokio 1.54.0」
+  #[serde(default)]
+  pub source: Option<DocSource>,
+}
+
+/// frontmatter `source: { crate: tokio, version: "1.54.0" }`
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DocSource {
+  #[serde(rename = "crate")]
+  pub krate: String,
+  /// 不加引号也行：serde_yaml 读进 String 时保留原文，`1.10` 不会变成 `1.1`
+  pub version: String,
 }
 
 /// 文档树节点（最多三级）
@@ -67,7 +79,7 @@ struct MetaEntry {
 
 /// 解析 frontmatter（YAML between --- delimiters）
 #[cfg(feature = "server")]
-pub(crate) fn parse_doc_frontmatter(content: &str) -> (DocMeta, String) {
+pub(crate) fn parse_doc_frontmatter(content: &str, file: &std::path::Path) -> (DocMeta, String) {
   if !content.starts_with("---") {
     return (DocMeta::default(), content.to_string());
   }
@@ -75,7 +87,10 @@ pub(crate) fn parse_doc_frontmatter(content: &str) -> (DocMeta, String) {
   if parts.len() < 3 {
     return (DocMeta::default(), content.to_string());
   }
-  let meta: DocMeta = serde_yaml::from_str(parts[1]).unwrap_or_default();
+  let meta: DocMeta = serde_yaml::from_str(parts[1]).unwrap_or_else(|e| {
+    tracing::warn!(file = %file.display(), error = %e, "doc frontmatter: invalid YAML, metadata ignored");
+    DocMeta::default()
+  });
   (meta, parts[2].to_string())
 }
 
@@ -138,7 +153,7 @@ fn extract_doc_info_full(
     return (None, String::new(), None, None);
   };
   let content = fs::read_to_string(&path).unwrap_or_default();
-  let (meta, body) = parse_doc_frontmatter(&content);
+  let (meta, body) = parse_doc_frontmatter(&content, &path);
 
   // 标题优先级：sidebar_label > frontmatter title > # heading > 目录名
   let title = meta
@@ -309,7 +324,7 @@ pub async fn get_doc_content(path: String) -> Result<Option<DocContentResponse>,
     };
     let raw =
       fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
-    let (mut meta, content) = parse_doc_frontmatter(&raw);
+    let (mut meta, content) = parse_doc_frontmatter(&raw, &filepath);
     fill_missing_meta(&mut meta, &content);
     let (prev, next) = doc_neighbors(&docs_root, &path);
     Ok(Some(DocContentResponse { content, meta, prev, next }))
@@ -389,7 +404,7 @@ mod tests {
   #[test]
   fn test_frontmatter_parsing() {
     let raw = "---\ntitle: Hello\nkeywords: [a, b]\nsidebar_position: 5\n---\n\n# body";
-    let (meta, body) = parse_doc_frontmatter(raw);
+    let (meta, body) = parse_doc_frontmatter(raw, Path::new("t.md"));
     assert_eq!(meta.title, "Hello");
     assert_eq!(meta.keywords, vec!["a", "b"]);
     assert_eq!(meta.sidebar_position, Some(5));
@@ -397,8 +412,23 @@ mod tests {
   }
 
   #[test]
+  fn source_frontmatter_parsed() {
+    let (meta, _) = parse_doc_frontmatter(
+      "---\ntitle: T\nsource: { crate: tokio, version: 1.54.0 }\n---\nbody",
+      Path::new("t.md"),
+    );
+    assert_eq!(meta.source, Some(DocSource { krate: "tokio".into(), version: "1.54.0".into() }));
+    assert_eq!(meta.title, "T");
+    let (meta, _) = parse_doc_frontmatter(
+      "---\ntitle: T\nsource: { crate: axum, version: 1.10 }\n---\n",
+      Path::new("t.md"),
+    );
+    assert_eq!(meta.source.map(|s| s.version), Some("1.10".to_string()));
+  }
+
+  #[test]
   fn test_no_frontmatter_returns_default() {
-    let (meta, body) = parse_doc_frontmatter("# Just heading\n\nsome body");
+    let (meta, body) = parse_doc_frontmatter("# Just heading\n\nsome body", Path::new("t.md"));
     assert_eq!(meta, DocMeta::default());
     assert!(body.contains("# Just heading"));
   }

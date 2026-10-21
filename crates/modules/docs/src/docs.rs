@@ -246,6 +246,15 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
                               if let Some(ref img) = resp.meta.image {
                                   document::Meta { property: "og:image", content: "{img}" }
                               }
+                              if let Some(ref src) = resp.meta.source {
+                                  a {
+                                      href: "https://docs.rs/{src.krate}/{src.version}",
+                                      target: "_blank",
+                                      rel: "noopener",
+                                      class: badge_class(BadgeVariant::Secondary, "mb-4 rounded-full font-normal text-muted-foreground"),
+                                      "{t(lang, \"docs.based_on\")} {src.krate} {src.version}"
+                                  }
+                              }
                               div { class: "text-slate-700 dark:text-slate-200",
                                   Markdown { content: resp.content.clone(), blog_id: anno_blog_id.clone() }
                               }
