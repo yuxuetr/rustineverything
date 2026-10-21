@@ -17,15 +17,23 @@ from typing import Iterator
 import yaml
 
 DATED_NAME = re.compile(r"^(\d{4})-(\d{2})-(\d{2})-(.+?)(\.mdx?)?$")
-FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
-IMAGE = re.compile(r'!\[([^\]]*)\]\(([^)\s]+)((?:\s+"[^"]*")?)\)')
+FENCE = re.compile(r"^(\s*)(`{3,}|~{3,})(.*)$")
+IMAGE = re.compile(r"""!\[([^\]]*)\]\(([^)\s]+)((?:\s+(?:"[^"]*"|'[^']*'))?)\)""")
 POST_LINK = re.compile(r"\]\((?:\.\.?/)*(\d{4}-\d{2}-\d{2}-[^/)#]+?)(?:/index)?\.mdx?(#[^)]*)?\)")
 MDX_IMPORT = re.compile(r"""^\s*(import\s.*\bfrom\s+['"]|import\s+['"]|export\s+(const|let|function|default)\b)""")
 MDX_COMMENT = re.compile(r"\{/\*.*?\*/\}")
 # 旧站 ColorText 组件改用本站同类组件（属性同为 text）
 COLOR = {"RedText": "Pink", "BlueText": "Blue", "GreenText": "Green", "YellowText": "Yellow", "PurpleText": "Purple"}
 COLOR_TAG = re.compile(r"<(/?)(" + "|".join(COLOR) + r")\b")
+# 独占一行的组件会被 CommonMark 当成 HTML 块，吞掉后面直到空行的内容；
+# 包一层 `**`（颜色组件本就是粗体）让它留在段落里
+LONE_COMPONENT = re.compile(r"^(\s*(?:[-*+]\s+|\d+\.\s+|>\s*)*)(<[A-Z][A-Za-z]* text=\"[^\"]*\"\s*/>)\s*$")
 VIDEO_EXT = (".mp4", ".webm", ".mov")
+# 个别文章的缩进 Docusaurus 能容忍、CommonMark 不行，逐篇修正（源名 → [(正则, 替换)]）
+FIXES: dict[str, list[tuple[str, str]]] = {
+  # 有序列表项缩进 3 格，子项只缩进 5 格（比内容列少 1 格），子项与代码块会并进上一行
+  "2023-10-30-ts-decorator.mdx": [(r"^   (\d+\. )", r"  \1")],
+}
 KEPT_KEYS = {"title", "description", "tags", "keywords", "date", "publishedAt", "updatedAt", "image"}
 
 
@@ -55,15 +63,20 @@ def split_frontmatter(text: str) -> tuple[dict, str]:
 
 
 def prose_segments(body: str) -> Iterator[tuple[bool, str]]:
-  """按行切分正文：(是否在代码块外, 行)。代码块内原样保留。"""
-  marker = ""
+  """按行切分正文：(是否在代码块外, 行)。代码块内原样保留。
+
+  结束标记的缩进改成与开始标记一致：旧文有 Tab 缩进的结束标记，Docusaurus 认，
+  CommonMark 不认（超过 3 列），后文会全部变成代码。
+  """
+  marker, indent = "", ""
   for line in body.split("\n"):
     m = FENCE.match(line)
     if not marker and m:
-      marker = m.group(1)
+      indent, marker = m.group(1), m.group(2)
       yield False, line
     elif marker:
-      if m and m.group(1)[0] == marker[0] and len(m.group(1)) >= len(marker) and not m.group(2).strip():
+      if m and m.group(2)[0] == marker[0] and len(m.group(2)) >= len(marker) and not m.group(3).strip():
+        line = indent + m.group(2)
         marker = ""
       yield False, line
     else:
@@ -87,6 +100,8 @@ class Post:
 
   def convert(self) -> None:
     fm, body = split_frontmatter(open(self.src, encoding="utf-8").read())
+    for pattern, repl in FIXES.get(self.name, []):
+      body = re.sub(pattern, repl, body, flags=re.M)
     if os.path.isdir(self.out_dir):
       shutil.rmtree(self.out_dir)
     os.makedirs(self.out_dir)
@@ -134,10 +149,13 @@ class Post:
       if MDX_IMPORT.match(line):
         skip_depth = line.count("{") - line.count("}")
         continue
+      # 行首 Tab 是作者的一级列表缩进；CommonMark 按 4 列算，嵌套列表会变成缩进代码块
+      line = re.sub(r"^[ \t]+", lambda m: m.group(0).replace("\t", "  "), line)
       line = MDX_COMMENT.sub("", line)
       if not line.strip() and stripped:
         continue
       line = COLOR_TAG.sub(lambda m: f"<{m.group(1)}{COLOR[m.group(2)]}", line)
+      line = LONE_COMPONENT.sub(r"\1**\2**", line)
       line = IMAGE.sub(self.rewrite_image, line)
       line = POST_LINK.sub(self.rewrite_post_link, line)
       out.append(line)
