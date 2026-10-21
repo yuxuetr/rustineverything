@@ -207,14 +207,18 @@ fn resolve_ref_title(kind: &str, path: &str) -> String {
   let root = get_asset_root();
   let fallback = || path.to_string();
   // 包一层 sub_root：blog → posts/, doc → docs/, ...
-  let resolve_in = |sub_dir: &str| -> Option<PathBuf> {
-    app_core::utils::safe_join_under(&root.join(sub_dir), path)
-  };
+  let courses = app_core::utils::content_dir("courses");
+  let resolve_in =
+    |dir: PathBuf| -> Option<PathBuf> { app_core::utils::safe_join_under(&dir, path) };
   match kind {
-    "blog" => resolve_in("posts").and_then(|p| read_index_title(&p)).unwrap_or_else(fallback),
-    "doc" => resolve_in("docs").and_then(|p| read_index_title(&p)).unwrap_or_else(fallback),
+    "blog" => resolve_in(app_core::utils::content_dir("posts"))
+      .and_then(|p| read_index_title(&p))
+      .unwrap_or_else(fallback),
+    "doc" => {
+      resolve_in(root.join("docs")).and_then(|p| read_index_title(&p)).unwrap_or_else(fallback)
+    }
     "course" => {
-      let Some(course_dir) = resolve_in("courses") else { return fallback() };
+      let Some(course_dir) = resolve_in(courses.clone()) else { return fallback() };
       let yaml = course_dir.join("course.yaml");
       if let Ok(content) = std::fs::read_to_string(&yaml) {
         for line in content.lines() {
@@ -231,12 +235,12 @@ fn resolve_ref_title(kind: &str, path: &str) -> String {
     }
     "lesson" => {
       // lesson 路径形如 `<category>/<course>/<lesson>`；逐段拼接前先整体 sanity check
-      if app_core::utils::safe_join_under(&root.join("courses"), path).is_none() {
+      if app_core::utils::safe_join_under(&courses, path).is_none() {
         return fallback();
       }
       let parts: Vec<&str> = path.split('/').collect();
       if parts.len() == 3 {
-        let lesson_dir = root.join("courses").join(parts[0]).join(parts[1]).join(parts[2]);
+        let lesson_dir = courses.join(parts[0]).join(parts[1]).join(parts[2]);
         if let Some(t) = read_index_title(&lesson_dir) {
           return t;
         }
@@ -244,7 +248,7 @@ fn resolve_ref_title(kind: &str, path: &str) -> String {
       fallback()
     }
     "case" => {
-      let Some(case_dir) = resolve_in("cases") else { return fallback() };
+      let Some(case_dir) = resolve_in(root.join("cases")) else { return fallback() };
       let yaml = case_dir.join("case.yaml");
       if let Ok(content) = std::fs::read_to_string(&yaml) {
         for line in content.lines() {

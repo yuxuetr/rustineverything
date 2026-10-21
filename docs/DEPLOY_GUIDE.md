@@ -43,14 +43,15 @@ cp .env.example .env
 $EDITOR .env
 ```
 
-最少必须填的两项：
+最少必须填的三项（缺任何一项 compose 拒绝启动）：
 
 ```dotenv
 JWT_SECRET=<32+ 字符随机串；用 openssl rand -hex 32 生成>
 BASE_URL=https://example.com         # 生产；本地可用 http://127.0.0.1:8080
+POSTGRES_PASSWORD=<强随机密码；openssl rand -hex 24>
 ```
 
-可选项：postgres 密码、OAuth 凭据、`RUST_LOG`。完整变量见 [`.env.example`](../.env.example)。
+可选项：私有内容仓库（§3.5）、OAuth 凭据、`RUST_LOG`。完整变量见 [`.env.example`](../.env.example)。
 
 ### 3.2 启动
 
@@ -93,6 +94,29 @@ docker compose exec postgres psql -U $POSTGRES_USER -d $POSTGRES_DB \
 
 `role=admin` 的用户登录后顶部菜单会出现「管理后台」入口。
 
+### 3.5 私有内容仓库（文章与课程）
+
+框架仓库只带示例内容（`assets/posts/welcome`、`assets/courses/rust-basics`），其余文章与课程被 `.gitignore` 挡住。站点自己的内容放在单独的私有仓库，结构为 `posts/<slug>/index.mdx` 与 `courses/<course>/...`。
+
+服务器上把两个仓库并排克隆，框架的 `.env` 指向内容仓库：
+
+```bash
+git clone https://github.com/<owner>/rustineverything.app.git
+git clone git@github.com:<owner>/<content-repo>.git   # 私有仓库：服务器上配一把只读 deploy key
+cd rustineverything.app
+echo 'CONTENT_HOST_DIR=../<content-repo>' >> .env
+docker compose up -d --build
+```
+
+compose 把 `CONTENT_HOST_DIR` 只读挂到容器的 `/app/content`（app 设 `CONTENT_DIR=/app/content`）；不设时挂框架自带的 `./assets`，即示例内容。
+
+| 要做的事 | 命令 | 是否重启 |
+| --- | --- | --- |
+| 发布 / 修改文章或课程 | `git -C ../<content-repo> pull` | 不用。页面立即生效，搜索索引 10 分钟内增量刷新（急用可在后台点「重建索引」） |
+| 升级框架 | `git pull && docker compose up -d --build` | 重建 app 镜像，内容不受影响 |
+
+本地写作：框架 `.env` 设 `CONTENT_DIR=<内容仓库绝对路径>`，`dx serve` 后刷新页面即可看到新文章。
+
 ## 4. 单 Docker 镜像（不带 compose）
 
 适用于已有托管 postgres / RDS / Supabase 的场景。
@@ -108,10 +132,11 @@ docker run -d --name rie-app \
   -e GITHUB_CLIENT_ID='...' \
   -e GITHUB_CLIENT_SECRET='...' \
   -v rie-uploads:/app/assets/uploads \
+  -v /srv/<content-repo>:/app/content:ro -e CONTENT_DIR=/app/content \
   rustineverything:latest
 ```
 
-挂卷 `/app/assets/uploads` 让用户图片在容器重启 / 滚动升级时不丢。
+挂卷 `/app/assets/uploads` 让用户图片在容器重启 / 滚动升级时不丢。内容仓库的挂载见 §3.5；不挂则显示镜像里的示例内容。
 
 ## 5. OAuth 凭据申请
 

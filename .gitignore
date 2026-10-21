@@ -32,3 +32,6 @@ crates/app/tailwind-sources.css
 /assets/posts/*
 !/assets/posts/welcome/
 !/assets/posts/authors.yml
+# 课程同理：真实（付费）课程放私有内容仓库（CONTENT_DIR），这里只留示例课
+/assets/courses/*
+!/assets/courses/rust-basics/

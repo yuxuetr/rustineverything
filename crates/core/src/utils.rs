@@ -19,6 +19,21 @@ pub fn get_asset_root() -> PathBuf {
   path
 }
 
+/// 站点内容目录：`kind` 为 `posts`（文章）或 `courses`（课程）。
+///
+/// 设了 `CONTENT_DIR` 就读 `$CONTENT_DIR/<kind>`——站点自己的内容放在框架仓库之外
+/// （私有内容仓库）；没设则用资产根下随框架发布的示例内容。
+pub fn content_dir(kind: &str) -> PathBuf {
+  content_dir_in(std::env::var_os("CONTENT_DIR"), kind)
+}
+
+fn content_dir_in(content_root: Option<std::ffi::OsString>, kind: &str) -> PathBuf {
+  match content_root.filter(|v| !v.is_empty()) {
+    Some(root) => PathBuf::from(root).join(kind),
+    None => get_asset_root().join(kind),
+  }
+}
+
 /// Phase 8.5：目录扫描结果的 mtime 缓存。
 ///
 /// 用于 `list_blog_posts` / `list_*_articles` / sitemap entries 等 hot path：
@@ -152,6 +167,20 @@ pub fn is_safe_slug(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn content_dir_prefers_content_root() {
+    assert_eq!(
+      content_dir_in(Some("/srv/content".into()), "posts"),
+      PathBuf::from("/srv/content/posts")
+    );
+    assert_eq!(content_dir_in(None, "courses"), get_asset_root().join("courses"));
+    assert_eq!(
+      content_dir_in(Some("".into()), "posts"),
+      get_asset_root().join("posts"),
+      "空值视为未设"
+    );
+  }
 
   #[test]
   fn safe_slug_accepts_only_single_plain_segments() {
