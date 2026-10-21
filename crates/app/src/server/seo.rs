@@ -202,7 +202,36 @@ fn slash_redirect_target(path: &str, query: Option<&str>) -> Option<String> {
   })
 }
 
-/// GET / HEAD 的尾斜杠地址 301 到无斜杠地址。
+/// 旧博客（Docusaurus）地址对应的新地址（M5）。文章 `/blog/YYYY/MM/DD/<slug>` 到
+/// `/blog/<slug>`（旧 slug 里的 `.` 在迁移时换成了 `-`）；标签、分页、归档、作者页
+/// 到 `/blog`。旧站曾短暂启用 `/en` 前缀，同样处理。尾斜杠、查询串一并丢掉。
+fn legacy_blog_target(path: &str) -> Option<String> {
+  let trimmed = path.trim_end_matches('/');
+  let english = trimmed.strip_prefix("/en").filter(|p| p.starts_with("/blog"));
+  let rest = match english.unwrap_or(trimmed).strip_prefix("/blog") {
+    // `/blog` 本身不跳（尾斜杠交给 slash_redirect_target）
+    Some("") => return english.map(|_| "/blog".to_string()),
+    Some(rest) => rest.strip_prefix('/')?,
+    None => return None,
+  };
+  let segments: Vec<&str> = rest.split('/').collect();
+  match segments.as_slice() {
+    [y, m, d, slug]
+      if [(y, 4), (m, 2), (d, 2)]
+        .iter()
+        .all(|(s, n)| s.len() == *n && s.bytes().all(|b| b.is_ascii_digit())) =>
+    {
+      let slug = slug.replace('.', "-");
+      let safe = !slug.is_empty()
+        && slug.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
+      safe.then(|| format!("/blog/{slug}"))
+    }
+    ["tags", ..] | ["page", ..] | ["archive"] | ["authors", ..] => Some("/blog".to_string()),
+    _ => None,
+  }
+}
+
+/// GET / HEAD 的旧博客地址与尾斜杠地址永久跳转到新地址。
 pub async fn trailing_slash_mw(
   req: axum::extract::Request,
   next: axum::middleware::Next,
@@ -210,7 +239,10 @@ pub async fn trailing_slash_mw(
   use axum::http::Method;
   use axum::response::{IntoResponse, Redirect};
   if matches!(*req.method(), Method::GET | Method::HEAD) {
-    if let Some(to) = slash_redirect_target(req.uri().path(), req.uri().query()) {
+    let path = req.uri().path();
+    let target =
+      legacy_blog_target(path).or_else(|| slash_redirect_target(path, req.uri().query()));
+    if let Some(to) = target {
       return Redirect::permanent(&to).into_response();
     }
   }
@@ -246,6 +278,39 @@ mod tests {
     assert_eq!(slash_redirect_target("/api/orders/", None), None);
     assert_eq!(slash_redirect_target("//evil.com/", None), None, "不能变成开放重定向");
     assert_eq!(slash_redirect_target("///", None), None);
+  }
+
+  /// M5：旧博客地址跳到新地址；新站自己的地址不跳。
+  #[test]
+  fn legacy_blog_redirect_targets() {
+    let t = |p: &str| legacy_blog_target(p);
+    assert_eq!(t("/blog/2024/01/09/rust-ownership").as_deref(), Some("/blog/rust-ownership"));
+    assert_eq!(t("/blog/2024/10/17/rust-1.82/").as_deref(), Some("/blog/rust-1-82"));
+    assert_eq!(t("/en/blog/2024/01/09/rust-ownership").as_deref(), Some("/blog/rust-ownership"));
+    for old in [
+      "/blog/tags/rust",
+      "/blog/tags",
+      "/blog/page/3",
+      "/blog/archive",
+      "/blog/authors",
+      "/en/blog",
+      "/en/blog/",
+    ] {
+      assert_eq!(t(old).as_deref(), Some("/blog"), "{old}");
+    }
+    for keep in [
+      "/blog",
+      "/blog/rust-ownership",
+      "/blog/2024/01/09",
+      "/blog/24/01/09/x",
+      "/blog/2024/01/09/x%2Fy",
+      "/blog/2024/01/09/中文",
+      "/en/docs",
+      "/docs/blog/tags",
+      "/blogs/tags",
+    ] {
+      assert_eq!(t(keep), None, "{keep}");
+    }
   }
 
   #[test]

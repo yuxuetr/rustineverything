@@ -29,15 +29,46 @@
 
 ## 3. 不做（当前版本）及重估条件
 
-- **标题锚点改为文字 slug、目录（TOC）**：锚点 `b1`、`b2` 是标注功能的定位依据，改动会让已有标注失效。重估：旧文章里有站内 `#锚点` 链接，即
-  `grep -rhoE '\]\(#[^)]+\)' assets/posts | wc -l` 非 0。
 - **服务端分页、标签 / 归档页**：sitemap 已收录全部文章，不靠分页页被抓取；列表摘要每篇约 300 字节。重估：迁移后 `/blog` 的 HTML 超过 300KB，即
   `curl -s localhost:8080/blog | wc -c` 大于 300000。
 - **feed 全文、feed 条数**：现为全站最近 50 条摘要，够订阅用。重估：读者提出要全文订阅。
 - **图片懒加载与宽高**：迁移后看文章页图片数量再定。重估：`grep -rcE '!\[' assets/posts --include='*.md' | awk -F: '$2>10' | wc -l` 非 0（有文章超过 10 张图）。
 
-以上门已核对（2026-10-21）：锚点链接现为 0，构造 `[x](#sec)` 时为 1；`/blog` 现为 50KB；图片门现为 0，构造 11 张图的文章时为 1。
+以上门已核对（2026-10-21）：`/blog` 现为 50KB；图片门现为 0，构造 11 张图的文章时为 1。
 
 ## 4. 进度
 
-§1 的 Z2–Z4 已完成。§2 等确认旧博客的系统与 URL 规则后，在转换脚本与站点之间分工。
+§1 的 Z2–Z4 已完成。§2 按来源（Docusaurus）的结论见 §5，任务为 Todos.md 阶段 M。
+
+## 5. 来源：Docusaurus（`yuxuetr.com/data/blog`，2026-10-21 统计）
+
+165 篇（单文件 `YYYY-MM-DD-slug.mdx` 与目录 `YYYY-MM-DD-slug/index.mdx` 混用），旧网址 `/blog/YYYY/MM/DD/<slug>`（与 `build/blog` 的 164 个页面逐一核对；`about` 是页面不是文章）。统计脚本按代码块内外区分。
+
+| 写法 | 数量 | 处理 |
+| --- | --- | --- |
+| 标题显式 id `## 标题 {#id}` | 222 | M1 站点：开启 heading attributes，用作 `id` |
+| 站内锚点链接 `](#引言)` | 251 处 / 23 篇 | M1 站点：无显式 id 的标题按 Docusaurus 规则（github-slugger）由文字生成 `id`；标注仍按 `data-block-id`（`annotations.js` 先找 `data-block-id` 再找 `id`），不受影响。不可信内容（评论 / 论坛）仍用 `bN`，避免与页面元素 id 冲突 |
+| 表格里的 `<br/>` | 11 行 | M2 站点：行内 `<br>` / `<br/>` 渲染为换行 |
+| `<AudioPlayer src title artist />` | 2 篇 | M3 站点：注册同名组件，渲染 `<audio controls>`（CSP `media-src` 已允许 https）|
+| 代码语言 swift 294、jsx 107、tsx 33、ts / typescript 24 | | M4 站点：补 prism 语言包（同版本 1.30.0）。latex 17、markdown 8、clojure 7 等少量的不补 |
+| 旧网址 | 164 | M5 站点：`/blog/YYYY/MM/DD/<slug>`（含 `/en` 前缀）308 到 `/blog/<新 slug>`；`/blog/tags/*`、`/blog/page/*`、`/blog/archive`、`/blog/authors*` 到 `/blog`。规则是确定的（新 slug = 旧 slug 中 `.` 换成 `-`），不需要映射表 |
+| `import` / `export` 行、`{/* */}` 注释 | 56 / 19 | M6 脚本删除（代码块内不动）|
+| `<RedText text=…/>` 等颜色组件 | 312 | M6 脚本改名为站点已有的 `Pink` / `Blue` / `Green` / `Yellow` / `Purple`（属性同为 `text`）|
+| 图片：相对路径 102、外链 10 | | M6 脚本把引用到的图片（共享 `images/` 与文章目录内）拷进新文章目录，路径改为文件名；外链图片下载到文章目录，`.mp4` 改成链接；下载失败的列出来 |
+| 文章互链 `](../2025-01-06-swiftui-intro/index.mdx)` | | M6 脚本改为 `/blog/<新 slug>` |
+| frontmatter | | 保留 title / description / tags / keywords / image；`authors` 按旧站 `authors.yml` 换成 `author`（名字）；没有 `image` 时用正文第一张图；日期取 `date` 或文件名；删 hide_table_of_contents 等 |
+| `:::note` 等提示块 | 46 | 站点已支持，不处理 |
+| slug 含 `.`（`rust-1.82` 等）| 6 | 新 slug 把 `.` 换成 `-`；无重名 |
+
+脚本 `scripts/migrate_docusaurus.py <源目录> <assets/posts>`：一次性工具，可重复运行（覆盖输出），结束时打印每篇的警告。迁移后跑 §3 的门（标题锚点已在 M1 做了，原第一条门删除），并用 curl 检查每篇文章页 200、页内 `href="#x"` 都有对应 `id="x"`、图片都 200。
+
+旧站域名（yuxuetr.com）是否指向新站，决定 M5 的跳转能否被旧链接用到；规则本身与域名无关。
+
+## 6. 结果（2026-10-21）
+
+导入 164 篇（`about.mdx` 是页面，没导）。检查方法与结论：
+
+- 每篇文章页 200；23 篇里 251 个页内锚点都能找到目标；109 张站内图片都 200；旧站构建里的 164 个文章地址都 308 到 200 的新页面。
+- 与旧站构建逐篇对比列表项、表格、代码块数量：全部一致。图片只少 2 个（model-explorer 的两个 mp4 原先当图片插入，现在是链接）。
+- §3 的门：图片门触发（lancedb-table 17 张），已给 Markdown 图片加 `loading="lazy"`；宽高仍未设，重估条件不变。`/blog` HTML 299.5KB（gzip 50KB），贴着 300KB 的门，分页留给作者决定。
+- 没处理：latex / markdown / clojure 等少量语言没有高亮；markmap-api 的 `canonical`（指向别的域名）、`seo`、`schema` 已去掉。

@@ -56,7 +56,8 @@ pub async fn get_seo_base_url() -> Result<String, ServerFnError> {
 /// - `base_url`：站点根 URL（必须以 `http://` 或 `https://` 开头）。
 pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
   let canonical = build_canonical(meta.canonical.as_deref(), path, base_url);
-  let json_ld = build_json_ld(meta, &canonical);
+  let json_ld = build_json_ld(meta, &canonical, base_url);
+  let image = meta.image.as_deref().filter(|s| !s.is_empty()).map(|s| absolute_url(s, base_url));
 
   rsx! {
       crate::browser::PageTitle { title: page_title(&meta.title) }
@@ -80,24 +81,20 @@ pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
               document::Meta { property: "og:description", content: "{desc}" }
           }
       }
-      if let Some(img) = meta.image.as_ref() {
-          if !img.is_empty() {
-              document::Meta { property: "og:image", content: "{img}" }
-          }
+      if let Some(img) = image.as_ref() {
+          document::Meta { property: "og:image", content: "{img}" }
       }
 
       // ── Twitter Card ──
-      document::Meta { name: "twitter:card", content: if meta.image.as_deref().map(|s| !s.is_empty()).unwrap_or(false) { "summary_large_image" } else { "summary" } }
+      document::Meta { name: "twitter:card", content: if image.is_some() { "summary_large_image" } else { "summary" } }
       document::Meta { name: "twitter:title", content: "{meta.title}" }
       if let Some(desc) = meta.description.as_ref() {
           if !desc.is_empty() {
               document::Meta { name: "twitter:description", content: "{desc}" }
           }
       }
-      if let Some(img) = meta.image.as_ref() {
-          if !img.is_empty() {
-              document::Meta { name: "twitter:image", content: "{img}" }
-          }
+      if let Some(img) = image.as_ref() {
+          document::Meta { name: "twitter:image", content: "{img}" }
       }
 
       // ── Canonical link ──
@@ -207,9 +204,19 @@ pub fn build_canonical(explicit: Option<&str>, path: &str, base_url: &str) -> St
   }
 }
 
+/// 站内路径（`/posts/...`）拼上站点根，已是绝对地址的原样返回。og:image 与 JSON-LD
+/// 的图片必须是绝对地址；`base_url` 为空时无从拼接，保持原样。
+fn absolute_url(url: &str, base_url: &str) -> String {
+  if url.starts_with('/') && !base_url.is_empty() {
+    build_canonical(None, url, base_url)
+  } else {
+    url.to_string()
+  }
+}
+
 /// 构造 JSON-LD Article schema。`title` 必填；其余字段缺失时跳过。
 /// 序列化失败返回 `None`，调用方负责降级（不输出 `<script>` 节点）。
-fn build_json_ld(meta: &PostMetadata, canonical: &str) -> Option<String> {
+fn build_json_ld(meta: &PostMetadata, canonical: &str, base_url: &str) -> Option<String> {
   let mut value = serde_json::json!({
       "@context": "https://schema.org",
       "@type": "Article",
@@ -225,12 +232,14 @@ fn build_json_ld(meta: &PostMetadata, canonical: &str) -> Option<String> {
   }
   if let Some(img) = meta.image.as_ref() {
     if !img.is_empty() {
-      obj.insert("image".to_string(), serde_json::Value::String(img.clone()));
+      obj.insert("image".to_string(), serde_json::Value::String(absolute_url(img, base_url)));
     }
   }
   if let Some(date) = meta.date.as_ref() {
     if !date.is_empty() {
       obj.insert("datePublished".to_string(), serde_json::Value::String(date.clone()));
+      let modified = meta.updated.as_ref().filter(|u| !u.is_empty()).unwrap_or(date);
+      obj.insert("dateModified".to_string(), serde_json::Value::String(modified.clone()));
     }
   }
   if let Some(author) = meta.author.as_ref() {
@@ -328,7 +337,7 @@ mod tests {
   #[test]
   fn json_ld_minimal_contains_required_fields() {
     let meta = meta_minimal("Hi");
-    let ld = build_json_ld(&meta, "https://example.com/p").expect("json-ld");
+    let ld = build_json_ld(&meta, "https://example.com/p", "https://example.com").expect("json-ld");
     assert!(ld.contains("\"@type\":\"Article\""));
     assert!(ld.contains("\"headline\":\"Hi\""));
     assert!(ld.contains("\"url\":\"https://example.com/p\""));
@@ -337,12 +346,39 @@ mod tests {
   #[test]
   fn json_ld_full_includes_all_optional_fields() {
     let meta = meta_full();
-    let ld = build_json_ld(&meta, "https://example.com/blog/welcome").expect("json-ld");
+    let ld = build_json_ld(&meta, "https://example.com/blog/welcome", "https://example.com")
+      .expect("json-ld");
     assert!(ld.contains("\"description\":\"A welcome post\""));
     assert!(ld.contains("\"image\":\"https://cdn.example.com/cover.png\""));
     assert!(ld.contains("\"datePublished\":\"2026-01-15\""));
+    assert!(ld.contains("\"dateModified\":\"2026-01-15\""), "没有 updated 时用发布日期");
     assert!(ld.contains("\"name\":\"Hal\""));
     assert!(ld.contains("\"keywords\":\"rust, welcome\""));
+  }
+
+  /// 站内图片（`/posts/...`）在 og:image / JSON-LD 里必须是绝对地址，爬虫不认相对路径。
+  #[test]
+  fn absolute_url_prefixes_site_paths_only() {
+    assert_eq!(
+      absolute_url("/posts/a/b.png", "https://example.com/"),
+      "https://example.com/posts/a/b.png"
+    );
+    assert_eq!(
+      absolute_url("https://cdn.example.com/c.png", "https://example.com"),
+      "https://cdn.example.com/c.png"
+    );
+    assert_eq!(absolute_url("/posts/a/b.png", ""), "/posts/a/b.png", "没配 BASE_URL 时保持原样");
+  }
+
+  #[test]
+  fn json_ld_uses_absolute_image_and_updated_date() {
+    let mut meta = meta_full();
+    meta.image = Some("/posts/welcome/cover.png".into());
+    meta.updated = Some("2026-02-01".into());
+    let ld = build_json_ld(&meta, "https://example.com/blog/welcome", "https://example.com")
+      .expect("json-ld");
+    assert!(ld.contains("\"image\":\"https://example.com/posts/welcome/cover.png\""), "{ld}");
+    assert!(ld.contains("\"dateModified\":\"2026-02-01\""), "{ld}");
   }
 
   #[test]
@@ -353,11 +389,12 @@ mod tests {
     meta.date = None;
     meta.author = None;
     meta.tags.clear();
-    let ld = build_json_ld(&meta, "https://example.com/p").expect("json-ld");
+    let ld = build_json_ld(&meta, "https://example.com/p", "https://example.com").expect("json-ld");
     // 只剩 @context / @type / headline / url
     assert!(!ld.contains("\"description\""));
     assert!(!ld.contains("\"image\""));
     assert!(!ld.contains("\"datePublished\""));
+    assert!(!ld.contains("\"dateModified\""));
     assert!(!ld.contains("\"author\""));
     assert!(!ld.contains("\"keywords\""));
   }
@@ -370,7 +407,7 @@ mod tests {
     meta.image = Some(String::new());
     meta.author = Some(String::new());
     meta.date = Some(String::new());
-    let ld = build_json_ld(&meta, "https://example.com/p").expect("json-ld");
+    let ld = build_json_ld(&meta, "https://example.com/p", "https://example.com").expect("json-ld");
     assert!(!ld.contains("\"description\":\"\""));
     assert!(!ld.contains("\"image\":\"\""));
     assert!(!ld.contains("\"author\""));

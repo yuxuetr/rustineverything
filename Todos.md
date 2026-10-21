@@ -658,3 +658,27 @@
   - 完成（6804fa8）：`PostMetadata` 全字段缺省、`tags` / `keywords` 字符串或列表、`summary` / `excerpt` 别名、标量标题、`draft`、`updated`（别名 `lastmod`），非法 YAML 记 warn；`normalize_date` 统一日期。博客列表改用 `parse_mdx`，删掉自有解析器；草稿不进列表 / sitemap / feed / 搜索，文章页 404（实测）。sitemap / feed 优先用 `updated`。单测 3 个
 - [x] Z4 — 列表与搜索跳过非法 slug
   - 完成（d4f9c93）：博客列表与搜索索引跳过非 `[A-Za-z0-9_-]` 目录名并记 warn。单测覆盖含中文、空格、`.` 的目录名
+
+### 阶段 M — 迁移 Docusaurus 旧博客（2026-10-21）
+来源与处理方式见 `docs/BLOG_MIGRATION.md` §5。
+- [x] M1 — 标题 id：支持 `{#id}`，否则按 github-slugger 由标题文字生成；标注仍按 `data-block-id`
+  - 完成（08d709d）：开启 heading attributes；显式 `{#id}` 优先，否则 github-slugger 生成，重名加 `-1`；`data-block-id` 仍为 `bN`，用户内容仍用 `bN`。单测 2 个。迁移后 23 篇里 251 个页内锚点全部能找到目标
+- [x] M2 — 行内 `<br>` / `<br/>` 渲染为换行
+  - 完成（7b1c922）：单测正反验证
+- [x] M3 — `AudioPlayer` 组件（`<audio controls>`）
+  - 完成（a744097）：单行与跨行写法都渲染；非 https 不渲染。单测正反验证；浏览器里 wasmi-1-0 显示播放器
+- [x] M4 — prism 语言包：swift、jsx、typescript、tsx
+  - 完成（3e22f18）：prismjs 1.30.0 的 swift / jsx / typescript / tsx。浏览器实测 swift 12/12、jsx 101/101、tsx 32/32 个代码块有高亮
+- [x] M5 — 旧网址 308：`/blog/YYYY/MM/DD/<slug>`、`/en` 前缀、标签 / 分页 / 归档页
+  - 完成（1e93524）：单测覆盖跳与不跳；旧站构建里的 164 个文章地址全部 308 到 200 的新页面
+- [x] M6 — 转换脚本 `scripts/migrate_docusaurus.py`
+  - 完成（09f558e、2ffca22）：逐页检查后补了结束标记缩进、行首 Tab、独占一行的组件、单引号图片标题，以及 ts-decorator 一篇的列表缩进
+- [x] M7 — 导入 165 篇，逐篇检查页面 / 锚点 / 图片，跑 §3 的门
+  - 完成（文章只在本地，见 M8）：164 篇、110 个文件、29MB。逐篇对比旧站构建：列表项、表格、代码块数量一致，图片仅少 2 个（mp4 视频改成了链接）；无密钥样式内容；sitemap 165 条。§3 的门：图片门触发（lancedb-table 17 张）→ Markdown 图片加 `loading=lazy`（69bbb50）；`/blog` 299.5KB（gzip 50KB）贴着 300KB 门，未做分页
+- [x] M8 — 迁移的文章不进仓库（框架开源，文章是站点自己的内容）
+  - 完成：导入提交未推送，已从本地历史去掉；`.gitignore` 忽略 `assets/posts/*`，只留示例 `welcome/` 与 `authors.yml`（两个方向都用 `git check-ignore` 验过）。文章仍在本地 `assets/posts/`，`docker build` 的上下文会带上它们；换机器重跑 `python3 -I scripts/migrate_docusaurus.py <旧博客 data/blog> assets/posts`
+- [x] M9 — 转换脚本写 `author`：旧文 `authors: [yuxuetr]` 按旧站 `authors.yml` 换成名字；没写 `image` 的文章用正文第一张图作封面（55 篇有图，现在只有 3 篇有 og:image）
+  - 完成（77b1f72）：重跑后与上次输出相比只多出 `author`（163 篇；windsurf 原文没写作者）与 `image`（3 → 46 篇；其余 9 篇的 `![` 在代码里）两行
+- [x] M10 — 文章 SEO：`og:image` / `twitter:image` / JSON-LD `image` 用绝对地址（现为 `/posts/...`，爬虫不认）；JSON-LD 加 `dateModified`（`updated`，没有则发布日期）
+  - 完成（479c043）：单测正反验证；全量体检：46 篇有 og:image（绝对地址，图片都 200），JSON-LD 作者 162 篇、dateModified 全部。其余 119 篇正文没有图，用 summary 卡片。描述不足 50 字 28 篇、标题超 70 字 3 篇、两篇 Solana 描述重复，属内容本身，未改
+- 阶段 M 完成：M1–M10

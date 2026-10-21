@@ -450,6 +450,11 @@ fn HeadAssets() -> Element {
       document::Script { src: "/js/prism-json.min.js", defer: true }
       document::Script { src: "/js/prism-yaml.min.js", defer: true }
       document::Script { src: "/js/prism-python.min.js", defer: true }
+      // M4：旧博客的 Swift / React / TS 代码；tsx 依赖 jsx 与 typescript，须排在其后。
+      document::Script { src: "/js/prism-swift.min.js", defer: true }
+      document::Script { src: "/js/prism-jsx.min.js", defer: true }
+      document::Script { src: "/js/prism-typescript.min.js", defer: true }
+      document::Script { src: "/js/prism-tsx.min.js", defer: true }
 
       // 全局 rehighlight / mermaid 触发器。**只挂载一次**，靠 MutationObserver
       // 自动捕获后续插入到 DOM 的代码块 / mermaid 块（含 SPA 路由切换换入的内容）。
