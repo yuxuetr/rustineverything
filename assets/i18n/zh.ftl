@@ -68,21 +68,10 @@ footer.rss = RSS 订阅
 hero.title = 专注 Rust 技术栈的学习与实战
 hero.subtitle = 文档、博客、课程、案例一站式聚合：AI、后端、前端、跨端、Web3、Wasm、嵌入式、命令行等。
 hero.btn.docs = 进入文档
-hero.btn.blog = 浏览博客
 hero.btn.cases = 查看案例
 hero.btn.courses = 查看课程
-hero.stat.docs.value = 文档
-hero.stat.docs.label = 从零到一
-hero.stat.blog.value = 博客
-hero.stat.blog.label = 持续更新
-hero.stat.course.value = 课程
-hero.stat.course.label = 系统学习
-hero.stat.cases.value = 案例
-hero.stat.cases.label = 可复用模板
 
 # ── 首页板块卡片 ──
-home.section_title = 专注 Rust 生态
-home.section_subtitle = 从底层原理到全栈实战，构建高性能、高可靠的软件系统
 home.featured.title = 精选案例
 home.featured.subtitle = 来自工业实践的 Rust 项目，可直接借鉴的工程范式
 home.featured.all = 查看全部案例
@@ -100,12 +89,6 @@ home.community.forum = 论坛热帖
 home.community.forum_all = 进入论坛
 home.community.forum_empty = 还没有讨论，来发第一帖
 home.community.forum_failed = 论坛暂时无法加载
-home.card.basics.title = Rust 基础
-home.card.basics.desc = 深入浅出所有权、生命周期、Trait 等核心概念。
-home.card.fullstack.title = 全栈开发
-home.card.fullstack.desc = 使用 Dioxus, Axum, SeaORM 快速构建跨平台应用。
-home.card.aiwasm.title = AI 与 WASM
-home.card.aiwasm.desc = 探索 WebAssembly 高性能计算与 Rust AI 生态。
 
 # ── 首页模块网格卡片（home.mod.<id>.title / .desc）──
 

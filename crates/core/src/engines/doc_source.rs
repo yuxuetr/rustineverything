@@ -60,11 +60,6 @@ pub fn collect_registered_docs() -> Vec<ExternalIndexedDoc> {
   }
 }
 
-/// 已注册来源的数量（调试 / 测试用）。
-pub fn registered_source_count() -> usize {
-  registry().read().map(|g| g.len()).unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;

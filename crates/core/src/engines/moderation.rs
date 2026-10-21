@@ -143,10 +143,6 @@ impl ModerationEngine {
     Self { stages: Vec::new(), thresholds }
   }
 
-  pub fn set_thresholds(&mut self, t: ModerationThresholds) {
-    self.thresholds = t;
-  }
-
   pub fn thresholds(&self) -> ModerationThresholds {
     self.thresholds
   }

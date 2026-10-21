@@ -9,7 +9,6 @@ dioxus-shadcn = { workspace = true, features = ["badge", "card", "empty", "spinn
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml = { workspace = true, optional = true }
-chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["full"], optional = true }
 sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }

@@ -187,7 +187,6 @@ dependencies = [
  "axum",
  "base64",
  "board",
- "chrono",
  "dioxus",
  "dioxus-shadcn",
  "dotenvy",
@@ -207,13 +206,7 @@ dependencies = [
  "module-uploads",
  "module-wasm",
  "module-web3",
- "oauth2",
- "pulldown-cmark",
- "rand 0.9.4",
- "sea-orm",
  "serde",
- "serde_json",
- "serde_yaml",
  "tempfile",
  "tokio",
  "tower",
@@ -4458,7 +4451,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "sea-orm-migration",
- "tracing",
 ]
 
 [[package]]
@@ -4562,11 +4554,9 @@ name = "module-blog"
 version = "0.1.0"
 dependencies = [
  "app-core",
- "chrono",
  "dioxus",
  "sdk",
  "serde",
- "serde_json",
  "serde_yaml",
  "tokio",
 ]
@@ -4576,7 +4566,6 @@ name = "module-cases"
 version = "0.1.0"
 dependencies = [
  "app-core",
- "chrono",
  "dioxus",
  "dioxus-shadcn",
  "sdk",
@@ -4607,7 +4596,6 @@ dependencies = [
  "sdk",
  "sea-orm",
  "serde",
- "serde_json",
  "tokio",
  "tracing",
 ]
@@ -4641,7 +4629,6 @@ name = "module-docs"
 version = "0.1.0"
 dependencies = [
  "app-core",
- "chrono",
  "dioxus",
  "dioxus-shadcn",
  "sdk",
@@ -4674,8 +4661,6 @@ dependencies = [
  "sdk",
  "sea-orm",
  "serde",
- "serde_json",
- "tempfile",
  "tokio",
  "tracing",
  "widgets",
@@ -4691,7 +4676,6 @@ dependencies = [
  "dotenvy",
  "llm",
  "migration",
- "mockito",
  "sdk",
  "sea-orm",
  "serde",
@@ -4731,7 +4715,6 @@ dependencies = [
  "dioxus-shadcn",
  "sdk",
  "serde",
- "serde_json",
  "serde_yaml",
  "tempfile",
  "tokio",
@@ -4743,7 +4726,6 @@ name = "module-search"
 version = "0.1.0"
 dependencies = [
  "app-core",
- "chrono",
  "dioxus",
  "dioxus-shadcn",
  "sdk",
@@ -4770,8 +4752,6 @@ dependencies = [
  "module-moderation",
  "rand 0.9.4",
  "sdk",
- "serde",
- "serde_json",
  "tokio",
  "tracing",
 ]
