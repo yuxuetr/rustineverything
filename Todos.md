@@ -622,3 +622,17 @@
 - [x] X1 — 图片描述作为 alt 输出（含 `*强调*` 等内联格式时取纯文本）。验收：单测在旧代码下变红；`/blog/welcome` 的图片有 alt
   - 完成（6c1d803）：`render_stream` 遇到图片时把子事件的纯文本收成 alt（按嵌套深度找到配对的结束事件），图片渲染从 `render_tag` 抽成 `render_image`。单测 `image_description_becomes_alt`（可信 / 不可信内容各一遍，含内联格式和空描述），旧代码下变红。实测 `/blog/welcome` 的图片输出 `alt="图片"`。clippy、629 个测试、四档检查通过
 - 阶段 X 完成：X1
+
+### 阶段 Y — 内容、代码健康与运维（2026-10-21 评估）
+问题与设计见 `docs/AUDIT_2026-10-21.md`。
+- [ ] Y1 — 清洗器改为 ASCII 不区分大小写匹配：消除多字节字符 panic 与平方复杂度。验收：`<script>İ</script>中文` 单测旧代码 panic；256KB `<` 输入不再秒级
+- [ ] Y2 — 搜索摘要按原串偏移定位。验收：开尔文符号 + 中文的单测旧代码 panic
+- [ ] Y3 — 评论长度上限 64KB。验收：超长评论被拒
+- [ ] Y4 — `course.yaml` 解析失败时课程下线并记 error。验收：单测坏 yaml 返回 None
+- [ ] Y5 — 支付网关与 OAuth 的 HTTP 客户端加超时
+- [ ] Y6 — 所有构建启动时刷新搜索索引，并每 10 分钟增量刷新
+- [ ] Y7 — 支付回调各失败分支记录原因
+- [ ] Y8 — 文档页用 `PageMeta`，缺 frontmatter 时用首个标题 / 首段补 title / description。验收：`/docs/axum/basic/handler` 标题与描述不再是站名 / 空
+- [ ] Y9 — 运维手册纠错（上传卷名、cron 变量、连接池、迁移、恢复）+ compose 日志轮转
+- [ ] Y10 — 内容小错：welcome 路径、课程 Cargo.toml edition、burn 示例 clone
+- [ ] Y11 — 删除死代码、未用 i18n key、未用依赖
