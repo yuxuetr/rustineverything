@@ -648,3 +648,7 @@
 - [x] Y11 — 删除死代码、未用 i18n key、未用依赖
   - 完成（dbf8ba6）：删微信 `create_native` / `create_h5` / `send_v3`、支付宝 `precreate` / `amount_matches`、`registered_source_count`、`set_thresholds`；中英各删 17 个无引用 key；11 个 crate 去掉源码未用的依赖。四档检查、workspace clippy、635 个测试通过，主要页面 200
 - 阶段 Y 完成：Y1–Y11
+
+### 阶段 Z — 上线前框架问题（2026-10-21）
+- [x] Z1 — wasm-opt：本机 dx 下载的 macOS binaryen 二进制连空 wasm 都崩溃（SIGBUS / SIGSEGV），dx 仍以 0 退出，产物未优化
+  - 完成（779a30e）：Linux aarch64 的同版本 binaryen 在容器里对本项目 wasm 连跑 3 次正常；本机把 `~/.dx/tools/binaryen-129/bin/wasm-opt` 指向 Homebrew 的 133 后 dx 正常执行 wasm-opt。产物原始 3.78MB → 3.41MB，br 0.92MB → 0.93MB（+1.5%），gzip +0.7%；release 服务端 + Chromium 验证水合、站内跳转、交互正常。Dockerfile 检查 bundle 日志中的 `wasm-opt failed` 并让构建失败（dash 下正反验证）；`DEVELOPER.md` §2.3 记本机修法
