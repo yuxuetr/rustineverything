@@ -639,7 +639,12 @@
   - 完成（119ca7b）：启动刷新移出 `cfg(not(accounts))`，改为启动一次 + 每 10 分钟一次。本地实测日志 `search: index refreshed upserts=19 deletes=0 elapsed_ms=1107`（debug）。`SEARCH_SPEC.md` 记录
 - [x] Y7 — 支付回调各失败分支记录原因
   - 完成（372f7e5）：三个回调与 `stripe_reversal` 的每个失败分支记 `pay_audit` 日志（含错误）。本地发签名正确但缺 `client_reference_id` 的事件：400，日志 `stripe notify: parse failed error=解析失败: 回调缺 client_reference_id`
-- [ ] Y8 — 文档页用 `PageMeta`，缺 frontmatter 时用首个标题 / 首段补 title / description。验收：`/docs/axum/basic/handler` 标题与描述不再是站名 / 空
-- [ ] Y9 — 运维手册纠错（上传卷名、cron 变量、连接池、迁移、恢复）+ compose 日志轮转
-- [ ] Y10 — 内容小错：welcome 路径、课程 Cargo.toml edition、burn 示例 clone
-- [ ] Y11 — 删除死代码、未用 i18n key、未用依赖
+- [x] Y8 — 文档页用 `PageMeta`，缺 frontmatter 时用首个标题 / 首段补 title / description。验收：`/docs/axum/basic/handler` 标题与描述不再是站名 / 空
+  - 完成（43c069f）：`DocPage` 改用 `PageMeta`（多了 canonical / og）；`fill_missing_meta` 用首个 `#` 标题与首段纯文本补齐。单测 `missing_meta_filled_from_body`。实测原先 17 个以站名为标题的页面都有了各自标题与描述；浏览器控制台无报错。`SEO_SPEC.md` §3
+- [x] Y9 — 运维手册纠错（上传卷名、cron 变量、连接池、迁移、恢复）+ compose 日志轮转
+  - 完成（bc8ad40）：`OPERATIONS.md` 上传卷名改为 `rustineverything_app-uploads`；pg_dump / pg_restore 用 `sh -c` 在容器内展开变量，cron 加 `test -s`（本地容器实测导出非空、空文件判失败）；去掉不存在的 `sea-orm-cli` 回滚步骤，6.3 改为恢复升级前导出；连接池与搜索日志更新。compose 两个服务 json-file 日志 5 × 10MB（YAML 解析确认）
+- [x] Y10 — 内容小错：welcome 路径、课程 Cargo.toml edition、burn 示例 clone
+  - 完成（ba5d0b3）：welcome 路径改为 `assets/posts/welcome/index.mdx`；课程下载 edition 2024（拷出后 `cargo run` 输出 `Hello, Rust!`）；burn 示例改 `x.clone().matmul(x.transpose())`
+- [x] Y11 — 删除死代码、未用 i18n key、未用依赖
+  - 完成（dbf8ba6）：删微信 `create_native` / `create_h5` / `send_v3`、支付宝 `precreate` / `amount_matches`、`registered_source_count`、`set_thresholds`；中英各删 17 个无引用 key；11 个 crate 去掉源码未用的依赖。四档检查、workspace clippy、635 个测试通过，主要页面 200
+- 阶段 Y 完成：Y1–Y11
