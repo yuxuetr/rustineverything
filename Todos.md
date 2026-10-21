@@ -631,10 +631,14 @@
   - 完成（bac4b4f）：`find_lower` 逐字符小写并记录原串偏移。单测 `snippet_survives_length_changing_lowercase` 旧代码 panic
 - [x] Y3 — 评论长度上限 32KB（同论坛回复）。验收：超长评论被拒
   - 完成（bfc7b0b）：`validate_comment`（空 / 超 32KB 拒绝）在会话校验后调用；单测覆盖边界
-- [ ] Y4 — `course.yaml` 解析失败时课程下线并记 error。验收：单测坏 yaml 返回 None
-- [ ] Y5 — 支付网关与 OAuth 的 HTTP 客户端加超时
-- [ ] Y6 — 所有构建启动时刷新搜索索引，并每 10 分钟增量刷新
-- [ ] Y7 — 支付回调各失败分支记录原因
+- [x] Y4 — `course.yaml` 解析失败时课程下线并记 error。验收：单测坏 yaml 返回 None
+  - 完成（93857fd）：`parse_course_meta` 解析失败记 error 返回 `None`，读文件失败同样下线；单测覆盖未加引号的冒号、类型错误、合法与空文件
+- [x] Y5 — 支付网关与 OAuth 的 HTTP 客户端加超时
+  - 完成（322b85b）：`payment/host.rs::send` 与 OAuth 换 token / 取资料的客户端加 5s 连接、15s 总超时。`alipay.rs` / `wechat.rs` 剩下的 `Client::new()` 只在死代码里，Y11 删除
+- [x] Y6 — 所有构建启动时刷新搜索索引，并每 10 分钟增量刷新
+  - 完成（119ca7b）：启动刷新移出 `cfg(not(accounts))`，改为启动一次 + 每 10 分钟一次。本地实测日志 `search: index refreshed upserts=19 deletes=0 elapsed_ms=1107`（debug）。`SEARCH_SPEC.md` 记录
+- [x] Y7 — 支付回调各失败分支记录原因
+  - 完成（372f7e5）：三个回调与 `stripe_reversal` 的每个失败分支记 `pay_audit` 日志（含错误）。本地发签名正确但缺 `client_reference_id` 的事件：400，日志 `stripe notify: parse failed error=解析失败: 回调缺 client_reference_id`
 - [ ] Y8 — 文档页用 `PageMeta`，缺 frontmatter 时用首个标题 / 首段补 title / description。验收：`/docs/axum/basic/handler` 标题与描述不再是站名 / 空
 - [ ] Y9 — 运维手册纠错（上传卷名、cron 变量、连接池、迁移、恢复）+ compose 日志轮转
 - [ ] Y10 — 内容小错：welcome 路径、课程 Cargo.toml edition、burn 示例 clone
