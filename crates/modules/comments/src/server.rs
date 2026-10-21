@@ -14,6 +14,20 @@ pub struct Comment {
   pub date: String,
 }
 
+/// 评论长度上限，与论坛回复一致（Y3）。
+pub const MAX_COMMENT_LEN: usize = 32 * 1024;
+
+/// 校验评论内容
+pub fn validate_comment(content: &str) -> Result<(), String> {
+  if content.trim().is_empty() {
+    return Err("评论内容不能为空".to_string());
+  }
+  if content.len() > MAX_COMMENT_LEN {
+    return Err(format!("评论长度不能超过 {} 字节", MAX_COMMENT_LEN));
+  }
+  Ok(())
+}
+
 #[post("/api/comments/list")]
 pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError> {
   #[cfg(feature = "server")]
@@ -85,6 +99,7 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
 
     // S4：写路径用 verified 会话（DB 回查 token_version，支持即时吊销）
     let session_user = require_session_verified().await?;
+    validate_comment(&content).map_err(ServerFnError::new)?;
 
     // ── 审核（默认 disabled → pipeline 为空 → 直接 Allow，零开销） ──
     let base_url = std::env::var("BASE_URL").unwrap_or_default();
@@ -148,5 +163,18 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
   {
     let _ = (blog_id, content);
     Ok(vec![])
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn validate_comment_rejects_empty_and_oversized() {
+    assert!(validate_comment("好文").is_ok());
+    assert!(validate_comment("  \n ").is_err());
+    assert!(validate_comment(&"a".repeat(MAX_COMMENT_LEN)).is_ok());
+    assert!(validate_comment(&"a".repeat(MAX_COMMENT_LEN + 1)).is_err());
   }
 }
