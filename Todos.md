@@ -661,10 +661,18 @@
 
 ### 阶段 M — 迁移 Docusaurus 旧博客（2026-10-21）
 来源与处理方式见 `docs/BLOG_MIGRATION.md` §5。
-- [ ] M1 — 标题 id：支持 `{#id}`，否则按 github-slugger 由标题文字生成；标注仍按 `data-block-id`
-- [ ] M2 — 行内 `<br>` / `<br/>` 渲染为换行
-- [ ] M3 — `AudioPlayer` 组件（`<audio controls>`）
-- [ ] M4 — prism 语言包：swift、jsx、typescript、tsx
-- [ ] M5 — 旧网址 308：`/blog/YYYY/MM/DD/<slug>`、`/en` 前缀、标签 / 分页 / 归档页
-- [ ] M6 — 转换脚本 `scripts/migrate_docusaurus.py`
-- [ ] M7 — 导入 165 篇，逐篇检查页面 / 锚点 / 图片，跑 §3 的门
+- [x] M1 — 标题 id：支持 `{#id}`，否则按 github-slugger 由标题文字生成；标注仍按 `data-block-id`
+  - 完成（08d709d）：开启 heading attributes；显式 `{#id}` 优先，否则 github-slugger 生成，重名加 `-1`；`data-block-id` 仍为 `bN`，用户内容仍用 `bN`。单测 2 个。迁移后 23 篇里 251 个页内锚点全部能找到目标
+- [x] M2 — 行内 `<br>` / `<br/>` 渲染为换行
+  - 完成（7b1c922）：单测正反验证
+- [x] M3 — `AudioPlayer` 组件（`<audio controls>`）
+  - 完成（a744097）：单行与跨行写法都渲染；非 https 不渲染。单测正反验证；浏览器里 wasmi-1-0 显示播放器
+- [x] M4 — prism 语言包：swift、jsx、typescript、tsx
+  - 完成（3e22f18）：prismjs 1.30.0 的 swift / jsx / typescript / tsx。浏览器实测 swift 12/12、jsx 101/101、tsx 32/32 个代码块有高亮
+- [x] M5 — 旧网址 308：`/blog/YYYY/MM/DD/<slug>`、`/en` 前缀、标签 / 分页 / 归档页
+  - 完成（1e93524）：单测覆盖跳与不跳；旧站构建里的 164 个文章地址全部 308 到 200 的新页面
+- [x] M6 — 转换脚本 `scripts/migrate_docusaurus.py`
+  - 完成（09f558e、2ffca22）：逐页检查后补了结束标记缩进、行首 Tab、独占一行的组件、单引号图片标题，以及 ts-decorator 一篇的列表缩进
+- [x] M7 — 导入 165 篇，逐篇检查页面 / 锚点 / 图片，跑 §3 的门
+  - 完成（74394ed）：164 篇、110 个文件、29MB。逐篇对比旧站构建：列表项、表格、代码块数量一致，图片仅少 2 个（mp4 视频改成了链接）；无密钥样式内容；sitemap 165 条。§3 的门：图片门触发（lancedb-table 17 张）→ Markdown 图片加 `loading=lazy`（69bbb50）；`/blog` 299.5KB（gzip 50KB）贴着 300KB 门，未做分页
+- 阶段 M 完成：M1–M7
