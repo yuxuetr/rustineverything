@@ -138,6 +138,7 @@ mod tests {
     }
   }
 
+  #[cfg(feature = "server")]
   fn write_post(dir: &std::path::Path, slug: &str, frontmatter: &str) {
     let d = dir.join(slug);
     std::fs::create_dir_all(&d).unwrap();
