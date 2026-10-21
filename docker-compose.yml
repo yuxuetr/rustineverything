@@ -36,7 +36,8 @@ services:
     logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-rie}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rie-dev-password}
+      # 不设就拒绝启动：生产库不能用仓库里公开的默认密码
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 必须设置（强随机密码）}
       POSTGRES_DB: ${POSTGRES_DB:-rie}
       # 显式锁 locale，避免 alpine 默认 UTF-8 collation 在不同主机间漂移。
       POSTGRES_INITDB_ARGS: "--lc-collate=C --lc-ctype=C --encoding=UTF8"
@@ -67,7 +68,7 @@ services:
         condition: service_healthy
     environment:
       # 数据库：连到 compose 内部的 postgres 服务名。
-      DATABASE_URL: postgres://${POSTGRES_USER:-rie}:${POSTGRES_PASSWORD:-rie-dev-password}@postgres:5432/${POSTGRES_DB:-rie}
+      DATABASE_URL: postgres://${POSTGRES_USER:-rie}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 必须设置（强随机密码）}@postgres:5432/${POSTGRES_DB:-rie}
       # 必须项（启动时校验，缺失会 panic）：
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必须设置（建议 32+ 字符随机）}
       BASE_URL: ${BASE_URL:?BASE_URL 必须设置（如 https://example.com）}
@@ -107,11 +108,15 @@ services:
       # 搜索索引目录（Phase 7.3）：MmapDirectory 持久化路径。
       # 不挂卷 → 容器每次重启都触发一次全量重建（仍能服务，只是冷启动慢）。
       SEARCH_INDEX_DIR: /app/data/search-index
+      # 站点文章与课程（阶段 P）：从下面挂载的目录读，更新内容只需在宿主上 git pull，不用重建镜像
+      CONTENT_DIR: /app/content
     volumes:
       # 用户上传图片：挂卷而非镜像层，便于备份与跨版本继承
       - app-uploads:/app/assets/uploads
       # 搜索索引（Phase 7.3）：跨重启保留 tantivy 索引 + manifest.json
       - app-search-index:/app/data/search-index
+      # 私有内容仓库（含 posts/、courses/）；不设 CONTENT_HOST_DIR 时用框架自带的示例内容
+      - ${CONTENT_HOST_DIR:-./assets}:/app/content:ro
     ports:
       # 只绑本机（H5）：限流按 X-Forwarded-For 区分客户端，该头由宿主上的
       # 网关 / 反代覆盖写入；端口对公网开放时，直连者每个请求换一个 XFF
