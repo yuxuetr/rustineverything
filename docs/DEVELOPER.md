@@ -107,6 +107,21 @@ target-dir = "/Users/<your-username>/.target"   # 或 /home/<user>/.target
 不受影响；直接打开或刷新才会 404。release 构建把 wasm 产物放进带哈希的 `public/assets/`，没有这个目录，
 `/wasm` 正常服务端渲染（2026-10-08 用 `dx build --release` 按 Docker 目录布局验证）。
 
+**本地 release 构建报 `wasm-opt failed with status code signal: 10 (SIGBUS)` / `11 (SIGSEGV)`**：dx 0.7.9 不看 PATH，
+固定用 `~/.dx/tools/binaryen-129/bin/wasm-opt`，没有就从 GitHub 下载 binaryen 最新版（当前 133）的 macOS 二进制放进去。
+这个二进制在本机连空 wasm 都会崩（2026-10-21 验证；Homebrew 的 133 正常，Linux aarch64 的 133 在容器里正常）。
+dx 遇到崩溃只打一行 ERROR、退出码仍为 0，产物是未经 wasm-opt 的 wasm（约 3.8MB，Docker 产物约 3.4MB）。
+本机修法，把 dx 的路径指向 Homebrew 的 wasm-opt：
+
+```bash
+brew install binaryen
+mv ~/.dx/tools/binaryen-129 ~/.dx/tools/binaryen-129.dx-download
+mkdir -p ~/.dx/tools/binaryen-129/bin
+ln -s "$(brew --prefix)/bin/wasm-opt" ~/.dx/tools/binaryen-129/bin/wasm-opt
+```
+
+Docker 构建会检查 `dx bundle` 日志里的 `wasm-opt failed`，出现即构建失败（Dockerfile 第 2 步）。
+
 ---
 
 ## 3. 扩展站点能力

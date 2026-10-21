@@ -114,8 +114,14 @@ RUN cd crates/app && npm run build
 #      --build-arg APP_FEATURES="--no-default-features"                     # basic（无库）
 #      --build-arg APP_FEATURES="--no-default-features --features accounts" # 博客 + 论坛
 #      --build-arg APP_FEATURES="--no-default-features --features course"   # + 课程（无在线支付）
+#    wasm-opt 失败时 dx 只打一行 ERROR、退出码仍是 0，产物是未优化的 wasm。这里查日志让构建失败，
+#    保证上线的就是验证过的 wasm-opt 产物（约 3.4MB；macOS 上 dx 下载的 binaryen 会崩，见 DEVELOPER.md）。
 ARG APP_FEATURES=""
-RUN cd crates/app && dx bundle --platform web --release --package app ${APP_FEATURES}
+RUN cd crates/app \
+ && { dx bundle --platform web --release --package app ${APP_FEATURES} > /tmp/bundle.log 2>&1; status=$?; } \
+ ; cat /tmp/bundle.log \
+ && [ "$status" -eq 0 ] \
+ && if grep -q 'wasm-opt failed' /tmp/bundle.log; then echo 'dx bundle: wasm-opt failed' >&2; exit 1; fi
 
 # 3. 收敛产物到统一目录，方便 runtime 阶段单层 COPY
 RUN mkdir -p /out \
