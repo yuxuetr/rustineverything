@@ -34,7 +34,7 @@ FIXES: dict[str, list[tuple[str, str]]] = {
   # 有序列表项缩进 3 格，子项只缩进 5 格（比内容列少 1 格），子项与代码块会并进上一行
   "2023-10-30-ts-decorator.mdx": [(r"^   (\d+\. )", r"  \1")],
 }
-KEPT_KEYS = {"title", "description", "tags", "keywords", "date", "publishedAt", "updatedAt", "image"}
+KEPT_KEYS = {"title", "description", "tags", "keywords", "date", "publishedAt", "updatedAt", "image", "authors"}
 
 
 def new_slug(old: str) -> str:
@@ -84,7 +84,7 @@ def prose_segments(body: str) -> Iterator[tuple[bool, str]]:
 
 
 class Post:
-  def __init__(self, name: str, src: str, out_root: str, slugs: dict[str, str]):
+  def __init__(self, name: str, src: str, out_root: str, slugs: dict[str, str], authors: dict):
     m = DATED_NAME.match(name)
     if not m:
       raise ValueError("文件名不是 YYYY-MM-DD-slug")
@@ -95,6 +95,8 @@ class Post:
     self.slug = new_slug(old)
     self.out_dir = os.path.join(out_root, self.slug)
     self.slugs = slugs
+    self.authors = authors
+    self.first_image: str | None = None
     self.copied: dict[str, str] = {}
     self.warnings: list[str] = []
 
@@ -123,13 +125,19 @@ class Post:
     for key in ("tags", "keywords"):
       if fm.get(key):
         out[key] = fm[key]
-    if fm.get("image"):
-      local = self.copy_local(str(fm["image"]))
-      if local:
-        out["image"] = f"/posts/{self.slug}/{local}"
-      else:
-        self.warnings.append(f"封面图找不到，已去掉：{fm['image']}")
-    dropped = sorted(set(fm) - KEPT_KEYS - {"authors", "hide_table_of_contents"})
+    authors = fm.get("authors") or []
+    for key in [authors] if isinstance(authors, str) else authors:
+      name = (self.authors.get(key) or {}).get("name")
+      if name:
+        out["author"] = name
+        break
+    # 没有封面图时用正文第一张图，分享卡片与 og:image 才有图
+    cover = self.copy_local(str(fm["image"])) if fm.get("image") else self.first_image
+    if cover:
+      out["image"] = f"/posts/{self.slug}/{cover}"
+    elif fm.get("image"):
+      self.warnings.append(f"封面图找不到，已去掉：{fm['image']}")
+    dropped = sorted(set(fm) - KEPT_KEYS - {"hide_table_of_contents"})
     if dropped:
       self.warnings.append(f"去掉 frontmatter：{', '.join(dropped)}")
     return out
@@ -179,6 +187,7 @@ class Post:
       local = self.copy_local(url)
     if not local:
       return m.group(0)
+    self.first_image = self.first_image or local
     return f"![{alt}]({local}{title})"
 
   def copy_local(self, url: str) -> str | None:
@@ -245,9 +254,11 @@ def main() -> int:
   if len(set(slugs.values())) != len(slugs):
     print("新 slug 有重名，停止")
     return 1
+  authors_file = os.path.join(src_root, "authors.yml")
+  authors = yaml.safe_load(open(authors_file, encoding="utf-8")) if os.path.isfile(authors_file) else {}
   warned = 0
   for name, path, _ in items:
-    post = Post(name, path, out_root, slugs)
+    post = Post(name, path, out_root, slugs, authors or {})
     post.convert()
     for w in post.warnings:
       print(f"{post.slug}: {w}")

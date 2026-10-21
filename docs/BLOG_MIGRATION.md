@@ -56,7 +56,7 @@
 | `<RedText text=…/>` 等颜色组件 | 312 | M6 脚本改名为站点已有的 `Pink` / `Blue` / `Green` / `Yellow` / `Purple`（属性同为 `text`）|
 | 图片：相对路径 102、外链 10 | | M6 脚本把引用到的图片（共享 `images/` 与文章目录内）拷进新文章目录，路径改为文件名；外链图片下载到文章目录，`.mp4` 改成链接；下载失败的列出来 |
 | 文章互链 `](../2025-01-06-swiftui-intro/index.mdx)` | | M6 脚本改为 `/blog/<新 slug>` |
-| frontmatter | | 保留 title / description / tags / keywords / image；日期取 `date` 或文件名；删 authors / hide_table_of_contents 等 |
+| frontmatter | | 保留 title / description / tags / keywords / image；`authors` 按旧站 `authors.yml` 换成 `author`（名字）；没有 `image` 时用正文第一张图；日期取 `date` 或文件名；删 hide_table_of_contents 等 |
 | `:::note` 等提示块 | 46 | 站点已支持，不处理 |
 | slug 含 `.`（`rust-1.82` 等）| 6 | 新 slug 把 `.` 换成 `-`；无重名 |
 
