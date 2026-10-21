@@ -699,5 +699,6 @@
 源码解析系列（第一卷 tokio，规划在内容仓库 `plans/`）放私有内容仓库的 `docs/`，一卷约 40 页、按版本写。框架需要三处支持。
 - [x] S1 — 文档也从 `CONTENT_DIR` 读：文档树与正文、搜索索引、论坛引用标题（sitemap 走文档树，自动跟随）。`.gitignore` 挡住 `assets/docs/*`，只留现有示例
   - 完成（403a545）：四处改用 `content_dir("docs")`，文档模块里重复的 `get_asset_root` 删掉。dx 实测：内容仓库放入临时 `docs/tokio` 后，文档页、sitemap、搜索都能看到，示例 axum 404。`.gitignore` 用 `git check-ignore` 两个方向验过
-- [ ] S2 — 文档页「上一页 / 下一页」：在同一个一级分类内按侧栏顺序（先序）取前后两篇，服务端算好随正文返回，SSR 里就有链接
+- [x] S2 — 文档页「上一页 / 下一页」：在同一个一级分类内按侧栏顺序（先序）取前后两篇，服务端算好随正文返回，SSR 里就有链接
+  - 完成（b54ded7）：`doc_neighbors` 只扫当前一级分类，单测覆盖顺序、跳过无正文目录、不跨分类、根与不存在的路径，把「跳过无正文」改坏后测试变红。dx 实测：SSR HTML 里有 `rel="prev"` / `rel="next"`；hydration 后点击跳转，链接跟着更新；手机宽度两张卡片上下排列
 - [ ] S3 — frontmatter `source: { crate, version }`：文档页正文上方显示「基于 tokio 1.54.0」，链到 docs.rs 对应版本。frontmatter 解析失败时记 warn（现在整块静默丢弃，写错一个字段标题和描述都没了）
