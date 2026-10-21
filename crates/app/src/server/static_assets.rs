@@ -12,7 +12,7 @@ use tower_http::services::ServeDir;
 pub fn mount(router: Router, assets_root: &str) -> Router {
   let router = router
     .nest_service("/images", ServeDir::new(format!("{}/images", assets_root)))
-    .nest_service("/posts", ServeDir::new(format!("{}/posts", assets_root)))
+    .nest_service("/posts", ServeDir::new(app_core::utils::content_dir("posts")))
     // 脚本文件名不带哈希：每次使用前向服务端确认（未变时 304），改版后立即生效
     .nest(
       "/js",
@@ -30,7 +30,7 @@ pub fn mount(router: Router, assets_root: &str) -> Router {
   let router = router.nest(
     "/courses",
     Router::new()
-      .fallback_service(ServeDir::new(format!("{}/courses", assets_root)))
+      .fallback_service(ServeDir::new(app_core::utils::content_dir("courses")))
       .layer(middleware::from_fn(guard_course_file))
       // 按用户鉴权的内容：共享缓存（CDN / 反代）不得存，浏览器每次复验
       .layer(middleware::map_response(cache_control("private, no-cache"))),

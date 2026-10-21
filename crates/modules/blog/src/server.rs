@@ -78,13 +78,13 @@ fn build_blog_list(posts_dir: &std::path::Path) -> Vec<BlogPostSummary> {
   posts
 }
 
-/// 扫描 assets/posts/ 下所有博客目录，解析 frontmatter 返回列表。
+/// 扫描文章目录（`content_dir("posts")`）下所有博客目录，解析 frontmatter 返回列表。
 ///
 /// Phase 8.5：用 `BLOG_LIST_CACHE` 按 (index 文件路径, mtime) fingerprint 缓存。
 /// 命中时省掉 N 次 `read_to_string` + `serde_yaml::from_str`。
 #[server]
 pub async fn list_blog_posts() -> Result<Vec<BlogPostSummary>, ServerFnError> {
-  let posts_dir = get_asset_root().join("posts");
+  let posts_dir = app_core::utils::content_dir("posts");
   if !posts_dir.exists() {
     return Ok(Vec::new());
   }
@@ -99,18 +99,18 @@ pub async fn list_blog_posts() -> Result<Vec<BlogPostSummary>, ServerFnError> {
 /// 文章源文件 `posts/<id>/index.mdx`（优先）或 `index.md`。`id` 必须是单段 slug：
 /// server fn 可被直接调用，`../courses/...` 这类 id 会读到付费课时等站内其他文件。
 #[allow(dead_code)]
-fn post_file(asset_root: &std::path::Path, id: &str) -> Option<PathBuf> {
+fn post_file(posts_dir: &std::path::Path, id: &str) -> Option<PathBuf> {
   if !app_core::utils::is_safe_slug(id) {
     return None;
   }
-  let dir = asset_root.join("posts").join(id);
+  let dir = posts_dir.join(id);
   ["index.mdx", "index.md"].into_iter().map(|name| dir.join(name)).find(|p| p.is_file())
 }
 
 /// 文章源文本；`Ok(None)` 表示没有这篇文章（页面据此回 404）。
 #[server]
 pub async fn get_blog_content(id: String) -> Result<Option<String>, ServerFnError> {
-  let Some(filepath) = post_file(&get_asset_root(), &id) else {
+  let Some(filepath) = post_file(&app_core::utils::content_dir("posts"), &id) else {
     return Ok(None);
   };
 
@@ -129,7 +129,7 @@ mod tests {
 
   #[test]
   fn post_file_stays_inside_posts() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../assets");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../assets/posts");
     assert!(post_file(&root, "welcome").is_some());
     // 站内确实存在的 index.md，但不在 posts/ 下（含付费课时）
     for id in ["../docs", "../courses/rust-basics/02-ownership/01-borrow-rules", "..", "welcome/.."]

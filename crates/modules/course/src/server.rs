@@ -534,11 +534,7 @@ pub(crate) fn parse_frontmatter_lesson(content: &str) -> (LessonFrontmatter, Str
 
 #[cfg(feature = "server")]
 pub fn get_courses_root() -> PathBuf {
-  let mut p = PathBuf::from("assets/courses");
-  if !p.exists() {
-    p = PathBuf::from("../../assets/courses");
-  }
-  p
+  app_core::utils::content_dir("courses")
 }
 
 #[cfg(feature = "server")]

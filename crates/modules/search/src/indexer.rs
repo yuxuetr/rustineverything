@@ -206,7 +206,7 @@ fn read_md_file(path: &Path) -> Option<(String, String, String)> {
 
 fn collect_blogs_versioned() -> Vec<VersionedDoc> {
   let mut out = Vec::new();
-  let posts_dir = get_asset_root().join("posts");
+  let posts_dir = app_core::utils::content_dir("posts");
   let entries = match std::fs::read_dir(&posts_dir) {
     Ok(e) => e,
     Err(_) => return out,
