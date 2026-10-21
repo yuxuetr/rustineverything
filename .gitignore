@@ -27,3 +27,8 @@ crates/app/tailwind-sources.css
 
 # 本地运行时数据（tantivy 搜索索引等，对应 SEARCH_INDEX_DIR）——不入库
 /data/
+
+# 站点文章是各自部署的内容，不进框架仓库；只保留示例文章与作者表
+/assets/posts/*
+!/assets/posts/welcome/
+!/assets/posts/authors.yml

@@ -674,5 +674,9 @@
 - [x] M6 — 转换脚本 `scripts/migrate_docusaurus.py`
   - 完成（09f558e、2ffca22）：逐页检查后补了结束标记缩进、行首 Tab、独占一行的组件、单引号图片标题，以及 ts-decorator 一篇的列表缩进
 - [x] M7 — 导入 165 篇，逐篇检查页面 / 锚点 / 图片，跑 §3 的门
-  - 完成（74394ed）：164 篇、110 个文件、29MB。逐篇对比旧站构建：列表项、表格、代码块数量一致，图片仅少 2 个（mp4 视频改成了链接）；无密钥样式内容；sitemap 165 条。§3 的门：图片门触发（lancedb-table 17 张）→ Markdown 图片加 `loading=lazy`（69bbb50）；`/blog` 299.5KB（gzip 50KB）贴着 300KB 门，未做分页
-- 阶段 M 完成：M1–M7
+  - 完成（文章只在本地，见 M8）：164 篇、110 个文件、29MB。逐篇对比旧站构建：列表项、表格、代码块数量一致，图片仅少 2 个（mp4 视频改成了链接）；无密钥样式内容；sitemap 165 条。§3 的门：图片门触发（lancedb-table 17 张）→ Markdown 图片加 `loading=lazy`（69bbb50）；`/blog` 299.5KB（gzip 50KB）贴着 300KB 门，未做分页
+- [x] M8 — 迁移的文章不进仓库（框架开源，文章是站点自己的内容）
+  - 完成：导入提交未推送，已从本地历史去掉；`.gitignore` 忽略 `assets/posts/*`，只留示例 `welcome/` 与 `authors.yml`（两个方向都用 `git check-ignore` 验过）。文章仍在本地 `assets/posts/`，`docker build` 的上下文会带上它们；换机器重跑 `python3 -I scripts/migrate_docusaurus.py <旧博客 data/blog> assets/posts`
+- [ ] M9 — 转换脚本写 `author`：旧文 `authors: [yuxuetr]` 按旧站 `authors.yml` 换成名字；没写 `image` 的文章用正文第一张图作封面（55 篇有图，现在只有 3 篇有 og:image）
+- [ ] M10 — 文章 SEO：`og:image` / `twitter:image` / JSON-LD `image` 用绝对地址（现为 `/posts/...`，爬虫不认）；JSON-LD 加 `dateModified`（`updated`，没有则发布日期）
+- 阶段 M 完成：M1–M8
