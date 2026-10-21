@@ -7,16 +7,6 @@ use std::fs;
 #[allow(unused_imports)]
 use std::path::PathBuf;
 
-/// 自动探测资产根目录
-#[allow(dead_code)]
-fn get_asset_root() -> PathBuf {
-  let mut path = PathBuf::from("assets");
-  if !path.exists() {
-    path = PathBuf::from("../../assets");
-  }
-  path
-}
-
 /// 文档 frontmatter 元数据（类似 Docusaurus）
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct DocMeta {
@@ -236,7 +226,7 @@ pub(crate) fn scan_doc_dir(
 pub async fn list_doc_tree() -> Result<Vec<DocTreeNode>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    let docs_dir = get_asset_root().join("docs");
+    let docs_dir = app_core::utils::content_dir("docs");
     if !docs_dir.exists() {
       return Ok(vec![]);
     }
@@ -265,7 +255,7 @@ fn resolve_doc_file(docs_root: &std::path::Path, path: &str) -> Option<PathBuf> 
 pub async fn get_doc_content(path: String) -> Result<Option<DocContentResponse>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    let Some(filepath) = resolve_doc_file(&get_asset_root().join("docs"), &path) else {
+    let Some(filepath) = resolve_doc_file(&app_core::utils::content_dir("docs"), &path) else {
       return Ok(None);
     };
     let raw =

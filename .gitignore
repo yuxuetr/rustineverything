@@ -35,3 +35,9 @@ crates/app/tailwind-sources.css
 # 课程同理：真实（付费）课程放私有内容仓库（CONTENT_DIR），这里只留示例课
 /assets/courses/*
 !/assets/courses/rust-basics/
+/assets/docs/*
+!/assets/docs/index.md
+!/assets/docs/axum/
+!/assets/docs/burn/
+!/assets/docs/dioxus/
+!/assets/docs/weekly/

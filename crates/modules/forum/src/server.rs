@@ -214,9 +214,9 @@ fn resolve_ref_title(kind: &str, path: &str) -> String {
     "blog" => resolve_in(app_core::utils::content_dir("posts"))
       .and_then(|p| read_index_title(&p))
       .unwrap_or_else(fallback),
-    "doc" => {
-      resolve_in(root.join("docs")).and_then(|p| read_index_title(&p)).unwrap_or_else(fallback)
-    }
+    "doc" => resolve_in(app_core::utils::content_dir("docs"))
+      .and_then(|p| read_index_title(&p))
+      .unwrap_or_else(fallback),
     "course" => {
       let Some(course_dir) = resolve_in(courses.clone()) else { return fallback() };
       let yaml = course_dir.join("course.yaml");

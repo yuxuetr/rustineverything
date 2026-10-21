@@ -345,7 +345,7 @@ mod tests {
         .unwrap_or(0)
     };
     let docs = doc_paths(&module_docs::server::list_doc_tree().await.unwrap_or_default()).len();
-    let index_files = walk_count(&root.join("docs"));
+    let index_files = walk_count(&app_core::utils::content_dir("docs"));
     assert!(docs > 0);
     assert_eq!(docs, index_files, "文档树漏掉了磁盘上的文档（深度上限 / _meta.json 过滤？）");
 
