@@ -385,7 +385,8 @@ fn render_image(dest_url: &str, title: &str, alt: &str, blog_id: &str, untrusted
   };
   rsx! {
       figure { class: "my-8",
-          img { src: "{src}", alt: "{alt}", class: "rounded-2xl shadow-xl mx-auto border border-slate-200 dark:border-slate-800" }
+          // 长文图多（迁移后最多一篇 17 张），首屏外的不先下载
+          img { src: "{src}", alt: "{alt}", loading: "lazy", decoding: "async", class: "rounded-2xl shadow-xl mx-auto border border-slate-200 dark:border-slate-800" }
           if !title.is_empty() {
               figcaption { class: "text-center text-sm text-slate-500 mt-3 italic", "{title}" }
           }
@@ -935,6 +936,7 @@ mod tests {
       assert!(!html.contains("<em>"), "描述不应作为正文渲染：{html}");
       let html = render_markdown("![](/uploads/a.png)", untrusted);
       assert!(html.contains("alt=\"\""), "{html}");
+      assert!(html.contains("loading=\"lazy\""), "{html}");
     }
   }
 
