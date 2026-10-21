@@ -21,27 +21,98 @@ use std::collections::HashMap;
 /// 所有新字段都是 Optional，反序列化 frontmatter 时走 default，
 /// 不会因为缺失而报错。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct PostMetadata {
+  /// 缺省为空（Z3）：之前缺 `title` 会让整块 frontmatter 解析失败。
+  #[serde(deserialize_with = "de_text")]
   pub title: String,
+  /// `summary` / `excerpt` 是其他博客系统的同义字段（Z3）。
+  #[serde(alias = "summary", alias = "excerpt", deserialize_with = "de_opt_text")]
   pub description: Option<String>,
+  /// 字符串或列表；列表以 `, ` 连接（Z3）。
+  #[serde(deserialize_with = "de_opt_joined")]
   pub keywords: Option<String>,
   /// 社交分享封面。推荐是绝对 URL；相对路径也允许，调用方负责拼接。
-  #[serde(default)]
   pub image: Option<String>,
   /// 作者。JSON-LD 中作为 `author.name` 用。
-  #[serde(default)]
+  #[serde(deserialize_with = "de_opt_text")]
   pub author: Option<String>,
   /// 手动覆盖 canonical URL；不提供时 [`crate::seo::inject_seo`]
   /// 从 `base_url + path` 自动推导。
-  #[serde(default)]
   pub canonical: Option<String>,
-  /// ISO 8601 发布日期字符串（如 `2024-01-15`）。JSON-LD 中
+  /// 发布日期。[`parse_mdx`] 会规范化（见 [`normalize_date`]）。JSON-LD 中
   /// 填入 `datePublished`。未提供时不输出该字段。
-  #[serde(default)]
+  #[serde(deserialize_with = "de_opt_text")]
   pub date: Option<String>,
-  /// 文章标签。JSON-LD `keywords` + Open Graph `article:tag`。
-  #[serde(default)]
+  /// 更新日期，规范化同 `date`。
+  #[serde(alias = "lastmod", deserialize_with = "de_opt_text")]
+  pub updated: Option<String>,
+  /// 文章标签，字符串或列表（Z3）。JSON-LD `keywords` + Open Graph `article:tag`。
+  #[serde(deserialize_with = "de_list")]
   pub tags: Vec<String>,
+  /// 草稿不进列表 / sitemap / feed / 搜索，文章页 404（Z3）。
+  pub draft: bool,
+}
+
+/// YAML 标量（字符串 / 数字 / 布尔）转成字符串；`title: 2024` 这类也能读。
+fn yaml_scalar(v: serde_yaml::Value) -> Option<String> {
+  match v {
+    serde_yaml::Value::String(s) => Some(s),
+    serde_yaml::Value::Number(n) => Some(n.to_string()),
+    serde_yaml::Value::Bool(b) => Some(b.to_string()),
+    _ => None,
+  }
+}
+
+fn de_text<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+  Ok(de_opt_text(d)?.unwrap_or_default())
+}
+
+fn de_opt_text<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+  Ok(yaml_scalar(serde_yaml::Value::deserialize(d)?))
+}
+
+fn de_list<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {
+  Ok(match serde_yaml::Value::deserialize(d)? {
+    serde_yaml::Value::Sequence(items) => items.into_iter().filter_map(yaml_scalar).collect(),
+    v => yaml_scalar(v).into_iter().filter(|s| !s.is_empty()).collect(),
+  })
+}
+
+fn de_opt_joined<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+  let list = de_list(d)?;
+  Ok(if list.is_empty() { None } else { Some(list.join(", ")) })
+}
+
+/// 规范化各博客系统常见的日期写法：`YYYY-M-D`、`YYYY/MM/DD`、`YYYY-MM-DD HH:MM[:SS]`
+/// 归一为 `YYYY-MM-DD`（不带时区的时间无法确定时区，只留日期）；RFC 3339 原样保留。
+/// 无法识别时返回 `None`，调用方保留原值。
+pub fn normalize_date(raw: &str) -> Option<String> {
+  let raw = raw.trim();
+  if chrono::DateTime::parse_from_rfc3339(raw).is_ok() {
+    return Some(raw.to_string());
+  }
+  for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M"] {
+    if let Ok(dt) = chrono::NaiveDateTime::parse_from_str(raw, fmt) {
+      return Some(dt.date().format("%Y-%m-%d").to_string());
+    }
+  }
+  for fmt in ["%Y-%m-%d", "%Y/%m/%d"] {
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(raw, fmt) {
+      return Some(d.format("%Y-%m-%d").to_string());
+    }
+  }
+  None
+}
+
+fn normalize_date_field(field: &mut Option<String>) {
+  if let Some(raw) = field.as_deref() {
+    match normalize_date(raw) {
+      Some(d) => *field = Some(d),
+      None if raw.trim().is_empty() => *field = None,
+      None => tracing::warn!(date = raw, "frontmatter: unrecognized date, kept as is"),
+    }
+  }
 }
 
 #[derive(Props, Clone, PartialEq)]
@@ -65,7 +136,15 @@ pub fn parse_mdx(content: &str) -> (PostMetadata, String) {
   if parts.len() < 3 {
     return (PostMetadata::default(), content.to_string());
   }
-  let metadata: PostMetadata = serde_yaml::from_str(parts[1]).unwrap_or_default();
+  let mut metadata: PostMetadata = match serde_yaml::from_str(parts[1]) {
+    Ok(m) => m,
+    Err(e) => {
+      tracing::warn!(error = %e, "frontmatter: invalid YAML, metadata ignored");
+      PostMetadata::default()
+    }
+  };
+  normalize_date_field(&mut metadata.date);
+  normalize_date_field(&mut metadata.updated);
   let body = parts[2].trim().to_string();
   (metadata, body)
 }
@@ -809,6 +888,33 @@ mod tests {
     let (meta, body) = parse_mdx(src);
     assert_eq!(meta, PostMetadata::default());
     assert!(body.contains("title: bad"));
+  }
+
+  /// Z3：其他博客系统常见的 frontmatter 写法都能读出来，缺 title 不连累其他字段。
+  #[test]
+  fn parse_mdx_tolerates_other_blog_frontmatter() {
+    let src = "---\ndate: 2019-3-5 10:20:00\ntags: rust\nkeywords: [a, b]\nsummary: 摘要\nupdated: 2020/01/02\ndraft: true\nauthor: 某人\n---\nbody";
+    let (meta, _) = parse_mdx(src);
+    assert_eq!(meta.title, "");
+    assert_eq!(meta.date.as_deref(), Some("2019-03-05"));
+    assert_eq!(meta.updated.as_deref(), Some("2020-01-02"));
+    assert_eq!(meta.tags, vec!["rust"]);
+    assert_eq!(meta.keywords.as_deref(), Some("a, b"));
+    assert_eq!(meta.description.as_deref(), Some("摘要"));
+    assert!(meta.draft);
+    let (meta, _) =
+      parse_mdx("---\ntitle: 2024\ntags: [x, 1]\ndate: 2024-01-02T03:04:05+08:00\n---\n");
+    assert_eq!(meta.title, "2024");
+    assert_eq!(meta.tags, vec!["x", "1"]);
+    assert_eq!(meta.date.as_deref(), Some("2024-01-02T03:04:05+08:00"));
+    assert!(!meta.draft);
+  }
+
+  #[test]
+  fn normalize_date_keeps_unknown_as_none() {
+    assert_eq!(normalize_date("2024-1-2").as_deref(), Some("2024-01-02"));
+    assert_eq!(normalize_date("2024/01/02").as_deref(), Some("2024-01-02"));
+    assert_eq!(normalize_date("yesterday"), None);
   }
 
   #[test]

@@ -21,6 +21,8 @@ pub struct BlogPostSummary {
   pub title: String,
   pub description: String,
   pub date: String,
+  /// frontmatter 的 `updated`（规范化后）；没有则为空。sitemap / feed 用它作更新时间。
+  pub updated: String,
   pub tags: Vec<String>,
 }
 
@@ -41,6 +43,11 @@ fn build_blog_list(posts_dir: &std::path::Path) -> Vec<BlogPostSummary> {
       continue;
     }
     let slug = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+    // 文章页只认 `[A-Za-z0-9_-]`（`post_file`）；不合法的目录名进列表只会生成死链（Z4）。
+    if !app_core::utils::is_safe_slug(&slug) {
+      tracing::warn!(dir = %path.display(), "blog: directory name is not a valid slug; skipped");
+      continue;
+    }
 
     let mdx = path.join("index.mdx");
     let md = path.join("index.md");
@@ -53,13 +60,17 @@ fn build_blog_list(posts_dir: &std::path::Path) -> Vec<BlogPostSummary> {
     };
 
     let content = fs::read_to_string(&index_file).unwrap_or_default();
-    let meta = parse_frontmatter(&content);
+    let (meta, _) = widgets::parse_mdx(&content);
+    if meta.draft {
+      continue;
+    }
 
     posts.push(BlogPostSummary {
       slug,
       title: meta.title,
-      description: meta.description,
-      date: meta.date,
+      description: meta.description.unwrap_or_default(),
+      date: meta.date.unwrap_or_default(),
+      updated: meta.updated.unwrap_or_default(),
       tags: meta.tags,
     });
   }
@@ -85,31 +96,6 @@ pub async fn list_blog_posts() -> Result<Vec<BlogPostSummary>, ServerFnError> {
   Ok((*cached).clone())
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize, Default)]
-struct FrontMatter {
-  #[serde(default)]
-  title: String,
-  #[serde(default)]
-  description: String,
-  #[serde(default)]
-  date: String,
-  #[serde(default)]
-  tags: Vec<String>,
-}
-
-#[allow(dead_code)]
-fn parse_frontmatter(content: &str) -> FrontMatter {
-  if !content.starts_with("---") {
-    return FrontMatter::default();
-  }
-  let parts: Vec<&str> = content.splitn(3, "---").collect();
-  if parts.len() < 3 {
-    return FrontMatter::default();
-  }
-  serde_yaml::from_str(parts[1]).unwrap_or_default()
-}
-
 /// 文章源文件 `posts/<id>/index.mdx`（优先）或 `index.md`。`id` 必须是单段 slug：
 /// server fn 可被直接调用，`../courses/...` 这类 id 会读到付费课时等站内其他文件。
 #[allow(dead_code)]
@@ -130,6 +116,10 @@ pub async fn get_blog_content(id: String) -> Result<Option<String>, ServerFnErro
 
   let raw =
     fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
+  // 草稿不对外（Z3）。
+  if widgets::parse_mdx(&raw).0.draft {
+    return Ok(None);
+  }
   Ok(Some(raw))
 }
 
@@ -146,5 +136,30 @@ mod tests {
     {
       assert_eq!(post_file(&root, id), None, "{id}");
     }
+  }
+
+  #[cfg(feature = "server")]
+  fn write_post(dir: &std::path::Path, slug: &str, frontmatter: &str) {
+    let d = dir.join(slug);
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::write(d.join("index.md"), format!("---\n{frontmatter}\n---\nbody")).unwrap();
+  }
+
+  /// Z3 / Z4：草稿与非法目录名不进列表；日期规范化后再排序（`2019-3-5` 不能排在 `2019-10-01` 之后）。
+  #[cfg(feature = "server")]
+  #[test]
+  fn blog_list_skips_drafts_and_sorts_normalized_dates() {
+    let dir = std::env::temp_dir().join(format!("blog-list-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    write_post(&dir, "old", "title: Old\ndate: 2019-3-5 10:20:00\ntags: rust");
+    write_post(&dir, "new", "title: New\ndate: 2019-10-01");
+    write_post(&dir, "wip", "title: WIP\ndate: 2030-01-01\ndraft: true");
+    write_post(&dir, "中文 标题.v2", "title: Bad slug\ndate: 2030-01-01");
+    let posts = build_blog_list(&dir);
+    let slugs: Vec<&str> = posts.iter().map(|p| p.slug.as_str()).collect();
+    assert_eq!(slugs, ["new", "old"]);
+    assert_eq!(posts[1].date, "2019-03-05");
+    assert_eq!(posts[1].tags, ["rust"]);
+    let _ = std::fs::remove_dir_all(&dir);
   }
 }

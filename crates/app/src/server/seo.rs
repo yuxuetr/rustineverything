@@ -22,7 +22,7 @@ async fn collect_content_entries(is_on: impl Fn(&str) -> bool) -> Vec<ContentEnt
       url_path: format!("/blog/{}", p.slug),
       title: p.title,
       description: p.description,
-      date: p.date,
+      date: if p.updated.is_empty() { p.date } else { p.updated },
       tags: p.tags,
     }));
   }

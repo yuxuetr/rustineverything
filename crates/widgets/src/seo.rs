@@ -269,6 +269,7 @@ mod tests {
       canonical: None,
       date: Some("2026-01-15".into()),
       tags: vec!["rust".into(), "welcome".into()],
+      ..Default::default()
     }
   }
 

@@ -4557,8 +4557,9 @@ dependencies = [
  "dioxus",
  "sdk",
  "serde",
- "serde_yaml",
  "tokio",
+ "tracing",
+ "widgets",
 ]
 
 [[package]]

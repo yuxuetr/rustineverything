@@ -586,10 +586,28 @@ fn BlogArticle(id: String) -> Element {
 
   match blog_content() {
     Some(Ok(Some(content))) => rsx! {
-        // SEO 注入：inject_seo 从 frontmatter 取 metadata。
+        // SEO 注入 + 文章头（Z2）：标题 / 日期 / 标签来自 frontmatter。正文已经以 `# 标题`
+        // 开头的（如示例文章）不再重复输出标题。
         {
-            let (meta, _body) = parse_mdx(&content);
-            rsx! { {inject_seo(&meta, &blog_path, &base_url)} }
+            let (meta, body) = parse_mdx(&content);
+            let show_title = !meta.title.is_empty() && !starts_with_h1(&body);
+            let date = meta.date.clone().unwrap_or_default();
+            rsx! {
+                {inject_seo(&meta, &blog_path, &base_url)}
+                if show_title {
+                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-3", "{meta.title}" }
+                }
+                if !date.is_empty() || !meta.tags.is_empty() {
+                    div { class: "flex flex-wrap items-center gap-2 mb-8 text-xs",
+                        if !date.is_empty() {
+                            time { class: "text-slate-400", datetime: "{date}", "{date}" }
+                        }
+                        for tag in meta.tags.iter() {
+                            span { class: badge_class(BadgeVariant::Secondary, "font-normal text-muted-foreground"), "#{tag}" }
+                        }
+                    }
+                }
+            }
         }
         // `blog_id` 在 widgets::Markdown 内仅用于拼图片相对路径 `/posts/<id>/...`，
         // **必须传纯 slug**（如 "welcome"）。
@@ -609,6 +627,11 @@ fn BlogArticle(id: String) -> Element {
         }
     },
   }
+}
+
+/// 正文第一个非空行是否为一级标题。
+fn starts_with_h1(body: &str) -> bool {
+  body.lines().find(|l| !l.trim().is_empty()).is_some_and(|l| l.trim_start().starts_with("# "))
 }
 
 #[component]
@@ -735,5 +758,18 @@ pub fn Podcast() -> Element {
       ModuleGate { id: "podcast".to_string(),
           PodcastPage { footer: tip_jar("/podcast".to_string()) }
       }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::starts_with_h1;
+
+  #[test]
+  fn detects_leading_h1() {
+    assert!(starts_with_h1("\n# 标题\n正文"));
+    assert!(!starts_with_h1("正文\n# 标题"));
+    assert!(!starts_with_h1("## 小节"));
+    assert!(!starts_with_h1(""));
   }
 }
