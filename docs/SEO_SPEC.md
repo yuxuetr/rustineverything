@@ -131,6 +131,8 @@ rsx! {
 - ✅ `Blog`（`/blog/:id`）— Phase 2.3 落地
 - ⏳ `DocPage` / `Lesson` / `CaseDetail` / `TopicDetail` / `PodcastPage`
   — 同模式可直接套用，详见 [`Blog` 实现](../crates/app/src/routes/mod.rs)
+- ✅ `DocPage`（`/docs/*`）用 `PageMeta`（2026-10-21，Y8）：frontmatter 没写 title / description 时，
+  `get_doc_content` 取正文首个 `#` 标题与首段纯文本（120 字）补上，页面不再以站名为标题
 
 ### 3.1 页面语言与多语言收录（2026-10-20）
 
