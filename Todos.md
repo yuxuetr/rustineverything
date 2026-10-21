@@ -694,3 +694,9 @@
 - [x] P4 — 文档：DEPLOY_GUIDE 加「私有内容仓库」（服务器上并排克隆两个仓库、更新内容 / 更新框架各自的命令）；`.env.example` 加两个变量
   - 完成（c683961）：DEPLOY_GUIDE §3.5（并排克隆、只读 deploy key、发布内容 / 升级框架两条命令）与 §4 的 `docker run` 挂载；§3.1 必填项加 `POSTGRES_PASSWORD`，`.env.example` 里改为留空
 - 阶段 P 完成：P1–P4
+
+### 阶段 S — 源码解析文档支持（2026-10-21）
+源码解析系列（第一卷 tokio，规划在内容仓库 `plans/`）放私有内容仓库的 `docs/`，一卷约 40 页、按版本写。框架需要三处支持。
+- [ ] S1 — 文档也从 `CONTENT_DIR` 读：文档树与正文、搜索索引、论坛引用标题（sitemap 走文档树，自动跟随）。`.gitignore` 挡住 `assets/docs/*`，只留现有示例
+- [ ] S2 — 文档页「上一页 / 下一页」：在同一个一级分类内按侧栏顺序（先序）取前后两篇，服务端算好随正文返回，SSR 里就有链接
+- [ ] S3 — frontmatter `source: { crate, version }`：文档页正文上方显示「基于 tokio 1.54.0」，链到 docs.rs 对应版本。frontmatter 解析失败时记 warn（现在整块静默丢弃，写错一个字段标题和描述都没了）
