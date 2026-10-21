@@ -45,6 +45,16 @@ pub struct DocTreeNode {
 pub struct DocContentResponse {
   pub content: String,
   pub meta: DocMeta,
+  /// 同一个一级分类里按侧栏顺序的上一篇 / 下一篇（S2）
+  pub prev: Option<DocLink>,
+  pub next: Option<DocLink>,
+}
+
+/// 指向另一篇文档的链接
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DocLink {
+  pub path: String,
+  pub title: String,
 }
 
 /// 数据结构：_meta.json 中的条目
@@ -250,19 +260,59 @@ fn resolve_doc_file(docs_root: &std::path::Path, path: &str) -> Option<PathBuf> 
   })
 }
 
+/// `path` 在它所属的一级分类里按侧栏顺序（先序：分类首页、章、章下的节）的前后两篇，
+/// 只取有正文的节点，不跨分类。只扫这个分类的目录，不扫整棵树（S2）。
+#[cfg(feature = "server")]
+fn doc_neighbors(docs_root: &std::path::Path, path: &str) -> (Option<DocLink>, Option<DocLink>) {
+  let path = path.trim_end_matches('/');
+  let Some(top) = path.split('/').next().filter(|s| !s.is_empty()) else {
+    return (None, None);
+  };
+  let top_dir = docs_root.join(top);
+  let (title, _, _) = extract_doc_info(&top_dir);
+  let root = DocTreeNode {
+    slug: top.to_string(),
+    title: title.unwrap_or_else(|| top.to_string()),
+    path: top.to_string(),
+    has_content: top_dir.join("index.md").exists() || top_dir.join("index.mdx").exists(),
+    description: String::new(),
+    // 与 list_doc_tree 里一级分类的子树相同（一级在第 1 层，子项从第 2 层扫）
+    children: scan_doc_dir(&top_dir, top, 2),
+  };
+  let mut pages = Vec::new();
+  collect_pages(&root, &mut pages);
+  let Some(i) = pages.iter().position(|n| n.path == path) else {
+    return (None, None);
+  };
+  let link = |n: &DocTreeNode| DocLink { path: n.path.clone(), title: n.title.clone() };
+  (i.checked_sub(1).map(|j| link(pages[j])), pages.get(i + 1).map(|n| link(n)))
+}
+
+#[cfg(feature = "server")]
+fn collect_pages<'a>(node: &'a DocTreeNode, out: &mut Vec<&'a DocTreeNode>) {
+  if node.has_content {
+    out.push(node);
+  }
+  for child in &node.children {
+    collect_pages(child, out);
+  }
+}
+
 /// 文档正文与 frontmatter；`Ok(None)` 表示没有这篇文档（页面据此回 404）。
 #[post("/api/docs/content")]
 pub async fn get_doc_content(path: String) -> Result<Option<DocContentResponse>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    let Some(filepath) = resolve_doc_file(&app_core::utils::content_dir("docs"), &path) else {
+    let docs_root = app_core::utils::content_dir("docs");
+    let Some(filepath) = resolve_doc_file(&docs_root, &path) else {
       return Ok(None);
     };
     let raw =
       fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
     let (mut meta, content) = parse_doc_frontmatter(&raw);
     fill_missing_meta(&mut meta, &content);
-    Ok(Some(DocContentResponse { content, meta }))
+    let (prev, next) = doc_neighbors(&docs_root, &path);
+    Ok(Some(DocContentResponse { content, meta, prev, next }))
   }
   #[cfg(not(feature = "server"))]
   {
@@ -309,6 +359,31 @@ mod tests {
 
   fn find<'a>(nodes: &'a [DocTreeNode], slug: &str) -> &'a DocTreeNode {
     nodes.iter().find(|n| n.slug == slug).unwrap_or_else(|| panic!("未找到节点: {}", slug))
+  }
+
+  #[test]
+  fn neighbors_follow_sidebar_order_within_one_category() {
+    let tmp = TempDir::new().unwrap();
+    let docs = tmp.path();
+    write_index(&docs.join("tokio"), Some("title: tokio"), "");
+    write_index(&docs.join("tokio/02-b/y"), Some("title: Y\nsidebar_position: 1"), "");
+    write_index(&docs.join("tokio/01-a"), Some("title: A\nsidebar_position: 1"), "");
+    write_index(&docs.join("tokio/01-a/x"), Some("title: X"), "");
+    write_index(&docs.join("axum"), Some("title: axum"), "");
+    // 02-b 没有 index.md：不是一页，跳过
+    let order = |p: &str| {
+      let (prev, next) = doc_neighbors(docs, p);
+      (prev.map(|l| l.path), next.map(|l| l.path))
+    };
+    assert_eq!(order("tokio"), (None, Some("tokio/01-a".into())));
+    assert_eq!(order("tokio/01-a"), (Some("tokio".into()), Some("tokio/01-a/x".into())));
+    assert_eq!(order("tokio/01-a/x"), (Some("tokio/01-a".into()), Some("tokio/02-b/y".into())));
+    assert_eq!(order("tokio/02-b/y/"), (Some("tokio/01-a/x".into()), None), "不跨到 axum");
+    assert_eq!(order("axum"), (None, None));
+    assert_eq!(order(""), (None, None));
+    assert_eq!(order("tokio/nope"), (None, None));
+    let (_, next) = doc_neighbors(docs, "tokio");
+    assert_eq!(next.map(|l| l.title), Some("A".to_string()));
   }
 
   #[test]

@@ -249,6 +249,28 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
                               div { class: "text-slate-700 dark:text-slate-200",
                                   Markdown { content: resp.content.clone(), blog_id: anno_blog_id.clone() }
                               }
+                              if resp.prev.is_some() || resp.next.is_some() {
+                                  nav { class: "mt-12 pt-6 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4",
+                                      if let Some(ref link) = resp.prev {
+                                          a {
+                                              href: doc_href(&link.path),
+                                              rel: "prev",
+                                              class: "block rounded-lg border border-slate-200 dark:border-slate-800 p-4 hover:border-primary transition-colors",
+                                              span { class: "block text-xs text-slate-500 dark:text-slate-400", "← {t(lang, \"docs.prev\")}" }
+                                              span { class: "block mt-1 font-medium text-slate-900 dark:text-white", "{link.title}" }
+                                          }
+                                      }
+                                      if let Some(ref link) = resp.next {
+                                          a {
+                                              href: doc_href(&link.path),
+                                              rel: "next",
+                                              class: "block rounded-lg border border-slate-200 dark:border-slate-800 p-4 hover:border-primary transition-colors text-right sm:col-start-2",
+                                              span { class: "block text-xs text-slate-500 dark:text-slate-400", "{t(lang, \"docs.next\")} →" }
+                                              span { class: "block mt-1 font-medium text-slate-900 dark:text-white", "{link.title}" }
+                                          }
+                                      }
+                                  }
+                              }
                               // 跨模块组合（标注层 + 讨论面板）由 app 层注入。
                               {footer.clone()}
                           },
