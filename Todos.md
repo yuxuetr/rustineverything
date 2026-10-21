@@ -679,5 +679,6 @@
   - 完成：导入提交未推送，已从本地历史去掉；`.gitignore` 忽略 `assets/posts/*`，只留示例 `welcome/` 与 `authors.yml`（两个方向都用 `git check-ignore` 验过）。文章仍在本地 `assets/posts/`，`docker build` 的上下文会带上它们；换机器重跑 `python3 -I scripts/migrate_docusaurus.py <旧博客 data/blog> assets/posts`
 - [x] M9 — 转换脚本写 `author`：旧文 `authors: [yuxuetr]` 按旧站 `authors.yml` 换成名字；没写 `image` 的文章用正文第一张图作封面（55 篇有图，现在只有 3 篇有 og:image）
   - 完成（77b1f72）：重跑后与上次输出相比只多出 `author`（163 篇；windsurf 原文没写作者）与 `image`（3 → 46 篇；其余 9 篇的 `![` 在代码里）两行
-- [ ] M10 — 文章 SEO：`og:image` / `twitter:image` / JSON-LD `image` 用绝对地址（现为 `/posts/...`，爬虫不认）；JSON-LD 加 `dateModified`（`updated`，没有则发布日期）
-- 阶段 M 完成：M1–M8
+- [x] M10 — 文章 SEO：`og:image` / `twitter:image` / JSON-LD `image` 用绝对地址（现为 `/posts/...`，爬虫不认）；JSON-LD 加 `dateModified`（`updated`，没有则发布日期）
+  - 完成（479c043）：单测正反验证；全量体检：46 篇有 og:image（绝对地址，图片都 200），JSON-LD 作者 162 篇、dateModified 全部。其余 119 篇正文没有图，用 summary 卡片。描述不足 50 字 28 篇、标题超 70 字 3 篇、两篇 Solana 描述重复，属内容本身，未改
+- 阶段 M 完成：M1–M10
