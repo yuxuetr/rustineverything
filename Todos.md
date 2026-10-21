@@ -689,5 +689,6 @@
   - 完成（58038ed）：`app_core::utils::content_dir`，单测覆盖设 / 未设 / 空值。dx 实测：不设时只有示例 welcome，设了是 164 篇（逐篇检查 0 问题、搜索命中）；课程目录放入示例课时列表出现、试看课文件 200、付费课时 404，拿走后消失。`.gitignore` 规则用 `git check-ignore` 两个方向验过
 - [x] P2 — docker-compose：app 设 `CONTENT_DIR=/app/content`，只读挂载 `${CONTENT_HOST_DIR:-./assets}`（不设则仍是示例内容）；`POSTGRES_PASSWORD` 不设则拒绝启动（原先回落到 `rie-dev-password`）
   - 完成（8d919cd）：YAML 解析与插值字段已核对；本机没有 Docker，`docker compose config` / 实际启动未验证，首次部署时确认
-- [ ] P3 — 建私有仓库 `yuxuetr/rustineverything-content`（`posts/`、`courses/`），迁移的 164 篇移过去；本地 `.env` 指向它
+- [x] P3 — 建私有仓库 `yuxuetr/rustineverything-content`（`posts/`、`courses/`），迁移的 164 篇移过去；本地 `.env` 指向它
+  - 完成：私有仓库已建（PRIVATE），本地克隆在框架仓库旁边，164 篇与图片 29MB；推前扫过密钥样式内容，无。全新克隆与本地逐文件一致。框架的 `assets/posts` 只剩示例 welcome 与 authors.yml
 - [ ] P4 — 文档：DEPLOY_GUIDE 加「私有内容仓库」（服务器上并排克隆两个仓库、更新内容 / 更新框架各自的命令）；`.env.example` 加两个变量
