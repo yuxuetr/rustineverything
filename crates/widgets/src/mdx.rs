@@ -7,7 +7,7 @@
 //!    保持与原版一致，welcome 示例和现有快照仍可像素级回归。
 
 use dioxus::prelude::*;
-use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, Options, Parser, Tag};
+use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use pulldown_latex::{push_mathml, Parser as LatexParser, Storage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -167,11 +167,15 @@ pub fn Markdown(props: MarkdownProps) -> Element {
   options.insert(Options::ENABLE_TASKLISTS);
   options.insert(Options::ENABLE_MATH);
   options.insert(Options::ENABLE_GFM);
+  options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
 
   // 预处理：将 :::type 语法转换为 GFM alert 语法
   let body = convert_admonitions(&body);
-  let parser = Parser::new_ext(&body, options);
-  let mut it = parser.peekable();
+  let mut events: Vec<Event> = Parser::new_ext(&body, options).collect();
+  if !props.untrusted {
+    assign_heading_ids(&mut events);
+  }
+  let mut it = events.into_iter();
 
   // 渲染流，传入 blog_id；同时按顶层块编号注入 data-block-id 供标注定位
   let mut block_idx: usize = 1;
@@ -196,8 +200,58 @@ pub fn Markdown(props: MarkdownProps) -> Element {
   }
 }
 
+/// M1：站点内容的标题 id 与 Docusaurus 一致：显式 `{#id}` 优先，否则按 github-slugger
+/// 由标题文字生成（重名依次加 `-1`、`-2`），旧文章里的 `](#引言)` 才能跳转。
+/// 标注按 `data-block-id` 定位，不受影响。
+fn assign_heading_ids(events: &mut [Event<'_>]) {
+  let mut used = std::collections::HashSet::new();
+  for i in 0..events.len() {
+    let Event::Start(Tag::Heading { id, .. }) = &events[i] else {
+      continue;
+    };
+    let anchor = match id {
+      Some(explicit) => explicit.to_string(),
+      None => {
+        let mut text = String::new();
+        for event in &events[i + 1..] {
+          match event {
+            Event::End(TagEnd::Heading(_)) => break,
+            Event::Text(t) | Event::Code(t) => text.push_str(t),
+            _ => {}
+          }
+        }
+        let base = slugify(&text);
+        if base.is_empty() {
+          continue;
+        }
+        let mut candidate = base.clone();
+        let mut n = 0;
+        while used.contains(&candidate) {
+          n += 1;
+          candidate = format!("{base}-{n}");
+        }
+        candidate
+      }
+    };
+    used.insert(anchor.clone());
+    if let Event::Start(Tag::Heading { id, .. }) = &mut events[i] {
+      *id = Some(anchor.into());
+    }
+  }
+}
+
+/// github-slugger：小写，去掉标点与符号（保留字母、数字、`-`、`_`），空格换成 `-`。
+fn slugify(text: &str) -> String {
+  text
+    .to_lowercase()
+    .chars()
+    .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | ' '))
+    .map(|c| if c == ' ' { '-' } else { c })
+    .collect()
+}
+
 fn render_stream<'a>(
-  it: &mut std::iter::Peekable<Parser<'a>>,
+  it: &mut std::vec::IntoIter<Event<'a>>,
   blog_id: &str,
   untrusted: bool,
   block_idx: &mut usize,
@@ -343,22 +397,24 @@ fn render_tag(
   let bid = block_id.unwrap_or_default();
   let has_bid = !bid.is_empty();
   match tag {
-    Tag::Heading { level, .. } => {
-      // 用户内容最高到 h2：h1 留给页面标题（G7）。
+    Tag::Heading { level, id, .. } => {
+      // 用户内容最高到 h2：h1 留给页面标题（G7）；也不能自定 id（M1）。
       let l = if untrusted { (level as u32).max(2) } else { level as u32 };
+      let anchor = id.filter(|_| !untrusted).map(|s| s.to_string()).unwrap_or_else(|| bid.clone());
+      let has_anchor = !anchor.is_empty();
       match l {
         1 => rsx! { h1 {
-            id: if has_bid { "{bid}" },
+            id: if has_anchor { "{anchor}" },
             "data-block-id": if has_bid { "{bid}" },
             {children.into_iter()}
         } },
         2 => rsx! { h2 {
-            id: if has_bid { "{bid}" },
+            id: if has_anchor { "{anchor}" },
             "data-block-id": if has_bid { "{bid}" },
             {children.into_iter()}
         } },
         _ => rsx! { h3 {
-            id: if has_bid { "{bid}" },
+            id: if has_anchor { "{anchor}" },
             "data-block-id": if has_bid { "{bid}" },
             {children.into_iter()}
         } },
@@ -810,6 +866,32 @@ mod tests {
     assert!(render_markdown("# 标题", false).contains("<h1"));
     let html = render_markdown("# 标题", true);
     assert!(!html.contains("<h1") && html.contains("<h2"), "{html}");
+  }
+
+  /// M1：站点内容的标题 id 与 Docusaurus 一致（旧文章的 `](#引言)` 才能跳转），
+  /// `data-block-id` 仍是 `bN`，标注不受影响。
+  #[test]
+  fn heading_ids_follow_docusaurus() {
+    let md = "## 引言\n\n## Hello, World!\n\n## 引言\n\n## 自定义 {#custom-id}\n\n## `Vec<T>` 用法";
+    let html = render_markdown(md, false);
+    for id in ["引言", "hello-world", "引言-1", "custom-id", "vect-用法"] {
+      assert!(html.contains(&format!("id=\"{id}\"")), "缺少 id={id}：{html}");
+    }
+    assert!(
+      html.contains("data-block-id=\"b1\"") && html.contains("data-block-id=\"b5\""),
+      "{html}"
+    );
+    assert!(!html.contains("{#"), "{html}");
+  }
+
+  /// 用户内容的标题不能自定 id（可能与页面元素重名），仍用 `bN`。
+  #[test]
+  fn untrusted_heading_ids_stay_block_ids() {
+    let html = render_markdown("## 引言 {#main}", true);
+    assert!(
+      html.contains("id=\"b1\"") && !html.contains("main") && !html.contains("引言\""),
+      "{html}"
+    );
   }
 
   /// X1：`![描述](x.png)` 的描述作为 alt，内联格式只取文本；没写描述时 alt 为空。
