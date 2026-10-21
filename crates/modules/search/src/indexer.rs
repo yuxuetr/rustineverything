@@ -229,6 +229,12 @@ fn collect_blogs_versioned() -> Vec<VersionedDoc> {
     } else {
       continue;
     };
+    // 草稿不进索引（Z3），与博客列表同一套 frontmatter 解析。
+    let is_draft =
+      std::fs::read_to_string(&chosen).map(|raw| widgets::parse_mdx(&raw).0.draft).unwrap_or(false);
+    if is_draft {
+      continue;
+    }
     if let Some((title, body, date)) = read_md_file(&chosen) {
       let mtime = file_mtime_secs(&chosen);
       out.push(VersionedDoc {

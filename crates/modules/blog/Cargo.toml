@@ -7,10 +7,10 @@ edition = "2021"
 dioxus = { workspace = true, features = ["fullstack", "router"] }
 serde = { workspace = true, features = ["derive"] }
 sdk = { path = "../../sdk" }
-serde_yaml = "0.9"
+widgets = { path = "../../widgets" }
 tokio = { workspace = true, features = ["full"], optional = true }
 # Phase 8.5：sharing DirListingCache helper with other server fns
 app-core = { path = "../../core" }
 
 [features]
-server = ["dioxus/server", "dep:tokio", "app-core/server"]
+server = ["dioxus/server", "dep:tokio", "app-core/server", "widgets/server"]
