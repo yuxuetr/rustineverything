@@ -276,7 +276,11 @@ impl AuthService {
     let redirect_url = self.config.redirect_url(provider.id());
 
     // 1. 构建 Token 交换请求
-    let http_client = reqwest::Client::new();
+    // 不设超时时 reqwest 会无限等待：provider 挂住，登录请求就一直挂着（Y5）。
+    let http_client = reqwest::Client::builder()
+      .connect_timeout(std::time::Duration::from_secs(5))
+      .timeout(std::time::Duration::from_secs(15))
+      .build()?;
     tracing::debug!(provider = %provider.id(), "auth: token exchange initiated");
 
     let mut form_params: Vec<(&str, String)> = vec![
