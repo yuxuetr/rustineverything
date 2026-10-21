@@ -205,6 +205,7 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
   let lang = current_lang();
   let doc_path = path.join("/");
   let doc_path_for_tree = doc_path.clone();
+  let doc_path_for_meta = doc_path.clone();
   // Markdown blog_id 携带 "doc:<path>" 前缀，JS 运行时以此识别资源归属
   let anno_blog_id = format!("doc:{}", doc_path);
 
@@ -232,12 +233,12 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
                   div { class: "max-w-3xl mx-auto",
                       match content() {
                           Some(Ok(Some(resp))) => rsx! {
-                              // SEO: 注入 title / description / keywords / og:image
-                              if !resp.meta.title.is_empty() {
-                                  widgets::browser::PageTitle { title: widgets::page_title(&resp.meta.title) }
-                              }
-                              if !resp.meta.description.is_empty() {
-                                  document::Meta { name: "description", content: "{resp.meta.description}" }
+                              // SEO：title / description / canonical / og 由 PageMeta 输出（服务端已从正文补齐），
+                              // 这里只补 keywords 与 og:image。
+                              widgets::PageMeta {
+                                  title: resp.meta.title.clone(),
+                                  description: resp.meta.description.clone(),
+                                  path: format!("/docs/{}", doc_path_for_meta),
                               }
                               if !resp.meta.keywords.is_empty() {
                                   document::Meta { name: "keywords", content: "{resp.meta.keywords.join(\", \")}" }

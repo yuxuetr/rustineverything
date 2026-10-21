@@ -69,36 +69,39 @@ pub fn sanitize_user_html(input: &str) -> String {
 /// 单独存在的 `<tag ... />` 或 `<tag>` 无对应 `</tag>` 时，至少删除起始标签
 /// （从 `<` 到下一个 `>`）。
 ///
-/// 实现注意：UTF-8 安全 — 通过字符串切片拼接而不是逐字节构造，
-/// 避免破坏中文等多字节字符。
+/// 实现注意：标签名是 ASCII，直接在原串字节上做 ASCII 大小写不敏感匹配，
+/// 位置都落在 ASCII 字节上（UTF-8 字符边界），切片安全。不能先 `to_lowercase()`
+/// 再拿位置切原串：İ、开尔文符号等小写后字节长度会变（Y1）。
 fn strip_tag_block(input: &str, tag: &str) -> String {
-  let lower_tag = tag.to_lowercase();
+  let open_marker = format!("<{}", tag.to_ascii_lowercase());
+  let close_marker = format!("</{}>", tag.to_ascii_lowercase());
   let mut out = String::with_capacity(input.len());
   let bytes = input.as_bytes();
   let mut i = 0;
   let mut last_emit = 0;
+  // 某个位置之后找不到闭合标签，更靠后的位置也找不到；记下来避免重复全文扫描。
+  let mut no_close = false;
 
   while i < bytes.len() {
     if bytes[i] == b'<' {
-      let rest = &input[i..];
-      let rest_lower = rest.to_lowercase();
-      let open_match = rest_lower.starts_with(&format!("<{}", lower_tag))
+      let rest = &bytes[i..];
+      let open_match = starts_with_ascii_ci(rest, open_marker.as_bytes())
         && rest
-          .as_bytes()
-          .get(1 + lower_tag.len())
+          .get(open_marker.len())
           .map(|c| matches!(c, b' ' | b'\t' | b'\n' | b'>' | b'/'))
           .unwrap_or(false);
       if open_match {
         // 先把累积的合法片段输出
         out.push_str(&input[last_emit..i]);
         // 找闭合标签；找不到则只删起始标签到首个 `>`
-        let close_marker = format!("</{}>", lower_tag);
-        if let Some(end_rel) = rest_lower.find(&close_marker) {
+        let close = if no_close { None } else { find_ascii_ci(rest, close_marker.as_bytes()) };
+        if let Some(end_rel) = close {
           i += end_rel + close_marker.len();
           last_emit = i;
           continue;
         }
-        if let Some(gt_rel) = rest.find('>') {
+        no_close = true;
+        if let Some(gt_rel) = rest.iter().position(|&b| b == b'>') {
           i += gt_rel + 1;
           last_emit = i;
           continue;
@@ -112,6 +115,14 @@ fn strip_tag_block(input: &str, tag: &str) -> String {
   }
   out.push_str(&input[last_emit..]);
   out
+}
+
+fn starts_with_ascii_ci(hay: &[u8], needle: &[u8]) -> bool {
+  hay.get(..needle.len()).is_some_and(|h| h.eq_ignore_ascii_case(needle))
+}
+
+fn find_ascii_ci(hay: &[u8], needle: &[u8]) -> Option<usize> {
+  hay.windows(needle.len()).position(|w| w.eq_ignore_ascii_case(needle))
 }
 
 /// 删除 `on*=` 事件属性。匹配形式：
@@ -354,6 +365,24 @@ mod tests {
     assert!(!out.contains("<style"));
     assert!(!out.contains("display"));
     assert!(out.contains("body"));
+  }
+
+  /// 小写后字节长度会变的字符（İ 2→3 字节、开尔文符号 3→1 字节）不能让切片落在字符中间（Y1）。
+  #[test]
+  fn length_changing_lowercase_does_not_panic() {
+    let out = sanitize_user_html("<script>İ</script>中文");
+    assert_eq!(out, "中文");
+    let out = sanitize_user_html("\u{212A}\u{212A}<script>x</script>中文");
+    assert_eq!(out, "\u{212A}\u{212A}中文");
+  }
+
+  /// 大量 `<` 时应线性（Y1 前 256KB 要秒级）；没有闭合标签的大量起始标签也一样。
+  #[test]
+  fn many_angle_brackets_stay_fast() {
+    let start = std::time::Instant::now();
+    sanitize_user_html(&"<".repeat(256 * 1024));
+    sanitize_user_html(&"<script ".repeat(32 * 1024));
+    assert!(start.elapsed() < std::time::Duration::from_secs(1), "{:?}", start.elapsed());
   }
 
   #[test]

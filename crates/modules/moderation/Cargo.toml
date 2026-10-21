@@ -29,6 +29,5 @@ llm = { path = "../../llm" }
 sdk = { path = "../../sdk" }
 
 [dev-dependencies]
-mockito = "1.5"
 dotenvy = "0.15"
 migration = { path = "../../migration" }

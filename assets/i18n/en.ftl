@@ -68,21 +68,10 @@ footer.rss = RSS feed
 hero.title = Learn and build with the Rust stack
 hero.subtitle = Docs, blogs, courses, and cases in one place: AI, backend, frontend, cross-platform, Web3, Wasm, embedded, CLI, and more.
 hero.btn.docs = Enter Docs
-hero.btn.blog = Browse Blog
 hero.btn.cases = View Cases
 hero.btn.courses = View Courses
-hero.stat.docs.value = Docs
-hero.stat.docs.label = From zero to one
-hero.stat.blog.value = Blog
-hero.stat.blog.label = Continuously updated
-hero.stat.course.value = Courses
-hero.stat.course.label = Systematic learning
-hero.stat.cases.value = Cases
-hero.stat.cases.label = Reusable templates
 
 # ── Home feature cards ──
-home.section_title = Focused on the Rust ecosystem
-home.section_subtitle = From low-level principles to full-stack practice — building high-performance, reliable software systems
 home.featured.title = Featured cases
 home.featured.subtitle = Rust projects from industrial practice — engineering patterns you can borrow
 home.featured.all = View all cases
@@ -100,12 +89,6 @@ home.community.forum = Hot topics
 home.community.forum_all = Visit forum
 home.community.forum_empty = No discussions yet — start the first thread
 home.community.forum_failed = The forum is unavailable right now
-home.card.basics.title = Rust Fundamentals
-home.card.basics.desc = A clear take on ownership, lifetimes, traits, and other core concepts.
-home.card.fullstack.title = Full-Stack Development
-home.card.fullstack.desc = Build cross-platform apps fast with Dioxus, Axum, and SeaORM.
-home.card.aiwasm.title = AI & WASM
-home.card.aiwasm.desc = Explore high-performance WebAssembly compute and the Rust AI ecosystem.
 
 # ── Home module grid cards (home.mod.<id>.title / .desc) ──
 

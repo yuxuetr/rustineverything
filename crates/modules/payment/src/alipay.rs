@@ -188,22 +188,6 @@ pub fn parse_precreate_response(body: &str) -> Result<String, String> {
   node["qr_code"].as_str().map(|s| s.to_string()).ok_or_else(|| "未返回二维码".to_string())
 }
 
-/// 扫码下单（`alipay.trade.precreate`）：需访问支付宝服务器，返回 `qr_code`。
-pub async fn precreate(
-  cfg: &AlipayConfig,
-  out_trade_no: &str,
-  subject: &str,
-  amount_cents: i64,
-) -> Result<String, String> {
-  let req = build_precreate(cfg, out_trade_no, subject, amount_cents)?;
-  let form: HashMap<String, String> = req.form.into_iter().collect();
-  let client = reqwest::Client::new();
-  let resp =
-    client.post(&req.url).form(&form).send().await.map_err(|e| format!("请求支付宝失败: {e}"))?;
-  let text = resp.text().await.map_err(|e| format!("读取支付宝响应失败: {e}"))?;
-  parse_precreate_response(&text)
-}
-
 /// 构造订单查询（`alipay.trade.query`）请求：需宿主 POST 到支付宝网关
 /// （M5e 对账用）。
 pub fn build_query_request(cfg: &AlipayConfig, out_trade_no: &str) -> Result<PayRequest, String> {
@@ -237,11 +221,6 @@ pub fn verify_notify(cfg: &AlipayConfig, params: &HashMap<String, String>) -> bo
     }
   }
   rsa2_verify(&cfg.alipay_public_key_der, &canonical(&sorted), sign)
-}
-
-/// 回调金额（元字符串）是否与订单金额（分）一致。
-pub fn amount_matches(total_amount: &str, order_cents: i64) -> bool {
-  total_amount == yuan(order_cents)
 }
 
 // =============================================================
@@ -484,8 +463,6 @@ mod tests {
     assert_eq!(yuan(9900), "99.00");
     assert_eq!(yuan(100), "1.00");
     assert_eq!(yuan(9), "0.09");
-    assert!(amount_matches("99.00", 9900));
-    assert!(!amount_matches("99.0", 9900));
   }
 
   #[test]

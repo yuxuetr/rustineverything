@@ -22,7 +22,12 @@ fn gateway_label(name: &str) -> &str {
 /// 发送一个已签名的网关请求，返回响应 body（HTTP 状态不在此判定——
 /// 业务成败统一由 Provider 的 `parse_*` 从 body 判定）。
 async fn send(pr: &PayRequest, label: &str) -> Result<String, PayError> {
-  let client = reqwest::Client::new();
+  // 必须有超时：对账循环逐单 await，一个挂住的连接会让对账永久停住（Y5）。
+  let client = reqwest::Client::builder()
+    .connect_timeout(std::time::Duration::from_secs(5))
+    .timeout(std::time::Duration::from_secs(15))
+    .build()
+    .map_err(|e| PayError::Gateway(format!("创建 HTTP 客户端失败: {e}")))?;
   let mut builder = match pr.method.as_str() {
     "GET" => client.get(&pr.url),
     _ => client.post(&pr.url),

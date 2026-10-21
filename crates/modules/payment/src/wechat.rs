@@ -109,25 +109,6 @@ fn build_post_v3(cfg: &WechatConfig, url_path: &str, body: String) -> Result<Pay
   })
 }
 
-/// 发送已构造的 v3 请求并解析 JSON（HTTP 层错误与业务错误统一为 String）。
-async fn send_v3(req: &PayRequest) -> Result<serde_json::Value, String> {
-  let client = reqwest::Client::new();
-  let mut builder = client.post(&req.url);
-  for (k, v) in &req.headers {
-    builder = builder.header(k, v);
-  }
-  let resp =
-    builder.body(req.body.clone()).send().await.map_err(|e| format!("请求微信支付失败: {e}"))?;
-  let status = resp.status();
-  let text = resp.text().await.map_err(|e| format!("读取微信响应失败: {e}"))?;
-  let json: serde_json::Value =
-    serde_json::from_str(&text).map_err(|e| format!("解析微信响应失败: {e}"))?;
-  if !status.is_success() {
-    return Err(format!("微信支付下单失败: {}", json["message"].as_str().unwrap_or("未知")));
-  }
-  Ok(json)
-}
-
 fn native_body(cfg: &WechatConfig, out_trade_no: &str, description: &str, amount: i64) -> String {
   serde_json::json!({
     "appid": cfg.appid,
@@ -157,33 +138,6 @@ fn h5_body(
     "scene_info": { "payer_client_ip": client_ip, "h5_info": { "type": "Wap" } },
   })
   .to_string()
-}
-
-/// Native 下单（PC 扫码）→ `code_url`（前端渲染二维码）。
-pub async fn create_native(
-  cfg: &WechatConfig,
-  out_trade_no: &str,
-  description: &str,
-  amount_cents: i64,
-) -> Result<String, String> {
-  let body = native_body(cfg, out_trade_no, description, amount_cents);
-  let req = build_post_v3(cfg, "/v3/pay/transactions/native", body)?;
-  let json = send_v3(&req).await?;
-  json["code_url"].as_str().map(|s| s.to_string()).ok_or_else(|| "未返回 code_url".to_string())
-}
-
-/// H5 下单（移动浏览器）→ `h5_url`（跳转）。
-pub async fn create_h5(
-  cfg: &WechatConfig,
-  out_trade_no: &str,
-  description: &str,
-  amount_cents: i64,
-  client_ip: &str,
-) -> Result<String, String> {
-  let body = h5_body(cfg, out_trade_no, description, amount_cents, client_ip);
-  let req = build_post_v3(cfg, "/v3/pay/transactions/h5", body)?;
-  let json = send_v3(&req).await?;
-  json["h5_url"].as_str().map(|s| s.to_string()).ok_or_else(|| "未返回 h5_url".to_string())
 }
 
 /// 验证回调签名（公钥模式）：校验 `{timestamp}\n{nonce}\n{body}\n`。

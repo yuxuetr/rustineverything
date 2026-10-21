@@ -79,6 +79,43 @@ pub(crate) fn parse_doc_frontmatter(content: &str) -> (DocMeta, String) {
   (meta, parts[2].to_string())
 }
 
+/// 正文里第一个 `# ` 标题。
+#[cfg(feature = "server")]
+fn first_heading(body: &str) -> Option<String> {
+  body.lines().find_map(|l| l.trim().strip_prefix("# ")).map(|t| t.trim().to_string())
+}
+
+/// 正文第一段纯文本（跳过标题、代码块、列表、引用、表格、HTML），去掉行内代码与加粗标记，
+/// 截到 120 字。没有 frontmatter 的文档页用它当 meta description（Y8）。
+#[cfg(feature = "server")]
+fn first_paragraph(body: &str) -> Option<String> {
+  let mut in_fence = false;
+  for line in body.lines() {
+    let t = line.trim();
+    if t.starts_with("```") {
+      in_fence = !in_fence;
+      continue;
+    }
+    if in_fence || t.is_empty() || t.starts_with(['#', '-', '*', '>', '|', '<', '!']) {
+      continue;
+    }
+    let text = t.replace("**", "").replace('`', "");
+    return Some(text.chars().take(120).collect());
+  }
+  None
+}
+
+/// frontmatter 没写 title / description 时从正文补上，页面标题和摘要不再是空的（Y8）。
+#[cfg(feature = "server")]
+fn fill_missing_meta(meta: &mut DocMeta, body: &str) {
+  if meta.title.is_empty() {
+    meta.title = first_heading(body).unwrap_or_default();
+  }
+  if meta.description.is_empty() {
+    meta.description = first_paragraph(body).unwrap_or_default();
+  }
+}
+
 /// 从 index.md/index.mdx 提取元数据（标题、描述、排序等）
 #[cfg(feature = "server")]
 fn extract_doc_info(dir: &std::path::Path) -> (Option<String>, String, Option<i32>) {
@@ -108,15 +145,7 @@ fn extract_doc_info_full(
     .sidebar_label
     .clone()
     .or_else(|| if !meta.title.is_empty() { Some(meta.title.clone()) } else { None })
-    .or_else(|| {
-      for line in body.lines() {
-        let trimmed = line.trim();
-        if let Some(t) = trimmed.strip_prefix("# ") {
-          return Some(t.trim().to_string());
-        }
-      }
-      None
-    });
+    .or_else(|| first_heading(&body));
 
   (title, meta.description.clone(), meta.sidebar_position, meta.sort_children.clone())
 }
@@ -241,7 +270,8 @@ pub async fn get_doc_content(path: String) -> Result<Option<DocContentResponse>,
     };
     let raw =
       fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
-    let (meta, content) = parse_doc_frontmatter(&raw);
+    let (mut meta, content) = parse_doc_frontmatter(&raw);
+    fill_missing_meta(&mut meta, &content);
     Ok(Some(DocContentResponse { content, meta }))
   }
   #[cfg(not(feature = "server"))]
@@ -267,6 +297,19 @@ mod tests {
       None => body.to_string(),
     };
     std::fs::write(dir.join("index.md"), content).unwrap();
+  }
+
+  /// Y8：缺 frontmatter 时 title 取首个 `#` 标题，description 取首段纯文本；已写的不覆盖。
+  #[test]
+  fn missing_meta_filled_from_body() {
+    let body = "# Handler 函数\n\n```rust\nfn a() {}\n```\n\n- 列表\n\nHandler 是处理 **HTTP** 请求的 `async` 函数：\n";
+    let mut meta = DocMeta::default();
+    fill_missing_meta(&mut meta, body);
+    assert_eq!(meta.title, "Handler 函数");
+    assert_eq!(meta.description, "Handler 是处理 HTTP 请求的 async 函数：");
+    let mut meta = DocMeta { title: "T".into(), description: "D".into(), ..Default::default() };
+    fill_missing_meta(&mut meta, body);
+    assert_eq!((meta.title.as_str(), meta.description.as_str()), ("T", "D"));
   }
 
   /// 辅助：提取一棵子树的 slug 列表（保留顺序）

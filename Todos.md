@@ -622,3 +622,29 @@
 - [x] X1 — 图片描述作为 alt 输出（含 `*强调*` 等内联格式时取纯文本）。验收：单测在旧代码下变红；`/blog/welcome` 的图片有 alt
   - 完成（6c1d803）：`render_stream` 遇到图片时把子事件的纯文本收成 alt（按嵌套深度找到配对的结束事件），图片渲染从 `render_tag` 抽成 `render_image`。单测 `image_description_becomes_alt`（可信 / 不可信内容各一遍，含内联格式和空描述），旧代码下变红。实测 `/blog/welcome` 的图片输出 `alt="图片"`。clippy、629 个测试、四档检查通过
 - 阶段 X 完成：X1
+
+### 阶段 Y — 内容、代码健康与运维（2026-10-21 评估）
+问题与设计见 `docs/AUDIT_2026-10-21.md`。
+- [x] Y1 — 清洗器改为 ASCII 不区分大小写匹配：消除多字节字符 panic 与平方复杂度。验收：`<script>İ</script>中文` 单测旧代码 panic；256KB `<` 输入不再秒级
+  - 完成（baf58e5）：`strip_tag_block` 在原串字节上做 ASCII 大小写不敏感匹配，找不到闭合标签后不再重复扫描。单测 `length_changing_lowercase_does_not_panic`、`many_angle_brackets_stay_fast` 旧代码下变红（panic；6.1s），新代码 0.06s
+- [x] Y2 — 搜索摘要按原串偏移定位。验收：开尔文符号 + 中文的单测旧代码 panic
+  - 完成（bac4b4f）：`find_lower` 逐字符小写并记录原串偏移。单测 `snippet_survives_length_changing_lowercase` 旧代码 panic
+- [x] Y3 — 评论长度上限 32KB（同论坛回复）。验收：超长评论被拒
+  - 完成（bfc7b0b）：`validate_comment`（空 / 超 32KB 拒绝）在会话校验后调用；单测覆盖边界
+- [x] Y4 — `course.yaml` 解析失败时课程下线并记 error。验收：单测坏 yaml 返回 None
+  - 完成（93857fd）：`parse_course_meta` 解析失败记 error 返回 `None`，读文件失败同样下线；单测覆盖未加引号的冒号、类型错误、合法与空文件
+- [x] Y5 — 支付网关与 OAuth 的 HTTP 客户端加超时
+  - 完成（322b85b）：`payment/host.rs::send` 与 OAuth 换 token / 取资料的客户端加 5s 连接、15s 总超时。`alipay.rs` / `wechat.rs` 剩下的 `Client::new()` 只在死代码里，Y11 删除
+- [x] Y6 — 所有构建启动时刷新搜索索引，并每 10 分钟增量刷新
+  - 完成（119ca7b）：启动刷新移出 `cfg(not(accounts))`，改为启动一次 + 每 10 分钟一次。本地实测日志 `search: index refreshed upserts=19 deletes=0 elapsed_ms=1107`（debug）。`SEARCH_SPEC.md` 记录
+- [x] Y7 — 支付回调各失败分支记录原因
+  - 完成（372f7e5）：三个回调与 `stripe_reversal` 的每个失败分支记 `pay_audit` 日志（含错误）。本地发签名正确但缺 `client_reference_id` 的事件：400，日志 `stripe notify: parse failed error=解析失败: 回调缺 client_reference_id`
+- [x] Y8 — 文档页用 `PageMeta`，缺 frontmatter 时用首个标题 / 首段补 title / description。验收：`/docs/axum/basic/handler` 标题与描述不再是站名 / 空
+  - 完成（43c069f）：`DocPage` 改用 `PageMeta`（多了 canonical / og）；`fill_missing_meta` 用首个 `#` 标题与首段纯文本补齐。单测 `missing_meta_filled_from_body`。实测原先 17 个以站名为标题的页面都有了各自标题与描述；浏览器控制台无报错。`SEO_SPEC.md` §3
+- [x] Y9 — 运维手册纠错（上传卷名、cron 变量、连接池、迁移、恢复）+ compose 日志轮转
+  - 完成（bc8ad40）：`OPERATIONS.md` 上传卷名改为 `rustineverything_app-uploads`；pg_dump / pg_restore 用 `sh -c` 在容器内展开变量，cron 加 `test -s`（本地容器实测导出非空、空文件判失败）；去掉不存在的 `sea-orm-cli` 回滚步骤，6.3 改为恢复升级前导出；连接池与搜索日志更新。compose 两个服务 json-file 日志 5 × 10MB（YAML 解析确认）
+- [x] Y10 — 内容小错：welcome 路径、课程 Cargo.toml edition、burn 示例 clone
+  - 完成（ba5d0b3）：welcome 路径改为 `assets/posts/welcome/index.mdx`；课程下载 edition 2024（拷出后 `cargo run` 输出 `Hello, Rust!`）；burn 示例改 `x.clone().matmul(x.transpose())`
+- [x] Y11 — 删除死代码、未用 i18n key、未用依赖
+  - 完成（dbf8ba6）：删微信 `create_native` / `create_h5` / `send_v3`、支付宝 `precreate` / `amount_matches`、`registered_source_count`、`set_thresholds`；中英各删 17 个无引用 key；11 个 crate 去掉源码未用的依赖。四档检查、workspace clippy、635 个测试通过，主要页面 200
+- 阶段 Y 完成：Y1–Y11

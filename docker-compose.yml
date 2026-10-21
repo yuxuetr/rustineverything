@@ -21,11 +21,19 @@
 
 name: rustineverything
 
+# 日志轮转：docker 默认 json-file 不限大小，长期运行会占满磁盘。每个容器最多 5 × 10MB。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: rie-postgres
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-rie}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rie-dev-password}
@@ -53,6 +61,7 @@ services:
     image: rustineverything:latest
     container_name: rie-app
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
