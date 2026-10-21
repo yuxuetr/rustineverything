@@ -349,6 +349,11 @@ fn render_stream<'a>(
             Event::Rule => nodes.push(rsx! { hr { class: "my-8 border-slate-200 dark:border-slate-800" } }),
             Event::Html(html) | Event::InlineHtml(html) => {
                 let h = html.trim();
+                // M2：表格单元格里只能靠 `<br/>` 换行（旧博客常见）
+                if matches!(h.to_ascii_lowercase().as_str(), "<br>" | "<br/>" | "<br />") {
+                    nodes.push(rsx! { br {} });
+                    continue;
+                }
                 if h.starts_with('<') {
                     if let Some(component) = render_mdx_registry(h) {
                         nodes.push(component);
@@ -882,6 +887,14 @@ mod tests {
       "{html}"
     );
     assert!(!html.contains("{#"), "{html}");
+  }
+
+  /// M2：表格单元格里的 `<br/>` 是换行，不是文字。
+  #[test]
+  fn inline_br_is_line_break() {
+    let html = render_markdown("| a |\n| --- |\n| x<br/>y<BR>z<br />w |", false);
+    assert_eq!(html.matches("<br/>").count() + html.matches("<br>").count(), 3, "{html}");
+    assert!(!html.contains("&#60;br"), "{html}");
   }
 
   /// 用户内容的标题不能自定 id（可能与页面元素重名），仍用 `bN`。
