@@ -14,6 +14,9 @@ docker compose logs -f postgres      # 数据库
 docker compose logs -f               # 全部
 ```
 
+日志按 `docker-compose.yml` 的 `x-logging` 轮转：每个容器最多 5 个 10MB 文件，更早的丢弃。要长期留存（如 `pay_audit` 审计日志），
+另行转发到日志平台。
+
 ### 1.2 过滤级别
 
 App 用 [`tracing`](https://docs.rs/tracing) + [`tracing-subscriber`](https://docs.rs/tracing-subscriber)
@@ -42,7 +45,9 @@ RUST_LOG=debug
 | `auth: token exchange success provider=X` | info | OAuth 登录闭环 |
 | `auth: PKCE code_verifier matched` | debug | PKCE 校验通过 |
 | `auth: site.json::auth.enabled=false` | warn | 登录被禁用（预期还是误配？） |
-| `search: index rebuilt documents=N` | info | tantivy 重建完成 |
+| `search: built initial index from disk + DB` / `search: loaded existing index` | info | 首次建索引 / 复用卷里的索引 |
+| `search: index refreshed upserts=N deletes=M` | info | 启动时及每 10 分钟的增量刷新 |
+| `search: index refresh failed` | warn | 增量刷新失败（下一轮重试） |
 | `theme: unknown cookie theme, ignoring` | warn | 访客 cookie 不是内置主题 id（旧值或被改写），已回退默认 |
 | `theme: unknown site.json theme, using default` | warn | site.json 的 `theme` 配错，已回退 `ocean` |
 | `[AppError::Db] ...` | error | 数据库错误已转 `ServerFnError`，详情留服务端 |
@@ -57,37 +62,42 @@ RUST_LOG=debug
 
 ```bash
 # 完整导出（约 2-50 MB，含 schema + 数据）
-docker compose exec postgres \
-  pg_dump -U $POSTGRES_USER -F c $POSTGRES_DB \
+# 变量在容器里展开（单引号）：宿主 shell / cron 不会加载 .env，在宿主展开会得到空用户名。
+docker compose exec -T postgres \
+  sh -c 'pg_dump -U "$POSTGRES_USER" -F c "$POSTGRES_DB"' \
   > backup-$(date +%F-%H%M).dump
 
 # 还原
 cat backup-2026-05-27-1430.dump | \
   docker compose exec -T postgres \
-  pg_restore -U $POSTGRES_USER -d $POSTGRES_DB --clean --if-exists
+  sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists'
 ```
 
 建议 cron：
 
 ```cron
 0 3 * * * cd /srv/rustineverything && docker compose exec -T postgres \
-  pg_dump -U $POSTGRES_USER -F c $POSTGRES_DB \
-  > /backups/rie-$(date +\%F).dump
+  sh -c 'pg_dump -U "$POSTGRES_USER" -F c "$POSTGRES_DB"' \
+  > /backups/rie-$(date +\%F).dump && test -s /backups/rie-$(date +\%F).dump
 ```
+
+`test -s` 让空文件（导出失败）以非零退出，cron 会把失败发到 `MAILTO`。备份文件还要再复制到另一台机器或对象存储，
+只留在本机等于没备份。
 
 ### 2.2 用户上传
 
-`app-uploads` 卷只在 docker 节点本地。异地备份：
+卷只在 docker 节点本地。compose 项目名是 `rustineverything`，所以实际卷名带前缀
+`rustineverything_app-uploads`（`docker volume ls` 可查）；写成 `app-uploads` 会新建一个空卷，备份出来是空包。异地备份：
 
 ```bash
-docker run --rm -v app-uploads:/data -v $(pwd):/out \
+docker run --rm -v rustineverything_app-uploads:/data:ro -v $(pwd):/out \
   alpine tar czf /out/uploads-$(date +%F).tgz -C /data .
 ```
 
 恢复：
 
 ```bash
-docker run --rm -v app-uploads:/data -v $(pwd):/in \
+docker run --rm -v rustineverything_app-uploads:/data -v $(pwd):/in \
   alpine sh -c 'cd /data && tar xzf /in/uploads-2026-05-27.tgz'
 ```
 
@@ -166,7 +176,7 @@ docker compose exec postgres psql -U $POSTGRES_USER -d $POSTGRES_DB \
   -c "SELECT count(*) FROM pg_stat_activity WHERE datname='$POSTGRES_DB';"
 
 # tantivy 索引规模（启动日志）
-docker compose logs app | grep "index rebuilt"
+docker compose logs app | grep "search: index"
 
 # 评论 / 话题量
 docker compose exec postgres psql -U $POSTGRES_USER -d $POSTGRES_DB \
@@ -213,8 +223,8 @@ docker compose logs app | grep -E "AppError::Db|post_comment"
 docker compose logs app | grep "search:"
 ```
 
-期待看到 `index rebuilt with N documents`。N=0 通常意味着 `assets/posts/`
-里没文章，或文章 frontmatter 解析失败。
+期待看到 `search: loaded existing index` 或 `search: built initial index from disk + DB`，之后每 10 分钟一条
+`search: index refreshed`。一直是 `index refresh failed` 时看后面的 `error=`。
 
 强制刷新索引：admin 会话下调用 `POST /api/search/reindex`（默认增量，`mode=full` 全量重建）。
 
@@ -258,13 +268,9 @@ docker compose up -d app
 
 ### 6.2 schema 回滚
 
-```bash
-# 回退一条迁移（执行最近一条的 down() 函数）
-docker compose run --rm app \
-  sh -c 'cd /workspace && sea-orm-cli migrate down -n 1'
-```
-
-如果迁移有数据破坏性变更（drop column / change type），先恢复备份后再回滚代码。
+迁移只在启动时执行 `up`；运行时镜像只有服务端二进制，没有 `sea-orm-cli`，`migration` crate 也没有命令行入口。
+所以不支持单条 `down`：新版本含迁移且需要回滚时，按 6.3 用升级前的备份恢复数据库，再切回旧代码。
+升级前先做一次 2.1 的导出。
 
 ### 6.3 完整回滚（含数据）
 
@@ -272,10 +278,11 @@ docker compose run --rm app \
 # 1. 停服
 docker compose down
 
-# 2. 恢复 postgres 卷
-docker run --rm -v rustineverything_postgres-data:/var/lib/postgresql/data \
-  -v $(pwd):/backup alpine sh -c \
-  'rm -rf /var/lib/postgresql/data/* && tar xzf /backup/postgres-2026-05-27.tgz -C /var/lib/postgresql/data'
+# 2. 只起数据库，用升级前的导出（2.1）覆盖恢复
+docker compose up -d postgres
+cat backup-2026-05-27-1430.dump | \
+  docker compose exec -T postgres \
+  sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists'
 
 # 3. 切回旧代码
 git checkout <previous-sha>
@@ -287,8 +294,8 @@ docker compose up -d
 
 ### 7.1 postgres 连接池
 
-`crates/core/src/db/pool.rs::init_pool` 用 SeaORM 默认配置。要调
-（默认 max 100, min 1）需要修改源码（计划中：通过 env 变量配置）。
+`crates/core/src/db/pool.rs::init_pool`：默认最多 32、最少 2 个连接，连接 / 获取超时 5s，空闲 600s。
+用环境变量调：`DB_MAX_CONN`、`DB_MIN_CONN`、`DB_CONNECT_TIMEOUT_SECS`、`DB_ACQUIRE_TIMEOUT_SECS`、`DB_IDLE_TIMEOUT_SECS`。
 
 排查连接耗尽：
 
