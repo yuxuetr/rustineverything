@@ -229,6 +229,10 @@ fn collect_blogs_versioned() -> Vec<VersionedDoc> {
     } else {
       continue;
     };
+    // 与博客列表一致：非法 slug（Z4）与草稿（Z3）不进索引。
+    if !app_core::utils::is_safe_slug(&slug) {
+      continue;
+    }
     // 草稿不进索引（Z3），与博客列表同一套 frontmatter 解析。
     let is_draft =
       std::fs::read_to_string(&chosen).map(|raw| widgets::parse_mdx(&raw).0.draft).unwrap_or(false);

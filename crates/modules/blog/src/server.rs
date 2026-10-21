@@ -43,6 +43,11 @@ fn build_blog_list(posts_dir: &std::path::Path) -> Vec<BlogPostSummary> {
       continue;
     }
     let slug = path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+    // 文章页只认 `[A-Za-z0-9_-]`（`post_file`）；不合法的目录名进列表只会生成死链（Z4）。
+    if !app_core::utils::is_safe_slug(&slug) {
+      tracing::warn!(dir = %path.display(), "blog: directory name is not a valid slug; skipped");
+      continue;
+    }
 
     let mdx = path.join("index.mdx");
     let md = path.join("index.md");
@@ -139,7 +144,7 @@ mod tests {
     std::fs::write(d.join("index.md"), format!("---\n{frontmatter}\n---\nbody")).unwrap();
   }
 
-  /// Z3：草稿不进列表；日期规范化后再排序（`2019-3-5` 不能排在 `2019-10-01` 之后）。
+  /// Z3 / Z4：草稿与非法目录名不进列表；日期规范化后再排序（`2019-3-5` 不能排在 `2019-10-01` 之后）。
   #[cfg(feature = "server")]
   #[test]
   fn blog_list_skips_drafts_and_sorts_normalized_dates() {
@@ -148,6 +153,7 @@ mod tests {
     write_post(&dir, "old", "title: Old\ndate: 2019-3-5 10:20:00\ntags: rust");
     write_post(&dir, "new", "title: New\ndate: 2019-10-01");
     write_post(&dir, "wip", "title: WIP\ndate: 2030-01-01\ndraft: true");
+    write_post(&dir, "中文 标题.v2", "title: Bad slug\ndate: 2030-01-01");
     let posts = build_blog_list(&dir);
     let slugs: Vec<&str> = posts.iter().map(|p| p.slug.as_str()).collect();
     assert_eq!(slugs, ["new", "old"]);
