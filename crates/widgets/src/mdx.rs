@@ -897,6 +897,25 @@ mod tests {
     assert!(!html.contains("&#60;br"), "{html}");
   }
 
+  /// M3：旧博客的 `<AudioPlayer>`（单行或跨行写法）渲染为播放器；非 https 地址不渲染。
+  #[test]
+  fn audio_player_renders_audio_element() {
+    crate::components::register_default_components();
+    let one_line = r#"<AudioPlayer src="https://a.example/x.m4a" title="标题" artist="作者" />"#;
+    let multi_line =
+      "<AudioPlayer\n  src=\"https://a.example/x.m4a\"\n  title=\"标题\"\n  artist=\"作者\"\n/>";
+    for md in [one_line, multi_line] {
+      let html = render_markdown(md, false);
+      assert!(
+        html.contains("<audio") && html.contains("src=\"https://a.example/x.m4a\""),
+        "{html}"
+      );
+      assert!(html.contains("标题") && !html.contains("&#60;AudioPlayer"), "{html}");
+    }
+    let html = render_markdown(r#"<AudioPlayer src="javascript:alert(1)" />"#, false);
+    assert!(!html.contains("<audio") && !html.contains("javascript"), "{html}");
+  }
+
   /// 用户内容的标题不能自定 id（可能与页面元素重名），仍用 `bN`。
   #[test]
   fn untrusted_heading_ids_stay_block_ids() {

@@ -23,6 +23,7 @@ pub fn register_default_components() {
   register(Box::new(BilibiliComponent));
   register(Box::new(UnderlineComponent));
   register(Box::new(StrikethroughComponent));
+  register(Box::new(AudioPlayerComponent));
 
   // 5 种 Mac Preview 风格高亮色。
   for (name, color) in COLOR_COMPONENTS {
@@ -146,6 +147,33 @@ impl MdxComponent for StrikethroughComponent {
   }
 }
 
+/// `<AudioPlayer src="https://….m4a" title="..." artist="..." />`（旧博客的音频组件，M3）。
+/// 只放行 https 地址：CSP `media-src` 允许 https，其余协议不渲染。
+struct AudioPlayerComponent;
+impl MdxComponent for AudioPlayerComponent {
+  fn name(&self) -> &'static str {
+    "AudioPlayer"
+  }
+  fn render(&self, attrs: &HashMap<String, String>) -> Element {
+    let Some(src) = attrs.get("src").filter(|s| s.starts_with("https://")).cloned() else {
+      return rsx! {};
+    };
+    let title = attrs.get("title").cloned().unwrap_or_default();
+    let artist = attrs.get("artist").cloned().unwrap_or_default();
+    rsx! {
+        figure { class: "not-prose my-8 rounded-2xl border border-slate-200 dark:border-slate-800 p-4",
+            if !title.is_empty() {
+                figcaption { class: "text-sm font-semibold text-slate-800 dark:text-slate-200", "{title}" }
+            }
+            if !artist.is_empty() {
+                p { class: "text-xs text-slate-500 dark:text-slate-400", "{artist}" }
+            }
+            audio { class: "w-full mt-3", controls: true, preload: "none", src: "{src}" }
+        }
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -174,6 +202,7 @@ mod tests {
     register_default_components();
     let names = list_registered();
     for expected in &[
+      "AudioPlayer",
       "Bilibili",
       "Blue",
       "Green",
@@ -191,8 +220,8 @@ mod tests {
         names
       );
     }
-    // 至少 9 个：5 颜色 + 2 视频 + 2 装饰
-    assert!(registered_count() >= 9);
+    // 至少 10 个：5 颜色 + 2 视频 + 2 装饰 + 音频
+    assert!(registered_count() >= 10);
   }
 
   #[test]
