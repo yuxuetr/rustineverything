@@ -915,6 +915,18 @@ pub fn read_chapter(course_slug: &str, chapter_slug: &str) -> Option<Chapter> {
   })
 }
 
+/// 解析 `course.yaml`；失败记 error 并返回 `None`（课程下线，而不是按免费放开）。
+#[cfg(feature = "server")]
+fn parse_course_meta(course_slug: &str, text: &str) -> Option<CourseMeta> {
+  match serde_yaml::from_str(text) {
+    Ok(meta) => Some(meta),
+    Err(e) => {
+      tracing::error!(course = course_slug, error = %e, "course: invalid course.yaml; course hidden");
+      None
+    }
+  }
+}
+
 /// 读取单个课程（含全部章节与 lesson summary）
 #[cfg(feature = "server")]
 pub fn read_course(course_slug: &str) -> Option<Course> {
@@ -941,9 +953,15 @@ pub fn read_course(course_slug: &str) -> Option<Course> {
     None
   };
   if let Some(p) = path {
-    if let Ok(c) = fs::read_to_string(&p) {
-      meta = serde_yaml::from_str(&c).unwrap_or_default();
-    }
+    // 读不了或写错时整门课下线：回落默认值会把 access_tier 变成 free（Y4）。
+    let text = match fs::read_to_string(&p) {
+      Ok(t) => t,
+      Err(e) => {
+        tracing::error!(course = course_slug, error = %e, "course: cannot read course.yaml; course hidden");
+        return None;
+      }
+    };
+    meta = parse_course_meta(course_slug, &text)?;
   }
   let (prefix_order, _) = parse_order_prefix(course_slug);
   let order = meta.order.unwrap_or(prefix_order);
@@ -2992,6 +3010,16 @@ mod tests {
     let free = course.schema();
     assert_eq!(free["isAccessibleForFree"], true);
     assert!(free.get("offers").is_none());
+  }
+
+  /// Y4：写错的 course.yaml 不能回落成默认的免费课程。
+  #[test]
+  fn invalid_course_yaml_hides_course() {
+    assert!(parse_course_meta("c", "title: Rust: 入门\naccess_tier: paid\n").is_none());
+    assert!(parse_course_meta("c", "access_tier: paid\nprice: \"99\"\n").is_none());
+    let meta = parse_course_meta("c", "title: \"Rust: 入门\"\naccess_tier: paid\nprice: 99\n");
+    assert_eq!(meta.and_then(|m| m.access_tier).as_deref(), Some("paid"));
+    assert!(parse_course_meta("c", "").is_some(), "empty course.yaml should mean defaults");
   }
 
   fn read_course_fixture() -> Course {
