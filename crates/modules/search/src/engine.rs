@@ -330,9 +330,19 @@ fn make_snippet(body: &str, query: &str, max_chars: usize) -> String {
   let lower_token = token.to_lowercase();
   let half = max_chars / 2;
 
-  /// 在 `haystack` 中查找 lowercase 的 `lower_token`。返回 byte offset。
+  /// 在 `haystack` 中查找 lowercase 的 `lower_token`，返回**原串**的 byte offset。
+  /// 小写后字节长度可能变（开尔文符号 3→1 字节、İ 2→3 字节），所以逐字符小写并记下
+  /// 每个小写字节对应的原串位置，不能直接拿小写串的位置切原串（Y2）。
   fn find_lower(haystack: &str, lower_token: &str) -> Option<usize> {
-    haystack.to_lowercase().find(lower_token)
+    let mut lowered = String::with_capacity(haystack.len());
+    let mut origin = Vec::with_capacity(haystack.len());
+    for (b, c) in haystack.char_indices() {
+      for lc in c.to_lowercase() {
+        lowered.push(lc);
+        origin.resize(lowered.len(), b);
+      }
+    }
+    lowered.find(lower_token).and_then(|pos| origin.get(pos).copied())
   }
 
   // 第一轮：仅对前 SNIPPET_HEAD_BYTES 字节做 lowercase 搜索（多数命中都落在这里）；
@@ -572,6 +582,15 @@ mod tests {
   #[test]
   fn snippet_empty_body() {
     assert_eq!(make_snippet("", "Rust", 50), "");
+  }
+
+  #[test]
+  fn snippet_survives_length_changing_lowercase() {
+    // 开尔文符号小写成 1 字节的 `k`：旧实现拿小写串的位置切原串会落在「中」中间。
+    let snippet = make_snippet("\u{212A}\u{212A}中文rust", "rust", 50);
+    assert!(snippet.contains("rust"), "{snippet}");
+    let snippet = make_snippet(&format!("{}İrust", "字".repeat(30)), "rust", 10);
+    assert!(snippet.starts_with('…') && snippet.contains("rust"), "{snippet}");
   }
 
   #[test]
