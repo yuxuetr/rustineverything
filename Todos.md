@@ -658,3 +658,13 @@
   - 完成（6804fa8）：`PostMetadata` 全字段缺省、`tags` / `keywords` 字符串或列表、`summary` / `excerpt` 别名、标量标题、`draft`、`updated`（别名 `lastmod`），非法 YAML 记 warn；`normalize_date` 统一日期。博客列表改用 `parse_mdx`，删掉自有解析器；草稿不进列表 / sitemap / feed / 搜索，文章页 404（实测）。sitemap / feed 优先用 `updated`。单测 3 个
 - [x] Z4 — 列表与搜索跳过非法 slug
   - 完成（d4f9c93）：博客列表与搜索索引跳过非 `[A-Za-z0-9_-]` 目录名并记 warn。单测覆盖含中文、空格、`.` 的目录名
+
+### 阶段 M — 迁移 Docusaurus 旧博客（2026-10-21）
+来源与处理方式见 `docs/BLOG_MIGRATION.md` §5。
+- [ ] M1 — 标题 id：支持 `{#id}`，否则按 github-slugger 由标题文字生成；标注仍按 `data-block-id`
+- [ ] M2 — 行内 `<br>` / `<br/>` 渲染为换行
+- [ ] M3 — `AudioPlayer` 组件（`<audio controls>`）
+- [ ] M4 — prism 语言包：swift、jsx、typescript、tsx
+- [ ] M5 — 旧网址 308：`/blog/YYYY/MM/DD/<slug>`、`/en` 前缀、标签 / 分页 / 归档页
+- [ ] M6 — 转换脚本 `scripts/migrate_docusaurus.py`
+- [ ] M7 — 导入 165 篇，逐篇检查页面 / 锚点 / 图片，跑 §3 的门

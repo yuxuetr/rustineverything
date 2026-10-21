@@ -40,4 +40,28 @@
 
 ## 4. 进度
 
-§1 的 Z2–Z4 已完成。§2 等确认旧博客的系统与 URL 规则后，在转换脚本与站点之间分工。
+§1 的 Z2–Z4 已完成。§2 按来源（Docusaurus）的结论见 §5，任务为 Todos.md 阶段 M。
+
+## 5. 来源：Docusaurus（`yuxuetr.com/data/blog`，2026-10-21 统计）
+
+165 篇（单文件 `YYYY-MM-DD-slug.mdx` 与目录 `YYYY-MM-DD-slug/index.mdx` 混用），旧网址 `/blog/YYYY/MM/DD/<slug>`（与 `build/blog` 的 164 个页面逐一核对；`about` 是页面不是文章）。统计脚本按代码块内外区分。
+
+| 写法 | 数量 | 处理 |
+| --- | --- | --- |
+| 标题显式 id `## 标题 {#id}` | 222 | M1 站点：开启 heading attributes，用作 `id` |
+| 站内锚点链接 `](#引言)` | 251 处 / 23 篇 | M1 站点：无显式 id 的标题按 Docusaurus 规则（github-slugger）由文字生成 `id`；标注仍按 `data-block-id`（`annotations.js` 先找 `data-block-id` 再找 `id`），不受影响。不可信内容（评论 / 论坛）仍用 `bN`，避免与页面元素 id 冲突 |
+| 表格里的 `<br/>` | 11 行 | M2 站点：行内 `<br>` / `<br/>` 渲染为换行 |
+| `<AudioPlayer src title artist />` | 2 篇 | M3 站点：注册同名组件，渲染 `<audio controls>`（CSP `media-src` 已允许 https）|
+| 代码语言 swift 294、jsx 107、tsx 33、ts / typescript 24 | | M4 站点：补 prism 语言包（同版本 1.30.0）。latex 17、markdown 8、clojure 7 等少量的不补 |
+| 旧网址 | 164 | M5 站点：`/blog/YYYY/MM/DD/<slug>`（含 `/en` 前缀）308 到 `/blog/<新 slug>`；`/blog/tags/*`、`/blog/page/*`、`/blog/archive`、`/blog/authors*` 到 `/blog`。规则是确定的（新 slug = 旧 slug 中 `.` 换成 `-`），不需要映射表 |
+| `import` / `export` 行、`{/* */}` 注释 | 56 / 19 | M6 脚本删除（代码块内不动）|
+| `<RedText text=…/>` 等颜色组件 | 312 | M6 脚本改名为站点已有的 `Pink` / `Blue` / `Green` / `Yellow` / `Purple`（属性同为 `text`）|
+| 图片：相对路径 102、外链 10 | | M6 脚本把引用到的图片（共享 `images/` 与文章目录内）拷进新文章目录，路径改为文件名；外链图片下载到文章目录，`.mp4` 改成链接；下载失败的列出来 |
+| 文章互链 `](../2025-01-06-swiftui-intro/index.mdx)` | | M6 脚本改为 `/blog/<新 slug>` |
+| frontmatter | | 保留 title / description / tags / keywords / image；日期取 `date` 或文件名；删 authors / hide_table_of_contents 等 |
+| `:::note` 等提示块 | 46 | 站点已支持，不处理 |
+| slug 含 `.`（`rust-1.82` 等）| 6 | 新 slug 把 `.` 换成 `-`；无重名 |
+
+脚本 `scripts/migrate_docusaurus.py <源目录> <assets/posts>`：一次性工具，可重复运行（覆盖输出），结束时打印每篇的警告。迁移后跑 §3 的门，并用 curl 检查每篇文章页 200、页内 `href="#x"` 都有对应 `id="x"`、图片都 200。
+
+旧站域名（yuxuetr.com）是否指向新站，决定 M5 的跳转能否被旧链接用到；规则本身与域名无关。
