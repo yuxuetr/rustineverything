@@ -721,4 +721,6 @@
   - 完成（2393e9e）：`heading_outline` 与 `Markdown` 共用解析和 id 分配，单测核对每个 id 都在渲染结果里（去掉 id 分配后变红）。滚动高亮用 web-sys 的 scroll 监听（CSP 不允许 `document::eval`），高亮由 signal 渲染。浏览器实测：滚动时高亮跟随，点目录跳到标题且不被顶栏挡住（标题距顶 80px），不刷新页面；SPA 换页后目录与高亮换成新页的；1100px 宽度下目录隐藏、无横向滚动。文档、博客（SSR 检查 3 篇）、课节（临时加标题验证 `xl:grid-cols-4` 版式）都有
 - [x] T3 — 手机：文档与课节的左侧导航用 `Sidebar { off_canvas }` 收进抽屉，正文上方加「目录」按钮，点链接后关闭；文档树改用 `Tree`，删掉 `TreeSection`。路由驱动的树（选中 / 祖先展开 / 选中即导航）放 `widgets`，文档和课程共用
   - 完成（e3e7cfe）：`widgets::ReadingLayout`（off-canvas `Sidebar`）与 `widgets::NavTree`（路由驱动的 `Tree`）由文档页、课节页共用；`TreeSection` 删除。断点用组件库的 768px：平板起就有侧栏（原来文档树 1024px 才显示）。浏览器实测：390px 打开抽屉、Esc 关闭、点链接后换页且抽屉关上、不刷新页面；关掉 JS 的 390px 页面侧栏隐藏（hydration 前不挤正文）；800px 侧栏常驻、按钮隐藏；桌面点分支行导航并展开，连续后退无重复历史。顺带修了长行内代码在手机上撑出横向滚动（`break-words`），文档 / 课节 / 博客 5 页 390px 下 scrollWidth 都是 390。遗留：标注开关按钮（z-[9999]）与顶栏浮在抽屉遮罩之上
-- [ ] T4 — cases、forum、about（及 board 若有）把 `PageMeta` 嵌在 SuspenseBoundary 里：逐页在浏览器查 hydration 报错与 SPA 换页，有问题的改用 `PageMetaTags` 或把 `PageMeta` 移出 boundary
+- [x] T4 — cases、forum、about（及 board 若有）把 `PageMeta` 嵌在 SuspenseBoundary 里：逐页在浏览器查 hydration 报错与 SPA 换页，有问题的改用 `PageMetaTags` 或把 `PageMeta` 移出 boundary
+  - 完成（只验证，不改代码）：board 的 PageMeta 不在 boundary 里。案例详情 `/case/candle`、话题 `/topics/1`、关于 `/about` 三页浏览器实测：hydration 后 console 无报错；点顶栏链接走客户端路由（window 标记保留）；打开登录对话框正常，`aria-describedby` 指向存在的节点，页脚文字没被改写（S5 在文档页看到的错位症状）。结论：当前版本下单是 PageMeta 嵌在 boundary 里不出问题，S5 的错位要和文档页当时的其它两处问题一起才出现，所以不改。重估条件：这几页 console 出现 `hydrate_node` / `setAttribute is not a function` 一类报错，或页面事件失效
+- 阶段 T 完成：T0–T4
