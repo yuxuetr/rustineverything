@@ -705,6 +705,8 @@
   - 完成（80803ac）：`DocMeta.source`；徽标链到 `docs.rs/<crate>/<version>`。实测 serde_yaml 读进 String 时保留原文，`version: 1.10` 不加引号也是 "1.10"（单测覆盖）。解析失败的 warn 带文件路径（dx 日志实测）。注意：文档树每次请求都会扫描，一个坏文件每次访问都会 warn 一次
 - [x] S4 — mermaid 图全部渲染成「Syntax error」（博客和文档都是）：SSR 在 `<pre class="mermaid">` 里留了 hydration 标记 `<!--node-id…-->`，mermaid 读 `innerHTML` 把注释当成图源码。引导脚本里调 `mermaid.run` 前先删掉节点里的注释
   - 完成（812c876）：浏览器实测改前博客和 tokio 文档的图都是 `aria-roledescription="error"`，改后是 `sequence` / `flowchart`，hydration 之后仍在
-- [ ] S5 — 点文档侧栏 / 上下页会整页刷新、白屏闪一下：文档模块的站内链接都是 `a { href }`，改用 `Link { to }`（board、course 已是这个写法），走客户端路由
-- [ ] S6 — 有代码块 / mermaid 图的页面 hydration 报错（`node.setAttribute is not a function` 等），之后整页事件失效：引导脚本在 hydration 之前改写了 Dioxus 管着的块内节点（Prism 换掉 code 的子节点；S4 删注释、mermaid 换成 svg）。块内容改用 `dangerous_inner_html`，脚本按源码比较判断是否已处理
-- 阶段 S 完成：S1–S4
+- [x] S5 — 点文档侧栏 / 上下页会整页刷新、白屏闪一下：文档模块的站内链接都是 `a { href }`，改用 `Link { to }`（board、course 已是这个写法），走客户端路由
+  - 完成（20feae6）：除了链接，还有两处让点击退回整页刷新：侧栏树是 use_resource（hydration 时为 None，SSR 侧栏没被接管）；`PageMeta` 自带的 SuspenseBoundary 嵌在文档的 boundary 里，hydration 编号错位。改为 `Link`、侧栏树 use_server_future、首页 PageMeta 移出 boundary、详情页用新加的 `PageMetaTags`（挂起外层 boundary）。侧栏与正文分成两个并列 boundary，换页只重取正文；导航进入某分支时自动展开。浏览器实测：侧栏 / 上下页 / 后退连续 8 次都不刷新页面（window 标记保留），每次切换侧栏都不消失，图和高亮正常，无 hydration 报错
+- [x] S6 — 有代码块 / mermaid 图的页面 hydration 报错（`node.setAttribute is not a function` 等），之后整页事件失效：引导脚本在 hydration 之前改写了 Dioxus 管着的块内节点（Prism 换掉 code 的子节点；S4 删注释、mermaid 换成 svg）。块内容改用 `dangerous_inner_html`，脚本按源码比较判断是否已处理
+  - 完成（a6bdcc0）：SSR 里 mermaid 块内不再有 `<!--node-id-->`；tokio 文档与博客页 hydration 无报错，SPA 换页后新内容的图和高亮都会处理。S4 的删注释逻辑随之去掉
+- 阶段 S 完成：S1–S6
