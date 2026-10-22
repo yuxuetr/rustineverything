@@ -703,4 +703,5 @@
   - 完成（b54ded7）：`doc_neighbors` 只扫当前一级分类，单测覆盖顺序、跳过无正文目录、不跨分类、根与不存在的路径，把「跳过无正文」改坏后测试变红。dx 实测：SSR HTML 里有 `rel="prev"` / `rel="next"`；hydration 后点击跳转，链接跟着更新；手机宽度两张卡片上下排列
 - [x] S3 — frontmatter `source: { crate, version }`：文档页正文上方显示「基于 tokio 1.54.0」，链到 docs.rs 对应版本。frontmatter 解析失败时记 warn（现在整块静默丢弃，写错一个字段标题和描述都没了）
   - 完成（80803ac）：`DocMeta.source`；徽标链到 `docs.rs/<crate>/<version>`。实测 serde_yaml 读进 String 时保留原文，`version: 1.10` 不加引号也是 "1.10"（单测覆盖）。解析失败的 warn 带文件路径（dx 日志实测）。注意：文档树每次请求都会扫描，一个坏文件每次访问都会 warn 一次
+- [ ] S4 — mermaid 图全部渲染成「Syntax error」（博客和文档都是）：SSR 在 `<pre class="mermaid">` 里留了 hydration 标记 `<!--node-id…-->`，mermaid 读 `innerHTML` 把注释当成图源码。引导脚本里调 `mermaid.run` 前先删掉节点里的注释
 - 阶段 S 完成：S1–S3
