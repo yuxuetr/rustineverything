@@ -715,7 +715,8 @@
 设计见 `docs/READING_LAYOUT_SPEC.md`。左侧只放按顺序阅读的跨页导航（文档树、课程大纲），右侧放页内目录（文档、博客、课节都有）；手机上左侧导航收进抽屉。组件放本仓库 `crates/widgets`，dioxus-ui 只用已有的 `Tree` 与 `Sidebar`，不改它。
 - [x] T0 — dioxus-shadcn 0.6.3 → 0.6.6（为了 `Tree`；上游 0.6.4–0.6.6 不改既有 API）。Tailwind 的 `@source` 由 `tw-sources.mjs` 生成，重新 `npm run build`
   - 完成（2290a91）：只改版本号与 Cargo.lock，无代码改动；fmt / clippy / 全部测试 / check_tiers 通过，`tailwind-sources.css` 已指向 0.6.6
-- [ ] T1 — 课节页：站内链接改 `Link`、`PageMeta` 改 `PageMetaTags`（同 S5，消除整页刷新）；左侧课程大纲（`Tree`：章 → 节，当前节选中，✅ / 🔒）；正文下方上一节 / 下一节。实测 Tree 用作导航时点击、Enter、后退不产生重复历史记录，不行则退回纯链接列表
+- [x] T1 — 课节页：站内链接改 `Link`、`PageMeta` 改 `PageMetaTags`（同 S5，消除整页刷新）；左侧课程大纲（`Tree`：章 → 节，当前节选中，✅ / 🔒）；正文下方上一节 / 下一节。实测 Tree 用作导航时点击、Enter、后退不产生重复历史记录，不行则退回纯链接列表
+  - 完成（40b3979）：大纲用 `Tree`，当前节选中、所在章展开、换节进入另一章时自动展开；上一节 / 下一节由 `get_lesson` 服务端算（跨章，单测覆盖并改坏验红）。课程详情页的 PageMeta 与站内链接一并修了。顺带修了 SPA 换节后「已完成」按钮与标注层不刷新的问题（文档页 S5 后标注层也有这个问题）。浏览器实测（示例课 rust-basics 临时放进内容仓库）：大纲链接、上一节、键盘 ↑ + Enter、详情页课节行、返回课程目录都不刷新页面；连续后退顺序正确，没有重复历史记录；无 console 报错
 - [ ] T2 — `widgets::heading_outline` + `OnThisPage`：从正文取 h2/h3（id 与正文一致），≥3 项时在 `xl` 以上显示在右侧，滚动高亮当前标题；用于文档、博客、课节。标题加 `scroll-margin-top`
 - [ ] T3 — 手机：文档与课节的左侧导航用 `Sidebar { off_canvas }` 收进抽屉，正文上方加「目录」按钮，点链接后关闭；文档树改用 `Tree`，删掉 `TreeSection`。路由驱动的树（选中 / 祖先展开 / 选中即导航）放 `widgets`，文档和课程共用
 - [ ] T4 — cases、forum、about（及 board 若有）把 `PageMeta` 嵌在 SuspenseBoundary 里：逐页在浏览器查 hydration 报错与 SPA 换页，有问题的改用 `PageMetaTags` 或把 `PageMeta` 移出 boundary
