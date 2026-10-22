@@ -705,4 +705,5 @@
   - 完成（80803ac）：`DocMeta.source`；徽标链到 `docs.rs/<crate>/<version>`。实测 serde_yaml 读进 String 时保留原文，`version: 1.10` 不加引号也是 "1.10"（单测覆盖）。解析失败的 warn 带文件路径（dx 日志实测）。注意：文档树每次请求都会扫描，一个坏文件每次访问都会 warn 一次
 - [x] S4 — mermaid 图全部渲染成「Syntax error」（博客和文档都是）：SSR 在 `<pre class="mermaid">` 里留了 hydration 标记 `<!--node-id…-->`，mermaid 读 `innerHTML` 把注释当成图源码。引导脚本里调 `mermaid.run` 前先删掉节点里的注释
   - 完成（812c876）：浏览器实测改前博客和 tokio 文档的图都是 `aria-roledescription="error"`，改后是 `sequence` / `flowchart`，hydration 之后仍在
+- [ ] S5 — 点文档侧栏 / 上下页会整页刷新、白屏闪一下：文档模块的站内链接都是 `a { href }`，改用 `Link { to }`（board、course 已是这个写法），走客户端路由
 - 阶段 S 完成：S1–S4
