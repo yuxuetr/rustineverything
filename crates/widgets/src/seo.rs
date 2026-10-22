@@ -115,6 +115,8 @@ pub const SITE_NAME: &str = "Rust in Everything";
 /// `schema` 是可选的 schema.org 对象（G8），输出为 JSON-LD，`@context` 与 `url` 自动补上。
 ///
 /// 自带 SuspenseBoundary（等 `BASE_URL` 时不渲染任何东西），调用方直接放进页面即可。
+/// 已经在 SuspenseBoundary 里的组件用 [`PageMetaTags`]：两层 boundary 嵌套时
+/// hydration 的节点编号会错位，之后的更新打到错误节点上，整页事件失效。
 #[component]
 pub fn PageMeta(
   title: String,
@@ -124,17 +126,18 @@ pub fn PageMeta(
 ) -> Element {
   rsx! {
       SuspenseBoundary { fallback: |_| VNode::empty(),
-          PageMetaInner { title, description, path, schema }
+          PageMetaTags { title, description, path, schema }
       }
   }
 }
 
+/// [`PageMeta`] 去掉自带的 SuspenseBoundary：等 `BASE_URL` 时挂起调用方所在的 boundary。
 #[component]
-fn PageMetaInner(
+pub fn PageMetaTags(
   title: String,
   description: String,
   path: String,
-  schema: Option<serde_json::Value>,
+  #[props(default)] schema: Option<serde_json::Value>,
 ) -> Element {
   let base_url_res =
     use_server_future(|| async move { get_seo_base_url().await.unwrap_or_default() })?;
