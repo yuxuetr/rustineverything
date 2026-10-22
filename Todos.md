@@ -706,4 +706,5 @@
 - [x] S4 — mermaid 图全部渲染成「Syntax error」（博客和文档都是）：SSR 在 `<pre class="mermaid">` 里留了 hydration 标记 `<!--node-id…-->`，mermaid 读 `innerHTML` 把注释当成图源码。引导脚本里调 `mermaid.run` 前先删掉节点里的注释
   - 完成（812c876）：浏览器实测改前博客和 tokio 文档的图都是 `aria-roledescription="error"`，改后是 `sequence` / `flowchart`，hydration 之后仍在
 - [ ] S5 — 点文档侧栏 / 上下页会整页刷新、白屏闪一下：文档模块的站内链接都是 `a { href }`，改用 `Link { to }`（board、course 已是这个写法），走客户端路由
+- [ ] S6 — 有代码块 / mermaid 图的页面 hydration 报错（`node.setAttribute is not a function` 等），之后整页事件失效：引导脚本在 hydration 之前改写了 Dioxus 管着的块内节点（Prism 换掉 code 的子节点；S4 删注释、mermaid 换成 svg）。块内容改用 `dangerous_inner_html`，脚本按源码比较判断是否已处理
 - 阶段 S 完成：S1–S4
