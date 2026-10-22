@@ -779,7 +779,9 @@ fn render_mermaid_block(code_text: String, block_id: Option<String>) -> Element 
           class: "not-prose my-6 flex justify-center overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6",
           // 内容走 dangerous_inner_html：mermaid / Prism 会改写块内节点，Dioxus 不能跟踪
           // 这些子节点，否则 hydration 找不到自己的标记而崩掉（之后整页的事件都失效）。
-          pre { class: "mermaid", dangerous_inner_html: escape_markup(&code_text) }
+          // mermaid 给 svg 的是 width="100%" 加 max-width：pre 要占满整行，svg 才按自身宽度显示，
+          // 否则 flex 里的 pre 收缩到内容宽度，与 svg 的 100% 互相依赖，图被压得很小。
+          pre { class: "mermaid w-full [&>svg]:mx-auto", dangerous_inner_html: escape_markup(&code_text) }
       }
   }
 }
