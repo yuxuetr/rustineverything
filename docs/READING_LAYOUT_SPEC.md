@@ -43,7 +43,7 @@
 
 - **页内目录**：`heading_outline` 是纯函数，服务端和客户端用同一份正文各算一次，结果一致，不新增 server fn，也不会造成 hydration 不一致。与 `Markdown` 组件共用「frontmatter → `:::` 转换 → 解析 → `assign_heading_ids`」这一段，不另写一套。只取 h2、h3。
 - **滚动高亮**：`document::eval` 里用 IntersectionObserver 观察正文标题，把当前标题 id `send` 回 Rust，高亮由 signal 渲染（不由 JS 改 Dioxus 管着的节点，S6 的教训）。换页时旧 observer 先断开。点击目录项是普通 `#id` 锚点；标题加 `scroll-margin-top`，不被 sticky 顶栏挡住。
-- **课程大纲**：课节页额外用 `use_server_future(get_course)` 取课程结构（SSR 里就有大纲链接）；进度和已购沿用课程详情页的 `use_resource`（每用户数据，不进 SSR）。上一节 / 下一节由课程结构在客户端算出，不改 server fn。
+- **课程大纲**：课节页额外用 `use_server_future(get_course)` 取课程结构（SSR 里就有大纲链接）；进度和已购沿用课程详情页的 `use_resource`（每用户数据，不进 SSR）。上一节 / 下一节由 `get_lesson` 在服务端按大纲算好随课节返回（同文档 S2），SSR 里就有 `rel="prev"/"next"`。
 - **路由驱动的树**：`Tree` 用受控的 `selected`（= 当前路径）和 `expanded`（含当前路径的所有祖先；换页时补进新祖先，用户手动展开 / 折叠也保留）。树项文字是 `Link`（爬虫与中键新开页都需要真实 `href`）；键盘 Enter 选中时由 `on_selected_change` 导航，路径与当前路由相同则不重复 push。
 
 ## 5. 风险与验证
