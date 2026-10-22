@@ -3,6 +3,7 @@
 //! ## 内容
 //! - [`mdx`]：MDX 渲染管道（GFM / 数学 / Mermaid / 代码 + Copy / 标注 block-id）。
 //! - [`registry`]：MDX 嵌入组件注册表（Phase 2.1 引入 / Phase 2.2 完整接入）。
+//! - [`toc`]：页内目录（标题列表 + 滚动高亮）。
 //! - [`browser`]：浏览器操作的 web-sys 实现与 [`browser::PageTitle`]（替代 `document::eval` / `document::Title`）。
 //!
 //! widgets crate 不依赖任何 `crates/modules/*`，业务模块通过 [`registry::register`]
@@ -26,11 +27,14 @@ pub mod registry;
 pub mod sanitize;
 pub mod seo;
 pub mod status;
+pub mod toc;
 
 // 重导出最常用 API，方便调用方仅依赖 widgets 顶层路径。
 pub use components::register_default_components;
 pub use feed::{build_atom_feed, build_robots_txt, build_sitemap_xml, ContentEntry};
-pub use mdx::{normalize_date, parse_mdx, Markdown, MarkdownProps, PostMetadata};
+pub use mdx::{
+  heading_outline, normalize_date, parse_mdx, Markdown, MarkdownProps, PostMetadata, TocEntry,
+};
 pub use registry::{
   clear_for_tests, list_registered, register, registered_count, ComponentRegistry, MdxComponent,
 };
@@ -40,3 +44,4 @@ pub use seo::{
   PageMetaTags, SITE_NAME,
 };
 pub use status::{LoadFailed, NotFound};
+pub use toc::OnThisPage;

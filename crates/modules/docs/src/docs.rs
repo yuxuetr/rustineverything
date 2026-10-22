@@ -197,17 +197,15 @@ pub fn DocPage(path: Vec<String>, footer: Element) -> Element {
                       DocTree { active_path: doc_path }
                   }
               }
-              // 右侧内容
+              // 右侧内容 + 页内目录（DocPageInner 里，目录来自正文）
               div { class: "flex-1 min-w-0 px-6 lg:px-12 py-8",
-                  div { class: "max-w-3xl mx-auto",
-                      SuspenseBoundary {
-                          fallback: |_| rsx! {
-                              div { class: "flex items-center justify-center py-20",
-                                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
-                              }
-                          },
-                          DocPageInner { path: path.clone(), footer: footer.clone() }
-                      }
+                  SuspenseBoundary {
+                      fallback: |_| rsx! {
+                          div { class: "flex items-center justify-center py-20",
+                              Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
+                          }
+                      },
+                      DocPageInner { path: path.clone(), footer: footer.clone() }
                   }
               }
           }
@@ -246,55 +244,67 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
   rsx! {
       match content() {
           Some(Ok(Some(resp))) => rsx! {
-              // SEO：title / description / canonical / og 由 PageMeta 输出（服务端已从正文补齐），
-              // 这里只补 keywords 与 og:image。
-              widgets::PageMetaTags {
-                  title: resp.meta.title.clone(),
-                  description: resp.meta.description.clone(),
-                  path: format!("/docs/{}", doc_path_for_meta),
-              }
-              if !resp.meta.keywords.is_empty() {
-                  document::Meta { name: "keywords", content: "{resp.meta.keywords.join(\", \")}" }
-              }
-              if let Some(ref img) = resp.meta.image {
-                  document::Meta { property: "og:image", content: "{img}" }
-              }
-              if let Some(ref src) = resp.meta.source {
-                  a {
-                      href: "https://docs.rs/{src.krate}/{src.version}",
-                      target: "_blank",
-                      rel: "noopener",
-                      class: badge_class(BadgeVariant::Secondary, "mb-4 rounded-full font-normal text-muted-foreground"),
-                      "{t(lang, \"docs.based_on\")} {src.krate} {src.version}"
-                  }
-              }
-              div { class: "text-slate-700 dark:text-slate-200",
-                  Markdown { content: resp.content.clone(), blog_id: anno_blog_id.clone() }
-              }
-              if resp.prev.is_some() || resp.next.is_some() {
-                  nav { class: "mt-12 pt-6 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4",
-                      if let Some(ref link) = resp.prev {
-                          Link {
-                              to: doc_href(&link.path),
-                              rel: "prev",
-                              class: "block rounded-lg border border-slate-200 dark:border-slate-800 p-4 hover:border-primary transition-colors",
-                              span { class: "block text-xs text-slate-500 dark:text-slate-400", "← {t(lang, \"docs.prev\")}" }
-                              span { class: "block mt-1 font-medium text-slate-900 dark:text-white", "{link.title}" }
+              div { class: "flex justify-center gap-10",
+                  article { class: "min-w-0 flex-1 max-w-3xl",
+                      // SEO：title / description / canonical / og 由 PageMeta 输出（服务端已从正文补齐），
+                      // 这里只补 keywords 与 og:image。
+                      widgets::PageMetaTags {
+                          title: resp.meta.title.clone(),
+                          description: resp.meta.description.clone(),
+                          path: format!("/docs/{}", doc_path_for_meta),
+                      }
+                      if !resp.meta.keywords.is_empty() {
+                          document::Meta { name: "keywords", content: "{resp.meta.keywords.join(\", \")}" }
+                      }
+                      if let Some(ref img) = resp.meta.image {
+                          document::Meta { property: "og:image", content: "{img}" }
+                      }
+                      if let Some(ref src) = resp.meta.source {
+                          a {
+                              href: "https://docs.rs/{src.krate}/{src.version}",
+                              target: "_blank",
+                              rel: "noopener",
+                              class: badge_class(BadgeVariant::Secondary, "mb-4 rounded-full font-normal text-muted-foreground"),
+                              "{t(lang, \"docs.based_on\")} {src.krate} {src.version}"
                           }
                       }
-                      if let Some(ref link) = resp.next {
-                          Link {
-                              to: doc_href(&link.path),
-                              rel: "next",
-                              class: "block rounded-lg border border-slate-200 dark:border-slate-800 p-4 hover:border-primary transition-colors text-right sm:col-start-2",
-                              span { class: "block text-xs text-slate-500 dark:text-slate-400", "{t(lang, \"docs.next\")} →" }
-                              span { class: "block mt-1 font-medium text-slate-900 dark:text-white", "{link.title}" }
+                      div { class: "text-slate-700 dark:text-slate-200",
+                          Markdown { content: resp.content.clone(), blog_id: anno_blog_id.clone() }
+                      }
+                      if resp.prev.is_some() || resp.next.is_some() {
+                          nav { class: "mt-12 pt-6 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4",
+                              if let Some(ref link) = resp.prev {
+                                  Link {
+                                      to: doc_href(&link.path),
+                                      rel: "prev",
+                                      class: "block rounded-lg border border-slate-200 dark:border-slate-800 p-4 hover:border-primary transition-colors",
+                                      span { class: "block text-xs text-slate-500 dark:text-slate-400", "← {t(lang, \"docs.prev\")}" }
+                                      span { class: "block mt-1 font-medium text-slate-900 dark:text-white", "{link.title}" }
+                                  }
+                              }
+                              if let Some(ref link) = resp.next {
+                                  Link {
+                                      to: doc_href(&link.path),
+                                      rel: "next",
+                                      class: "block rounded-lg border border-slate-200 dark:border-slate-800 p-4 hover:border-primary transition-colors text-right sm:col-start-2",
+                                      span { class: "block text-xs text-slate-500 dark:text-slate-400", "{t(lang, \"docs.next\")} →" }
+                                      span { class: "block mt-1 font-medium text-slate-900 dark:text-white", "{link.title}" }
+                                  }
+                              }
+                          }
+                      }
+                      // 跨模块组合（标注层 + 讨论面板）由 app 层注入。
+                      {footer.clone()}
+                  }
+                  aside { class: "hidden xl:block w-56 shrink-0",
+                      div { class: "sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto",
+                          widgets::OnThisPage {
+                              entries: widgets::heading_outline(&resp.content),
+                              title: t(lang, "toc.title"),
                           }
                       }
                   }
               }
-              // 跨模块组合（标注层 + 讨论面板）由 app 层注入。
-              {footer.clone()}
           },
           Some(Ok(None)) => rsx! { widgets::NotFound { message: t(lang, "docs.not_found") } },
           Some(Err(_)) => rsx! { widgets::LoadFailed { message: t(lang, "common.load_failed") } },

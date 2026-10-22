@@ -7,7 +7,9 @@
 //!    保持与原版一致，welcome 示例和现有快照仍可像素级回归。
 
 use dioxus::prelude::*;
-use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{
+  BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
+};
 use pulldown_latex::{push_mathml, Parser as LatexParser, Storage};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -160,18 +162,9 @@ pub fn Markdown(props: MarkdownProps) -> Element {
   };
   let (metadata, body) = parse_mdx(&raw_content);
 
-  let mut options = Options::empty();
-  options.insert(Options::ENABLE_TABLES);
-  options.insert(Options::ENABLE_FOOTNOTES);
-  options.insert(Options::ENABLE_STRIKETHROUGH);
-  options.insert(Options::ENABLE_TASKLISTS);
-  options.insert(Options::ENABLE_MATH);
-  options.insert(Options::ENABLE_GFM);
-  options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
-
   // 预处理：将 :::type 语法转换为 GFM alert 语法
   let body = convert_admonitions(&body);
-  let mut events: Vec<Event> = Parser::new_ext(&body, options).collect();
+  let mut events = parse_events(&body);
   if !props.untrusted {
     assign_heading_ids(&mut events);
   }
@@ -198,6 +191,55 @@ pub fn Markdown(props: MarkdownProps) -> Element {
       // SPA 导航后 Prism/Mermaid 失效。改由 main.rs 里的 MutationObserver
       // 自动捕获新插入的 code/mermaid 块，覆盖首屏 + SPA 导航两个场景。
   }
+}
+
+fn parse_events(body: &str) -> Vec<Event<'_>> {
+  let mut options = Options::empty();
+  options.insert(Options::ENABLE_TABLES);
+  options.insert(Options::ENABLE_FOOTNOTES);
+  options.insert(Options::ENABLE_STRIKETHROUGH);
+  options.insert(Options::ENABLE_TASKLISTS);
+  options.insert(Options::ENABLE_MATH);
+  options.insert(Options::ENABLE_GFM);
+  options.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+  Parser::new_ext(body, options).collect()
+}
+
+/// 页内目录的一项：`level` 是 2 或 3，`id` 与 [`Markdown`] 渲染出的标题 id 相同。
+#[derive(Clone, Debug, PartialEq)]
+pub struct TocEntry {
+  pub level: u8,
+  pub id: String,
+  pub text: String,
+}
+
+/// 站点作者内容的 h2 / h3 标题（T2）。走与 [`Markdown`] 相同的解析和 id 分配，
+/// 服务端与客户端由同一份正文算出同样的结果。
+pub fn heading_outline(content: &str) -> Vec<TocEntry> {
+  let (_, body) = parse_mdx(content);
+  let body = convert_admonitions(&body);
+  let mut events = parse_events(&body);
+  assign_heading_ids(&mut events);
+  let mut entries = Vec::new();
+  let mut current: Option<TocEntry> = None;
+  for event in events {
+    match event {
+      Event::Start(Tag::Heading { level, id: Some(id), .. })
+        if matches!(level, HeadingLevel::H2 | HeadingLevel::H3) =>
+      {
+        let level = if level == HeadingLevel::H2 { 2 } else { 3 };
+        current = Some(TocEntry { level, id: id.to_string(), text: String::new() });
+      }
+      Event::Text(t) | Event::Code(t) => {
+        if let Some(entry) = current.as_mut() {
+          entry.text.push_str(&t);
+        }
+      }
+      Event::End(TagEnd::Heading(_)) => entries.extend(current.take()),
+      _ => {}
+    }
+  }
+  entries
 }
 
 /// M1：站点内容的标题 id 与 Docusaurus 一致：显式 `{#id}` 优先，否则按 github-slugger
@@ -891,6 +933,28 @@ mod tests {
       "{html}"
     );
     assert!(!html.contains("{#"), "{html}");
+  }
+
+  /// T2：页内目录只取 h2 / h3，文字含行内代码，每个 id 都能在渲染结果里找到。
+  #[test]
+  fn heading_outline_matches_rendered_ids() {
+    let md = "---\ntitle: T\n---\n# 标题\n\n## 引言\n\n:::tip\n提示\n:::\n\n### `Vec<T>` 用法\n\n#### 太深\n\n## 引言\n\n## 自定义 {#custom-id}";
+    let outline = heading_outline(md);
+    let got: Vec<(u8, &str, &str)> =
+      outline.iter().map(|e| (e.level, e.id.as_str(), e.text.as_str())).collect();
+    assert_eq!(
+      got,
+      vec![
+        (2, "引言", "引言"),
+        (3, "vect-用法", "Vec<T> 用法"),
+        (2, "引言-1", "引言"),
+        (2, "custom-id", "自定义"),
+      ]
+    );
+    let html = render_markdown(md, false);
+    for entry in &outline {
+      assert!(html.contains(&format!("id=\"{}\"", entry.id)), "缺少 id={}：{html}", entry.id);
+    }
   }
 
   /// M2：表格单元格里的 `<br/>` 是换行，不是文字。

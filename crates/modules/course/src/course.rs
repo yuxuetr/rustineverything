@@ -655,7 +655,21 @@ fn LessonContent(
   chapter_slug: String,
   lesson_slug: String,
 ) -> Element {
-  let has_sidebar = !lesson.code.is_empty() || !lesson.downloads.is_empty();
+  let has_resources = !lesson.code.is_empty() || !lesson.downloads.is_empty();
+  let toc = lesson.doc.as_ref().map(|d| widgets::heading_outline(&d.markdown)).unwrap_or_default();
+  let has_toc = toc.len() >= widgets::toc::MIN_ENTRIES;
+  // 右栏：有代码 / 下载时 lg 起就有（目录在 xl 起显示在它上面）；只有目录时 xl 起才有。
+  let (grid_class, main_class, aside_class) = if has_resources {
+    ("grid-cols-1 lg:grid-cols-3", "lg:col-span-2", "space-y-6 lg:sticky lg:top-20 self-start")
+  } else if has_toc {
+    (
+      "grid-cols-1 xl:grid-cols-4",
+      "xl:col-span-3",
+      "hidden xl:block xl:sticky xl:top-20 self-start",
+    )
+  } else {
+    ("grid-cols-1", "", "")
+  };
   let resource_path = format!("{}/{}/{}", course_slug, chapter_slug, lesson_slug);
   // M4c：锁定课节只渲染头部 + Paywall，不渲染正文/资源/标注。
   if lesson.locked {
@@ -690,11 +704,8 @@ fn LessonContent(
       }
 
       // 布局容器（主区 + 右侧栏）
-      div { class: format_args!(
-          "grid gap-8 {}",
-          if has_sidebar { "grid-cols-1 lg:grid-cols-3" } else { "grid-cols-1" }
-      ),
-          div { class: format_args!("min-w-0 {}", if has_sidebar { "lg:col-span-2" } else { "" }),
+      div { class: "grid gap-8 {grid_class}",
+          div { class: "min-w-0 {main_class}",
               {render_main_area(&lesson, &blog_id)}
               CompleteLessonButton {
                   course_slug: course_slug.clone(),
@@ -702,8 +713,13 @@ fn LessonContent(
                   lesson_slug: lesson_slug.clone(),
               }
           }
-          if has_sidebar {
-              aside { class: "space-y-6 lg:sticky lg:top-20 self-start",
+          if has_resources || has_toc {
+              aside { class: aside_class,
+                  if has_toc {
+                      div { class: "hidden xl:block",
+                          widgets::OnThisPage { entries: toc, title: t(current_lang(), "toc.title") }
+                      }
+                  }
                   if !lesson.code.is_empty() {
                       CodeTabs { files: lesson.code.clone() }
                   }

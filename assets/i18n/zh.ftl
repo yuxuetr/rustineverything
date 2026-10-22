@@ -247,6 +247,7 @@ docs.start_reading = 开始阅读
 docs.not_found = 文档不存在
 docs.prev = 上一篇
 docs.next = 下一篇
+toc.title = 本页目录
 docs.based_on = 基于
 course.title = Rust 课程
 course.subtitle = 系统化学习路径，从基础到全栈实战

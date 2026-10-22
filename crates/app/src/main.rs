@@ -452,6 +452,7 @@ fn HeadAssets() -> Element {
         math {{ font-size: 1.1em; }}
         .math-display math {{ font-size: 1.4em; }}
         .prose code::before, .prose code::after {{ content: none !important; }}
+        .prose :where(h2, h3)[id] {{ scroll-margin-top: 5rem; }}
       " }
 
       // pulldown-latex math fonts & styles

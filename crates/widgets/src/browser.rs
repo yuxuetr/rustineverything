@@ -316,6 +316,56 @@ impl Drop for KeyListener {
   }
 }
 
+/// 窗口 `scroll` 监听，被 drop 时移除。
+pub struct ScrollListener {
+  #[cfg(target_arch = "wasm32")]
+  closure: Closure<dyn FnMut()>,
+}
+
+/// 注册窗口 `scroll` 监听。
+pub fn on_window_scroll(handler: impl FnMut() + 'static) -> ScrollListener {
+  #[cfg(target_arch = "wasm32")]
+  {
+    let closure = Closure::<dyn FnMut()>::new(handler);
+    if let Some(w) = web_sys::window() {
+      let _ = w.add_event_listener_with_callback("scroll", closure.as_ref().unchecked_ref());
+    }
+    ScrollListener { closure }
+  }
+  #[cfg(not(target_arch = "wasm32"))]
+  {
+    let _ = handler;
+    ScrollListener {}
+  }
+}
+
+impl Drop for ScrollListener {
+  fn drop(&mut self) {
+    #[cfg(target_arch = "wasm32")]
+    if let Some(w) = web_sys::window() {
+      let _ =
+        w.remove_event_listener_with_callback("scroll", self.closure.as_ref().unchecked_ref());
+    }
+  }
+}
+
+/// `ids` 里最后一个顶边已滚过视口顶部 `offset` 像素的元素；都没滚过时取第一个。
+pub fn current_heading(ids: &[String], offset: f64) -> Option<String> {
+  #[cfg(target_arch = "wasm32")]
+  {
+    let doc = document()?;
+    let passed = ids.iter().rev().find(|id| {
+      doc.get_element_by_id(id).is_some_and(|el| el.get_bounding_client_rect().top() <= offset)
+    });
+    passed.or(ids.first()).cloned()
+  }
+  #[cfg(not(target_arch = "wasm32"))]
+  {
+    let _ = (ids, offset);
+    None
+  }
+}
+
 /// 页面标题。替代 `document::Title`：它在客户端经 eval 设置标题，严格 CSP 下会
 /// 崩溃。服务端仍交给 Dioxus 文档输出 `<title>`（不经 eval），客户端在
 /// effect 里用 web-sys 设置。与 `document::Title` 一样不渲染任何节点。
