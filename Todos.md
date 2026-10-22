@@ -710,3 +710,11 @@
 - [x] S6 — 有代码块 / mermaid 图的页面 hydration 报错（`node.setAttribute is not a function` 等），之后整页事件失效：引导脚本在 hydration 之前改写了 Dioxus 管着的块内节点（Prism 换掉 code 的子节点；S4 删注释、mermaid 换成 svg）。块内容改用 `dangerous_inner_html`，脚本按源码比较判断是否已处理
   - 完成（a6bdcc0）：SSR 里 mermaid 块内不再有 `<!--node-id-->`；tokio 文档与博客页 hydration 无报错，SPA 换页后新内容的图和高亮都会处理。S4 的删注释逻辑随之去掉
 - 阶段 S 完成：S1–S6
+
+### 阶段 T — 阅读页布局：左侧跨页导航，右侧页内目录（2026-10-22）
+设计见 `docs/READING_LAYOUT_SPEC.md`。左侧只放按顺序阅读的跨页导航（文档树、课程大纲），右侧放页内目录（文档、博客、课节都有）；手机上左侧导航收进抽屉。组件放本仓库 `crates/widgets`，dioxus-ui 只用已有的 `Tree` 与 `Sidebar`，不改它。
+- [ ] T0 — dioxus-shadcn 0.6.3 → 0.6.6（为了 `Tree`；上游 0.6.4–0.6.6 不改既有 API）。Tailwind 的 `@source` 由 `tw-sources.mjs` 生成，重新 `npm run build`
+- [ ] T1 — 课节页：站内链接改 `Link`、`PageMeta` 改 `PageMetaTags`（同 S5，消除整页刷新）；左侧课程大纲（`Tree`：章 → 节，当前节选中，✅ / 🔒）；正文下方上一节 / 下一节。实测 Tree 用作导航时点击、Enter、后退不产生重复历史记录，不行则退回纯链接列表
+- [ ] T2 — `widgets::heading_outline` + `OnThisPage`：从正文取 h2/h3（id 与正文一致），≥3 项时在 `xl` 以上显示在右侧，滚动高亮当前标题；用于文档、博客、课节。标题加 `scroll-margin-top`
+- [ ] T3 — 手机：文档与课节的左侧导航用 `Sidebar { off_canvas }` 收进抽屉，正文上方加「目录」按钮，点链接后关闭；文档树改用 `Tree`，删掉 `TreeSection`。路由驱动的树（选中 / 祖先展开 / 选中即导航）放 `widgets`，文档和课程共用
+- [ ] T4 — cases、forum、about（及 board 若有）把 `PageMeta` 嵌在 SuspenseBoundary 里：逐页在浏览器查 hydration 报错与 SPA 换页，有问题的改用 `PageMetaTags` 或把 `PageMeta` 移出 boundary
