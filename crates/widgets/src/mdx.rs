@@ -735,7 +735,9 @@ fn render_mermaid_block(code_text: String, block_id: Option<String>) -> Element 
           id: if has_bid { "{bid}" },
           "data-block-id": if has_bid { "{bid}" },
           class: "not-prose my-6 flex justify-center overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6",
-          pre { class: "mermaid", "{code_text}" }
+          // 内容走 dangerous_inner_html：mermaid / Prism 会改写块内节点，Dioxus 不能跟踪
+          // 这些子节点，否则 hydration 找不到自己的标记而崩掉（之后整页的事件都失效）。
+          pre { class: "mermaid", dangerous_inner_html: escape_markup(&code_text) }
       }
   }
 }
@@ -773,7 +775,8 @@ fn CodeBlock(lang: String, code_text: String, block_id: Option<String>) -> Eleme
               if copied() { "Copied!" } else { "Copy" }
           }
           pre { class: "rounded-xl p-4 bg-slate-900 overflow-x-auto shadow-inner",
-              code { class: "language-{lang} text-sm text-slate-200", "{code_text}" }
+              // 同 render_mermaid_block：Prism 会改写 code 的子节点。
+              code { class: "language-{lang} text-sm text-slate-200", dangerous_inner_html: escape_markup(&code_text) }
           }
       }
   }

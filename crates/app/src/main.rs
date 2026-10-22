@@ -35,33 +35,41 @@ const PRISM_CSS: Asset = asset!("/assets/css/prism-tomorrow.min.css");
 /// - prism 是 defer 脚本，首次 sweep 等到 DOMContentLoaded（此时 defer 脚本
 ///   已执行完）；mermaid 不在 head 里，首次见到 `.mermaid` 块时才注入
 ///   `<script>`，加载完再 sweep（G3，mermaid 3MB，多数页面用不到）。
-/// - 用 `Prism.highlightAllUnder` + 自加 `data-prism-done` 标记，防止重复处理。
-/// - mermaid 用其自身的 `data-processed` 已有标记（mermaid 内部维护）。
+/// - 代码块 / mermaid 块的内容是 `dangerous_inner_html`（见 widgets mdx.rs），
+///   Dioxus 不跟踪其子节点，这里改写才不会弄坏 hydration。
+/// - 是否处理过按源码比较（WeakMap），SPA 导航复用节点换内容时会重新处理。
 const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
 (function(){
+  // 节点 → 上次按哪份源码处理过。块的内容由 Dioxus 以 innerHTML 设置，SPA 导航可能
+  // 复用同一节点换内容，所以按源码比较而不是打一次性标记。
+  var seen = window.__rie_seen || (window.__rie_seen = new WeakMap());
   function tryHighlight(root){
     if(!window.Prism) return;
-    var nodes = (root || document).querySelectorAll('code[class*="language-"]:not([data-prism-done])');
+    var nodes = (root || document).querySelectorAll('code[class*="language-"]');
     for(var i = 0; i < nodes.length; i++){
+      var src = nodes[i].textContent;
+      if(seen.get(nodes[i]) === src) continue;
       try { window.Prism.highlightElement(nodes[i]); } catch(e) {}
-      nodes[i].setAttribute('data-prism-done', '1');
+      seen.set(nodes[i], nodes[i].textContent);
     }
   }
   function tryMermaid(root){
-    var hits = (root || document).querySelectorAll('.mermaid:not([data-processed])');
+    var all = (root || document).querySelectorAll('pre.mermaid');
+    var hits = [];
+    for(var i = 0; i < all.length; i++){
+      if(all[i].querySelector('svg')) continue;
+      var src = all[i].textContent;
+      // 渲染是异步的，进行中的节点还没有 svg，别重复提交
+      if(seen.get(all[i]) === src) continue;
+      seen.set(all[i], src);
+      all[i].removeAttribute('data-processed');
+      hits.push(all[i]);
+    }
     if(hits.length === 0) return;
     if(!window.mermaid || typeof window.mermaid.run !== 'function'){
+      for(var j = 0; j < hits.length; j++) seen.delete(hits[j]);
       loadMermaid();
       return;
-    }
-    // SSR 在块里留了 hydration 标记 `<!--node-id…-->`，mermaid 读 innerHTML，
-    // 会把注释当成图源码而整张图报 Syntax error。mermaid 反正要整体替换节点内容，先删掉注释。
-    for(var i = 0; i < hits.length; i++){
-      for(var c = hits[i].firstChild; c; ){
-        var next = c.nextSibling;
-        if(c.nodeType === 8) hits[i].removeChild(c);
-        c = next;
-      }
     }
     try { window.mermaid.run({nodes: hits}); } catch(e) {}
   }
