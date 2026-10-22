@@ -54,6 +54,15 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
       loadMermaid();
       return;
     }
+    // SSR 在块里留了 hydration 标记 `<!--node-id…-->`，mermaid 读 innerHTML，
+    // 会把注释当成图源码而整张图报 Syntax error。mermaid 反正要整体替换节点内容，先删掉注释。
+    for(var i = 0; i < hits.length; i++){
+      for(var c = hits[i].firstChild; c; ){
+        var next = c.nextSibling;
+        if(c.nodeType === 8) hits[i].removeChild(c);
+        c = next;
+      }
+    }
     try { window.mermaid.run({nodes: hits}); } catch(e) {}
   }
   // 按需加载 mermaid：只请求一次，加载完再扫一遍。
