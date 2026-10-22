@@ -717,6 +717,7 @@
   - 完成（2290a91）：只改版本号与 Cargo.lock，无代码改动；fmt / clippy / 全部测试 / check_tiers 通过，`tailwind-sources.css` 已指向 0.6.6
 - [x] T1 — 课节页：站内链接改 `Link`、`PageMeta` 改 `PageMetaTags`（同 S5，消除整页刷新）；左侧课程大纲（`Tree`：章 → 节，当前节选中，✅ / 🔒）；正文下方上一节 / 下一节。实测 Tree 用作导航时点击、Enter、后退不产生重复历史记录，不行则退回纯链接列表
   - 完成（40b3979）：大纲用 `Tree`，当前节选中、所在章展开、换节进入另一章时自动展开；上一节 / 下一节由 `get_lesson` 服务端算（跨章，单测覆盖并改坏验红）。课程详情页的 PageMeta 与站内链接一并修了。顺带修了 SPA 换节后「已完成」按钮与标注层不刷新的问题（文档页 S5 后标注层也有这个问题）。浏览器实测（示例课 rust-basics 临时放进内容仓库）：大纲链接、上一节、键盘 ↑ + Enter、详情页课节行、返回课程目录都不刷新页面；连续后退顺序正确，没有重复历史记录；无 console 报错
-- [ ] T2 — `widgets::heading_outline` + `OnThisPage`：从正文取 h2/h3（id 与正文一致），≥3 项时在 `xl` 以上显示在右侧，滚动高亮当前标题；用于文档、博客、课节。标题加 `scroll-margin-top`
+- [x] T2 — `widgets::heading_outline` + `OnThisPage`：从正文取 h2/h3（id 与正文一致），≥3 项时在 `xl` 以上显示在右侧，滚动高亮当前标题；用于文档、博客、课节。标题加 `scroll-margin-top`
+  - 完成（2393e9e）：`heading_outline` 与 `Markdown` 共用解析和 id 分配，单测核对每个 id 都在渲染结果里（去掉 id 分配后变红）。滚动高亮用 web-sys 的 scroll 监听（CSP 不允许 `document::eval`），高亮由 signal 渲染。浏览器实测：滚动时高亮跟随，点目录跳到标题且不被顶栏挡住（标题距顶 80px），不刷新页面；SPA 换页后目录与高亮换成新页的；1100px 宽度下目录隐藏、无横向滚动。文档、博客（SSR 检查 3 篇）、课节（临时加标题验证 `xl:grid-cols-4` 版式）都有
 - [ ] T3 — 手机：文档与课节的左侧导航用 `Sidebar { off_canvas }` 收进抽屉，正文上方加「目录」按钮，点链接后关闭；文档树改用 `Tree`，删掉 `TreeSection`。路由驱动的树（选中 / 祖先展开 / 选中即导航）放 `widgets`，文档和课程共用
 - [ ] T4 — cases、forum、about（及 board 若有）把 `PageMeta` 嵌在 SuspenseBoundary 里：逐页在浏览器查 hydration 报错与 SPA 换页，有问题的改用 `PageMetaTags` 或把 `PageMeta` 移出 boundary
