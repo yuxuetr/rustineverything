@@ -719,5 +719,6 @@
   - 完成（40b3979）：大纲用 `Tree`，当前节选中、所在章展开、换节进入另一章时自动展开；上一节 / 下一节由 `get_lesson` 服务端算（跨章，单测覆盖并改坏验红）。课程详情页的 PageMeta 与站内链接一并修了。顺带修了 SPA 换节后「已完成」按钮与标注层不刷新的问题（文档页 S5 后标注层也有这个问题）。浏览器实测（示例课 rust-basics 临时放进内容仓库）：大纲链接、上一节、键盘 ↑ + Enter、详情页课节行、返回课程目录都不刷新页面；连续后退顺序正确，没有重复历史记录；无 console 报错
 - [x] T2 — `widgets::heading_outline` + `OnThisPage`：从正文取 h2/h3（id 与正文一致），≥3 项时在 `xl` 以上显示在右侧，滚动高亮当前标题；用于文档、博客、课节。标题加 `scroll-margin-top`
   - 完成（2393e9e）：`heading_outline` 与 `Markdown` 共用解析和 id 分配，单测核对每个 id 都在渲染结果里（去掉 id 分配后变红）。滚动高亮用 web-sys 的 scroll 监听（CSP 不允许 `document::eval`），高亮由 signal 渲染。浏览器实测：滚动时高亮跟随，点目录跳到标题且不被顶栏挡住（标题距顶 80px），不刷新页面；SPA 换页后目录与高亮换成新页的；1100px 宽度下目录隐藏、无横向滚动。文档、博客（SSR 检查 3 篇）、课节（临时加标题验证 `xl:grid-cols-4` 版式）都有
-- [ ] T3 — 手机：文档与课节的左侧导航用 `Sidebar { off_canvas }` 收进抽屉，正文上方加「目录」按钮，点链接后关闭；文档树改用 `Tree`，删掉 `TreeSection`。路由驱动的树（选中 / 祖先展开 / 选中即导航）放 `widgets`，文档和课程共用
+- [x] T3 — 手机：文档与课节的左侧导航用 `Sidebar { off_canvas }` 收进抽屉，正文上方加「目录」按钮，点链接后关闭；文档树改用 `Tree`，删掉 `TreeSection`。路由驱动的树（选中 / 祖先展开 / 选中即导航）放 `widgets`，文档和课程共用
+  - 完成（e3e7cfe）：`widgets::ReadingLayout`（off-canvas `Sidebar`）与 `widgets::NavTree`（路由驱动的 `Tree`）由文档页、课节页共用；`TreeSection` 删除。断点用组件库的 768px：平板起就有侧栏（原来文档树 1024px 才显示）。浏览器实测：390px 打开抽屉、Esc 关闭、点链接后换页且抽屉关上、不刷新页面；关掉 JS 的 390px 页面侧栏隐藏（hydration 前不挤正文）；800px 侧栏常驻、按钮隐藏；桌面点分支行导航并展开，连续后退无重复历史。顺带修了长行内代码在手机上撑出横向滚动（`break-words`），文档 / 课节 / 博客 5 页 390px 下 scrollWidth 都是 390。遗留：标注开关按钮（z-[9999]）与顶栏浮在抽屉遮罩之上
 - [ ] T4 — cases、forum、about（及 board 若有）把 `PageMeta` 嵌在 SuspenseBoundary 里：逐页在浏览器查 hydration 报错与 SPA 换页，有问题的改用 `PageMetaTags` 或把 `PageMeta` 移出 boundary
