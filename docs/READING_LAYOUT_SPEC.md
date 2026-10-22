@@ -18,7 +18,7 @@
 
 - **左侧 = 跨页导航**：「我在这本书 / 这门课的哪里」。只有按顺序阅读的内容才有：文档、课程。
 - **右侧 = 页内目录**：「我在这一页的哪里」。正文有 3 个及以上 `##`/`###` 标题时才显示，`xl`（≥1280px）以上显示。
-- **手机**：左侧导航收进抽屉，由正文上方的「目录」按钮打开；页内目录在手机上不显示（正文本身就是一列）。
+- **手机**：宽度 <768px（`Sidebar` 的 `SIDEBAR_MOBILE_QUERY`）时左侧导航收进抽屉，由正文上方的按钮打开，换页后自动关上；≥768px 是 sticky 侧栏（原来文档树要到 1024px 才显示，平板上没有导航）。页内目录在 xl 以下不显示。
 
 | 页面 | 左 | 右 |
 |---|---|---|
@@ -49,7 +49,7 @@
 ## 5. 风险与验证
 
 - **Tree 用于站点导航**：WAI-ARIA APG 有 navigation treeview 示例，可用；但点击行时 `Link` 与行的 onclick 都会触发。T1 先在课程大纲上实测：点击、Enter、后退各一次，历史记录里不应有重复项。若行为不对，退回到纯 `nav > ul > li > Link` 列表，并把问题记进 DIOXUS_UI_FEEDBACK。
-- **off-canvas 侧栏在手机上的 SSR**：`Sidebar` 在 hydration 前按桌面渲染（上游测试写明 "renders as the desktop aside until the page answers"），手机上会先看到一个挤在正文旁的侧栏。用只在非 modal 状态生效的 `max-md:hidden` 类遮住，实测手机宽度首屏不出现侧栏。
+- **off-canvas 侧栏在手机上的 SSR**：`Sidebar` 在 hydration 前按桌面渲染（上游测试写明 "renders as the desktop aside until the page answers"），手机上会先看到一个挤在正文旁的侧栏。用 `max-md:data-[mobile=false]:hidden` 遮住（抽屉形态下 `data-mobile` 为 true，不受影响），关掉 JS 的 390px 页面实测侧栏不显示、无横向滚动。
 - **每项都要在浏览器里验**：SPA 换页不刷新（window 标记保留）、无 hydration 报错、SSR HTML 里有导航链接、手机宽度无横向滚动。
 
 ## 6. 任务

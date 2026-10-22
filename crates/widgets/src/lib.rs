@@ -3,6 +3,7 @@
 //! ## 内容
 //! - [`mdx`]：MDX 渲染管道（GFM / 数学 / Mermaid / 代码 + Copy / 标注 block-id）。
 //! - [`registry`]：MDX 嵌入组件注册表（Phase 2.1 引入 / Phase 2.2 完整接入）。
+//! - [`reading`]：阅读页外壳（侧栏 / 手机抽屉）与路由驱动的导航树。
 //! - [`toc`]：页内目录（标题列表 + 滚动高亮）。
 //! - [`browser`]：浏览器操作的 web-sys 实现与 [`browser::PageTitle`]（替代 `document::eval` / `document::Title`）。
 //!
@@ -23,6 +24,7 @@ pub mod browser;
 pub mod components;
 pub mod feed;
 pub mod mdx;
+pub mod reading;
 pub mod registry;
 pub mod sanitize;
 pub mod seo;
@@ -35,6 +37,7 @@ pub use feed::{build_atom_feed, build_robots_txt, build_sitemap_xml, ContentEntr
 pub use mdx::{
   heading_outline, normalize_date, parse_mdx, Markdown, MarkdownProps, PostMetadata, TocEntry,
 };
+pub use reading::{NavTree, ReadingLayout};
 pub use registry::{
   clear_for_tests, list_registered, register, registered_count, ComponentRegistry, MdxComponent,
 };

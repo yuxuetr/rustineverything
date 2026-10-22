@@ -8,7 +8,7 @@ use dioxus::prelude::*;
 use dioxus_shadcn::{
   button_class, card_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Collapsible,
   CollapsibleContent, CollapsibleTrigger, Progress, Spinner, SpinnerSize, Tabs, TabsContent,
-  TabsList, TabsTrigger, Tree, TreeItem, UiDensity,
+  TabsList, TabsTrigger, TreeItem, UiDensity,
 };
 use widgets::Markdown;
 
@@ -472,34 +472,35 @@ fn LessonRow(
 
 /// 课节页：左侧课程大纲 + 正文，两个并列的 SuspenseBoundary（T1，同文档页 S5）：
 /// 换节只重取正文，大纲留在原处。课程结构与课节内容都由 use_server_future 服务端预取。
+/// 手机上大纲收进抽屉（`ReadingLayout`，T3）。
 #[component]
 pub fn LessonPage(slug: String, chapter: String, lesson: String) -> Element {
   let lang = current_lang();
+  let active = format!("/course/{slug}/{chapter}/{lesson}");
   rsx! {
       section { class: "min-h-screen bg-[var(--color-bg)]",
-          div { class: "max-w-7xl mx-auto flex",
-              // 左侧课程大纲（仅桌面端显示）
-              aside { class: "hidden lg:block shrink-0 w-72 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto border-r border-slate-200 dark:border-slate-800 pt-8 pb-12 px-4",
+          widgets::ReadingLayout {
+              path: active.clone(),
+              nav_label: t(lang, "course.outline"),
+              nav: rsx! {
                   SuspenseBoundary { fallback: |_| VNode::empty(),
-                      CourseOutline { slug: slug.clone(), active: format!("{chapter}/{lesson}") }
+                      CourseOutline { slug: slug.clone(), chapter: chapter.clone(), active: active.clone() }
                   }
+              },
+              Link { to: format!("/course/{slug}"),
+                  class: "inline-flex items-center gap-1 text-sm text-primary hover:underline mb-6",
+                  "← {t(lang, \"course.back_outline\")}"
               }
-              div { class: "flex-1 min-w-0 px-4 sm:px-6 lg:px-12 py-8",
-                  Link { to: format!("/course/{slug}"),
-                      class: "inline-flex items-center gap-1 text-sm text-primary hover:underline mb-6",
-                      "← {t(lang, \"course.back_outline\")}"
-                  }
-                  SuspenseBoundary {
-                      fallback: |_| rsx! {
-                          div { class: "flex items-center justify-center py-20",
-                              Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
-                          }
-                      },
-                      LessonLoaded {
-                          slug: slug.clone(),
-                          chapter: chapter.clone(),
-                          lesson: lesson.clone(),
+              SuspenseBoundary {
+                  fallback: |_| rsx! {
+                      div { class: "flex items-center justify-center py-20",
+                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
                       }
+                  },
+                  LessonLoaded {
+                      slug: slug.clone(),
+                      chapter: chapter.clone(),
+                      lesson: lesson.clone(),
                   }
               }
           }
@@ -507,57 +508,38 @@ pub fn LessonPage(slug: String, chapter: String, lesson: String) -> Element {
   }
 }
 
-/// 课节页左侧大纲：章是分支、节是叶子，当前节选中、所在章展开。
-/// 进度（✅）是每用户数据，用 use_resource，不进 SSR。
+/// 课节页左侧大纲：章是分组（值 `chapter:<slug>`）、节是页面（值为站内路径），当前节选中、
+/// 所在章展开。进度（✅）是每用户数据，用 use_resource，不进 SSR。
 #[component]
-fn CourseOutline(slug: String, active: String) -> Element {
+fn CourseOutline(slug: String, chapter: String, active: String) -> Element {
   let course_res =
     use_server_future(use_reactive!(|slug| async move { get_course(slug).await.ok().flatten() }))?;
   let progress_res =
     use_resource(use_reactive!(|slug| async move { get_progress(slug).await.unwrap_or_default() }));
   let progress = progress_res.read().clone().unwrap_or_default();
 
-  // 展开状态由这里持有：换节进入另一章时把那一章加进去，用户手动展开 / 折叠的保留。
-  let active_chapter = active.split('/').next().unwrap_or_default().to_string();
-  let mut expanded = use_signal(|| vec![active_chapter.clone()]);
-  use_effect(use_reactive!(|active_chapter| {
-    if !expanded.peek().contains(&active_chapter) {
-      expanded.write().push(active_chapter);
-    }
-  }));
-
   let Some(Some(course)) = course_res() else {
     return VNode::empty();
   };
   let paid = course.is_paid();
-  let course_slug = course.slug.clone();
   rsx! {
       nav { "aria-label": "{course.title}",
           Link { to: format!("/course/{}", course.slug),
               class: "block px-2 mb-4 text-sm font-semibold text-slate-900 dark:text-white hover:text-primary",
               "{course.title}"
           }
-          Tree {
-              "aria-label": "{course.title}",
-              expanded: Some(expanded()),
-              on_expanded_change: move |v| expanded.set(v),
-              selected: Some(active.clone()),
-              // 键盘 Enter / 点行的空白处只会「选中」，这里把选中变成导航。点的是行里的 Link 时
-              // 路由已经切过去，与当前地址相同就不再 push，免得历史记录里多一条。
-              on_selected_change: move |path: String| {
-                  let target = format!("/course/{course_slug}/{path}");
-                  if path.contains('/') && router().full_route_string() != target {
-                      navigator().push(target);
-                  }
-              },
+          widgets::NavTree {
+              label: course.title.clone(),
+              active,
+              expand: vec![format!("chapter:{chapter}")],
               for ch in course.chapters.iter() {
                   TreeItem {
-                      value: ch.slug.clone(),
+                      value: format!("chapter:{}", ch.slug),
                       class: "text-xs font-semibold text-slate-500 dark:text-slate-400",
                       group: rsx! {
                           for l in ch.lessons.iter() {
                               TreeItem {
-                                  value: format!("{}/{}", ch.slug, l.slug),
+                                  value: format!("/course/{}/{}/{}", course.slug, ch.slug, l.slug),
                                   class: "[[aria-selected=true]>&]:text-primary",
                                   Link { to: format!("/course/{}/{}/{}", course.slug, ch.slug, l.slug),
                                       class: "flex flex-1 min-w-0 items-center gap-2 text-sm",

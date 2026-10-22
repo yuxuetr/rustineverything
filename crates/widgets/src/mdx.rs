@@ -372,7 +372,7 @@ fn render_stream<'a>(
             Event::End(_) => break,
             Event::Text(text) => nodes.push(rsx! { "{text}" }),
             Event::Code(code) => nodes.push(rsx! {
-                code { class: "bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono text-pink-600 dark:text-pink-400", "{code}" }
+                code { class: "bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sm font-mono break-words text-pink-600 dark:text-pink-400", "{code}" }
             }),
             Event::InlineMath(math) => {
                 let mathml = latex_to_mathml_string(&math, false);

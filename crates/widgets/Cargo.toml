@@ -19,6 +19,8 @@ chrono = { workspace = true, features = ["serde"] }
 pulldown-cmark = { version = "0.13.0", features = ["html"] }
 pulldown-latex = "0.7.1"
 tracing = { workspace = true }
+# 阅读页外壳与导航树（reading.rs）
+dioxus-shadcn = { workspace = true, features = ["sidebar", "tree"] }
 
 # browser.rs：浏览器操作走 web-sys 直接调用，不经 document::eval（站点 CSP 无 unsafe-eval）
 [target.'cfg(target_arch = "wasm32")'.dependencies]
