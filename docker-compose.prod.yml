@@ -6,7 +6,8 @@
 # 与基础文件的差别：
 # - app 用 ghcr 镜像（accounts 档），不 build；RIE_TAG 选版本，默认 latest
 # - postgres 不对宿主开端口（cu 的 5432 已被别的服务占用，也不该对外）
-# - 加 gateway：host 网络，监听宿主 80 / 443，TLS 证书来自 certbot，反代到 127.0.0.1:8080
+# - 加 gateway：host 网络，监听宿主 80 / 443，反代到 127.0.0.1:8080。证书在宿主 /data/rie/certs
+#   （Dynadot 签发，scripts/cert_refresh.sh 每天取回续期后的证书并重启网关）
 # - 内存上限：cu 上还跑着别的服务，单个容器失控不能拖垮整机
 # - CONTENT_HOST_DIR 必填：生产不能退回框架自带的示例内容
 
@@ -36,9 +37,8 @@ services:
         max-size: "10m"
         max-file: "5"
     environment:
-      TLS_CERT_PATH: /etc/letsencrypt/live/rustineverything.app/fullchain.pem
-      TLS_KEY_PATH: /etc/letsencrypt/live/rustineverything.app/privkey.pem
+      TLS_CERT_PATH: /certs/fullchain.pem
+      TLS_KEY_PATH: /certs/privkey.pem
       RUST_LOG: ${RUST_LOG:-info}
     volumes:
-      # live/ 下是指向 archive/ 的软链，整个目录挂进去
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ${CERT_HOST_DIR:-/data/rie/certs}:/certs:ro

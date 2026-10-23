@@ -1,0 +1,17 @@
+# 阶段 V：每天查线上证书剩余天数，少于 20 天就失败（GitHub 给仓库所有者发邮件）。
+# 不需要任何密钥。上线前只能手动触发（站点还连不上会直接失败），上线后加上 schedule。
+
+name: Cert check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: scripts/check_cert_expiry.sh rustineverything.app 20
