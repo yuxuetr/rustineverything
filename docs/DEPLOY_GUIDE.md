@@ -342,14 +342,7 @@ app 已在 server fn 内强制 5 MB 限制（Phase 1A.4）。Pingora 默认对 b
 CSP 只有应用这一份定义（SEC-10）：gateway 若另设一份，会覆盖掉应用 CSP 里 hydration 必需的
 `'wasm-unsafe-eval'` 与内联启动脚本许可，页面整体失去交互。
 
-per-IP token-bucket 限流（基于 [`governor`](https://docs.rs/governor)）：
-
-| 路径 | 配额 / IP / 分钟 | env 覆盖 |
-| --- | --- | --- |
-| 写端点（`/api/auth/` `/api/upload` `/api/comments/` `/api/topics/` `/api/admin/` `/api/forum/`） | 10 | `RATE_LIMIT_WRITE_PER_MIN` |
-| 其他读端点 / 静态资源 | 60 | `RATE_LIMIT_READ_PER_MIN` |
-
-触发限流返回 `429 Too Many Requests` + `Retry-After: 60`；开发态 `RATE_LIMIT_DISABLE=true` 全关。
+gateway 不限流，限流只在 app 里做（`crates/app/src/server/rate_limit.rs`：只限 `/api/*`，按 gateway 写入的 `X-Forwarded-For` 分桶，环境变量见 `.env.example` 的 `RATE_LIMIT_*`）。gateway 原先也按 IP 限流，但把静态资源算在内：一次冷加载文档页约 57 个请求，读配额 60 / 分钟刷新一次就 429，`/api/auth/me` 还算进 10 / 分钟的写配额。
 
 `X-Forwarded-For` 改用 `insert_header` 覆盖客户端伪造，同时 strip 掉 RFC 7239 `Forwarded` 头；下游 app 看到的 XFF 一定是 Pingora 取到的真实 TCP 对端 IP。
 
@@ -358,11 +351,6 @@ per-IP token-bucket 限流（基于 [`governor`](https://docs.rs/governor)）：
 ```bash
 # 安全头检查（任意路径）
 curl -kI https://your-domain.com/ | grep -iE 'strict-transport|x-frame|x-content-type|content-security-policy|referrer-policy'
-
-# 限流冒烟（同 IP 11 次写端点，第 11 次预期 429）
-for i in $(seq 1 11); do
-  curl -ks -o /dev/null -w "%{http_code}\n" -X POST https://your-domain.com/api/auth/whatever
-done
 ```
 
 #### 与 docker-compose 的关系
