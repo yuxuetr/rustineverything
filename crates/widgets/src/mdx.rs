@@ -645,14 +645,31 @@ fn parse_attrs(html: &str) -> HashMap<String, String> {
   attrs
 }
 
+/// 代码围栏的开头：返回围栏字符和长度（至少 3 个 ` 或 ~）。
+fn code_fence(trimmed: &str) -> Option<(char, usize)> {
+  let ch = trimmed.chars().next().filter(|c| *c == '`' || *c == '~')?;
+  let len = trimmed.chars().take_while(|c| *c == ch).count();
+  (len >= 3).then_some((ch, len))
+}
+
 /// 将 :::type 语法转换为 GFM alert 语法
 fn convert_admonitions(body: &str) -> String {
   let mut result = String::with_capacity(body.len());
   let mut in_block = false;
+  // 围栏代码块里的 `:::`（比如 rustc 报错里的 `  ::: src/x.rs:1:1`）原样保留
+  let mut fence: Option<(char, usize)> = None;
 
   for line in body.lines() {
     let trimmed = line.trim();
-    if !in_block {
+    if let Some((ch, len)) = fence {
+      let closes = code_fence(trimmed)
+        .is_some_and(|(c, n)| c == ch && n >= len && trimmed.chars().all(|x| x == ch));
+      if closes {
+        fence = None;
+      }
+    } else if let Some(open) = code_fence(trimmed) {
+      fence = Some(open);
+    } else if !in_block {
       if let Some(kind) = trimmed.strip_prefix(":::").and_then(|rest| {
         let word = rest.split_whitespace().next().unwrap_or("");
         match word.to_lowercase().as_str() {
@@ -1122,6 +1139,21 @@ mod tests {
     let input = ":::random\ntext\n:::\n";
     let out = convert_admonitions(input);
     assert!(out.contains("> [!NOTE]"));
+  }
+
+  #[test]
+  fn convert_admonitions_ignores_markers_inside_code_fences() {
+    // rustc 的报错里有 `  ::: /path/to/file.rs:68:1` 这样的行
+    let input = "```text\nerror[E0599]\n  ::: src/routing/mod.rs:68:1\n   |\n```\nafter\n";
+    let out = convert_admonitions(input);
+    assert_eq!(out, input);
+  }
+
+  #[test]
+  fn convert_admonitions_fence_inside_block_keeps_prefix() {
+    let input = ":::note\n~~~text\n:::\n~~~\nend\n:::\nafter\n";
+    let out = convert_admonitions(input);
+    assert_eq!(out, "> [!NOTE]\n> ~~~text\n> :::\n> ~~~\n> end\n\nafter\n");
   }
 
   #[test]
