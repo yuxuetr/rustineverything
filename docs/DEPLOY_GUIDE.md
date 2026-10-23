@@ -607,6 +607,7 @@ docker compose logs -f app | grep "schema migrations"
 
 - **备份只在本机**：`scripts/backup.sh` 把数据库和上传文件写到同一台服务器的 `/data/rie/backups`（OPERATIONS.md §2），异地复制需自行安排。
 - **搜索索引目录需挂卷**：Phase 7.3 起索引落盘到 `SEARCH_INDEX_DIR`（默认 `data/search-index`）。docker-compose 已为该路径配卷；裸机部署需自行确保该目录持久化，否则重启会触发一次全量重建（仍可正常对外服务，只是冷启动慢）。
+- **卷的属主**：镜像里预先建好 `/app/assets/uploads`、`/app/data/search-index` 并归 `app`（uid 999），新建的命名卷沿用这个属主。用旧镜像建出的卷归 root，容器里上传和搜索索引都会报 `Permission denied`，在宿主上执行一次 `chown 999:999 /var/lib/docker/volumes/rustineverything_app-{uploads,search-index}/_data` 即可。
 - **moderation provider**：当前 ModerationEngine 为骨架，未接入实际 LLM。Phase 4.3+ 落地。
 
 ## 13. 参考

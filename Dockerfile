@@ -153,6 +153,11 @@ COPY --from=builder --chown=app:app /out/server /app/server
 COPY --from=builder --chown=app:app /out/public /app/public
 COPY --from=builder --chown=app:app /out/assets /app/assets
 
+# 挂卷点要先在镜像里建好并归 app 所有：docker 初始化空的命名卷时沿用镜像里该目录的属主，
+# 镜像里没有这个目录时卷归 root，app 用户写不进去（上传失败、搜索索引建不起来）。
+RUN mkdir -p /app/assets/uploads /app/data/search-index \
+ && chown app:app /app/assets/uploads /app/data /app/data/search-index
+
 USER app
 
 # Dioxus fullstack 默认监听 0.0.0.0:8080
