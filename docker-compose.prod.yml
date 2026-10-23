@@ -1,0 +1,44 @@
+# 阶段 V：生产覆盖文件（cu）。镜像由 .github/workflows/release.yml 发布，服务器上不编译。
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# 与基础文件的差别：
+# - app 用 ghcr 镜像（accounts 档），不 build；RIE_TAG 选版本，默认 latest
+# - postgres 不对宿主开端口（cu 的 5432 已被别的服务占用，也不该对外）
+# - 加 gateway：host 网络，监听宿主 80 / 443，反代到 127.0.0.1:8080。证书在宿主 /data/rie/certs
+#   （Dynadot 签发，scripts/cert_refresh.sh 每天取回续期后的证书并重启网关）
+# - 内存上限：cu 上还跑着别的服务，单个容器失控不能拖垮整机
+# - CONTENT_HOST_DIR 必填：生产不能退回框架自带的示例内容
+
+services:
+  postgres:
+    ports: !reset []
+    mem_limit: 512m
+
+  app:
+    build: !reset null
+    image: ghcr.io/yuxuetr/rie-app:${RIE_TAG:-latest}
+    mem_limit: 768m
+    volumes:
+      - ${CONTENT_HOST_DIR:?CONTENT_HOST_DIR 必须指向内容仓库}:/app/content:ro
+
+  gateway:
+    image: ghcr.io/yuxuetr/rie-gateway:${RIE_TAG:-latest}
+    container_name: rie-gateway
+    restart: unless-stopped
+    network_mode: host
+    mem_limit: 128m
+    depends_on:
+      - app
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    environment:
+      TLS_CERT_PATH: /certs/fullchain.pem
+      TLS_KEY_PATH: /certs/privkey.pem
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - ${CERT_HOST_DIR:-/data/rie/certs}:/certs:ro
