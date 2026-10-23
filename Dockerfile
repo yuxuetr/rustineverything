@@ -85,6 +85,8 @@ COPY crates/app/index.html crates/app/index.html
 COPY crates/app/package.json crates/app/package.json
 COPY crates/app/package-lock.json crates/app/package-lock.json
 COPY crates/app/tailwind-input.css crates/app/tailwind-input.css
+# npm run build 先跑它生成 tailwind-sources.css（组件库源码的 @source 行，路径来自 cargo metadata）
+COPY scripts/tw-sources.mjs scripts/tw-sources.mjs
 COPY crates/migration/Cargo.toml crates/migration/Cargo.toml
 COPY crates/modules ./crates/modules
 # build.rs 引用 ../../assets，提供占位避免预热阶段 panic
