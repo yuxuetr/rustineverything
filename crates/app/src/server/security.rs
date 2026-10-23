@@ -15,7 +15,7 @@
 //! - `Strict-Transport-Security` / `Permissions-Policy`（SEC-19）。
 //!
 //! ## 运维开关
-//! - `CSP_POLICY`：完整覆盖默认 CSP（留空字符串 = 不发送 CSP 头）。
+//! - `CSP_POLICY`：完整覆盖默认 CSP（未设或留空 = 默认策略）。
 //! - `SECURITY_HEADERS_DISABLED=1`：整体禁用（本地排障用，生产勿开）。
 //!
 //! ## 后续 nonce 化方向（暂不实施）
@@ -60,26 +60,23 @@ fn csp_for(dev: bool) -> String {
   .join("; ")
 }
 
-/// 解析生效的 CSP 值：`CSP_POLICY` env 覆盖 > 默认值。
-/// 返回 `None` 表示运维显式配置了空字符串（= 不发送 CSP 头）。
-fn effective_csp() -> Option<String> {
-  match std::env::var("CSP_POLICY") {
-    Ok(v) if v.trim().is_empty() => None,
-    Ok(v) => Some(v),
-    Err(_) => Some(default_csp()),
+/// 生效的 CSP：`CSP_POLICY` 非空时完整覆盖，未设或空白都用默认值
+/// （compose 对未配置的变量传空字符串）。
+fn effective_csp(policy: Option<&str>) -> String {
+  match policy {
+    Some(v) if !v.trim().is_empty() => v.to_string(),
+    _ => default_csp(),
   }
 }
 
 /// 构建全部安全头（纯函数，便于单测）。value 构造失败的条目直接跳过
 /// （不 panic；仅在非法 env 覆盖时可能发生）。
-pub fn build_security_headers(csp: Option<&str>) -> Vec<(HeaderName, HeaderValue)> {
+pub fn build_security_headers(csp: &str) -> Vec<(HeaderName, HeaderValue)> {
   let mut out: Vec<(HeaderName, HeaderValue)> = Vec::with_capacity(6);
-  if let Some(csp) = csp {
-    if let Ok(v) = HeaderValue::from_str(csp) {
-      out.push((HeaderName::from_static("content-security-policy"), v));
-    } else {
-      tracing::warn!("security: CSP_POLICY contains invalid header characters; CSP not sent");
-    }
+  if let Ok(v) = HeaderValue::from_str(csp) {
+    out.push((HeaderName::from_static("content-security-policy"), v));
+  } else {
+    tracing::warn!("security: CSP_POLICY contains invalid header characters; CSP not sent");
   }
   out
     .push((HeaderName::from_static("x-content-type-options"), HeaderValue::from_static("nosniff")));
@@ -117,7 +114,9 @@ pub async fn security_headers_mw(req: Request, next: Next) -> Response {
     return resp;
   }
 
-  let headers = HEADERS.get_or_init(|| build_security_headers(effective_csp().as_deref()));
+  let headers = HEADERS.get_or_init(|| {
+    build_security_headers(&effective_csp(std::env::var("CSP_POLICY").ok().as_deref()))
+  });
   for (name, value) in headers {
     if !resp.headers().contains_key(name) {
       resp.headers_mut().insert(name.clone(), value.clone());
@@ -169,7 +168,7 @@ mod tests {
 
   #[test]
   fn build_headers_includes_all_baseline_headers() {
-    let headers = build_security_headers(Some(&default_csp()));
+    let headers = build_security_headers(&default_csp());
     let get = |name: &str| {
       headers.iter().find(|(n, _)| n.as_str() == name).and_then(|(_, v)| v.to_str().ok())
     };
@@ -185,17 +184,22 @@ mod tests {
     }
   }
 
+  /// compose 对未配置的 `CSP_POLICY` 传空字符串，空值必须落到默认策略，不能变成不发 CSP。
   #[test]
-  fn build_headers_without_csp_still_has_baseline() {
-    let headers = build_security_headers(None);
-    let names: Vec<&str> = headers.iter().map(|(n, _)| n.as_str()).collect();
-    assert!(!names.contains(&"content-security-policy"));
-    assert_eq!(names.len(), 5, "无 CSP 时应有 5 个基础头");
+  fn unset_or_blank_csp_policy_uses_default() {
+    for value in [None, Some(""), Some("  ")] {
+      assert_eq!(effective_csp(value), default_csp(), "CSP_POLICY={value:?}");
+    }
+  }
+
+  #[test]
+  fn non_blank_csp_policy_overrides_default() {
+    assert_eq!(effective_csp(Some("default-src 'none'")), "default-src 'none'");
   }
 
   #[test]
   fn invalid_csp_value_is_skipped_not_panic() {
-    let headers = build_security_headers(Some("bad\nvalue"));
+    let headers = build_security_headers("bad\nvalue");
     let names: Vec<&str> = headers.iter().map(|(n, _)| n.as_str()).collect();
     assert!(!names.contains(&"content-security-policy"), "非法 CSP 值应跳过");
     assert!(names.contains(&"x-content-type-options"));
