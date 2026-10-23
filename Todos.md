@@ -733,6 +733,7 @@ cu 现状：Ubuntu 22.04 x86_64、4 核、内存 7.8G 只剩约 1.1G 可用（�
 - [x] V2 — `docker-compose.prod.yml`：app / postgres 用镜像不 build；postgres 不对外开端口；网关服务 `network_mode: host` 监听 80 / 443、挂 `/etc/letsencrypt`；各服务设内存上限。验收：`docker compose -f docker-compose.yml -f docker-compose.prod.yml config` 通过，输出里 postgres 没有 ports
   - 完成（d303307）：在 cu 上 `docker compose config` 通过：postgres 无 ports、app 无 build、gateway host 网络，内存上限 app 768m / postgres 512m / gateway 128m；不设 `CONTENT_HOST_DIR` 时拒绝启动（已验证报错）
 - [ ] V3 — cu 准备：`/data/rie` 放框架仓库与内容仓库（内容仓库用只读 deploy key）；`.env` 在 cu 上生成随机密钥（不经本机）；certbot standalone 签 `rustineverything.app`（`www` 等加了解析再加），续期用 pre / post hook 停启网关。验收：`certbot certificates` 显示新证书；`certbot renew --dry-run` 通过
+  - **阻塞（2026-10-23）**：cu 已被入侵。`/etc/ld.so.preload` 预加载 `/var/cache/.sys-uuid/libuh.so`（不属于任何包，导出符号劫持 readdir / open / stat / recv 等，字符串 `nebula_hide_*`、`should_hide_proc_pid`、读 `/proc/net/tcp` 过滤），隐藏配置里有端口 8001、路径 `/var/cache/fontconfig/.uuid-cache`、`/tmp/.update`、pid 757。库 2026-09-15 放入，preload 与配置 2026-10-20 更新。在 cu 重装或换机之前不往上放任何密钥。已在 cu 上做的：装了 snap 版 certbot（apt 版被系统里 pip 装的 cryptography 弄坏，已卸），用 dichen0921@gmail.com 注册了 Let's Encrypt 账号，dry-run 成功；没放任何密钥
 - [ ] V4 — 首次启动与烟测：迁移跑完；外网 `https://rustineverything.app` 首页、`/healthz`、sitemap、feed、robots 200；http 301 到 https；响应带 HSTS 与 CSP；tokio 卷抽查几页；`/course` 404。观察一天内存占用后按实际值调上限
 - [ ] V5 — 备份：cron 每天 `pg_dump` + 上传卷打包到 `/data/rie/backups`，保留 14 天；做一次恢复演练（导入到临时库，表数与行数对上）
 - [ ] V6 — 文档：`DEPLOY_GUIDE.md` 补「镜像发布 + prod 覆盖文件 + certbot」一节，写清更新内容与升级框架的命令
