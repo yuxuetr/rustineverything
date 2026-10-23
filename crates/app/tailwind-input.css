@@ -14,6 +14,9 @@
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
+    /* 行内 code / font-mono 与 Prism 代码块（Consolas,Monaco,…）在 macOS 上统一为 Monaco */
+    --font-mono: Monaco, "Monaco Nerd Font", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace;
+
     /* === Map Tailwind color scales to theme variables === */
     /* 'slate' maps to zinc: cool graphite neutrals */
     --color-slate-50: var(--color-zinc-50);
