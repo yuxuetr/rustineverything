@@ -1,14 +1,14 @@
 use crate::server::{
   get_annotations_config, get_course, get_last_lesson, get_lesson, get_progress, list_annotations,
   list_courses, list_my_annotations, mark_lesson_complete, Annotation, AnnotationsConfig, Chapter,
-  CodeFile, Course, CourseSummary, DownloadFile, Lesson, LessonKind, LessonProgress, LessonSummary,
-  MediaRef,
+  CodeFile, Course, CourseSummary, DownloadFile, Lesson, LessonKind, LessonLink, LessonProgress,
+  LessonSummary, MediaRef,
 };
 use dioxus::prelude::*;
 use dioxus_shadcn::{
   button_class, card_class, Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Collapsible,
   CollapsibleContent, CollapsibleTrigger, Progress, Spinner, SpinnerSize, Tabs, TabsContent,
-  TabsList, TabsTrigger, UiDensity,
+  TabsList, TabsTrigger, TreeItem, UiDensity,
 };
 use widgets::Markdown;
 
@@ -212,7 +212,7 @@ fn CourseDetailLoaded(slug: String) -> Element {
   match course_res() {
     Some(Some(c)) => {
       rsx! {
-          widgets::PageMeta {
+          widgets::PageMetaTags {
               title: c.title.clone(),
               description: c.description.clone(),
               path: format!("/course/{}", slug),
@@ -225,7 +225,7 @@ fn CourseDetailLoaded(slug: String) -> Element {
         widgets::NotFound { message: t(current_lang(), "course.not_found") }
         div { class: "text-center",
             p { class: "text-slate-500", "{t(current_lang(), \"course.not_found_detail\")}" }
-            a { href: "/course",
+            Link { to: "/course",
                 class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-6"),
                 "{t(current_lang(), \"course.back\")}"
             }
@@ -336,7 +336,7 @@ fn CourseDetailBody(
               }
               // 继续学习按钮
               if let Some(href) = continue_link {
-                  a { href: "{href}",
+                  Link { to: href,
                       class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "mt-8 w-fit gap-2 px-5"),
                       "{continue_label}"
                       span { "→" }
@@ -438,7 +438,7 @@ fn LessonRow(
   let lang = current_lang();
   rsx! {
       li {
-          a { href: "{href}",
+          Link { to: href,
               class: "flex items-center gap-3 px-5 py-3 hover:bg-slate-50 dark:hover:bg-slate-900/60 transition-colors group",
               if completed {
                   span { class: "text-base flex-shrink-0 text-green-500", "✅" }
@@ -470,16 +470,26 @@ fn LessonRow(
 // 按 LessonKind 自适应布局：Doc / Video / Audio / Code
 // ============================================================
 
-/// 重构 B4：课节页拆为 SuspenseBoundary 外壳 + `LessonLoaded`；课节内容（get_lesson）
-/// 由 use_server_future 服务端预取（SEO）。返回链接在外壳始终展示。
+/// 课节页：左侧课程大纲 + 正文，两个并列的 SuspenseBoundary（T1，同文档页 S5）：
+/// 换节只重取正文，大纲留在原处。课程结构与课节内容都由 use_server_future 服务端预取。
+/// 手机上大纲收进抽屉（`ReadingLayout`，T3）。
 #[component]
 pub fn LessonPage(slug: String, chapter: String, lesson: String) -> Element {
+  let lang = current_lang();
+  let active = format!("/course/{slug}/{chapter}/{lesson}");
   rsx! {
-      section { class: "py-8 min-h-screen bg-[var(--color-bg)]",
-          LocalContainer {
-              a { href: "/course/{slug}",
+      section { class: "min-h-screen bg-[var(--color-bg)]",
+          widgets::ReadingLayout {
+              path: active.clone(),
+              nav_label: t(lang, "course.outline"),
+              nav: rsx! {
+                  SuspenseBoundary { fallback: |_| VNode::empty(),
+                      CourseOutline { slug: slug.clone(), chapter: chapter.clone(), active: active.clone() }
+                  }
+              },
+              Link { to: format!("/course/{slug}"),
                   class: "inline-flex items-center gap-1 text-sm text-primary hover:underline mb-6",
-                  "← 返回课程目录"
+                  "← {t(lang, \"course.back_outline\")}"
               }
               SuspenseBoundary {
                   fallback: |_| rsx! {
@@ -498,6 +508,60 @@ pub fn LessonPage(slug: String, chapter: String, lesson: String) -> Element {
   }
 }
 
+/// 课节页左侧大纲：章是分组（值 `chapter:<slug>`）、节是页面（值为站内路径），当前节选中、
+/// 所在章展开。进度（✅）是每用户数据，用 use_resource，不进 SSR。
+#[component]
+fn CourseOutline(slug: String, chapter: String, active: String) -> Element {
+  let course_res =
+    use_server_future(use_reactive!(|slug| async move { get_course(slug).await.ok().flatten() }))?;
+  let progress_res =
+    use_resource(use_reactive!(|slug| async move { get_progress(slug).await.unwrap_or_default() }));
+  let progress = progress_res.read().clone().unwrap_or_default();
+
+  let Some(Some(course)) = course_res() else {
+    return VNode::empty();
+  };
+  let paid = course.is_paid();
+  rsx! {
+      nav { "aria-label": "{course.title}",
+          Link { to: format!("/course/{}", course.slug),
+              class: "block px-2 mb-4 text-sm font-semibold text-slate-900 dark:text-white hover:text-primary",
+              "{course.title}"
+          }
+          widgets::NavTree {
+              label: course.title.clone(),
+              active,
+              expand: vec![format!("chapter:{chapter}")],
+              for ch in course.chapters.iter() {
+                  TreeItem {
+                      value: format!("chapter:{}", ch.slug),
+                      class: "text-xs font-semibold text-slate-500 dark:text-slate-400",
+                      group: rsx! {
+                          for l in ch.lessons.iter() {
+                              TreeItem {
+                                  value: format!("/course/{}/{}/{}", course.slug, ch.slug, l.slug),
+                                  class: "[[aria-selected=true]>&]:text-primary",
+                                  Link { to: format!("/course/{}/{}/{}", course.slug, ch.slug, l.slug),
+                                      class: "flex flex-1 min-w-0 items-center gap-2 text-sm",
+                                      span { class: "shrink-0",
+                                          if lesson_completed(&progress, &ch.slug, &l.slug) { "✅" } else { "{l.kind.icon()}" }
+                                      }
+                                      span { class: "truncate", "{l.title}" }
+                                      if paid && !l.preview {
+                                          span { class: "ml-auto shrink-0 text-xs text-slate-400", "🔒" }
+                                      }
+                                  }
+                              }
+                          }
+                      },
+                      span { class: "truncate", "{ch.title}" }
+                  }
+              }
+          }
+      }
+  }
+}
+
 #[component]
 fn LessonLoaded(slug: String, chapter: String, lesson: String) -> Element {
   let blog_id = format!("course:{}/{}/{}", slug, chapter, lesson);
@@ -508,22 +572,59 @@ fn LessonLoaded(slug: String, chapter: String, lesson: String) -> Element {
 
   match lesson_res() {
     Some(Some(l)) => rsx! {
-        widgets::PageMeta {
+        // 挂起外层 boundary，不另起一个（PageMeta 自带的 boundary 会让 hydration 编号错位，见 S5）
+        widgets::PageMetaTags {
             title: l.title.clone(),
             description: l.doc.as_ref().map(|d| d.description.clone()).unwrap_or_default(),
             path: format!("/course/{slug}/{chapter}/{lesson}"),
         }
         LessonContent {
-            lesson: l,
+            lesson: l.clone(),
             blog_id: blog_id.clone(),
             course_slug: slug.clone(),
             chapter_slug: chapter.clone(),
             lesson_slug: lesson.clone(),
         }
+        LessonNeighbors { course_slug: slug.clone(), prev: l.prev, next: l.next }
     },
     _ => rsx! {
         widgets::NotFound { message: t(current_lang(), "course.lesson_not_found") }
     },
+  }
+}
+
+/// 正文下方的上一节 / 下一节（T1）。
+#[component]
+fn LessonNeighbors(
+  course_slug: String,
+  prev: Option<LessonLink>,
+  next: Option<LessonLink>,
+) -> Element {
+  if prev.is_none() && next.is_none() {
+    return VNode::empty();
+  }
+  let lang = current_lang();
+  rsx! {
+      nav { class: "mt-12 pt-6 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4",
+          if let Some(link) = prev {
+              Link {
+                  to: format!("/course/{course_slug}/{}", link.path),
+                  rel: "prev",
+                  class: "block rounded-lg border border-slate-200 dark:border-slate-800 p-4 hover:border-primary transition-colors",
+                  span { class: "block text-xs text-slate-500 dark:text-slate-400", "← {t(lang, \"course.prev\")}" }
+                  span { class: "block mt-1 font-medium text-slate-900 dark:text-white", "{link.title}" }
+              }
+          }
+          if let Some(link) = next {
+              Link {
+                  to: format!("/course/{course_slug}/{}", link.path),
+                  rel: "next",
+                  class: "block rounded-lg border border-slate-200 dark:border-slate-800 p-4 hover:border-primary transition-colors text-right sm:col-start-2",
+                  span { class: "block text-xs text-slate-500 dark:text-slate-400", "{t(lang, \"course.next\")} →" }
+                  span { class: "block mt-1 font-medium text-slate-900 dark:text-white", "{link.title}" }
+              }
+          }
+      }
   }
 }
 
@@ -536,7 +637,21 @@ fn LessonContent(
   chapter_slug: String,
   lesson_slug: String,
 ) -> Element {
-  let has_sidebar = !lesson.code.is_empty() || !lesson.downloads.is_empty();
+  let has_resources = !lesson.code.is_empty() || !lesson.downloads.is_empty();
+  let toc = lesson.doc.as_ref().map(|d| widgets::heading_outline(&d.markdown)).unwrap_or_default();
+  let has_toc = toc.len() >= widgets::toc::MIN_ENTRIES;
+  // 右栏：有代码 / 下载时 lg 起就有（目录在 xl 起显示在它上面）；只有目录时 xl 起才有。
+  let (grid_class, main_class, aside_class) = if has_resources {
+    ("grid-cols-1 lg:grid-cols-3", "lg:col-span-2", "space-y-6 lg:sticky lg:top-20 self-start")
+  } else if has_toc {
+    (
+      "grid-cols-1 xl:grid-cols-4",
+      "xl:col-span-3",
+      "hidden xl:block xl:sticky xl:top-20 self-start",
+    )
+  } else {
+    ("grid-cols-1", "", "")
+  };
   let resource_path = format!("{}/{}/{}", course_slug, chapter_slug, lesson_slug);
   // M4c：锁定课节只渲染头部 + Paywall，不渲染正文/资源/标注。
   if lesson.locked {
@@ -571,11 +686,8 @@ fn LessonContent(
       }
 
       // 布局容器（主区 + 右侧栏）
-      div { class: format_args!(
-          "grid gap-8 {}",
-          if has_sidebar { "grid-cols-1 lg:grid-cols-3" } else { "grid-cols-1" }
-      ),
-          div { class: format_args!("min-w-0 {}", if has_sidebar { "lg:col-span-2" } else { "" }),
+      div { class: "grid gap-8 {grid_class}",
+          div { class: "min-w-0 {main_class}",
               {render_main_area(&lesson, &blog_id)}
               CompleteLessonButton {
                   course_slug: course_slug.clone(),
@@ -583,8 +695,13 @@ fn LessonContent(
                   lesson_slug: lesson_slug.clone(),
               }
           }
-          if has_sidebar {
-              aside { class: "space-y-6 lg:sticky lg:top-20 self-start",
+          if has_resources || has_toc {
+              aside { class: aside_class,
+                  if has_toc {
+                      div { class: "hidden xl:block",
+                          widgets::OnThisPage { entries: toc, title: t(current_lang(), "toc.title") }
+                      }
+                  }
                   if !lesson.code.is_empty() {
                       CodeTabs { files: lesson.code.clone() }
                   }
@@ -660,20 +777,19 @@ fn CompleteLessonButton(course_slug: String, chapter_slug: String, lesson_slug: 
   let cs = course_slug.clone();
   let lp = format!("{}/{}", chapter_slug, lesson_slug);
 
-  // 进入页面时获取当前 lesson 状态
+  // 取当前 lesson 的完成状态；换节时组件不重建（SPA 导航），所以随课节重取并先清掉旧状态。
   {
     let cs2 = cs.clone();
     let lp2 = lp.clone();
-    use_effect(move || {
-      let cs2 = cs2.clone();
-      let lp2 = lp2.clone();
+    use_effect(use_reactive!(|cs2, lp2| {
+      completed.set(false);
       spawn(async move {
         let list = get_progress(cs2).await.unwrap_or_default();
         if list.iter().any(|p| p.completed && p.lesson_path == lp2) {
           completed.set(true);
         }
       });
-    });
+    }));
   }
 
   rsx! {
@@ -734,16 +850,16 @@ pub fn AnnotationLayer(resource_kind: String, resource_path: String) -> Element 
   }
 
   // 加载现有标注并交给 JS 渲染
+  // 随资源路径重取：SPA 换页时组件不重建。
   let kind_for_eff = resource_kind.clone();
   let path_for_eff = resource_path.clone();
-  use_effect(move || {
-    let kind = kind_for_eff.clone();
-    let path = path_for_eff.clone();
+  use_effect(use_reactive!(|kind_for_eff, path_for_eff| {
     spawn(async move {
-      let list = list_annotations(kind.clone(), path.clone()).await.unwrap_or_default();
-      inject_annotations(&kind, &path, &list);
+      let list =
+        list_annotations(kind_for_eff.clone(), path_for_eff.clone()).await.unwrap_or_default();
+      inject_annotations(&kind_for_eff, &path_for_eff, &list);
     });
-  });
+  }));
 
   rsx! { AnnotationToggle {} }
 }

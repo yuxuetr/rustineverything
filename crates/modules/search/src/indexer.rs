@@ -307,7 +307,7 @@ fn collect_boards_versioned() -> Vec<VersionedDoc> {
 
 fn collect_docs_versioned() -> Vec<VersionedDoc> {
   let mut out = Vec::new();
-  let root = get_asset_root().join("docs");
+  let root = app_core::utils::content_dir("docs");
   if !root.exists() {
     return out;
   }

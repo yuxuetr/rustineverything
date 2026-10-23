@@ -548,7 +548,7 @@ fn BlogInner(id: String) -> Element {
   rsx! {
       section { class: "py-12 bg-white dark:bg-slate-950",
           Container {
-              div { class: "max-w-4xl mx-auto",
+              div { class: "max-w-6xl mx-auto",
                   div { class: "text-slate-700 dark:text-slate-200 mb-12",
                       // 重构 B1：正文改由 BlogArticle 用 use_server_future 服务端预取（随 SSR HTML 下发）。
                       // SuspenseBoundary 捕获 BlogArticle 内 `?` 的挂起，未就绪时渲染 spinner。
@@ -586,38 +586,47 @@ fn BlogArticle(id: String) -> Element {
 
   match blog_content() {
     Some(Ok(Some(content))) => rsx! {
-        // SEO 注入 + 文章头（Z2）：标题 / 日期 / 标签来自 frontmatter。正文已经以 `# 标题`
-        // 开头的（如示例文章）不再重复输出标题。
-        {
-            let (meta, body) = parse_mdx(&content);
-            let show_title = !meta.title.is_empty() && !starts_with_h1(&body);
-            let date = meta.date.clone().unwrap_or_default();
-            rsx! {
-                {inject_seo(&meta, &blog_path, &base_url)}
-                if show_title {
-                    h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-3", "{meta.title}" }
-                }
-                if !date.is_empty() || !meta.tags.is_empty() {
-                    div { class: "flex flex-wrap items-center gap-2 mb-8 text-xs",
-                        if !date.is_empty() {
-                            time { class: "text-slate-400", datetime: "{date}", "{date}" }
+        div { class: "flex justify-center gap-10",
+            article { class: "min-w-0 flex-1 max-w-4xl",
+                // SEO 注入 + 文章头（Z2）：标题 / 日期 / 标签来自 frontmatter。正文已经以 `# 标题`
+                // 开头的（如示例文章）不再重复输出标题。
+                {
+                    let (meta, body) = parse_mdx(&content);
+                    let show_title = !meta.title.is_empty() && !starts_with_h1(&body);
+                    let date = meta.date.clone().unwrap_or_default();
+                    rsx! {
+                        {inject_seo(&meta, &blog_path, &base_url)}
+                        if show_title {
+                            h1 { class: "text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white mb-3", "{meta.title}" }
                         }
-                        for tag in meta.tags.iter() {
-                            span { class: badge_class(BadgeVariant::Secondary, "font-normal text-muted-foreground"), "#{tag}" }
+                        if !date.is_empty() || !meta.tags.is_empty() {
+                            div { class: "flex flex-wrap items-center gap-2 mb-8 text-xs",
+                                if !date.is_empty() {
+                                    time { class: "text-slate-400", datetime: "{date}", "{date}" }
+                                }
+                                for tag in meta.tags.iter() {
+                                    span { class: badge_class(BadgeVariant::Secondary, "font-normal text-muted-foreground"), "#{tag}" }
+                                }
+                            }
                         }
                     }
                 }
+                // `blog_id` 在 widgets::Markdown 内仅用于拼图片相对路径 `/posts/<id>/...`，
+                // **必须传纯 slug**（如 "welcome"）。
+                Markdown { content: content.clone(), blog_id: id.clone() }
+                {tip_jar(blog_path.clone())}
+                // 标注层（resource_kind="blog"，path = 博客 id）
+                {annotation_layer("blog", anno_path.clone())}
+                // 评论与关联讨论只挂在存在的文章下
+                {comments(id.clone())}
+                {discussion("blog", id.clone())}
+            }
+            aside { class: "hidden xl:block w-56 shrink-0",
+                div { class: "sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto",
+                    widgets::OnThisPage { entries: widgets::heading_outline(&content), title: t(lang(), "toc.title") }
+                }
             }
         }
-        // `blog_id` 在 widgets::Markdown 内仅用于拼图片相对路径 `/posts/<id>/...`，
-        // **必须传纯 slug**（如 "welcome"）。
-        Markdown { content: content.clone(), blog_id: id.clone() }
-        {tip_jar(blog_path.clone())}
-        // 标注层（resource_kind="blog"，path = 博客 id）
-        {annotation_layer("blog", anno_path.clone())}
-        // 评论与关联讨论只挂在存在的文章下
-        {comments(id.clone())}
-        {discussion("blog", id.clone())}
     },
     Some(Ok(None)) => rsx! { widgets::NotFound { message: t(lang(), "blog.not_found") } },
     Some(Err(_)) => rsx! { widgets::LoadFailed { message: t(lang(), "common.load_failed") } },

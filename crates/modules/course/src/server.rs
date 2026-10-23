@@ -113,6 +113,18 @@ pub struct Lesson {
   /// 所属课程价格；锁定时供 Paywall 展示。
   #[serde(default)]
   pub pricing: crate::pricing::Pricing,
+  /// 按课程大纲顺序（跨章）的上一节 / 下一节（T1）。
+  #[serde(default)]
+  pub prev: Option<LessonLink>,
+  #[serde(default)]
+  pub next: Option<LessonLink>,
+}
+
+/// 指向同一课程里另一节的链接；`path` 是 `<chapter>/<lesson>`。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LessonLink {
+  pub path: String,
+  pub title: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -809,7 +821,32 @@ pub fn read_lesson(course_slug: &str, chapter_slug: &str, lesson_slug: &str) -> 
     preview: frontmatter.preview,
     locked: false,
     pricing: Default::default(),
+    prev: None,
+    next: None,
   })
+}
+
+/// 课程大纲里 `<chapter>/<lesson>` 的前后两节，跨章连续。
+pub fn lesson_neighbors(
+  course: &Course,
+  chapter: &str,
+  lesson: &str,
+) -> (Option<LessonLink>, Option<LessonLink>) {
+  let flat: Vec<LessonLink> = course
+    .chapters
+    .iter()
+    .flat_map(|ch| {
+      ch.lessons
+        .iter()
+        .map(|l| LessonLink { path: format!("{}/{}", ch.slug, l.slug), title: l.title.clone() })
+    })
+    .collect();
+  let current = format!("{chapter}/{lesson}");
+  let Some(i) = flat.iter().position(|l| l.path == current) else {
+    return (None, None);
+  };
+  let prev = i.checked_sub(1).and_then(|p| flat.get(p)).cloned();
+  (prev, flat.get(i + 1).cloned())
 }
 
 /// 扫描一个 chapter 目录，返回带 LessonSummary 的 Chapter
@@ -1086,9 +1123,12 @@ pub async fn get_lesson(
   {
     let mut lesson_opt = read_lesson(&slug, &chapter, &lesson);
     if let Some(lesson_ref) = lesson_opt.as_mut() {
+      let course = read_course(&slug);
+      if let Some(course) = course.as_ref() {
+        (lesson_ref.prev, lesson_ref.next) = lesson_neighbors(course, &chapter, &lesson);
+      }
       // 访问控制：付费/Pro 课程的非试看课节需鉴权（M4c + M6）。
       // 鉴权在服务端进行，锁定时清空正文/媒体/代码，绝不把付费内容下发到客户端。
-      let course = read_course(&slug);
       if let Some(course) = course.as_ref().filter(|c| c.is_paid()) {
         lesson_ref.pricing = course.pricing();
         let user = current_session_user();
@@ -3080,6 +3120,40 @@ mod tests {
     let meta = parse_course_meta("c", "title: \"Rust: 入门\"\naccess_tier: paid\nprice: 99\n");
     assert_eq!(meta.and_then(|m| m.access_tier).as_deref(), Some("paid"));
     assert!(parse_course_meta("c", "").is_some(), "empty course.yaml should mean defaults");
+  }
+
+  /// T1：上一节 / 下一节按大纲顺序跨章连续，首尾与不存在的课节没有对应的一侧。
+  #[test]
+  fn lesson_neighbors_cross_chapters() {
+    let lesson = |slug: &str| LessonSummary {
+      slug: slug.into(),
+      title: slug.to_uppercase(),
+      kind: LessonKind::Doc,
+      order: 0,
+      duration: None,
+      preview: false,
+    };
+    let chapter = |slug: &str, lessons: Vec<LessonSummary>| Chapter {
+      slug: slug.into(),
+      title: slug.into(),
+      description: String::new(),
+      order: 0,
+      lessons,
+    };
+    let mut course = read_course_fixture();
+    course.chapters = vec![
+      chapter("c1", vec![lesson("a"), lesson("b")]),
+      chapter("c2", vec![]),
+      chapter("c3", vec![lesson("c")]),
+    ];
+    let path = |l: Option<LessonLink>| l.map(|l| l.path);
+    let (prev, next) = lesson_neighbors(&course, "c1", "b");
+    assert_eq!((path(prev), path(next)), (Some("c1/a".into()), Some("c3/c".into())));
+    let (prev, next) = lesson_neighbors(&course, "c1", "a");
+    assert_eq!((path(prev), next.map(|l| l.title)), (None, Some("B".into())));
+    let (prev, next) = lesson_neighbors(&course, "c3", "c");
+    assert_eq!((path(prev), path(next)), (Some("c1/b".into()), None));
+    assert_eq!(lesson_neighbors(&course, "c2", "a"), (None, None));
   }
 
   fn read_course_fixture() -> Course {

@@ -694,3 +694,33 @@
 - [x] P4 — 文档：DEPLOY_GUIDE 加「私有内容仓库」（服务器上并排克隆两个仓库、更新内容 / 更新框架各自的命令）；`.env.example` 加两个变量
   - 完成（c683961）：DEPLOY_GUIDE §3.5（并排克隆、只读 deploy key、发布内容 / 升级框架两条命令）与 §4 的 `docker run` 挂载；§3.1 必填项加 `POSTGRES_PASSWORD`，`.env.example` 里改为留空
 - 阶段 P 完成：P1–P4
+
+### 阶段 S — 源码解析文档支持（2026-10-21）
+源码解析系列（第一卷 tokio，规划在内容仓库 `plans/`）放私有内容仓库的 `docs/`，一卷约 40 页、按版本写。框架需要三处支持。
+- [x] S1 — 文档也从 `CONTENT_DIR` 读：文档树与正文、搜索索引、论坛引用标题（sitemap 走文档树，自动跟随）。`.gitignore` 挡住 `assets/docs/*`，只留现有示例
+  - 完成（403a545）：四处改用 `content_dir("docs")`，文档模块里重复的 `get_asset_root` 删掉。dx 实测：内容仓库放入临时 `docs/tokio` 后，文档页、sitemap、搜索都能看到，示例 axum 404。`.gitignore` 用 `git check-ignore` 两个方向验过
+- [x] S2 — 文档页「上一页 / 下一页」：在同一个一级分类内按侧栏顺序（先序）取前后两篇，服务端算好随正文返回，SSR 里就有链接
+  - 完成（b54ded7）：`doc_neighbors` 只扫当前一级分类，单测覆盖顺序、跳过无正文目录、不跨分类、根与不存在的路径，把「跳过无正文」改坏后测试变红。dx 实测：SSR HTML 里有 `rel="prev"` / `rel="next"`；hydration 后点击跳转，链接跟着更新；手机宽度两张卡片上下排列
+- [x] S3 — frontmatter `source: { crate, version }`：文档页正文上方显示「基于 tokio 1.54.0」，链到 docs.rs 对应版本。frontmatter 解析失败时记 warn（现在整块静默丢弃，写错一个字段标题和描述都没了）
+  - 完成（80803ac）：`DocMeta.source`；徽标链到 `docs.rs/<crate>/<version>`。实测 serde_yaml 读进 String 时保留原文，`version: 1.10` 不加引号也是 "1.10"（单测覆盖）。解析失败的 warn 带文件路径（dx 日志实测）。注意：文档树每次请求都会扫描，一个坏文件每次访问都会 warn 一次
+- [x] S4 — mermaid 图全部渲染成「Syntax error」（博客和文档都是）：SSR 在 `<pre class="mermaid">` 里留了 hydration 标记 `<!--node-id…-->`，mermaid 读 `innerHTML` 把注释当成图源码。引导脚本里调 `mermaid.run` 前先删掉节点里的注释
+  - 完成（812c876）：浏览器实测改前博客和 tokio 文档的图都是 `aria-roledescription="error"`，改后是 `sequence` / `flowchart`，hydration 之后仍在
+- [x] S5 — 点文档侧栏 / 上下页会整页刷新、白屏闪一下：文档模块的站内链接都是 `a { href }`，改用 `Link { to }`（board、course 已是这个写法），走客户端路由
+  - 完成（20feae6）：除了链接，还有两处让点击退回整页刷新：侧栏树是 use_resource（hydration 时为 None，SSR 侧栏没被接管）；`PageMeta` 自带的 SuspenseBoundary 嵌在文档的 boundary 里，hydration 编号错位。改为 `Link`、侧栏树 use_server_future、首页 PageMeta 移出 boundary、详情页用新加的 `PageMetaTags`（挂起外层 boundary）。侧栏与正文分成两个并列 boundary，换页只重取正文；导航进入某分支时自动展开。浏览器实测：侧栏 / 上下页 / 后退连续 8 次都不刷新页面（window 标记保留），每次切换侧栏都不消失，图和高亮正常，无 hydration 报错
+- [x] S6 — 有代码块 / mermaid 图的页面 hydration 报错（`node.setAttribute is not a function` 等），之后整页事件失效：引导脚本在 hydration 之前改写了 Dioxus 管着的块内节点（Prism 换掉 code 的子节点；S4 删注释、mermaid 换成 svg）。块内容改用 `dangerous_inner_html`，脚本按源码比较判断是否已处理
+  - 完成（a6bdcc0）：SSR 里 mermaid 块内不再有 `<!--node-id-->`；tokio 文档与博客页 hydration 无报错，SPA 换页后新内容的图和高亮都会处理。S4 的删注释逻辑随之去掉
+- 阶段 S 完成：S1–S6
+
+### 阶段 T — 阅读页布局：左侧跨页导航，右侧页内目录（2026-10-22）
+设计见 `docs/READING_LAYOUT_SPEC.md`。左侧只放按顺序阅读的跨页导航（文档树、课程大纲），右侧放页内目录（文档、博客、课节都有）；手机上左侧导航收进抽屉。组件放本仓库 `crates/widgets`，dioxus-ui 只用已有的 `Tree` 与 `Sidebar`，不改它。
+- [x] T0 — dioxus-shadcn 0.6.3 → 0.6.6（为了 `Tree`；上游 0.6.4–0.6.6 不改既有 API）。Tailwind 的 `@source` 由 `tw-sources.mjs` 生成，重新 `npm run build`
+  - 完成（2290a91）：只改版本号与 Cargo.lock，无代码改动；fmt / clippy / 全部测试 / check_tiers 通过，`tailwind-sources.css` 已指向 0.6.6
+- [x] T1 — 课节页：站内链接改 `Link`、`PageMeta` 改 `PageMetaTags`（同 S5，消除整页刷新）；左侧课程大纲（`Tree`：章 → 节，当前节选中，✅ / 🔒）；正文下方上一节 / 下一节。实测 Tree 用作导航时点击、Enter、后退不产生重复历史记录，不行则退回纯链接列表
+  - 完成（40b3979）：大纲用 `Tree`，当前节选中、所在章展开、换节进入另一章时自动展开；上一节 / 下一节由 `get_lesson` 服务端算（跨章，单测覆盖并改坏验红）。课程详情页的 PageMeta 与站内链接一并修了。顺带修了 SPA 换节后「已完成」按钮与标注层不刷新的问题（文档页 S5 后标注层也有这个问题）。浏览器实测（示例课 rust-basics 临时放进内容仓库）：大纲链接、上一节、键盘 ↑ + Enter、详情页课节行、返回课程目录都不刷新页面；连续后退顺序正确，没有重复历史记录；无 console 报错
+- [x] T2 — `widgets::heading_outline` + `OnThisPage`：从正文取 h2/h3（id 与正文一致），≥3 项时在 `xl` 以上显示在右侧，滚动高亮当前标题；用于文档、博客、课节。标题加 `scroll-margin-top`
+  - 完成（2393e9e）：`heading_outline` 与 `Markdown` 共用解析和 id 分配，单测核对每个 id 都在渲染结果里（去掉 id 分配后变红）。滚动高亮用 web-sys 的 scroll 监听（CSP 不允许 `document::eval`），高亮由 signal 渲染。浏览器实测：滚动时高亮跟随，点目录跳到标题且不被顶栏挡住（标题距顶 80px），不刷新页面；SPA 换页后目录与高亮换成新页的；1100px 宽度下目录隐藏、无横向滚动。文档、博客（SSR 检查 3 篇）、课节（临时加标题验证 `xl:grid-cols-4` 版式）都有
+- [x] T3 — 手机：文档与课节的左侧导航用 `Sidebar { off_canvas }` 收进抽屉，正文上方加「目录」按钮，点链接后关闭；文档树改用 `Tree`，删掉 `TreeSection`。路由驱动的树（选中 / 祖先展开 / 选中即导航）放 `widgets`，文档和课程共用
+  - 完成（e3e7cfe）：`widgets::ReadingLayout`（off-canvas `Sidebar`）与 `widgets::NavTree`（路由驱动的 `Tree`）由文档页、课节页共用；`TreeSection` 删除。断点用组件库的 768px：平板起就有侧栏（原来文档树 1024px 才显示）。浏览器实测：390px 打开抽屉、Esc 关闭、点链接后换页且抽屉关上、不刷新页面；关掉 JS 的 390px 页面侧栏隐藏（hydration 前不挤正文）；800px 侧栏常驻、按钮隐藏；桌面点分支行导航并展开，连续后退无重复历史。顺带修了长行内代码在手机上撑出横向滚动（`break-words`），文档 / 课节 / 博客 5 页 390px 下 scrollWidth 都是 390。遗留：标注开关按钮（z-[9999]）与顶栏浮在抽屉遮罩之上
+- [x] T4 — cases、forum、about（及 board 若有）把 `PageMeta` 嵌在 SuspenseBoundary 里：逐页在浏览器查 hydration 报错与 SPA 换页，有问题的改用 `PageMetaTags` 或把 `PageMeta` 移出 boundary
+  - 完成（只验证，不改代码）：board 的 PageMeta 不在 boundary 里。案例详情 `/case/candle`、话题 `/topics/1`、关于 `/about` 三页浏览器实测：hydration 后 console 无报错；点顶栏链接走客户端路由（window 标记保留）；打开登录对话框正常，`aria-describedby` 指向存在的节点，页脚文字没被改写（S5 在文档页看到的错位症状）。结论：当前版本下单是 PageMeta 嵌在 boundary 里不出问题，S5 的错位要和文档页当时的其它两处问题一起才出现，所以不改。重估条件：这几页 console 出现 `hydrate_node` / `setAttribute is not a function` 一类报错，或页面事件失效
+- 阶段 T 完成：T0–T4

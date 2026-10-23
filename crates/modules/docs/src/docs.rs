@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_shadcn::{
-  badge_class, card_class, BadgeVariant, Empty, EmptyDescription, Spinner, SpinnerSize,
+  badge_class, card_class, BadgeVariant, Empty, EmptyDescription, Spinner, SpinnerSize, TreeItem,
 };
 
 use crate::server::{get_doc_content, list_doc_tree, DocTreeNode};
@@ -26,7 +26,13 @@ fn doc_href(path: &str) -> String {
 /// 重构 B4：树形导航改由 `DocsIndexInner` 用 use_server_future 服务端预取（随 SSR HTML 下发）。
 #[component]
 pub fn Docs() -> Element {
+  let lang = current_lang();
   rsx! {
+      widgets::PageMeta {
+          title: t(lang, "docs.title"),
+          description: t(lang, "docs.subtitle"),
+          path: "/docs".to_string(),
+      }
       section { class: "min-h-screen bg-white dark:bg-slate-950",
           SuspenseBoundary {
               fallback: |_| rsx! {
@@ -46,11 +52,6 @@ fn DocsIndexInner() -> Element {
   let tree = use_server_future(|| async move { list_doc_tree().await.unwrap_or_default() })?;
 
   rsx! {
-      widgets::PageMeta {
-          title: t(lang, "docs.title"),
-          description: t(lang, "docs.subtitle"),
-          path: "/docs".to_string(),
-      }
       div { class: "max-w-7xl mx-auto flex",
               // 左侧导航：一级分类列表（仅桌面端显示）
               aside { class: "hidden lg:block shrink-0 w-64 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 pt-8 pb-12 px-4",
@@ -105,8 +106,8 @@ fn render_sidebar_link(node: &DocTreeNode, _active: &str) -> Element {
   let child_count = count_leaves(node);
 
   rsx! {
-      a {
-          href: "{href}",
+      Link {
+          to: href.clone(),
           class: "flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mb-1",
           span { "{node.title}" }
           span { class: badge_class(BadgeVariant::Secondary, "rounded-full px-1.5 font-normal text-muted-foreground"),
@@ -139,8 +140,8 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
   let has_more = node.children.len() > 5;
 
   rsx! {
-      a {
-          href: "{href}",
+      Link {
+          to: href.clone(),
           class: card_class("group block p-6 rounded-2xl hover:border-primary/50 hover:shadow-lg transition-all"),
           // 标题行
           div { class: "flex items-center justify-between mb-3",
@@ -176,25 +177,103 @@ fn render_doc_card(node: &DocTreeNode) -> Element {
   }
 }
 
-/// 文档页面：左侧树形导航 + 右侧 Markdown 内容。
+/// 文档页面：左侧树形导航 + 右侧 Markdown 内容（手机上导航收进抽屉，`ReadingLayout`，T3）。
 ///
 /// `footer` 插槽：标注层（AnnotationLayer）与讨论面板（DiscussionPanel）是跨模块
 /// 组合（分属 course / forum），为避免 docs 模块编译期依赖兄弟模块，这两个组件
 /// 由组合根 `app` 装配后通过该插槽注入；docs 自身只渲染内容主体。
-/// 重构 B4：文档详情页拆为 SuspenseBoundary 外壳 + `DocPageInner`，正文由
-/// use_server_future 服务端预取（随 SSR HTML 下发）；树形导航仍是客户端
-/// use_resource（导航辅助，非 SEO 关键）。
+/// 侧栏（`DocTree`）与正文（`DocPageInner`）都由 use_server_future 服务端预取
+/// （随 SSR HTML 下发），各在一个 SuspenseBoundary 里：换页只有正文重取，侧栏留在原处不闪。
 #[component]
 pub fn DocPage(path: Vec<String>, footer: Element) -> Element {
+  let doc_path = path.join("/");
   rsx! {
       section { class: "min-h-screen bg-white dark:bg-slate-950",
-          SuspenseBoundary {
-              fallback: |_| rsx! {
-                  div { class: "flex items-center justify-center py-20",
-                      Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
+          widgets::ReadingLayout {
+              path: doc_path.clone(),
+              nav_label: t(current_lang(), "docs.nav"),
+              nav: rsx! {
+                  SuspenseBoundary { fallback: |_| VNode::empty(),
+                      DocTree { active_path: doc_path.clone() }
                   }
               },
-              DocPageInner { path: path.clone(), footer: footer.clone() }
+              // 正文 + 页内目录（DocPageInner 里，目录来自正文）
+              SuspenseBoundary {
+                  fallback: |_| rsx! {
+                      div { class: "flex items-center justify-center py-20",
+                          Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
+                      }
+                  },
+                  DocPageInner { path: path.clone(), footer: footer.clone() }
+              }
+          }
+      }
+  }
+}
+
+/// 侧栏树：服务端预取。用 use_resource 时 hydration 那一刻它还是 None，
+/// SSR 出来的侧栏不会被接管，里面的 Link 点下去是整页刷新。
+/// 有正文的节点值为站内路径（可导航），没有正文的值为 `group:<path>`（只展开）。
+#[component]
+fn DocTree(active_path: String) -> Element {
+  let tree = use_server_future(|| async move { list_doc_tree().await.unwrap_or_default() })?;
+  let Some(nodes) = tree() else {
+    return VNode::empty();
+  };
+  // 当前页所在的分支（含当前页自己）都展开
+  let mut expand = Vec::new();
+  collect_within(&nodes, &active_path, &mut expand);
+  rsx! {
+      nav { "aria-label": "{t(current_lang(), \"docs.nav\")}",
+          widgets::NavTree {
+              label: t(current_lang(), "docs.nav"),
+              active: doc_href(&active_path),
+              expand,
+              for node in nodes.iter() {
+                  {doc_tree_item(node, 1)}
+              }
+          }
+      }
+  }
+}
+
+fn tree_value(node: &DocTreeNode) -> String {
+  if node.has_content {
+    doc_href(&node.path)
+  } else {
+    format!("group:{}", node.path)
+  }
+}
+
+/// `active_path` 所在的节点及其所有祖先的树值。
+fn collect_within(nodes: &[DocTreeNode], active_path: &str, out: &mut Vec<String>) {
+  for node in nodes {
+    if is_path_within(node, active_path) {
+      out.push(tree_value(node));
+      collect_within(&node.children, active_path, out);
+    }
+  }
+}
+
+fn doc_tree_item(node: &DocTreeNode, level: u32) -> Element {
+  let row_class = if level == 1 {
+    "text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 [[aria-selected=true]>&]:text-primary"
+  } else {
+    "text-sm text-slate-700 dark:text-slate-300 [[aria-selected=true]>&]:text-primary"
+  };
+  let group = (!node.children.is_empty()).then(|| {
+    rsx! {
+        for child in node.children.iter() {
+            {doc_tree_item(child, level + 1)}
+        }
+    }
+  });
+  rsx! {
+      TreeItem { value: tree_value(node), class: row_class, group,
+          if node.has_content {
+              Link { to: doc_href(&node.path), class: "flex-1 min-w-0 py-0.5", "{node.title}" }
+          } else {
+              span { class: "flex-1 min-w-0", "{node.title}" }
           }
       }
   }
@@ -204,65 +283,87 @@ pub fn DocPage(path: Vec<String>, footer: Element) -> Element {
 fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
   let lang = current_lang();
   let doc_path = path.join("/");
-  let doc_path_for_tree = doc_path.clone();
   let doc_path_for_meta = doc_path.clone();
   // Markdown blog_id 携带 "doc:<path>" 前缀，JS 运行时以此识别资源归属
   let anno_blog_id = format!("doc:{}", doc_path);
-
-  let tree = use_resource(move || async move { list_doc_tree().await.unwrap_or_default() });
 
   // 正文：use_server_future 服务端预取，随路由参数 doc_path 变化重取。
   let content =
     use_server_future(use_reactive!(|doc_path| async move { get_doc_content(doc_path).await }))?;
 
   rsx! {
-      div { class: "max-w-7xl mx-auto flex",
-              // 左侧导航（仅桌面端显示）
-              aside { class: "hidden lg:block shrink-0 w-64 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 pt-8 pb-12 px-4",
-                  nav {
-                      if let Some(ref nodes) = tree() {
-                          for node in nodes.iter() {
-                              TreeSection { node: node.clone(), active_path: doc_path_for_tree.clone(), depth: 0 }
+      match content() {
+          Some(Ok(Some(resp))) => rsx! {
+              div { class: "flex justify-center gap-10",
+                  article { class: "min-w-0 flex-1 max-w-3xl",
+                      // SEO：title / description / canonical / og 由 PageMeta 输出（服务端已从正文补齐），
+                      // 这里只补 keywords 与 og:image。
+                      widgets::PageMetaTags {
+                          title: resp.meta.title.clone(),
+                          description: resp.meta.description.clone(),
+                          path: format!("/docs/{}", doc_path_for_meta),
+                      }
+                      if !resp.meta.keywords.is_empty() {
+                          document::Meta { name: "keywords", content: "{resp.meta.keywords.join(\", \")}" }
+                      }
+                      if let Some(ref img) = resp.meta.image {
+                          document::Meta { property: "og:image", content: "{img}" }
+                      }
+                      if let Some(ref src) = resp.meta.source {
+                          a {
+                              href: "https://docs.rs/{src.krate}/{src.version}",
+                              target: "_blank",
+                              rel: "noopener",
+                              class: badge_class(BadgeVariant::Secondary, "mb-4 rounded-full font-normal text-muted-foreground"),
+                              "{t(lang, \"docs.based_on\")} {src.krate} {src.version}"
+                          }
+                      }
+                      div { class: "text-slate-700 dark:text-slate-200",
+                          Markdown { content: resp.content.clone(), blog_id: anno_blog_id.clone() }
+                      }
+                      if resp.prev.is_some() || resp.next.is_some() {
+                          nav { class: "mt-12 pt-6 border-t border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4",
+                              if let Some(ref link) = resp.prev {
+                                  Link {
+                                      to: doc_href(&link.path),
+                                      rel: "prev",
+                                      class: "block rounded-lg border border-slate-200 dark:border-slate-800 p-4 hover:border-primary transition-colors",
+                                      span { class: "block text-xs text-slate-500 dark:text-slate-400", "← {t(lang, \"docs.prev\")}" }
+                                      span { class: "block mt-1 font-medium text-slate-900 dark:text-white", "{link.title}" }
+                                  }
+                              }
+                              if let Some(ref link) = resp.next {
+                                  Link {
+                                      to: doc_href(&link.path),
+                                      rel: "next",
+                                      class: "block rounded-lg border border-slate-200 dark:border-slate-800 p-4 hover:border-primary transition-colors text-right sm:col-start-2",
+                                      span { class: "block text-xs text-slate-500 dark:text-slate-400", "{t(lang, \"docs.next\")} →" }
+                                      span { class: "block mt-1 font-medium text-slate-900 dark:text-white", "{link.title}" }
+                                  }
+                              }
+                          }
+                      }
+                      // 跨模块组合（标注层 + 讨论面板）由 app 层注入。
+                      {footer.clone()}
+                  }
+                  aside { class: "hidden xl:block w-56 shrink-0",
+                      div { class: "sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto",
+                          widgets::OnThisPage {
+                              entries: widgets::heading_outline(&resp.content),
+                              title: t(lang, "toc.title"),
                           }
                       }
                   }
               }
-
-              // 右侧内容
-              div { class: "flex-1 min-w-0 px-6 lg:px-12 py-8",
-                  div { class: "max-w-3xl mx-auto",
-                      match content() {
-                          Some(Ok(Some(resp))) => rsx! {
-                              // SEO：title / description / canonical / og 由 PageMeta 输出（服务端已从正文补齐），
-                              // 这里只补 keywords 与 og:image。
-                              widgets::PageMeta {
-                                  title: resp.meta.title.clone(),
-                                  description: resp.meta.description.clone(),
-                                  path: format!("/docs/{}", doc_path_for_meta),
-                              }
-                              if !resp.meta.keywords.is_empty() {
-                                  document::Meta { name: "keywords", content: "{resp.meta.keywords.join(\", \")}" }
-                              }
-                              if let Some(ref img) = resp.meta.image {
-                                  document::Meta { property: "og:image", content: "{img}" }
-                              }
-                              div { class: "text-slate-700 dark:text-slate-200",
-                                  Markdown { content: resp.content.clone(), blog_id: anno_blog_id.clone() }
-                              }
-                              // 跨模块组合（标注层 + 讨论面板）由 app 层注入。
-                              {footer.clone()}
-                          },
-                          Some(Ok(None)) => rsx! { widgets::NotFound { message: t(lang, "docs.not_found") } },
-                          Some(Err(_)) => rsx! { widgets::LoadFailed { message: t(lang, "common.load_failed") } },
-                          None => rsx! {
-                              div { class: "flex items-center justify-center py-20",
-                                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
-                              }
-                          },
-                      }
-                  }
+          },
+          Some(Ok(None)) => rsx! { widgets::NotFound { message: t(lang, "docs.not_found") } },
+          Some(Err(_)) => rsx! { widgets::LoadFailed { message: t(lang, "common.load_failed") } },
+          None => rsx! {
+              div { class: "flex items-center justify-center py-20",
+                  Spinner { size: SpinnerSize::Lg, class: "border-t-primary" }
               }
-          }
+          },
+      }
   }
 }
 
@@ -272,130 +373,4 @@ fn is_path_within(node: &DocTreeNode, active_path: &str) -> bool {
     return true;
   }
   node.children.iter().any(|c| is_path_within(c, active_path))
-}
-
-/// 可折叠的树节点组件
-#[component]
-pub fn TreeSection(node: DocTreeNode, active_path: String, depth: u32) -> Element {
-  let has_children = !node.children.is_empty();
-  let is_active = active_path == node.path;
-  let is_within = is_path_within(&node, &active_path);
-
-  // 当前页所在的分支默认展开
-  let mut expanded = use_signal(move || is_within);
-
-  let href = doc_href(&node.path);
-
-  match depth {
-    // === 一级：分组标题，带展开/折叠箭头 ===
-    0 => {
-      rsx! {
-          div { class: "mb-3",
-              // 标题行：可点击展开/折叠，也可导航
-              div { class: "flex items-center gap-1",
-                  if has_children {
-                      button {
-                          class: "p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition-colors",
-                          onclick: move |_| expanded.set(!expanded()),
-                          svg {
-                              class: format_args!("w-3.5 h-3.5 transition-transform {}", if expanded() { "rotate-90" } else { "" }),
-                              fill: "currentColor", view_box: "0 0 20 20",
-                              path { d: "M6.293 7.293a1 1 0 011.414 0L10 9.586l2.293-2.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" }
-                          }
-                      }
-                  }
-                  if node.has_content {
-                      a {
-                          href: "{href}",
-                          class: format_args!("text-xs font-semibold uppercase tracking-wider py-1 {}",
-                              if is_active { "text-primary" } else { "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white" }
-                          ),
-                          "{node.title}"
-                      }
-                  } else {
-                      button {
-                          class: "text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 py-1",
-                          onclick: move |_| expanded.set(!expanded()),
-                          "{node.title}"
-                      }
-                  }
-              }
-              // 子节点
-              if has_children && expanded() {
-                  div { class: "mt-1 ml-1 border-l-2 border-slate-200 dark:border-slate-800 pl-3",
-                      for child in node.children.iter() {
-                          TreeSection { node: child.clone(), active_path: active_path.clone(), depth: 1 }
-                      }
-                  }
-              }
-          }
-      }
-    }
-    // === 二级：章节，带展开/折叠 ===
-    1 => {
-      let item_class = if is_active {
-        "text-sm font-medium text-primary bg-primary/10"
-      } else {
-        "text-sm text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50"
-      };
-
-      rsx! {
-          div { class: "mb-0.5",
-              div { class: "flex items-center",
-                  if has_children {
-                      button {
-                          class: "p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 shrink-0",
-                          onclick: move |_| expanded.set(!expanded()),
-                          svg {
-                              class: format_args!("w-3 h-3 transition-transform {}", if expanded() { "rotate-90" } else { "" }),
-                              fill: "currentColor", view_box: "0 0 20 20",
-                              path { d: "M6.293 7.293a1 1 0 011.414 0L10 9.586l2.293-2.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" }
-                          }
-                      }
-                  }
-                  if node.has_content {
-                      a {
-                          href: "{href}",
-                          class: "flex-1 block px-2 py-1.5 rounded-md transition-colors {item_class}",
-                          "{node.title}"
-                      }
-                  } else {
-                      button {
-                          class: "flex-1 text-left px-2 py-1.5 rounded-md transition-colors {item_class}",
-                          onclick: move |_| expanded.set(!expanded()),
-                          "{node.title}"
-                      }
-                  }
-              }
-              if has_children && expanded() {
-                  div { class: "ml-4 mt-0.5 border-l border-slate-200 dark:border-slate-800 pl-3",
-                      for child in node.children.iter() {
-                          TreeSection { node: child.clone(), active_path: active_path.clone(), depth: 2 }
-                      }
-                  }
-              }
-          }
-      }
-    }
-    // === 三级：小节，叶子节点 ===
-    _ => {
-      let item_class = if is_active {
-        "text-xs font-medium text-primary bg-primary/10"
-      } else {
-        "text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50"
-      };
-
-      rsx! {
-          if node.has_content {
-              a {
-                  href: "{href}",
-                  class: "block px-2 py-1 rounded-md transition-colors mb-0.5 {item_class}",
-                  "{node.title}"
-              }
-          } else {
-              div { class: "px-2 py-1 {item_class}", "{node.title}" }
-          }
-      }
-    }
-  }
 }
