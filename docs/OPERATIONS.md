@@ -58,47 +58,46 @@ RUST_LOG=debug
 
 ## 2. 备份
 
-### 2.1 数据库
+`scripts/backup.sh` 每次写两份文件到 `BACKUP_DIR`（默认 `/data/rie/backups`），各保留最新 14 份（`KEEP`）：
 
-```bash
-# 完整导出（约 2-50 MB，含 schema + 数据）
-# 变量在容器里展开（单引号）：宿主 shell / cron 不会加载 .env，在宿主展开会得到空用户名。
-docker compose exec -T postgres \
-  sh -c 'pg_dump -U "$POSTGRES_USER" -F c "$POSTGRES_DB"' \
-  > backup-$(date +%F-%H%M).dump
+| 文件 | 内容 |
+| --- | --- |
+| `db-<时间>.dump` | `pg_dump` 自定义格式，写完用 `pg_restore -l` 读一遍确认可用 |
+| `uploads-<时间>.tar.gz` | app 容器的 `/app/assets/uploads`（`docker cp` 打包，顶层目录是 `uploads/`） |
 
-# 还原
-cat backup-2026-05-27-1430.dump | \
-  docker compose exec -T postgres \
-  sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists'
-```
-
-建议 cron：
+任一步失败就以 1 退出，不留半成品，也不清理旧备份；按份数而不是按天数清理，连续失败几天旧备份也不会被删光。
 
 ```cron
-0 3 * * * cd /srv/rustineverything && docker compose exec -T postgres \
-  sh -c 'pg_dump -U "$POSTGRES_USER" -F c "$POSTGRES_DB"' \
-  > /backups/rie-$(date +\%F).dump && test -s /backups/rie-$(date +\%F).dump
+MAILTO=you@example.com
+30 3 * * * /data/rie/rustineverything/scripts/backup.sh >> /data/rie/backups/backup.log 2>&1
 ```
 
-`test -s` 让空文件（导出失败）以非零退出，cron 会把失败发到 `MAILTO`。备份文件还要再复制到另一台机器或对象存储，
-只留在本机等于没备份。
+备份只在本机等于没备份：服务器整机出事（被入侵、磁盘坏）时它们一起没了，定期复制到另一台机器或对象存储。
 
-### 2.2 用户上传
-
-卷只在 docker 节点本地。compose 项目名是 `rustineverything`，所以实际卷名带前缀
-`rustineverything_app-uploads`（`docker volume ls` 可查）；写成 `app-uploads` 会新建一个空卷，备份出来是空包。异地备份：
+### 2.1 恢复演练
 
 ```bash
-docker run --rm -v rustineverything_app-uploads:/data:ro -v $(pwd):/out \
-  alpine tar czf /out/uploads-$(date +%F).tgz -C /data .
+scripts/restore_drill.sh                       # 最新一份
+scripts/restore_drill.sh /data/rie/backups/db-20261023-033000.dump
 ```
 
-恢复：
+把 dump 导入临时库 `rie_restore_drill`，逐表比对行数，再比对上传包与线上的文件数，最后删掉临时库，不碰线上库。
+备份之后线上又有写入时会对不上，挑没人写的时段跑，或者先跑一次 `backup.sh` 再演练。
+脚本本身的测试：`scripts/test_backup.sh`（需要 docker）。
+
+### 2.2 恢复
+
+先停 app（`docker compose stop app`），恢复后再启动：
 
 ```bash
-docker run --rm -v rustineverything_app-uploads:/data -v $(pwd):/in \
-  alpine sh -c 'cd /data && tar xzf /in/uploads-2026-05-27.tgz'
+# 数据库：变量在容器里展开（单引号）；宿主 shell / cron 不会加载 .env
+docker exec -i rie-postgres \
+  sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' \
+  < /data/rie/backups/db-<时间>.dump
+
+# 上传：卷名带 compose 项目名前缀（docker volume ls 可查）；写成 app-uploads 会新建一个空卷
+docker run --rm -v rustineverything_app-uploads:/data -v /data/rie/backups:/in:ro alpine \
+  tar xzf /in/uploads-<时间>.tar.gz -C /data --strip-components=1
 ```
 
 ### 2.3 site.json
@@ -270,7 +269,7 @@ docker compose up -d app
 
 迁移只在启动时执行 `up`；运行时镜像只有服务端二进制，没有 `sea-orm-cli`，`migration` crate 也没有命令行入口。
 所以不支持单条 `down`：新版本含迁移且需要回滚时，按 6.3 用升级前的备份恢复数据库，再切回旧代码。
-升级前先做一次 2.1 的导出。
+升级前先跑一次 `scripts/backup.sh`。
 
 ### 6.3 完整回滚（含数据）
 
@@ -278,11 +277,11 @@ docker compose up -d app
 # 1. 停服
 docker compose down
 
-# 2. 只起数据库，用升级前的导出（2.1）覆盖恢复
+# 2. 只起数据库，用升级前的备份按 2.2 覆盖恢复
 docker compose up -d postgres
-cat backup-2026-05-27-1430.dump | \
-  docker compose exec -T postgres \
-  sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists'
+docker exec -i rie-postgres \
+  sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' \
+  < /data/rie/backups/db-<升级前的时间>.dump
 
 # 3. 切回旧代码
 git checkout <previous-sha>
@@ -322,7 +321,7 @@ export RUSTC_WRAPPER=sccache
 | `JWT_SECRET` 轮换 | 季度（旋转时所有用户被踢下线） |
 | postgres 密码轮换 | 季度 |
 | `docker compose pull` upstream 镜像 | 月度（postgres 安全补丁） |
-| 备份恢复演练 | 季度（确认 dump 可用） |
+| 备份恢复演练（`scripts/restore_drill.sh`） | 季度 |
 | OAuth 凭据轮换 | 按 provider 推荐 |
 | 审查 `seaql_migrations` 与 git 是否一致 | 每次发布 |
 
