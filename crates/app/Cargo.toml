@@ -38,6 +38,7 @@ axum = { version = "0.8", optional = true }
 dotenvy = { version = "0.15", optional = true }
 base64 = "0.22"
 tower-http = { version = "0.6", features = ["fs", "compression-gzip", "compression-br"], optional = true }
+tower = { version = "0.5", features = ["util"], optional = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, optional = true }
 migration = { path = "../migration", optional = true }
@@ -81,6 +82,7 @@ server = [
     "dep:axum",
     "dep:dotenvy",
     "dep:tower-http",
+    "dep:tower",
     "dep:tracing-subscriber",
     "dep:migration",
 ]

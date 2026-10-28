@@ -377,6 +377,10 @@ fn main() {
     // 已统一到 server::seo::collect_content_entries（消除双份宏重复）。
     let router = crate::server::seo::mount(router, &base_url);
 
+    // 请求体超过上限时，dioxus 读 server fn 请求体会 panic（500）：/api/upload 放宽到 8 MiB，
+    // 声明的 Content-Length 超限的请求直接回 413。
+    let router = router.layer(axum::middleware::from_fn(crate::server::body_limit::body_limit_mw));
+
     // S2（风险 R4）：应用层 per-IP 限流，仅作用于 /api/*（auth / pay 更严）。
     // gateway 限流仍是第一道防线；这里是 app 裸跑时的兑底。
     let router = router.layer(axum::middleware::from_fn(crate::server::rate_limit::rate_limit_mw));

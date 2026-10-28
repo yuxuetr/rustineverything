@@ -25,12 +25,14 @@ const UPLOAD_MAX_BYTES: usize = 5 * 1024 * 1024;
 const UPLOAD_ALLOWED_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp"];
 
 /// 写盘前的第一道大小防线：取出 base64 负载（接受 `data:URL` 或裸 base64），
-/// 按长度估算解码后字节数（`len * 3/4` 为上限），超出 `UPLOAD_MAX_BYTES` 即拒绝。
+/// 按长度估算解码后字节数（`len * 3/4` 减去末尾 `=` 的个数），超出 `UPLOAD_MAX_BYTES` 即拒绝。
 /// 在分配解码缓冲区之前拦截超大负载，返回提取出的裸 base64 切片。
 #[cfg(feature = "server")]
 pub(crate) fn check_upload_size(data_base64: &str) -> Result<&str, String> {
   let base64_str = data_base64.split(',').next_back().unwrap_or(data_base64);
-  let estimated_bytes = base64_str.len().saturating_mul(3) / 4;
+  // 末尾每个 `=` 少解码出一个字节；不减的话正好 5 MiB 的图会被估成 5 MiB + 1 而拒绝
+  let padding = base64_str.bytes().rev().take(2).filter(|&b| b == b'=').count();
+  let estimated_bytes = (base64_str.len().saturating_mul(3) / 4).saturating_sub(padding);
   if estimated_bytes > UPLOAD_MAX_BYTES {
     return Err(format!("文件过大（限制 {} MB）", UPLOAD_MAX_BYTES / 1024 / 1024));
   }
@@ -277,6 +279,20 @@ mod tests {
     let payload = "A".repeat(over_len);
     let err = check_upload_size(&payload).unwrap_err();
     assert!(err.contains("过大"));
+  }
+
+  #[test]
+  fn test_check_upload_size_accepts_exact_limit_with_padding() {
+    // 5 MiB = 3 × 1747626 + 2，base64 为 1747627 组、末尾 1 个 `=`
+    let payload = format!("{}=", "A".repeat(6_990_507));
+    assert!(check_upload_size(&payload).is_ok());
+  }
+
+  #[test]
+  fn test_check_upload_size_rejects_one_byte_over_limit() {
+    // 1747627 组、无填充，解码后 5 MiB + 1 字节
+    let payload = "A".repeat(6_990_508);
+    assert!(check_upload_size(&payload).is_err());
   }
 
   #[test]

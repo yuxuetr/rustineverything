@@ -724,3 +724,18 @@
 - [x] T4 — cases、forum、about（及 board 若有）把 `PageMeta` 嵌在 SuspenseBoundary 里：逐页在浏览器查 hydration 报错与 SPA 换页，有问题的改用 `PageMetaTags` 或把 `PageMeta` 移出 boundary
   - 完成（只验证，不改代码）：board 的 PageMeta 不在 boundary 里。案例详情 `/case/candle`、话题 `/topics/1`、关于 `/about` 三页浏览器实测：hydration 后 console 无报错；点顶栏链接走客户端路由（window 标记保留）；打开登录对话框正常，`aria-describedby` 指向存在的节点，页脚文字没被改写（S5 在文档页看到的错位症状）。结论：当前版本下单是 PageMeta 嵌在 boundary 里不出问题，S5 的错位要和文档页当时的其它两处问题一起才出现，所以不改。重估条件：这几页 console 出现 `hydrate_node` / `setAttribute is not a function` 一类报错，或页面事件失效
 - 阶段 T 完成：T0–T4
+
+### 阶段 V — 上线到 cu（2026-10-23）
+决定（2026-10-23）：首发 `accounts` 档（博客、文档、论坛、评论、登录；无课程与支付）；备份先放服务器本机。证书改用 Dynadot 签发的通配符证书（用户选择，替代最初的 certbot 方案），服务器每天用 API key 从永久下载链接取回续期后的证书。
+cu 现状：Ubuntu 22.04 x86_64、4 核、内存 7.8G 只剩约 1.1G 可用（已有十几个容器），docker 数据在 `/data`（剩 43G），80 / 443 / 8080 空闲，**5432 已被占**，ufw 未开。域名解析已指向 cu（154.44.16.42），`www` 无记录。原证书是通配符证书，2026-07-01 已过期。
+- [ ] V1 — 镜像在 CI 构建，不在 cu 上编译（内存不够）：新增 workflow，打 `v*` tag 或手动触发时构建 linux/amd64 的 app 镜像（`APP_FEATURES="--no-default-features --features accounts"`）与网关镜像，推到 ghcr（公开：镜像只含框架与示例内容，正式内容运行时挂载）。验收：workflow 绿；本地 `docker manifest inspect` 能看到 amd64
+  - 进展（8816b92、37199cd）：workflow 与网关 Dockerfile 已写，待推送后实跑。顺带修了网关两处会在线上出问题的地方：网关限流把静态资源也算进去（文档页冷加载约 57 个请求，读配额 60 / 分钟，`/api/auth/me` 算写配额 10 / 分钟），删掉，只留 app 的 `/api/*` 限流；网关写给 app 的 XFF 带端口，app 按它分桶等于每条连接一个桶，改为只写 IP（单测，改回带端口变红）
+- [x] V2 — `docker-compose.prod.yml`：app / postgres 用镜像不 build；postgres 不对外开端口；网关服务 `network_mode: host` 监听 80 / 443、挂 `/etc/letsencrypt`；各服务设内存上限。验收：`docker compose -f docker-compose.yml -f docker-compose.prod.yml config` 通过，输出里 postgres 没有 ports
+  - 完成（d303307）：在 cu 上 `docker compose config` 通过：postgres 无 ports、app 无 build、gateway host 网络，内存上限 app 768m / postgres 512m / gateway 128m；不设 `CONTENT_HOST_DIR` 时拒绝启动（已验证报错）
+- [ ] V3 — cu 准备：`/data/rie` 放框架仓库与内容仓库（内容仓库用只读 deploy key）；`.env` 在 cu 上生成随机密钥（不经本机）；证书放 `/data/rie/certs`，`cert.env`（600）放 `DYNADOT_API_KEY`，cron 每天跑 `scripts/cert_refresh.sh`；Dynadot 后台给 API key 开 IP 白名单（只放服务器 IP）。验收：在服务器上真实下载一次，确认格式（是否带链、私钥是否随续期更换）；演练：换上旧证书后手动跑脚本，线上证书变成新的
+  - **阻塞（2026-10-23）**：cu 已被入侵。`/etc/ld.so.preload` 预加载 `/var/cache/.sys-uuid/libuh.so`（不属于任何包，导出符号劫持 readdir / open / stat / recv 等，字符串 `nebula_hide_*`、`should_hide_proc_pid`、读 `/proc/net/tcp` 过滤），隐藏配置里有端口 8001、路径 `/var/cache/fontconfig/.uuid-cache`、`/tmp/.update`、pid 757。库 2026-09-15 放入，preload 与配置 2026-10-20 更新。在 cu 重装或换机之前不往上放任何密钥。已在 cu 上做的：装了 snap 版 certbot（apt 版被系统里 pip 装的 cryptography 弄坏，已卸），用 dichen0921@gmail.com 注册了 Let's Encrypt 账号，dry-run 成功；没放任何密钥
+- [ ] V4 — 首次启动与烟测：迁移跑完；外网 `https://rustineverything.app` 首页、`/healthz`、sitemap、feed、robots 200；http 301 到 https；响应带 HSTS 与 CSP；tokio 卷抽查几页；`/course` 404。观察一天内存占用后按实际值调上限
+- [ ] V3b — 证书续期链路（本地部分已做，c97e095）：`cert_refresh.sh` 下载 → 检查（PEM、域名、与现有私钥配对、证书链、到期日更晚）→ 替换并重启网关，任一项不过就不动现有证书；`test_cert_refresh.sh` 自建 CA 覆盖 8 种情况，macOS 与 Linux（OpenSSL 3）都 8/8，分别去掉配对 / 链 / 到期日检查各有一项变红。`check_cert_expiry.sh` + `cert-check.yml` 查线上剩余天数，github.com 37 天绿、门槛 400 红、expired.badssl.com 红、连不上红。本机下载被 Cloudflare 人机验证拦（403），从 cu 用假 key 请求返回 401 未被拦，所以要在服务器上验证。剩余：服务器上真实下载一次；上线后给 cert-check 加 schedule
+- [ ] V5 — 备份：cron 每天 `pg_dump` + 上传卷打包到 `/data/rie/backups`，保留 14 天；做一次恢复演练（导入到临时库，表数与行数对上）
+- [ ] V6 — 文档：`DEPLOY_GUIDE.md` 补「镜像发布 + prod 覆盖文件 + certbot」一节，写清更新内容与升级框架的命令
+- 用户操作：注册账号后 `promote_admin.sh`；OAuth 应用（回调 `https://rustineverything.app/api/auth/callback/<provider>`）可后补

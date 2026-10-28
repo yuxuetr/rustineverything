@@ -85,6 +85,8 @@ COPY crates/app/index.html crates/app/index.html
 COPY crates/app/package.json crates/app/package.json
 COPY crates/app/package-lock.json crates/app/package-lock.json
 COPY crates/app/tailwind-input.css crates/app/tailwind-input.css
+# npm run build 先跑它生成 tailwind-sources.css（组件库源码的 @source 行，路径来自 cargo metadata）
+COPY scripts/tw-sources.mjs scripts/tw-sources.mjs
 COPY crates/migration/Cargo.toml crates/migration/Cargo.toml
 COPY crates/modules ./crates/modules
 # build.rs 引用 ../../assets，提供占位避免预热阶段 panic
@@ -150,6 +152,11 @@ WORKDIR /app
 COPY --from=builder --chown=app:app /out/server /app/server
 COPY --from=builder --chown=app:app /out/public /app/public
 COPY --from=builder --chown=app:app /out/assets /app/assets
+
+# 挂卷点要先在镜像里建好并归 app 所有：docker 初始化空的命名卷时沿用镜像里该目录的属主，
+# 镜像里没有这个目录时卷归 root，app 用户写不进去（上传失败、搜索索引建不起来）。
+RUN mkdir -p /app/assets/uploads /app/data/search-index \
+ && chown app:app /app/assets/uploads /app/data /app/data/search-index
 
 USER app
 

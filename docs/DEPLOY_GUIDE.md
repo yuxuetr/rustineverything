@@ -117,6 +117,76 @@ compose 把 `CONTENT_HOST_DIR` 只读挂到容器的 `/app/content`（app 设 `C
 
 本地写作：框架 `.env` 设 `CONTENT_DIR=<内容仓库绝对路径>`，`dx serve` 后刷新页面即可看到新文章。
 
+### 3.6 生产：用发布的镜像
+
+服务器上不编译（app 镜像要几 GB 内存构建）。镜像由 `.github/workflows/release.yml` 在 CI 构建，
+`docker-compose.prod.yml` 叠加在基础文件上：app 用 ghcr 镜像（accounts 档）、postgres 不开端口、
+加 `rie-gateway`（host 网络监听 80 / 443）、各服务设内存上限。
+
+**发布镜像**：打 tag 推上去，CI 构建 linux/amd64 的 `ghcr.io/<owner>/rie-app` 与 `rie-gateway`，
+标签为 tag 名、短 sha 和 `latest`。第一次发布后在 GitHub 的 Packages 页把两个包设为 Public，服务器才能免登录拉取。
+
+```bash
+git tag v0.1.1 && git push origin v0.1.1
+```
+
+**服务器布局**（`/data/rie`）：
+
+```text
+/data/rie/
+  rustineverything/          框架仓库：只用到 compose 文件和 scripts/
+  rustineverything-content/  内容仓库（只读 deploy key）
+  certs/                     fullchain.pem、privkey.pem（600）
+  cert.env                   DYNADOT_API_KEY=...（600），cert_refresh.sh 读
+  backups/                   backup.sh 写
+```
+
+**`.env`**：在服务器上生成，密钥不经过别的机器：
+
+```bash
+cd /data/rie/rustineverything
+umask 077
+cat > .env <<ENV
+COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+RIE_TAG=v0.1.1
+BASE_URL=https://example.com
+CONTENT_HOST_DIR=/data/rie/rustineverything-content
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
+JWT_SECRET=$(openssl rand -hex 32)
+DATA_ENCRYPTION_KEY=$(openssl rand -hex 32)
+ENV
+```
+
+`COMPOSE_FILE` 让之后的 `docker compose` 命令自动叠加 prod 文件，不用每次写 `-f`。
+
+**证书**：网关不自带 ACME（§6.1）。本站用域名注册商 Dynadot 签发的 Let's Encrypt 证书：Dynadot 在到期前约一个月自动续期，
+`scripts/cert_refresh.sh` 每天从永久下载链接取回，检查通过（PEM、域名、与现有私钥配对、证书链、到期日更晚）才替换并重启网关，
+任一项不过就不动现有证书。首次把证书和私钥放进 `certs/`。用 certbot 等其他来源时，续期后执行 `docker restart rie-gateway` 即可。
+
+**启动**：
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose logs -f app | grep "schema migrations"
+```
+
+**cron**（`crontab -e`）：
+
+```cron
+MAILTO=you@example.com
+0 4 * * * /data/rie/rustineverything/scripts/cert_refresh.sh >> /data/rie/certs/refresh.log 2>&1
+30 3 * * * /data/rie/rustineverything/scripts/backup.sh >> /data/rie/backups/backup.log 2>&1
+```
+
+另给 `.github/workflows/cert-check.yml` 加 schedule，每天从外网查线上证书剩余天数（`scripts/check_cert_expiry.sh`），少于 20 天就红。
+
+| 要做的事 | 命令 |
+| --- | --- |
+| 更新文章 / 课程 | `git -C /data/rie/rustineverything-content pull`（不重启） |
+| 升级框架 | `scripts/backup.sh`；`git pull`（compose 文件与脚本）；`.env` 里改 `RIE_TAG`；`docker compose pull && docker compose up -d` |
+| 回滚框架 | `.env` 里把 `RIE_TAG` 改回旧版本后 `docker compose up -d`；新版本带迁移时先按 OPERATIONS.md §2.2 恢复升级前的备份 |
+
 ## 4. 单 Docker 镜像（不带 compose）
 
 适用于已有托管 postgres / RDS / Supabase 的场景。
@@ -305,6 +375,7 @@ Pingora **不自带 ACME**，证书需外部提供。两种推荐路径：
 | `certbot --standalone` | 单机部署；先停 Pingora、申请、再启动 | `certbot certonly --standalone -d example.com` |
 | [`lego`](https://github.com/go-acme/lego) | 容器化部署；可独立 sidecar 跑续期 | `lego --email you@example.com --domains example.com --http run` |
 | Rust 原生：[`instant-acme`](https://crates.io/crates/instant-acme) | 想纯 Rust 栈 | 需自己写续期脚本，~50 行 |
+| 域名注册商签发（如 Dynadot） | 注册商托管 DNS、自动续期 | `scripts/cert_refresh.sh` 每天取回（§3.6） |
 
 证书续期后给 Pingora 进程发 `SIGHUP` 触发零停机热重载（Pingora 内置）：
 
@@ -342,14 +413,7 @@ app 已在 server fn 内强制 5 MB 限制（Phase 1A.4）。Pingora 默认对 b
 CSP 只有应用这一份定义（SEC-10）：gateway 若另设一份，会覆盖掉应用 CSP 里 hydration 必需的
 `'wasm-unsafe-eval'` 与内联启动脚本许可，页面整体失去交互。
 
-per-IP token-bucket 限流（基于 [`governor`](https://docs.rs/governor)）：
-
-| 路径 | 配额 / IP / 分钟 | env 覆盖 |
-| --- | --- | --- |
-| 写端点（`/api/auth/` `/api/upload` `/api/comments/` `/api/topics/` `/api/admin/` `/api/forum/`） | 10 | `RATE_LIMIT_WRITE_PER_MIN` |
-| 其他读端点 / 静态资源 | 60 | `RATE_LIMIT_READ_PER_MIN` |
-
-触发限流返回 `429 Too Many Requests` + `Retry-After: 60`；开发态 `RATE_LIMIT_DISABLE=true` 全关。
+gateway 不限流，限流只在 app 里做（`crates/app/src/server/rate_limit.rs`：只限 `/api/*`，按 gateway 写入的 `X-Forwarded-For` 分桶，环境变量见 `.env.example` 的 `RATE_LIMIT_*`）。gateway 原先也按 IP 限流，但把静态资源算在内：一次冷加载文档页约 57 个请求，读配额 60 / 分钟刷新一次就 429，`/api/auth/me` 还算进 10 / 分钟的写配额。
 
 `X-Forwarded-For` 改用 `insert_header` 覆盖客户端伪造，同时 strip 掉 RFC 7239 `Forwarded` 头；下游 app 看到的 XFF 一定是 Pingora 取到的真实 TCP 对端 IP。
 
@@ -358,11 +422,6 @@ per-IP token-bucket 限流（基于 [`governor`](https://docs.rs/governor)）：
 ```bash
 # 安全头检查（任意路径）
 curl -kI https://your-domain.com/ | grep -iE 'strict-transport|x-frame|x-content-type|content-security-policy|referrer-policy'
-
-# 限流冒烟（同 IP 11 次写端点，第 11 次预期 429）
-for i in $(seq 1 11); do
-  curl -ks -o /dev/null -w "%{http_code}\n" -X POST https://your-domain.com/api/auth/whatever
-done
 ```
 
 #### 与 docker-compose 的关系
@@ -508,9 +567,11 @@ docker compose restart app
 
 ## 10. 升级流程
 
+用 §3.6 发布的镜像部署时，升级见 §3.6 末尾的表格。下面是在服务器上自己构建镜像的流程。
+
 ```bash
-# 0. 备份数据库（强烈建议；详见 OPERATIONS.md §备份）
-docker compose exec postgres pg_dump -U $POSTGRES_USER $POSTGRES_DB > backup-$(date +%F).sql
+# 0. 备份数据库与上传文件（OPERATIONS.md §2）
+scripts/backup.sh
 
 # 1. 拉新代码
 git pull
@@ -544,8 +605,9 @@ docker compose logs -f app | grep "schema migrations"
 
 ## 12. 已知限制
 
-- **uploads/ 不集中备份**：当前用户图片只在 `app-uploads` 卷里；若需异地备份，挂 NFS / S3-FUSE 或自行 `docker cp` 定时拷出。
+- **备份只在本机**：`scripts/backup.sh` 把数据库和上传文件写到同一台服务器的 `/data/rie/backups`（OPERATIONS.md §2），异地复制需自行安排。
 - **搜索索引目录需挂卷**：Phase 7.3 起索引落盘到 `SEARCH_INDEX_DIR`（默认 `data/search-index`）。docker-compose 已为该路径配卷；裸机部署需自行确保该目录持久化，否则重启会触发一次全量重建（仍可正常对外服务，只是冷启动慢）。
+- **卷的属主**：镜像里预先建好 `/app/assets/uploads`、`/app/data/search-index` 并归 `app`（uid 999），新建的命名卷沿用这个属主。用旧镜像建出的卷归 root，容器里上传和搜索索引都会报 `Permission denied`，在宿主上执行一次 `chown 999:999 /var/lib/docker/volumes/rustineverything_app-{uploads,search-index}/_data` 即可。
 - **moderation provider**：当前 ModerationEngine 为骨架，未接入实际 LLM。Phase 4.3+ 落地。
 
 ## 13. 参考
