@@ -169,8 +169,7 @@ impl SearchEngine {
     for d in docs {
       self.add_one(&mut writer, &d)?;
     }
-    writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
-    self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))?;
+    self.commit_and_reload(writer)?;
     Ok(count)
   }
 
@@ -197,8 +196,7 @@ impl SearchEngine {
       writer.delete_term(term);
       self.add_one(&mut writer, d)?;
     }
-    writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
-    self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))?;
+    self.commit_and_reload(writer)?;
     Ok(docs.len())
   }
 
@@ -207,14 +205,21 @@ impl SearchEngine {
     if uids.is_empty() {
       return Ok(0);
     }
-    let mut writer = self.new_writer()?;
+    let writer = self.new_writer()?;
     for uid in uids {
       let term = Term::from_field_text(self.fields.doc_uid, uid);
       writer.delete_term(term);
     }
-    writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
-    self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))?;
+    self.commit_and_reload(writer)?;
     Ok(uids.len())
+  }
+
+  /// 提交并刷新 reader。writer 每次用完即弃，所以要等 commit 触发的后台合并做完再 drop，
+  /// 否则合并结果被丢掉，段只增不减，删掉的旧版本也一直留在段里。
+  fn commit_and_reload(&self, mut writer: IndexWriter) -> Result<(), String> {
+    writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
+    writer.wait_merging_threads().map_err(|e| format!("search: merge failed: {}", e))?;
+    self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))
   }
 
   fn new_writer(&self) -> Result<IndexWriter, String> {
@@ -770,6 +775,19 @@ mod tests {
     let hits = eng.query(&q, None, 10).expect("query");
     assert!(started.elapsed() < std::time::Duration::from_secs(2), "took {:?}", started.elapsed());
     assert!(!hits.is_empty());
+  }
+
+  /// 每次 upsert 都是新 writer：commit 后不等合并就 drop，后台合并会被丢掉，段只增不减。
+  #[test]
+  fn repeated_upserts_keep_segments_merged() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    for i in 0..20 {
+      eng.upsert_document(&doc_with("blog", &format!("p{i}"), "Rust", "body")).expect("upsert");
+    }
+    let segments = eng.index.searchable_segment_ids().expect("segments").len();
+    assert!(segments <= 8, "{segments} segments after 20 upserts");
+    assert_eq!(eng.reader.searcher().num_docs(), 20);
   }
 
   #[test]
