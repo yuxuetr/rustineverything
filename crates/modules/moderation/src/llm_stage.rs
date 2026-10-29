@@ -180,8 +180,11 @@ mod tests {
     fn provider(&self) -> LlmProvider {
       LlmProvider::OpenAi
     }
-    async fn chat(&self, _messages: Vec<LlmMessage>) -> AppResult<String> {
-      self.0.map(str::to_string).ok_or_else(|| AppError::other("stub LLM forced failure"))
+    async fn complete(&self, _messages: Vec<LlmMessage>) -> AppResult<llm::LlmReply> {
+      self
+        .0
+        .map(|t| llm::LlmReply { text: t.to_string(), usage: Default::default() })
+        .ok_or_else(|| AppError::other("stub LLM forced failure"))
     }
   }
 

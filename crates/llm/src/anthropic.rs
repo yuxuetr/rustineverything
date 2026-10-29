@@ -46,7 +46,8 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use super::{
-  config::DEFAULT_TIMEOUT_SECS, LlmClient, LlmContentBlock, LlmMessage, LlmProvider, LlmRole,
+  config::DEFAULT_TIMEOUT_SECS, LlmClient, LlmContentBlock, LlmMessage, LlmProvider, LlmReply,
+  LlmRole, LlmUsage,
 };
 
 /// Anthropic API 版本头。0.x SDK 与 2023-06-01 兼容；后续升级时更新。
@@ -217,6 +218,16 @@ struct MessagesResponse {
   resp_type: String,
   #[serde(default)]
   error: Option<ApiError>,
+  #[serde(default)]
+  usage: Option<WireUsage>,
+}
+
+#[derive(Deserialize)]
+struct WireUsage {
+  #[serde(default)]
+  input_tokens: u64,
+  #[serde(default)]
+  output_tokens: u64,
 }
 
 #[derive(Deserialize)]
@@ -241,7 +252,7 @@ impl LlmClient for AnthropicChat {
     LlmProvider::Anthropic
   }
 
-  async fn chat(&self, messages: Vec<LlmMessage>) -> AppResult<String> {
+  async fn complete(&self, messages: Vec<LlmMessage>) -> AppResult<LlmReply> {
     let (system, conv) = split_system_and_messages(&messages);
 
     if conv.is_empty() {
@@ -300,6 +311,10 @@ impl LlmClient for AnthropicChat {
       return Err(AppError::other(format!("LLM 服务返回错误（{}）: {}", err.kind, err.message)));
     }
 
+    let usage = parsed
+      .usage
+      .map(|u| LlmUsage { input_tokens: u.input_tokens, output_tokens: u.output_tokens })
+      .unwrap_or_default();
     let answer = parsed
       .content
       .into_iter()
@@ -315,7 +330,7 @@ impl LlmClient for AnthropicChat {
     }
 
     tracing::debug!(provider = "anthropic", len = answer.len(), "llm: chat ok");
-    Ok(answer)
+    Ok(LlmReply { text: answer, usage })
   }
 }
 
@@ -345,6 +360,20 @@ mod tests {
 
   fn build_chat(base_url: &str) -> AnthropicChat {
     AnthropicChat::new(base_url, "sk-test", "deepseek-chat").with_client(test_client())
+  }
+
+  #[tokio::test]
+  async fn complete_reports_usage() {
+    let mut server = mockito::Server::new_async().await;
+    let body = r#"{
+      "type": "message",
+      "content": [{"type": "text", "text": "ok"}],
+      "usage": {"input_tokens": 200, "output_tokens": 17, "cache_read_input_tokens": 0}
+    }"#;
+    let _m = server.mock("POST", "/v1/messages").with_body(body).create_async().await;
+    let reply = build_chat(&server.url()).complete(vec![LlmMessage::user("x")]).await.unwrap();
+    assert_eq!(reply.text, "ok");
+    assert_eq!(reply.usage, LlmUsage { input_tokens: 200, output_tokens: 17 });
   }
 
   #[tokio::test]
