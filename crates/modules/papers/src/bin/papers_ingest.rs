@@ -1,26 +1,30 @@
-//! 论文采集：取 HF Daily Papers 列表入库。服务器 cron 每天跑一次。
+//! 论文采集：取 HF Daily Papers 列表入库，再给当天 upvotes 最高的几篇生成解读。
+//! 服务器 cron 每天跑一次。
 //!
 //! ```sh
 //! papers-ingest                        # 昨天（UTC）
 //! papers-ingest --date 2026-10-28      # 指定日期，可重复
 //! papers-ingest --hf-dir saved/        # 从存下来的 <date>.json 导入（不带 --date 时导入目录里全部）
+//! papers-ingest --list-only            # 只入库列表，不调模型
 //! ```
-//! 读 `DATABASE_URL`；表由 app 启动时的迁移建好。
+//! 读 `DATABASE_URL`、`OPENAI_LLM_*`、`PAPERS_DAILY_LIMIT`（默认 20）；表由 app 启动时的迁移建好。
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use chrono::NaiveDate;
-use module_papers::ingest::{run_day, HfSource};
+use module_papers::ingest::{run_day, Generator, HfSource};
 
 struct Args {
   dates: Vec<NaiveDate>,
   hf_dir: Option<PathBuf>,
+  list_only: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
   let mut dates = Vec::new();
   let mut hf_dir = None;
+  let mut list_only = false;
   let mut it = std::env::args().skip(1);
   while let Some(a) = it.next() {
     match a.as_str() {
@@ -30,6 +34,7 @@ fn parse_args() -> Result<Args, String> {
           .push(NaiveDate::parse_from_str(&v, "%Y-%m-%d").map_err(|e| format!("--date {v}: {e}"))?);
       }
       "--hf-dir" => hf_dir = Some(PathBuf::from(it.next().ok_or("--hf-dir 缺少值")?)),
+      "--list-only" => list_only = true,
       other => return Err(format!("未知参数：{other}")),
     }
   }
@@ -39,7 +44,7 @@ fn parse_args() -> Result<Args, String> {
       None => vec![(chrono::Utc::now() - chrono::Duration::days(1)).date_naive()],
     };
   }
-  Ok(Args { dates, hf_dir })
+  Ok(Args { dates, hf_dir, list_only })
 }
 
 /// 目录里 `<YYYY-MM-DD>.json` 的日期，升序。
@@ -83,17 +88,47 @@ async fn main() -> ExitCode {
       return ExitCode::FAILURE;
     }
   };
+  // arXiv 与 HF 都建议带上能联系到人的 User-Agent
+  let http = match reqwest::Client::builder()
+    .user_agent("rustineverything-papers/0.1 (+https://rustineverything.app)")
+    .timeout(std::time::Duration::from_secs(60))
+    .build()
+  {
+    Ok(c) => c,
+    Err(e) => {
+      eprintln!("构造 HTTP 客户端失败：{e}");
+      return ExitCode::FAILURE;
+    }
+  };
+  let generator = if args.list_only {
+    None
+  } else {
+    match Generator::from_env(http.clone()) {
+      Ok(g) => Some(g),
+      Err(e) => {
+        eprintln!("{e}（只入库列表请加 --list-only）");
+        return ExitCode::from(2);
+      }
+    }
+  };
   let source = match args.hf_dir {
     Some(dir) => HfSource::Dir(dir),
-    None => HfSource::Api(reqwest::Client::new()),
+    None => HfSource::Api(http),
   };
 
   let mut ok = true;
   for date in args.dates {
-    match run_day(&db, date, &source).await {
-      Ok(s) => {
-        tracing::info!(%date, fetched = s.fetched, inserted = s.inserted, "papers: day done")
-      }
+    match run_day(&db, date, &source, generator.as_ref()).await {
+      Ok(s) => tracing::info!(
+        %date,
+        fetched = s.fetched,
+        inserted = s.inserted,
+        generated = s.generated,
+        failed = s.failed,
+        input_tokens = s.input_tokens,
+        output_tokens = s.output_tokens,
+        "papers: day done"
+      ),
       Err(e) => {
         ok = false;
         tracing::error!(%date, error = %e, "papers: day failed");

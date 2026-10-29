@@ -41,7 +41,7 @@ async fn importing_saved_days_dedupes_by_arxiv_id() {
 
   let mut inserted = 0;
   for d in &dates {
-    inserted += run_day(&db, *d, &source).await.unwrap().inserted;
+    inserted += run_day(&db, *d, &source, None).await.unwrap().inserted;
   }
   let rows = paper::Entity::find().count(&db).await.unwrap();
   println!("{} days, {} rows", dates.len(), rows);
@@ -53,7 +53,7 @@ async fn importing_saved_days_dedupes_by_arxiv_id() {
   // 同一天再导一次：不增行，first_seen_on 不变
   let last = *dates.last().unwrap();
   let before = paper::Entity::find().order_by_asc(paper::Column::ArxivId).all(&db).await.unwrap();
-  let again = run_day(&db, last, &source).await.unwrap();
+  let again = run_day(&db, last, &source, None).await.unwrap();
   assert_eq!(again.inserted, 0);
   let after = paper::Entity::find().order_by_asc(paper::Column::ArxivId).all(&db).await.unwrap();
   assert_eq!(after.len(), before.len());

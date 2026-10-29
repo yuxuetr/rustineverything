@@ -20,6 +20,7 @@ tokio = { workspace = true, optional = true }
 dotenvy = { version = "0.15", optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 llm = { path = "../../llm", optional = true }
+scraper = { version = "0.23", optional = true }
 
 [features]
 server = [
@@ -37,6 +38,7 @@ ingest = [
     "dep:dotenvy",
     "dep:tracing-subscriber",
     "dep:llm",
+    "dep:scraper",
 ]
 
 [[bin]]
@@ -45,4 +47,5 @@ path = "src/bin/papers_ingest.rs"
 required-features = ["ingest"]
 
 [dev-dependencies]
+async-trait = "0.1"
 migration = { path = "../../migration" }
