@@ -307,11 +307,13 @@ fn wipe_index_dir(dir: &Path) -> Result<(), String> {
 }
 
 /// 防御性查询转义：保留 ASCII 字母数字、空格、引号、中文等。
+/// 查询语法只认 ASCII 空白作分隔，全角空格（U+3000）、不换行空格等要先换成普通空格。
 fn escape_query(q: &str) -> String {
   q.chars()
     .map(|c| match c {
       '+' | '-' | '!' | '(' | ')' | '{' | '}' | '[' | ']' | '^' | '~' | '*' | '?' | ':' | '\\'
       | '/' => ' ',
+      c if c.is_whitespace() => ' ',
       other => other,
     })
     .collect()
@@ -797,6 +799,19 @@ mod tests {
     eng.replace_all(sample_docs()).expect("write");
     let q = format!("rust {}", "x".repeat(10 * MAX_QUERY_CHARS));
     assert!(eng.query(&q, None, 10).is_ok());
+  }
+
+  #[test]
+  fn unicode_whitespace_separates_terms() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    eng.replace_all(sample_docs()).expect("write");
+    for q in ["rust\u{3000}tokio", "rust\u{a0}tokio"] {
+      let hits = eng.query(q, None, 10).expect("query");
+      assert_eq!(hits.len(), 2, "{q:?}");
+      let hits = eng.query(q, Some("doc"), 10).expect("query with kind");
+      assert_eq!(hits.len(), 1, "{q:?} with kind");
+    }
   }
 
   // ---- Phase 7.3.1：持久化相关测试 ----
