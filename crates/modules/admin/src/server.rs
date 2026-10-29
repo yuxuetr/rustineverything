@@ -702,7 +702,7 @@ pub async fn admin_approve_moderation(id: i64) -> Result<(), ServerFnError> {
   {
     use app_core::entities::moderation_queue;
     use app_core::session::require_admin;
-    use sea_orm::{ActiveValue::Set, EntityTrait};
+    use sea_orm::EntityTrait;
 
     let admin = require_admin().await?;
     let db = open_db().await?;
@@ -714,21 +714,43 @@ pub async fn admin_approve_moderation(id: i64) -> Result<(), ServerFnError> {
       .map_err(|e| ServerFnError::new(e.to_string()))?
       .ok_or_else(|| ServerFnError::new("审核记录不存在".to_string()))?;
 
-    let mut am: moderation_queue::ActiveModel = row.into();
-    am.status = Set("approved".to_string());
-    am.reviewer_user_id = Set(Some(admin.id));
-    am.reviewed_at = Set(Some(now));
-    moderation_queue::Entity::update(am)
-      .exec(&db)
-      .await
-      .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(())
+    approve_one(&db, admin.id, row, now).await
   }
   #[cfg(not(feature = "server"))]
   {
     let _ = id;
     Ok(())
   }
+}
+
+/// 通过一条队列记录：公开业务内容（`pending_review` 置回 false）并标记 approved。
+/// 两步在一个事务里，不会出现「队列显示已通过、内容却还藏着」。
+#[cfg(feature = "server")]
+async fn approve_one(
+  db: &sea_orm::DatabaseConnection,
+  admin_id: i32,
+  row: app_core::entities::moderation_queue::Model,
+  now: chrono::DateTime<chrono::FixedOffset>,
+) -> Result<(), ServerFnError> {
+  use app_core::entities::moderation_queue;
+  use sea_orm::{ActiveValue::Set, EntityTrait, TransactionTrait};
+
+  let txn = db.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+  if let Some(ref_id) = row.ref_id {
+    module_moderation::publish_held(&txn, &row.kind, ref_id)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+  }
+  let mut am: moderation_queue::ActiveModel = row.into();
+  am.status = Set("approved".to_string());
+  am.reviewer_user_id = Set(Some(admin_id));
+  am.reviewed_at = Set(Some(now));
+  moderation_queue::Entity::update(am)
+    .exec(&txn)
+    .await
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+  txn.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+  Ok(())
 }
 
 /// 拒绝一条队列记录：删除关联业务内容（按 kind + ref_id）并标记 rejected。
@@ -819,17 +841,22 @@ pub async fn admin_bulk_approve_moderation(ids: Vec<i64>) -> Result<u64, ServerF
     }
     let db = open_db().await?;
     let now = chrono::Utc::now().fixed_offset();
-
-    // 单条 UPDATE ... WHERE id IN (...)，避免逐行往返。
-    let res = moderation_queue::Entity::update_many()
-      .col_expr(moderation_queue::Column::Status, sea_orm::sea_query::Expr::value("approved"))
-      .col_expr(moderation_queue::Column::ReviewerUserId, sea_orm::sea_query::Expr::value(admin.id))
-      .col_expr(moderation_queue::Column::ReviewedAt, sea_orm::sea_query::Expr::value(now))
+    let rows = moderation_queue::Entity::find()
       .filter(moderation_queue::Column::Id.is_in(ids))
-      .exec(&db)
+      .all(&db)
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?;
-    Ok(res.rows_affected)
+
+    // 每条都要公开对应的业务行，逐条处理；单条失败只告警，继续其余
+    let mut done = 0;
+    for row in rows {
+      let id = row.id;
+      match approve_one(&db, admin.id, row, now).await {
+        Ok(()) => done += 1,
+        Err(e) => tracing::warn!(error = %e, queue_id = id, "bulk approve: item failed"),
+      }
+    }
+    Ok(done)
   }
   #[cfg(not(feature = "server"))]
   {

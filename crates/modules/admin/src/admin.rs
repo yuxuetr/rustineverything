@@ -1157,7 +1157,7 @@ pub fn AdminModerationSettingsPage() -> Element {
                           on_value_change: move |v: String| {
                               on_llm_failure.set(if v == "reject" { LlmFailureAction::Reject } else { LlmFailureAction::Review });
                           },
-                          NativeSelectOption { value: "review", selected: on_llm_failure() == LlmFailureAction::Review, "送人工复核（照常发布，进审核队列）" }
+                          NativeSelectOption { value: "review", selected: on_llm_failure() == LlmFailureAction::Review, "送人工复核（通过前不显示，邮件通知管理员）" }
                           NativeSelectOption { value: "reject", selected: on_llm_failure() == LlmFailureAction::Reject, "拒绝提交（提示用户稍后再试）" }
                       }
                       p { class: "{help_cls}",

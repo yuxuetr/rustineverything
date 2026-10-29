@@ -11,6 +11,8 @@ pub struct Model {
   #[sea_orm(column_type = "Text")]
   pub content: String,
   pub created_at: DateTimeWithTimeZone,
+  /// 审核未决（Flag）：公开读路径不返回，admin 通过后置 false。
+  pub pending_review: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -14,6 +14,13 @@ pub struct Comment {
   pub date: String,
 }
 
+/// 发评论的结果：最新的公开评论列表，以及刚发的这条是不是在等人工审核（等审的不在列表里）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PostedComment {
+  pub comments: Vec<Comment>,
+  pub pending_review: bool,
+}
+
 /// 评论长度上限，与论坛回复一致（Y3）。
 pub const MAX_COMMENT_LEN: usize = 32 * 1024;
 
@@ -40,6 +47,7 @@ pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError
 
     let results = comment::Entity::find()
       .filter(comment::Column::BlogId.eq(&blog_id))
+      .filter(comment::Column::PendingReview.eq(false))
       .find_also_related(user::Entity)
       .order_by_desc(comment::Column::CreatedAt)
       .all(&db)
@@ -83,7 +91,10 @@ pub async fn get_comments(blog_id: String) -> Result<Vec<Comment>, ServerFnError
   )
 )]
 #[post("/api/comments/post")]
-pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Comment>, ServerFnError> {
+pub async fn post_comment(
+  blog_id: String,
+  content: String,
+) -> Result<PostedComment, ServerFnError> {
   #[cfg(feature = "server")]
   {
     use app_core::db::get_or_init_pool;
@@ -129,11 +140,14 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
 
     let db = get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Flag：先存下但不公开，等 admin 在审核队列里通过
+    let pending_review = verdict.label == ModerationLabel::Flag;
     let new_comment = comment::ActiveModel {
       blog_id: Set(blog_id.clone()),
       user_id: Set(session_user.id),
       content: Set(content.clone()),
       created_at: Set(Utc::now().fixed_offset()),
+      pending_review: Set(pending_review),
       ..Default::default()
     };
     // `insert(...)` 返回新行 ActiveModel；用 id 入审核队列
@@ -152,12 +166,12 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
     )
     .await;
 
-    get_comments(blog_id).await
+    Ok(PostedComment { comments: get_comments(blog_id).await?, pending_review })
   }
   #[cfg(not(feature = "server"))]
   {
     let _ = (blog_id, content);
-    Ok(vec![])
+    Ok(PostedComment { comments: vec![], pending_review: false })
   }
 }
 

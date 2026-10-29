@@ -2849,12 +2849,14 @@ pub async fn list_annotations(
     let me = current_session_user();
     let db = open_db().await?;
 
-    // 同资源路径下：本人全部标注 + 他人不为 private 的标注。
+    // 同资源路径下：本人全部标注 + 他人不为 private 且不在等审核的标注。
     // 未登录只能看他人公开标注。
     let me_id = me.as_ref().map(|u| u.id).unwrap_or(-1);
-    let visible_cond = Condition::any()
-      .add(Expr::col(annotation::Column::UserId).eq(me_id))
-      .add(Expr::col(annotation::Column::Visibility).ne("private"));
+    let visible_cond = Condition::any().add(Expr::col(annotation::Column::UserId).eq(me_id)).add(
+      Condition::all()
+        .add(Expr::col(annotation::Column::Visibility).ne("private"))
+        .add(Expr::col(annotation::Column::PendingReview).eq(false)),
+    );
 
     let rows = annotation::Entity::find()
       .filter(annotation::Column::ResourceKind.eq(&resource_kind))
@@ -2966,6 +2968,8 @@ pub async fn create_annotation(payload: AnnotationCreate) -> Result<Annotation, 
       visibility: Set(visibility),
       created_at: Set(now),
       updated_at: Set(now),
+      // Flag：作者自己照常看得到，别人要等 admin 通过
+      pending_review: Set(mod_outcome.as_ref().is_some_and(|v| v.label == ModerationLabel::Flag)),
       ..Default::default()
     };
     let res = annotation::Entity::insert(am)

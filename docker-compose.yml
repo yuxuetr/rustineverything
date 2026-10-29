@@ -103,6 +103,13 @@ services:
       ANTHROPIC_LLM_BASE_URL: ${ANTHROPIC_LLM_BASE_URL:-}
       ANTHROPIC_LLM_API_KEY: ${ANTHROPIC_LLM_API_KEY:-}
       ANTHROPIC_LLM_MODEL: ${ANTHROPIC_LLM_MODEL:-}
+      # 可选：有内容等人工审核时邮件通知管理员（缺任一项则只记日志）
+      MODERATION_NOTIFY_EMAIL: ${MODERATION_NOTIFY_EMAIL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       # tracing 输出级别
       RUST_LOG: ${RUST_LOG:-info}
       # 搜索索引目录（Phase 7.3）：MmapDirectory 持久化路径。

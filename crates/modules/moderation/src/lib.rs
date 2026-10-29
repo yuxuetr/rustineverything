@@ -23,7 +23,7 @@
 //! - **transport 在 `crates/llm`**：端点 / 超时 / 鉴权 / 协议（OpenAI 兼容或
 //!   Anthropic 兼容）由 env 选择，本 crate 只管提示词与结论解析。
 //! - **失败不放行**：LLM 失败 / 回复无法解析 → 按 `on_llm_failure` 记为 Flag
-//!   （默认：照常发布并进审核队列）或 Block（拒绝提交），warning 日志带累计失败次数。
+//!   （默认：先不公开，进审核队列）或 Block（拒绝提交），warning 日志带累计失败次数。
 //! - **默认禁用**：`site.json::moderation.enabled` 与 `llm_review` 默认 false。
 //!
 //! ## 使用方式
@@ -43,13 +43,14 @@
 
 pub mod hook;
 pub mod llm_stage;
+pub mod notify;
 pub mod pipeline;
 pub mod stage;
 pub mod url_blocklist;
 
 pub use hook::{
   enqueue_if_flagged, evaluate_submission, evaluate_with_images, external_image_urls,
-  extract_image_urls, reload_pipeline, shared_pipeline, MAX_IMAGES_PER_SUBMISSION,
+  extract_image_urls, publish_held, reload_pipeline, shared_pipeline, MAX_IMAGES_PER_SUBMISSION,
 };
 pub use llm_stage::LlmModerationStage;
 pub use pipeline::ModerationPipeline;

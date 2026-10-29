@@ -241,7 +241,7 @@ docker compose logs app | grep -i theme
 
 审核走托管 LLM API（`OPENAI_LLM_*` / `ANTHROPIC_LLM_*`，可指向 OpenAI / DeepSeek /
 … 或自托管 ollama 的 `/v1`）。若该 API 超时 / 限流 / 掉线，或回复读不出结论，
-按 `site.json::moderation.on_llm_failure` 处理：默认 `review` 照常发布并送 `/admin/moderation`
+按 `site.json::moderation.on_llm_failure` 处理：默认 `review` 先不公开、邮件通知管理员并送 `/admin/moderation`
 人工复核，`reject` 拒绝提交（详 [`MODERATION_SPEC.md`](MODERATION_SPEC.md) §3.3）。
 
 排查：

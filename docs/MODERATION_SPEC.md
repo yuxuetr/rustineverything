@@ -237,7 +237,7 @@ LLM stage 以下任一情况视为审核失败：
 
 | 值 | 结论 | 用户看到 | 管理员 |
 | --- | --- | --- | --- |
-| `review`（默认） | Flag，分数 0，理由「LLM 审核失败，待人工复核」 | 照常发布 | 进 `moderation_queue`，在 `/admin/moderation` 复核 |
+| `review`（默认） | Flag，分数 0，理由「LLM 审核失败，待人工复核」 | 通过前不公开 | 进 `moderation_queue`，在 `/admin/moderation` 复核 |
 | `reject` | Block，理由「审核服务暂不可用，请稍后再试」 | 提交被拒 | 无 |
 
 `review` 下内容在复核前已经可见，`reject` 下 LLM 故障期间无法提交。
@@ -341,6 +341,12 @@ docker compose restart app
 校验（越界 / NaN / block<flag → 回退默认 + 告警）。
 
 ### 3.8 审核队列（Phase 4.5）
+
+**等审不公开（2026-10-29）**：Flag 的评论 / 话题 / 回复 / 标注照常写入业务表，但
+`pending_review = true`，所有公开读路径（列表、详情、标签计数、搜索索引、他人标注）都过滤掉；
+提交者看到「已提交，管理员审核通过后显示」。admin 通过时 `publish_held` 置回 false
+（回复此时才计入话题回复数，重复通过不重复计数），拒绝时照旧删除业务行。入队时后台发邮件
+给 `MODERATION_NOTIFY_EMAIL`（SMTP 配置见 `.env.example`），发信失败只记 warn。
 
 Flag 决定自动入 `moderation_queue` 表等待 admin 复核。
 

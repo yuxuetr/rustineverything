@@ -18,6 +18,8 @@ sea-orm = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tracing = { workspace = true }
+# 待审内容通知管理员（SMTP，rustls + webpki 根证书，不依赖系统 OpenSSL）
+lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "hostname", "tokio1-rustls-tls"] }
 
 # 工作区内的依赖：
 # - core::engines::moderation 提供 Verdict / ModerationLabel / ModerationThresholds
