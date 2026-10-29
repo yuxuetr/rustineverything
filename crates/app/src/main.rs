@@ -126,6 +126,9 @@ fn compiled_modules() -> Vec<&'static str> {
   if cfg!(feature = "course") {
     ids.push("course");
   }
+  if cfg!(feature = "papers") {
+    ids.push("papers");
+  }
   ids
 }
 

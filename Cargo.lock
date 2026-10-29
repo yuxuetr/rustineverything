@@ -201,6 +201,7 @@ dependencies = [
  "module-docs",
  "module-embedded",
  "module-forum",
+ "module-papers",
  "module-podcast",
  "module-search",
  "module-uploads",
@@ -4530,6 +4531,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "sea-orm-migration",
+ "tokio",
 ]
 
 [[package]]
@@ -4765,6 +4767,20 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "module-papers"
+version = "0.1.0"
+dependencies = [
+ "app-core",
+ "chrono",
+ "dioxus",
+ "dioxus-shadcn",
+ "sea-orm",
+ "serde",
+ "tracing",
+ "widgets",
 ]
 
 [[package]]

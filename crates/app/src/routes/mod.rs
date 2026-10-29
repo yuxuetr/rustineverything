@@ -36,6 +36,10 @@ use widgets::{get_seo_base_url, inject_seo, parse_mdx, Markdown};
 mod accounts;
 #[cfg(feature = "accounts")]
 pub use accounts::*;
+#[cfg(feature = "papers")]
+mod papers;
+#[cfg(feature = "papers")]
+pub use papers::*;
 #[cfg(feature = "course")]
 mod course;
 #[cfg(feature = "course")]
@@ -65,6 +69,11 @@ absent_pages! {
   MyAnnotations {},
   MyOrders {},
   AdminEntitlements {},
+}
+
+#[cfg(not(feature = "papers"))]
+absent_pages! {
+  Papers {},
 }
 
 #[cfg(not(feature = "accounts"))]
@@ -232,6 +241,9 @@ pub enum Route {
         Cli {},
         #[route("/cli/:slug")]
         CliArticle { slug: String },
+
+        #[route("/papers")]
+        Papers {},
 
         // 论坛：注意路由顺序，静态路径优先于 i32 动态参数
         #[route("/topics")]
