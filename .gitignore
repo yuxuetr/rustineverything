@@ -41,3 +41,8 @@ crates/app/tailwind-sources.css
 !/assets/docs/burn/
 !/assets/docs/dioxus/
 !/assets/docs/weekly/
+
+# 规划文件只放本地（框架仓库公开）
+Todos.md
+TODOs.md
+docs/archive/todos/
