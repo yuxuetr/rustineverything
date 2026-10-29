@@ -51,6 +51,11 @@ impl MindNode {
   }
 }
 
+/// 出处节号：模型偶尔写成 `§3.1` 或带空格。
+pub fn clean_section(s: &str) -> &str {
+  s.trim().trim_start_matches('§').trim()
+}
+
 /// 生成 mermaid `mindmap` 源码。标签里会被 mermaid 当成语法的字符换成空格，
 /// 每个节点都写成 `["..."]` 形状，避免标签被当成关键字或节点 id。
 pub fn mindmap_source(root: &MindNode) -> String {

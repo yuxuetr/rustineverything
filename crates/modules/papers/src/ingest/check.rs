@@ -1,6 +1,6 @@
 //! 生成结果的校验：出处节号必须存在、导图不超限、数字能在原文找到，翻译不改结构。
 
-use crate::digest::{MindNode, PaperDigest};
+use crate::digest::{clean_section, MindNode, PaperDigest};
 
 /// 导图在根以下最多几层。
 pub const MINDMAP_MAX_DEPTH: usize = 3;
@@ -101,11 +101,6 @@ pub fn check_translation(en: &PaperDigest, tr: &PaperDigest) -> Result<(), Vec<S
 fn same_shape(a: &MindNode, b: &MindNode) -> bool {
   a.children.len() == b.children.len()
     && a.children.iter().zip(&b.children).all(|(x, y)| same_shape(x, y))
-}
-
-/// 模型偶尔写成 `§3.1` 或带空格。
-pub fn clean_section(s: &str) -> &str {
-  s.trim().trim_start_matches('§').trim()
 }
 
 /// 数字比对前的规范化：原文里的数字常在 LaTeX 公式里（`$49\times$`、`$84.6\%$`），

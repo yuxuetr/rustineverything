@@ -74,6 +74,10 @@ async fn collect_detail_paths(is_on: impl Fn(&str) -> bool) -> Vec<String> {
       }
     }
   }
+  #[cfg(feature = "papers")]
+  if is_on("papers") {
+    paths.extend(module_papers::server::sitemap_paths().await);
+  }
   paths
 }
 

@@ -11,4 +11,4 @@ pub mod ingest;
 pub mod pages;
 pub mod server;
 
-pub use pages::PapersIndexPage;
+pub use pages::{PaperDetailPage, PapersIndexPage};

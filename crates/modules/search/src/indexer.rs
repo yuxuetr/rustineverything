@@ -402,8 +402,9 @@ async fn collect_topics() -> Result<Vec<IndexedDocument>, String> {
 /// 依赖 cases。改走 [`app_core::engines::doc_source`] 注册表后，search 只依赖 core
 /// 抽象；具体内容模块的数据由组合根 `app` 注入（见 `app/src/main.rs`）。
 #[cfg(feature = "server")]
-fn collect_registered_external() -> Vec<IndexedDocument> {
+async fn collect_registered_external() -> Vec<IndexedDocument> {
   app_core::engines::doc_source::collect_registered_docs()
+    .await
     .into_iter()
     .map(|d| IndexedDocument {
       kind: d.kind,
@@ -466,7 +467,7 @@ pub async fn collect_dyn_documents() -> Vec<IndexedDocument> {
       Err(e) => tracing::warn!(error = %e, "search: failed to collect topics"),
     }
   }
-  out.extend(collect_registered_external());
+  out.extend(collect_registered_external().await);
   out
 }
 

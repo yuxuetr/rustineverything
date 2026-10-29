@@ -13,8 +13,8 @@ app-core = { path = "../../core" }
 widgets = { path = "../../widgets" }
 sea-orm = { workspace = true, optional = true }
 tracing = { workspace = true }
-# ingest
 serde_json = { workspace = true, optional = true }
+# ingest
 reqwest = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 dotenvy = { version = "0.15", optional = true }
@@ -26,13 +26,13 @@ scraper = { version = "0.23", optional = true }
 server = [
     "dioxus/server",
     "dep:sea-orm",
+    "dep:serde_json",
     "app-core/server",
     "widgets/server",
 ]
 # 采集与生成流水线、`papers-ingest` 二进制（服务器 cron 跑，app 不链接）
 ingest = [
     "server",
-    "dep:serde_json",
     "dep:reqwest",
     "dep:tokio",
     "dep:dotenvy",

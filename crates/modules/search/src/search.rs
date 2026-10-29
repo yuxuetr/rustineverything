@@ -252,6 +252,9 @@ fn HitRow(hit: SearchHit) -> Element {
       ("TOPIC", "bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300")
     }
     "case" => ("CASE", "bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300"),
+    "paper" => {
+      ("PAPER", "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300")
+    }
     "course" => ("COURSE", "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"),
     // Phase 6 内容板块：统一靛蓝徽章
     "embedded" => {
