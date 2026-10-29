@@ -276,6 +276,7 @@ comment.submitting = 提交中…
 comment.submit = 发布评论
 comment.login_hint = 登录后即可发表评论
 comment.loading = 加载评论中…
+comment.pending_review = 已提交，管理员审核通过后显示
 
 # 支付（阶段 I）
 pay.channel.alipay = 支付宝

@@ -276,6 +276,7 @@ comment.submitting = Posting…
 comment.submit = Post comment
 comment.login_hint = Sign in to leave a comment
 comment.loading = Loading comments…
+comment.pending_review = Submitted. It will appear after a moderator approves it.
 
 # 支付（阶段 I）
 pay.channel.alipay = Alipay

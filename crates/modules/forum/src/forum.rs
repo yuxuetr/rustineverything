@@ -71,6 +71,10 @@ fn tf(lang: Language, key: &str) -> &'static str {
     (_, "forum.write_reply") => "撰写回复",
     (Language::En, "forum.post_reply") => "Post Reply",
     (_, "forum.post_reply") => "发表回复",
+    (Language::En, "forum.pending_review") => {
+      "Submitted. It will appear after a moderator approves it."
+    }
+    (_, "forum.pending_review") => "已提交，管理员审核通过后显示",
     (Language::En, "forum.submitting") => "Submitting...",
     (_, "forum.submitting") => "提交中...",
     (Language::En, "forum.login_to_reply") => "Log in to reply to topics",
@@ -623,6 +627,7 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
   let mut content = use_signal(String::new);
   let mut submitting = use_signal(|| false);
   let mut error = use_signal::<Option<String>>(|| None);
+  let mut notice = use_signal::<Option<String>>(|| None);
 
   let handle_submit = move |_| {
     if content().trim().is_empty() || submitting() {
@@ -633,10 +638,14 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
     spawn(async move {
       submitting.set(true);
       error.set(None);
+      notice.set(None);
       match post_reply(topic_id, body).await {
-        Ok(d) => {
+        Ok(posted) => {
           content.set(String::new());
-          on_replied.call(d);
+          if posted.pending_review {
+            notice.set(Some(tf(lang, "forum.pending_review").to_string()));
+          }
+          on_replied.call(posted.topic);
         }
         Err(e) => {
           error.set(Some(format!("发表失败: {}", e)));
@@ -678,6 +687,9 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
           if let Some(err) = error() {
               ErrorAlert { message: err, class: "rounded-none border-x-0 px-5 py-2" }
           }
+          if let Some(msg) = notice() {
+              p { class: "px-5 py-2 text-sm text-slate-600 dark:text-slate-400", "{msg}" }
+          }
           div { class: "px-5 py-3 bg-muted/50 flex justify-end border-t border-border",
               Button {
                   r#type: "button",
@@ -708,6 +720,7 @@ pub fn NewTopicPage() -> Element {
   let mut is_preview = use_signal(|| false);
   let mut submitting = use_signal(|| false);
   let mut error = use_signal::<Option<String>>(|| None);
+  let mut notice = use_signal::<Option<String>>(|| None);
 
   // 引用 query 参数（?ref_kind=&ref_path=）
   let mut ref_kind = use_signal::<Option<String>>(|| None);
@@ -744,7 +757,13 @@ pub fn NewTopicPage() -> Element {
     spawn(async move {
       submitting.set(true);
       error.set(None);
+      notice.set(None);
       match create_topic(payload).await {
+        Ok(summary) if summary.pending_review => {
+          title.set(String::new());
+          content.set(String::new());
+          notice.set(Some(tf(lang, "forum.pending_review").to_string()));
+        }
         Ok(summary) => {
           let url = format!("/topics/{}", summary.id);
           widgets::browser::navigate(&url);
@@ -861,6 +880,9 @@ pub fn NewTopicPage() -> Element {
 
               if let Some(err) = error() {
                   ErrorAlert { message: err, class: "mb-4 py-2" }
+              }
+              if let Some(msg) = notice() {
+                  p { class: "mb-4 text-sm text-slate-600 dark:text-slate-400", "{msg}" }
               }
 
               div { class: "flex justify-end",

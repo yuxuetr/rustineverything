@@ -5,7 +5,7 @@
 //! 3. [`parse_verdict`]：从回复里读出 `{score, label, reason}`
 //!
 //! LLM 调用失败或回复无法解析时不放行（SEC-12）：按 [`LlmFailureAction`] 记为
-//! Flag（默认，照常发布并进审核队列）或 Block，并在 warning 里带上进程内累计失败次数。
+//! Flag（默认，先不公开，进审核队列）或 Block，并在 warning 里带上进程内累计失败次数。
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;

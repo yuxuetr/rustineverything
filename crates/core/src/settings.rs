@@ -78,7 +78,7 @@ pub struct ModerationSettings {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum LlmFailureAction {
-  /// 记为 Flag：照常发布，同时进审核队列等管理员复核。
+  /// 记为 Flag：先不公开，进审核队列等管理员通过后显示。
   #[default]
   Review,
   /// 记为 Block：拒绝提交，提示用户稍后再试。

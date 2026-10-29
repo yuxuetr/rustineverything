@@ -365,7 +365,7 @@ fn walk_docs(base: &Path, dir: &Path, out: &mut Vec<VersionedDoc>) {
 #[cfg(feature = "server")]
 async fn collect_topics() -> Result<Vec<IndexedDocument>, String> {
   use app_core::entities::topic;
-  use sea_orm::EntityTrait;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
   let db = match app_core::db::get_or_init_pool().await {
     Ok(db) => db,
@@ -375,7 +375,12 @@ async fn collect_topics() -> Result<Vec<IndexedDocument>, String> {
       return Ok(vec![]);
     }
   };
-  let rows: Vec<topic::Model> = topic::Entity::find().all(&db).await.map_err(|e| e.to_string())?;
+  // 等人工审核的话题不进索引
+  let rows: Vec<topic::Model> = topic::Entity::find()
+    .filter(topic::Column::PendingReview.eq(false))
+    .all(&db)
+    .await
+    .map_err(|e| e.to_string())?;
   let mut out = Vec::with_capacity(rows.len());
   for t in rows {
     let body = format!("{} {}", truncate_chars(&t.content, 4000), t.tag);

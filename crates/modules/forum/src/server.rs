@@ -28,6 +28,15 @@ pub struct TopicSummary {
   pub last_reply_at: Option<String>,
   pub created_at: String,
   pub reference: Option<TopicRef>,
+  /// 等人工审核、尚未公开（只会出现在 `create_topic` 的返回里，列表不含这种话题）
+  pub pending_review: bool,
+}
+
+/// 发回复的结果：最新的话题详情，以及刚发的回复是不是在等人工审核（等审的不在详情里）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PostedReply {
+  pub topic: TopicDetail,
+  pub pending_review: bool,
 }
 
 /// 单条回复
@@ -320,6 +329,7 @@ fn topic_to_summary(
     last_reply_at: t.last_reply_at.map(fmt_dt),
     created_at: fmt_dt(t.created_at),
     reference,
+    pending_review: t.pending_review,
   }
 }
 
@@ -342,7 +352,7 @@ pub async fn list_topics(
     let db = open_db().await?;
     let page = page.unwrap_or(0) as u64;
 
-    let mut q = topic::Entity::find();
+    let mut q = topic::Entity::find().filter(topic::Column::PendingReview.eq(false));
     if let Some(t) = tag.as_ref() {
       if !t.is_empty() {
         q = q.filter(topic::Column::Tag.eq(t));
@@ -407,6 +417,7 @@ pub async fn list_topics_by_ref(
     let rows: Vec<topic::Model> = topic::Entity::find()
       .filter(topic::Column::RefKind.eq(&kind))
       .filter(topic::Column::RefPath.eq(&path))
+      .filter(topic::Column::PendingReview.eq(false))
       .order_by_desc(topic::Column::LastReplyAt)
       .order_by_desc(topic::Column::CreatedAt)
       .all(&db)
@@ -450,7 +461,9 @@ pub async fn list_tags() -> Result<Vec<TagSummary>, ServerFnError> {
   #[cfg(feature = "server")]
   {
     use app_core::entities::topic;
-    use sea_orm::{ColumnTrait, EntityTrait, FromQueryResult, Order, QueryOrder, QuerySelect};
+    use sea_orm::{
+      ColumnTrait, EntityTrait, FromQueryResult, Order, QueryFilter, QueryOrder, QuerySelect,
+    };
 
     #[derive(FromQueryResult)]
     struct TagRow {
@@ -463,6 +476,7 @@ pub async fn list_tags() -> Result<Vec<TagSummary>, ServerFnError> {
       .select_only()
       .column(topic::Column::Tag)
       .column_as(topic::Column::Id.count(), "cnt")
+      .filter(topic::Column::PendingReview.eq(false))
       .group_by(topic::Column::Tag)
       .order_by(topic::Column::Id.count(), Order::Desc)
       .into_model::<TagRow>()
@@ -487,6 +501,7 @@ pub async fn get_topic(id: i32) -> Result<Option<TopicDetail>, ServerFnError> {
 
     let db = open_db().await?;
     let Some(t) = topic::Entity::find_by_id(id)
+      .filter(topic::Column::PendingReview.eq(false))
       .one(&db)
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?
@@ -503,6 +518,7 @@ pub async fn get_topic(id: i32) -> Result<Option<TopicDetail>, ServerFnError> {
     // 加载回复
     let reply_rows = topic_reply::Entity::find()
       .filter(topic_reply::Column::TopicId.eq(id))
+      .filter(topic_reply::Column::PendingReview.eq(false))
       .order_by_asc(topic_reply::Column::CreatedAt)
       .all(&db)
       .await
@@ -595,6 +611,7 @@ pub async fn create_topic(input: NewTopicInput) -> Result<TopicSummary, ServerFn
       ref_path: Set(input.ref_path.clone()),
       created_at: Set(now),
       updated_at: Set(now),
+      pending_review: Set(outcome.pending_review()),
       ..Default::default()
     };
     let inserted = topic::Entity::insert(am)
@@ -620,7 +637,7 @@ pub async fn create_topic(input: NewTopicInput) -> Result<TopicSummary, ServerFn
 }
 
 #[post("/api/topics/reply")]
-pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, ServerFnError> {
+pub async fn post_reply(topic_id: i32, content: String) -> Result<PostedReply, ServerFnError> {
   #[cfg(feature = "server")]
   {
     use app_core::entities::{topic, topic_reply};
@@ -634,11 +651,13 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
     // ── 审核 ──
     let ref_path = format!("topic:{}", topic_id);
     let outcome = moderate_or_reject(&content, "reply", &ref_path).await?;
+    let pending_review = outcome.pending_review();
 
     let db = open_db().await?;
 
-    // 必须存在该话题
+    // 必须存在该话题（等审核的话题不能回复）
     let _ = topic::Entity::find_by_id(topic_id)
+      .filter(topic::Column::PendingReview.eq(false))
       .one(&db)
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?
@@ -652,6 +671,7 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
       user_id: Set(user.id),
       content: Set(content.clone()),
       created_at: Set(now),
+      pending_review: Set(pending_review),
       ..Default::default()
     };
     let inserted_reply = topic_reply::Entity::insert(reply_am)
@@ -659,16 +679,10 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // 更新 topic 计数与最近回复时间
-    use sea_orm::sea_query::Expr;
-    topic::Entity::update_many()
-      .col_expr(topic::Column::ReplyCount, Expr::col(topic::Column::ReplyCount).add(1))
-      .col_expr(topic::Column::LastReplyAt, Expr::value(now))
-      .col_expr(topic::Column::UpdatedAt, Expr::value(now))
-      .filter(topic::Column::Id.eq(topic_id))
-      .exec(&txn)
-      .await
-      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    // 更新 topic 计数与最近回复时间；等审核的回复在通过时再计入
+    if !pending_review {
+      bump_reply_count(&txn, topic_id, now).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+    }
 
     txn.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -685,7 +699,9 @@ pub async fn post_reply(topic_id: i32, content: String) -> Result<TopicDetail, S
     .await;
 
     // 返回最新详情
-    get_topic(topic_id).await?.ok_or_else(|| ServerFnError::new("话题不存在".to_string()))
+    let topic =
+      get_topic(topic_id).await?.ok_or_else(|| ServerFnError::new("话题不存在".to_string()))?;
+    Ok(PostedReply { topic, pending_review })
   }
   #[cfg(not(feature = "server"))]
   {
@@ -708,6 +724,7 @@ pub async fn list_my_topics() -> Result<Vec<TopicSummary>, ServerFnError> {
     let db = open_db().await?;
     let rows = topic::Entity::find()
       .filter(topic::Column::UserId.eq(user.id))
+      .filter(topic::Column::PendingReview.eq(false))
       .order_by_desc(topic::Column::CreatedAt)
       .all(&db)
       .await
@@ -896,6 +913,35 @@ mod tests {
 struct ModerationOutcome {
   verdict: app_core::engines::moderation::Verdict,
   image_urls: Vec<String>,
+}
+
+#[cfg(feature = "server")]
+impl ModerationOutcome {
+  /// Flag：先存下但不公开，等 admin 在审核队列里通过
+  fn pending_review(&self) -> bool {
+    self.verdict.label == app_core::engines::moderation::ModerationLabel::Flag
+  }
+}
+
+/// 回复数 +1 并刷新最近回复时间。等审核的回复不调，由 admin 通过时
+/// `module_moderation::publish_held` 补上。
+#[cfg(feature = "server")]
+async fn bump_reply_count(
+  db: &impl sea_orm::ConnectionTrait,
+  topic_id: i32,
+  now: chrono::DateTime<chrono::FixedOffset>,
+) -> Result<(), sea_orm::DbErr> {
+  use app_core::entities::topic;
+  use sea_orm::sea_query::Expr;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+  topic::Entity::update_many()
+    .col_expr(topic::Column::ReplyCount, Expr::col(topic::Column::ReplyCount).add(1))
+    .col_expr(topic::Column::LastReplyAt, Expr::value(now))
+    .col_expr(topic::Column::UpdatedAt, Expr::value(now))
+    .filter(topic::Column::Id.eq(topic_id))
+    .exec(db)
+    .await?;
+  Ok(())
 }
 
 /// 在写库前评估内容：Block → ServerFnError，Allow / Flag → 返回 outcome 让

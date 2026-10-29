@@ -36,6 +36,7 @@ use app_core::settings::SiteConfig;
 use llm::{default_client_from_env, LlmClient};
 use sdk::{ImageRef, ModerationSubmission};
 
+use crate::notify::{notify_admin, PendingItem};
 use crate::pipeline::ModerationPipeline;
 
 /// 进程级共享 pipeline，包在 `RwLock` 里以支持 hot reload（Phase 5.1）。
@@ -160,12 +161,22 @@ pub async fn enqueue_if_flagged(
     ..Default::default()
   };
   match am.insert(db).await {
-    Ok(row) => tracing::info!(
-      queue_id = row.id,
-      kind = %kind,
-      ref_path = %ref_path,
-      "moderation: flagged item enqueued for review"
-    ),
+    Ok(row) => {
+      tracing::info!(
+        queue_id = row.id,
+        kind = %kind,
+        ref_path = %ref_path,
+        "moderation: flagged item enqueued for review"
+      );
+      notify_admin(PendingItem {
+        kind: kind.to_string(),
+        ref_path: ref_path.to_string(),
+        reason: verdict.reason.clone(),
+        score: verdict.score,
+        content: content.to_string(),
+        image_count: image_urls.len(),
+      });
+    }
     Err(e) => tracing::warn!(
       error = %e,
       kind = %kind,
@@ -173,6 +184,66 @@ pub async fn enqueue_if_flagged(
       "moderation: failed to enqueue flagged item (业务不受影响)"
     ),
   }
+}
+
+/// admin 通过一条审核记录时调：把业务行的 `pending_review` 置回 false，公开显示。
+///
+/// 回复在等审期间没计入话题的回复数，这里补上。业务行已被删（作者自己删了）时
+/// 什么也不做。未知 kind 返回 Ok，只记 warn。
+pub async fn publish_held(
+  db: &impl sea_orm::ConnectionTrait,
+  kind: &str,
+  ref_id: i64,
+) -> Result<(), sea_orm::DbErr> {
+  use app_core::entities::{annotation, comment, topic, topic_reply};
+  use sea_orm::sea_query::Expr;
+  use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+  match kind {
+    "comment" => {
+      comment::Entity::update_many()
+        .col_expr(comment::Column::PendingReview, Expr::value(false))
+        .filter(comment::Column::Id.eq(ref_id as i32))
+        .exec(db)
+        .await?;
+    }
+    "topic" => {
+      topic::Entity::update_many()
+        .col_expr(topic::Column::PendingReview, Expr::value(false))
+        .filter(topic::Column::Id.eq(ref_id as i32))
+        .exec(db)
+        .await?;
+    }
+    "annotation" => {
+      annotation::Entity::update_many()
+        .col_expr(annotation::Column::PendingReview, Expr::value(false))
+        .filter(annotation::Column::Id.eq(ref_id))
+        .exec(db)
+        .await?;
+    }
+    "reply" => {
+      // 只在这次真的从「等审」变成公开时才计数，重复通过不会多加
+      let published = topic_reply::Entity::update_many()
+        .col_expr(topic_reply::Column::PendingReview, Expr::value(false))
+        .filter(topic_reply::Column::Id.eq(ref_id as i32))
+        .filter(topic_reply::Column::PendingReview.eq(true))
+        .exec_with_returning(db)
+        .await?;
+      // 最近回复时间记通过的时刻：这条回复这时才出现
+      let now = chrono::Utc::now().fixed_offset();
+      for reply in published {
+        topic::Entity::update_many()
+          .col_expr(topic::Column::ReplyCount, Expr::col(topic::Column::ReplyCount).add(1))
+          .col_expr(topic::Column::LastReplyAt, Expr::value(now))
+          .col_expr(topic::Column::UpdatedAt, Expr::value(now))
+          .filter(topic::Column::Id.eq(reply.topic_id))
+          .exec(db)
+          .await?;
+      }
+    }
+    _ => tracing::warn!(kind = %kind, ref_id, "publish_held: unknown moderation kind"),
+  }
+  Ok(())
 }
 
 // ────────────────────────────────────────────────────────────

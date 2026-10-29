@@ -16,6 +16,8 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
   let mut content = use_signal(String::new);
   let mut is_preview = use_signal(|| false);
   let mut is_submitting = use_signal(|| false);
+  // 提交后给用户的一行提示：审核拒绝的原因，或「等待审核」
+  let mut notice = use_signal::<Option<String>>(|| None);
   let session_user = crate::use_session_user();
   let mut show_auth_modal = crate::use_auth_modal();
   let lang = use_i18n();
@@ -38,14 +40,19 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
 
     spawn(async move {
       is_submitting.set(true);
+      notice.set(None);
       match post_comment(id, current_content).await {
-        Ok(new_comments) => {
-          comments.set(Some(new_comments));
+        Ok(posted) => {
+          comments.set(Some(posted.comments));
           content.set(String::new());
           is_preview.set(false);
+          if posted.pending_review {
+            notice.set(Some(t(lang(), "comment.pending_review")));
+          }
         }
         Err(e) => {
           tracing::error!(error = ?e, "comment: post_comment failed");
+          notice.set(Some(e.to_string()));
         }
       }
       is_submitting.set(false);
@@ -125,7 +132,10 @@ pub fn CommentBox(props: CommentBoxProps) -> Element {
                   }
 
                   // Footer
-                  div { class: "px-5 py-3 bg-muted/50 flex justify-end border-t border-border",
+                  div { class: "px-5 py-3 bg-muted/50 flex items-center justify-end gap-4 border-t border-border",
+                      if let Some(msg) = notice() {
+                          p { class: "text-sm text-slate-600 dark:text-slate-400", "{msg}" }
+                      }
                       Button {
                           class: "px-5 font-semibold",
                           disabled: is_submitting(),
