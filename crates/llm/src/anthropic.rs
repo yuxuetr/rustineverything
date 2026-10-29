@@ -43,10 +43,9 @@ use app_core::error::{AppError, AppResult};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 use super::{
-  config::DEFAULT_TIMEOUT_SECS, LlmClient, LlmContentBlock, LlmMessage, LlmProvider, LlmRole,
+  config::api_client_builder, LlmClient, LlmContentBlock, LlmMessage, LlmProvider, LlmRole,
 };
 
 /// Anthropic API 版本头。0.x SDK 与 2023-06-01 兼容；后续升级时更新。
@@ -71,10 +70,7 @@ impl AnthropicChat {
     model: impl Into<String>,
   ) -> Self {
     let base_url = base_url.into().trim_end_matches('/').to_string();
-    let client = Client::builder()
-      .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-      .build()
-      .unwrap_or_else(|_| Client::new());
+    let client = api_client_builder().build().unwrap_or_else(|_| Client::new());
     Self {
       base_url,
       api_key: api_key.into(),
