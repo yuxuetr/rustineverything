@@ -34,6 +34,9 @@ pub const TOKENIZER_NAME: &str = "jieba_lower";
 /// 默认持久化目录（相对工作目录）。可通过 `SEARCH_INDEX_DIR` 覆盖。
 pub const DEFAULT_INDEX_DIR: &str = "data/search-index";
 
+/// 查询文本的字符上限，超出部分截掉。搜索框里的正常输入远短于此。
+pub const MAX_QUERY_CHARS: usize = 256;
+
 /// 命中结果（与 server 层对齐）。
 #[derive(Debug, Clone)]
 pub struct EngineHit {
@@ -166,8 +169,7 @@ impl SearchEngine {
     for d in docs {
       self.add_one(&mut writer, &d)?;
     }
-    writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
-    self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))?;
+    self.commit_and_reload(writer)?;
     Ok(count)
   }
 
@@ -194,8 +196,7 @@ impl SearchEngine {
       writer.delete_term(term);
       self.add_one(&mut writer, d)?;
     }
-    writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
-    self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))?;
+    self.commit_and_reload(writer)?;
     Ok(docs.len())
   }
 
@@ -204,14 +205,21 @@ impl SearchEngine {
     if uids.is_empty() {
       return Ok(0);
     }
-    let mut writer = self.new_writer()?;
+    let writer = self.new_writer()?;
     for uid in uids {
       let term = Term::from_field_text(self.fields.doc_uid, uid);
       writer.delete_term(term);
     }
-    writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
-    self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))?;
+    self.commit_and_reload(writer)?;
     Ok(uids.len())
+  }
+
+  /// 提交并刷新 reader。writer 每次用完即弃，所以要等 commit 触发的后台合并做完再 drop，
+  /// 否则合并结果被丢掉，段只增不减，删掉的旧版本也一直留在段里。
+  fn commit_and_reload(&self, mut writer: IndexWriter) -> Result<(), String> {
+    writer.commit().map_err(|e| format!("search: commit failed: {}", e))?;
+    writer.wait_merging_threads().map_err(|e| format!("search: merge failed: {}", e))?;
+    self.reader.reload().map_err(|e| format!("search: reader reload failed: {}", e))
   }
 
   fn new_writer(&self) -> Result<IndexWriter, String> {
@@ -242,7 +250,8 @@ impl SearchEngine {
     kind_filter: Option<&str>,
     limit: usize,
   ) -> tantivy::Result<Vec<EngineHit>> {
-    let q = text.trim();
+    let truncated: String = text.trim().chars().take(MAX_QUERY_CHARS).collect();
+    let q = truncated.trim();
     if q.is_empty() {
       return Ok(vec![]);
     }
@@ -251,9 +260,12 @@ impl SearchEngine {
     let mut parser = QueryParser::for_index(&self.index, vec![self.fields.title, self.fields.body]);
     parser.set_field_boost(self.fields.title, 3.0);
 
+    // 用户输入一律先转义：搜索框只接受关键词，分组、字段语法（`url:...`）
+    // 等查询语法不对外开放。
+    let escaped = escape_query(q);
     let final_query = match kind_filter {
-      Some(k) if !k.is_empty() => format!("({}) AND kind:{}", escape_query(q), k),
-      _ => q.to_string(),
+      Some(k) if !k.is_empty() => format!("({}) AND kind:{}", escaped, k),
+      _ => escaped,
     };
 
     let query =
@@ -750,6 +762,41 @@ mod tests {
       .expect("write");
     let r = eng.query("rust!@#?:", None, 10);
     assert!(r.is_ok());
+  }
+
+  /// 括号分组不对外开放：深层嵌套的输入要和普通关键词一样快地返回。
+  #[test]
+  fn deeply_nested_parentheses_do_not_blow_up_parsing() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    eng.replace_all(sample_docs()).expect("write");
+    let q = format!("{}rust{}", "(".repeat(30), ")".repeat(30));
+    let started = std::time::Instant::now();
+    let hits = eng.query(&q, None, 10).expect("query");
+    assert!(started.elapsed() < std::time::Duration::from_secs(2), "took {:?}", started.elapsed());
+    assert!(!hits.is_empty());
+  }
+
+  /// 每次 upsert 都是新 writer：commit 后不等合并就 drop，后台合并会被丢掉，段只增不减。
+  #[test]
+  fn repeated_upserts_keep_segments_merged() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    for i in 0..20 {
+      eng.upsert_document(&doc_with("blog", &format!("p{i}"), "Rust", "body")).expect("upsert");
+    }
+    let segments = eng.index.searchable_segment_ids().expect("segments").len();
+    assert!(segments <= 8, "{segments} segments after 20 upserts");
+    assert_eq!(eng.reader.searcher().num_docs(), 20);
+  }
+
+  #[test]
+  fn overlong_query_is_truncated_not_rejected() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let eng = open_engine(tmp.path());
+    eng.replace_all(sample_docs()).expect("write");
+    let q = format!("rust {}", "x".repeat(10 * MAX_QUERY_CHARS));
+    assert!(eng.query(&q, None, 10).is_ok());
   }
 
   // ---- Phase 7.3.1：持久化相关测试 ----
