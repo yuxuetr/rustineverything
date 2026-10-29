@@ -103,6 +103,8 @@ services:
       ANTHROPIC_LLM_BASE_URL: ${ANTHROPIC_LLM_BASE_URL:-}
       ANTHROPIC_LLM_API_KEY: ${ANTHROPIC_LLM_API_KEY:-}
       ANTHROPIC_LLM_MODEL: ${ANTHROPIC_LLM_MODEL:-}
+      # 论文采集（papers-ingest，与审核共用 OPENAI_LLM_*）每天最多生成几篇，默认 20
+      PAPERS_DAILY_LIMIT: ${PAPERS_DAILY_LIMIT:-}
       # 可选：有内容等人工审核时邮件通知管理员（缺任一项则只记日志）
       MODERATION_NOTIFY_EMAIL: ${MODERATION_NOTIFY_EMAIL:-}
       SMTP_HOST: ${SMTP_HOST:-}

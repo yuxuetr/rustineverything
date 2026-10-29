@@ -125,10 +125,14 @@ RUN cd crates/app \
  && [ "$status" -eq 0 ] \
  && if grep -q 'wasm-opt failed' /tmp/bundle.log; then echo 'dx bundle: wasm-opt failed' >&2; exit 1; fi
 
-# 3. 收敛产物到统一目录，方便 runtime 阶段单层 COPY
+# 3. 论文采集程序（阶段 N）：不链接进 app，服务器 cron 用 `docker compose run --rm app /app/papers-ingest` 跑
+RUN cargo build --release -p module-papers --features ingest --bin papers-ingest
+
+# 4. 收敛产物到统一目录，方便 runtime 阶段单层 COPY
 RUN mkdir -p /out \
  && cp -r /tmp/target/dx/app/release/web/public /out/public \
  && cp /tmp/target/dx/app/release/web/server /out/server \
+ && cp /tmp/target/release/papers-ingest /out/papers-ingest \
  && cp -r assets /out/assets
 
 
@@ -150,6 +154,7 @@ RUN groupadd --system app && useradd --system --gid app --no-create-home app
 WORKDIR /app
 
 COPY --from=builder --chown=app:app /out/server /app/server
+COPY --from=builder --chown=app:app /out/papers-ingest /app/papers-ingest
 COPY --from=builder --chown=app:app /out/public /app/public
 COPY --from=builder --chown=app:app /out/assets /app/assets
 
