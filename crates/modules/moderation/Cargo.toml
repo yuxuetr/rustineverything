@@ -31,3 +31,4 @@ sdk = { path = "../../sdk" }
 [dev-dependencies]
 dotenvy = "0.15"
 migration = { path = "../../migration" }
+base64 = { workspace = true }

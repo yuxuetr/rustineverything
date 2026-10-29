@@ -4698,6 +4698,7 @@ version = "0.1.0"
 dependencies = [
  "app-core",
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "dotenvy",
  "llm",
