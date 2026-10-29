@@ -91,8 +91,7 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
     use app_core::session::require_session_verified;
     use chrono::Utc;
     use module_moderation::{
-      absolutize_image_url, enqueue_if_flagged, evaluate_submission, extract_image_urls,
-      ModerationLabel,
+      enqueue_if_flagged, evaluate_submission, external_image_urls, ModerationLabel,
     };
     use sdk::{ImageRef, ModerationSubmission};
     use sea_orm::{ActiveModelTrait, Set};
@@ -103,16 +102,12 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
 
     // ── 审核（默认 disabled → pipeline 为空 → 直接 Allow，零开销） ──
     let base_url = std::env::var("BASE_URL").unwrap_or_default();
-    let raw_image_urls: Vec<String> = extract_image_urls(&content)
-      .into_iter()
-      .map(|u| absolutize_image_url(&u, &base_url))
-      .collect();
-    let image_refs: Vec<ImageRef> = raw_image_urls.iter().cloned().map(ImageRef::url).collect();
+    let image_urls = external_image_urls(&content, &base_url).map_err(ServerFnError::new)?;
     let ref_path = format!("blog:{}", blog_id);
     let submission = ModerationSubmission::new(&content)
       .with_kind("comment")
       .with_ref_path(&ref_path)
-      .with_images(image_refs);
+      .with_images(image_urls.iter().cloned().map(ImageRef::url));
     let verdict = evaluate_submission(submission).await;
     if verdict.label == ModerationLabel::Block {
       tracing::warn!(
@@ -153,7 +148,7 @@ pub async fn post_comment(blog_id: String, content: String) -> Result<Vec<Commen
       &ref_path,
       Some(session_user.id),
       &content,
-      &raw_image_urls,
+      &image_urls,
     )
     .await;
 

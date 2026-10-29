@@ -48,8 +48,8 @@ pub mod stage;
 pub mod url_blocklist;
 
 pub use hook::{
-  absolutize_image_url, enqueue_if_flagged, evaluate_submission, evaluate_with_images,
-  extract_image_urls, reload_pipeline, shared_pipeline,
+  enqueue_if_flagged, evaluate_submission, evaluate_with_images, external_image_urls,
+  extract_image_urls, reload_pipeline, shared_pipeline, MAX_IMAGES_PER_SUBMISSION,
 };
 pub use llm_stage::LlmModerationStage;
 pub use pipeline::ModerationPipeline;

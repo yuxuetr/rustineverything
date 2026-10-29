@@ -906,19 +906,15 @@ async fn moderate_or_reject(
   kind: &str,
   ref_path: &str,
 ) -> Result<ModerationOutcome, ServerFnError> {
-  use module_moderation::{
-    absolutize_image_url, evaluate_submission, extract_image_urls, ModerationLabel,
-  };
+  use module_moderation::{evaluate_submission, external_image_urls, ModerationLabel};
   use sdk::{ImageRef, ModerationSubmission};
 
   let base_url = std::env::var("BASE_URL").unwrap_or_default();
-  let image_urls: Vec<String> =
-    extract_image_urls(content).into_iter().map(|u| absolutize_image_url(&u, &base_url)).collect();
-  let image_refs: Vec<ImageRef> = image_urls.iter().cloned().map(ImageRef::url).collect();
+  let image_urls = external_image_urls(content, &base_url).map_err(ServerFnError::new)?;
   let submission = ModerationSubmission::new(content)
     .with_kind(kind)
     .with_ref_path(ref_path)
-    .with_images(image_refs);
+    .with_images(image_urls.iter().cloned().map(ImageRef::url));
   let verdict = evaluate_submission(submission).await;
   match verdict.label {
     ModerationLabel::Block => {

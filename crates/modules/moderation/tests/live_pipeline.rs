@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use app_core::settings::{LlmFailureAction, ModerationSettings, SiteConfig};
-use llm::{default_client_from_env, LlmConfig};
+use llm::{default_client_from_env, AnthropicChat, LlmConfig, OpenAiChat};
 use module_moderation::{
   AsyncModerationStage, LlmModerationStage, ModerationLabel, ModerationPipeline,
 };
@@ -132,7 +132,8 @@ async fn comment_with_benign_image_returns_allow() {
   };
   let stage = LlmModerationStage::new(llm, LlmFailureAction::Review);
 
-  // 若用 DeepSeek 之类不带视觉的端点，会返回错误 → stage 记为 Flag（送人工复核），本测试会失败。
+  // 端点不支持图片时会返回错误 → stage 记为 Flag（送人工复核），本测试会失败。
+  // 2026-10-29：deepseek-flash（V4.1）支持图片，base64 与公网 URL 都能读。
 
   let v = stage
     .evaluate(
@@ -144,6 +145,75 @@ async fn comment_with_benign_image_returns_allow() {
 
   println!("[benign+image] label={:?} score={} reason={}", v.label, v.score, v.reason);
   assert_eq!(v.label, ModerationLabel::Allow, "中立图片不应被拒: {:?}", v);
+}
+
+/// tests/fixtures 下的 PNG 内联成 data URL（上传审核走的就是这条路）。
+fn fixture_png(name: &str) -> ImageRef {
+  use base64::Engine as _;
+  let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name);
+  let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+  let data = base64::engine::general_purpose::STANDARD.encode(bytes);
+  ImageRef::url(format!("data:image/png;base64,{data}")).with_media_type("image/png")
+}
+
+/// 两种协议各建一个客户端（都配置了才各跑一遍）：图片在两个协议里的序列化方式不同。
+fn clients_per_protocol() -> Vec<(&'static str, Arc<dyn llm::LlmClient>)> {
+  load_env();
+  let cfg = LlmConfig::from_env();
+  let mut out: Vec<(&'static str, Arc<dyn llm::LlmClient>)> = Vec::new();
+  if let (Some(url), Some(key)) = (cfg.openai_base_url.as_deref(), cfg.openai_api_key.as_deref()) {
+    let model = cfg.openai_model.clone().unwrap_or_else(|| "deepseek-chat".to_string());
+    out.push(("openai", Arc::new(OpenAiChat::new(url, key, &model))));
+  }
+  if let (Some(url), Some(key)) =
+    (cfg.anthropic_base_url.as_deref(), cfg.anthropic_api_key.as_deref())
+  {
+    let model = cfg.anthropic_model.clone().unwrap_or_else(|| "deepseek-chat".to_string());
+    out.push(("anthropic", Arc::new(AnthropicChat::new(url, key, &model))));
+  }
+  out
+}
+
+/// 违规只在图片里：正文正常，图片是刷单广告 / 钓鱼 / 辱骂文字；另有只传图片的上传场景。
+/// 图片是渲染出来的文字图，不含真实的色情或血腥内容。
+#[tokio::test]
+#[ignore = "Live vision LLM. Run with --ignored."]
+async fn violations_carried_only_by_images_are_caught() {
+  let clients = clients_per_protocol();
+  if clients.is_empty() {
+    eprintln!("跳过：未配置任一 LLM provider（OPENAI_LLM_* 或 ANTHROPIC_LLM_*）");
+    return;
+  }
+
+  // (正文, 场景, 图片, 应当放行)
+  let cases = [
+    ("分享一下我的第一个 Rust 程序", "comment", "code.png", true),
+    ("用户上传的图片", "upload", "code.png", true),
+    ("大家看看这个", "comment", "spam.png", false),
+    ("大家看看这个", "comment", "phish.png", false),
+    ("大家看看这个", "topic", "insult.png", false),
+    ("用户上传的图片", "upload", "spam.png", false),
+    ("用户上传的图片", "upload", "insult.png", false),
+  ];
+  let mut wrong = Vec::new();
+  for (protocol, llm) in clients {
+    let stage = LlmModerationStage::new(llm, LlmFailureAction::Review);
+    for (content, kind, image, allow) in cases {
+      let v = stage
+        .evaluate(
+          &ModerationSubmission::new(content).with_kind(kind).push_image(fixture_png(image)),
+        )
+        .await;
+      println!(
+        "[{protocol} {kind} {image}] label={:?} score={} reason={}",
+        v.label, v.score, v.reason
+      );
+      if (v.label == ModerationLabel::Allow) != allow {
+        wrong.push(format!("{protocol} {kind} {image}: {:?} {}", v.label, v.reason));
+      }
+    }
+  }
+  assert!(wrong.is_empty(), "判错: {wrong:?}");
 }
 
 /// `extract_image_urls` 在真实 markdown 评论上正确抽取站内 + 外站图片。

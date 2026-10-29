@@ -328,8 +328,8 @@ docker compose restart app
 | 上传 `upload_image` | `crates/modules/uploads/src/server.rs` | **写盘前** 用 base64 data URL 调 vision LLM；Block 不落盘 |
 
 每个 hook 自动：
-1. 从 markdown 抽 `![alt](url)` 图片 URL（站内 `/uploads/...` + 外站 https）
-2. 相对路径 `absolutize_image_url` 拼成绝对 URL（用 `BASE_URL`），给 vision LLM 用
+1. 从 markdown 抽 `![alt](url)` 图片 URL，去重；超过 `MAX_IMAGES_PER_SUBMISSION`（10）张直接拒绝提交
+2. `external_image_urls` 只留外站图交给 vision LLM：站内 `/uploads/...` 上传时已审，`/images/...` 是站点自带资源（审核开启前上传的图不会补审）
 3. 装填 `ModerationSubmission { content, kind, ref_path, images }`
 4. 走 `evaluate_submission` 流过 [`shared_pipeline`]
 5. 按 Verdict label 决定返回 / 标记 / 通过

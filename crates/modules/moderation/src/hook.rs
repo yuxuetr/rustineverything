@@ -239,22 +239,36 @@ fn is_acceptable_image_url(url: &str) -> bool {
     || url.starts_with("/images/")
 }
 
-/// 站内相对路径（如 `/uploads/xxx.jpg`）→ 绝对 URL（用 `BASE_URL` 拼接）。
-/// 已是 `http(s)://` 起首的原样返回；其它无 base_url 时也原样返回（LLM 大概率失败 →
-/// 按 `on_llm_failure` 送复核或拒绝）。
-pub fn absolutize_image_url(url: &str, base_url: &str) -> String {
-  if url.starts_with("http://") || url.starts_with("https://") {
-    return url.to_string();
-  }
+/// 一条提交最多带多少张图。外站图每张都要一次 vision 调用，不设上限就能用一条评论刷掉审核预算。
+pub const MAX_IMAGES_PER_SUBMISSION: usize = 10;
+
+/// 从 markdown 里取出要交给审核的图：只留外站图，去重。
+///
+/// 站内图（`/uploads/...`、`/images/...`，以及写成 `BASE_URL` 开头的同一路径）跳过：
+/// 用户的图经 `upload_image` 上传时已经审过，`/images/` 是站点自带的资源。
+/// 例外：开启审核之前上传的图没审过，也会一并跳过。
+///
+/// 图片数（按不同 URL 计，站内图也算）超过 [`MAX_IMAGES_PER_SUBMISSION`] → `Err`，
+/// 调用方直接拒绝提交，不管审核开没开。
+pub fn external_image_urls(markdown: &str, base_url: &str) -> Result<Vec<String>, String> {
   let base = base_url.trim_end_matches('/');
-  if base.is_empty() {
-    return url.to_string();
+  let mut seen: Vec<String> = Vec::new();
+  for url in extract_image_urls(markdown) {
+    if !seen.contains(&url) {
+      seen.push(url);
+    }
   }
-  if url.starts_with('/') {
-    format!("{}{}", base, url)
-  } else {
-    format!("{}/{}", base, url)
+  if seen.len() > MAX_IMAGES_PER_SUBMISSION {
+    return Err(format!("图片最多 {MAX_IMAGES_PER_SUBMISSION} 张"));
   }
+  let is_site_image = |url: &str| {
+    let path = match url.strip_prefix(base) {
+      Some(rest) if !base.is_empty() => rest,
+      _ => url,
+    };
+    path.starts_with("/uploads/") || path.starts_with("/images/")
+  };
+  Ok(seen.into_iter().filter(|u| !is_site_image(u)).collect())
 }
 
 #[cfg(test)]
@@ -314,35 +328,32 @@ mod tests {
     assert_eq!(urls, vec!["/uploads/cat.png"]);
   }
 
-  // ── absolutize ──
+  // ── external_image_urls ──
 
   #[test]
-  fn absolutize_absolute_url_unchanged() {
-    let u = absolutize_image_url("https://example.com/x.jpg", "https://my.site");
-    assert_eq!(u, "https://example.com/x.jpg");
+  fn external_refs_skip_site_images_and_dedupe() {
+    let md = "![a](/uploads/1.png) ![b](https://my.site/uploads/2.png) ![c](/images/logo.png) \
+              ![d](https://x.example/3.jpg) ![e](https://x.example/3.jpg) \
+              ![f](https://x.example/uploads/4.jpg)";
+    let refs = external_image_urls(md, "https://my.site/").unwrap_or_default();
+    // 外站同名路径 /uploads/ 不算站内图
+    assert_eq!(refs, vec!["https://x.example/3.jpg", "https://x.example/uploads/4.jpg"]);
   }
 
   #[test]
-  fn absolutize_relative_with_base() {
-    let u = absolutize_image_url("/uploads/x.jpg", "https://my.site");
-    assert_eq!(u, "https://my.site/uploads/x.jpg");
+  fn external_refs_without_base_url_still_skip_relative_site_paths() {
+    let refs = external_image_urls("![a](/uploads/1.png) ![b](https://my.site/uploads/2.png)", "")
+      .unwrap_or_default();
+    assert_eq!(refs, vec!["https://my.site/uploads/2.png"]);
   }
 
   #[test]
-  fn absolutize_relative_strips_base_trailing_slash() {
-    let u = absolutize_image_url("/uploads/x.jpg", "https://my.site/");
-    assert_eq!(u, "https://my.site/uploads/x.jpg");
-  }
-
-  #[test]
-  fn absolutize_no_base_returns_relative_as_is() {
-    let u = absolutize_image_url("/uploads/x.jpg", "");
-    assert_eq!(u, "/uploads/x.jpg");
-  }
-
-  #[test]
-  fn absolutize_relative_no_leading_slash() {
-    let u = absolutize_image_url("uploads/x.jpg", "https://my.site");
-    assert_eq!(u, "https://my.site/uploads/x.jpg");
+  fn external_refs_reject_too_many_images() {
+    let md = |n: usize| (0..n).map(|i| format!("![](/uploads/{i}.png)")).collect::<String>();
+    assert!(external_image_urls(&md(MAX_IMAGES_PER_SUBMISSION), "").is_ok());
+    assert!(external_image_urls(&md(MAX_IMAGES_PER_SUBMISSION + 1), "").is_err());
+    // 重复的同一张图只算一次
+    let same = "![](/uploads/x.png)".repeat(MAX_IMAGES_PER_SUBMISSION + 5);
+    assert!(external_image_urls(&same, "").is_ok());
   }
 }

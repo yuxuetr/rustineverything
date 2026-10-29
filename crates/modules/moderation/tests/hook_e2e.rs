@@ -17,9 +17,7 @@ use std::sync::Arc;
 
 use app_core::settings::{ModerationSettings, SiteConfig};
 use llm::{default_client_from_env, LlmClient};
-use module_moderation::{
-  absolutize_image_url, extract_image_urls, ModerationLabel, ModerationPipeline,
-};
+use module_moderation::{external_image_urls, ModerationLabel, ModerationPipeline};
 use sdk::{ImageRef, ModerationSubmission};
 
 fn workspace_root() -> std::path::PathBuf {
@@ -46,9 +44,10 @@ async fn evaluate_comment(
   body: &str,
 ) -> ModerationLabel {
   let base_url = std::env::var("BASE_URL").unwrap_or_default();
-  let images: Vec<ImageRef> = extract_image_urls(body)
+  let images: Vec<ImageRef> = external_image_urls(body, &base_url)
+    .unwrap_or_default()
     .into_iter()
-    .map(|u| ImageRef::url(absolutize_image_url(&u, &base_url)))
+    .map(ImageRef::url)
     .collect();
   let submission = ModerationSubmission::new(body)
     .with_kind("comment")
