@@ -13,6 +13,13 @@ app-core = { path = "../../core" }
 widgets = { path = "../../widgets" }
 sea-orm = { workspace = true, optional = true }
 tracing = { workspace = true }
+# ingest
+serde_json = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+dotenvy = { version = "0.15", optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+llm = { path = "../../llm", optional = true }
 
 [features]
 server = [
@@ -21,3 +28,21 @@ server = [
     "app-core/server",
     "widgets/server",
 ]
+# 采集与生成流水线、`papers-ingest` 二进制（服务器 cron 跑，app 不链接）
+ingest = [
+    "server",
+    "dep:serde_json",
+    "dep:reqwest",
+    "dep:tokio",
+    "dep:dotenvy",
+    "dep:tracing-subscriber",
+    "dep:llm",
+]
+
+[[bin]]
+name = "papers-ingest"
+path = "src/bin/papers_ingest.rs"
+required-features = ["ingest"]
+
+[dev-dependencies]
+migration = { path = "../../migration" }

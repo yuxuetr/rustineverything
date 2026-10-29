@@ -4777,9 +4777,16 @@ dependencies = [
  "chrono",
  "dioxus",
  "dioxus-shadcn",
+ "dotenvy",
+ "llm",
+ "migration",
+ "reqwest",
  "sea-orm",
  "serde",
+ "serde_json",
+ "tokio",
  "tracing",
+ "tracing-subscriber",
  "widgets",
 ]
 

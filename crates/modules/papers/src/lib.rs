@@ -5,6 +5,8 @@
 
 #[cfg(feature = "server")]
 pub mod entities;
+#[cfg(feature = "ingest")]
+pub mod ingest;
 pub mod pages;
 pub mod server;
 
