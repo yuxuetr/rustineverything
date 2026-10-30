@@ -447,6 +447,18 @@ fn render_stream<'a>(
                     nodes.push(render_code_block(lang, code_text, id));
                 }
             }
+            Event::Start(Tag::Paragraph) if paragraph_has_block(it.as_slice()) => {
+                // 图片是 <figure>、`$$` 和注册组件是 <div>，放进 <p> 浏览器会先关掉 <p>
+                let bid = mint_block_id(top, block_idx).unwrap_or_default();
+                let has_bid = !bid.is_empty();
+                let children = render_stream(it, blog_id, untrusted, block_idx, false);
+                nodes.push(rsx! { div {
+                    id: if has_bid { "{bid}" },
+                    "data-block-id": if has_bid { "{bid}" },
+                    class: "my-5",
+                    {children.into_iter()}
+                } });
+            }
             Event::Start(Tag::Image { dest_url, title, .. }) => {
                 // X1：图片的描述是它的子事件，取纯文本作 alt（不当正文渲染）。
                 let mut alt = String::new();
@@ -517,6 +529,17 @@ fn render_stream<'a>(
         }
   }
   nodes
+}
+
+/// 段落（`rest` 从段落内第一个事件开始）里是否有渲染成块级元素的内容。
+fn paragraph_has_block(rest: &[Event<'_>]) -> bool {
+  rest.iter().take_while(|event| !matches!(event, Event::End(TagEnd::Paragraph))).any(|event| {
+    match event {
+      Event::Start(Tag::Image { .. }) | Event::DisplayMath(_) => true,
+      Event::Html(html) | Event::InlineHtml(html) => detect_registered_tag(html.trim()).is_some(),
+      _ => false,
+    }
+  })
 }
 
 /// 在顶层块上递增生成 "b{N}" 序号；不在顶层返回 None
@@ -1189,6 +1212,19 @@ mod tests {
       html.contains("id=\"b1\"") && !html.contains("main") && !html.contains("引言\""),
       "{html}"
     );
+  }
+
+  /// 段落里有图片 / `$$` 公式时外层不能是 `<p>`：浏览器遇到 `<figure>`、`<div>`
+  /// 会先关掉 `<p>`，块 id 落在空段落上，图片不在任何块里。
+  #[test]
+  fn block_content_is_not_wrapped_in_p() {
+    for md in ["![a](/uploads/a.png)", "see ![a](/uploads/a.png) here", "x\n$$\na+b\n$$"] {
+      let html = render_markdown(md, false);
+      assert!(!html.contains("<p"), "{md}: {html}");
+      assert!(html.contains("data-block-id=\"b1\""), "{md}: {html}");
+    }
+    let html = render_markdown("plain *text*", false);
+    assert!(html.contains("<p id=\"b1\""), "{html}");
   }
 
   /// X1：`![描述](x.png)` 的描述作为 alt，内联格式只取文本；没写描述时 alt 为空。
