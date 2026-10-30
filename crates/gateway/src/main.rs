@@ -7,9 +7,9 @@
 //!   TLS_KEY_PATH=/data/cert/rustineverything.app.key \
 //!     ./rie-gateway
 //!
-//! Reload TLS certs without dropping connections: `kill -HUP <pid>` (Pingora
-//! handles graceful reload natively when the binary is re-exec'd via the
-//! signal — see Pingora docs for the full upgrade ritual).
+//! 证书只在启动时读：换证书后重启网关（`scripts/cert_refresh.sh` 默认
+//! `docker restart rie-gateway`）。不要发 SIGHUP：pingora 不处理它，进程直接退出。
+//! SIGTERM 是平滑停机，宽限期见 `main` 里的 `ServerConf`。
 //!
 //! ## Phase 8.3 安全 / 性能强化
 //! - 注入 HSTS；应用未下发时补 X-Content-Type-Options / X-Frame-Options / Referrer-Policy。
@@ -20,6 +20,7 @@
 //!   读配额 60/min 刷新一次就会 429，`/api/auth/me` 还被算进 10/min 的写配额
 
 use async_trait::async_trait;
+use pingora_core::server::configuration::{Opt, ServerConf};
 use pingora_core::server::Server;
 use pingora_core::upstreams::peer::HttpPeer;
 use pingora_core::Result;
@@ -35,12 +36,28 @@ const HTTP_BIND: &str = "0.0.0.0:80";
 
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
 
+/// 下游 HTTP/1 keep-alive 连接两个请求之间最多空闲多久（秒）。
+const DOWNSTREAM_IDLE_SECS: u64 = 60;
+
+/// pingora 读完请求头后把 HTTP/1.1 keep-alive 设成无限（`Some(0)`），
+/// 下一个请求之前的那次读就没有超时；换回有限值。`None`（客户端要求 close）不动。
+fn cap_keepalive(session: &mut Session) {
+  if session.get_keepalive() == Some(0) {
+    session.set_keepalive(Some(DOWNSTREAM_IDLE_SECS));
+  }
+}
+
 struct AppGateway;
 
 #[async_trait]
 impl ProxyHttp for AppGateway {
   type CTX = ();
   fn new_ctx(&self) -> Self::CTX {}
+
+  async fn early_request_filter(&self, session: &mut Session, _ctx: &mut ()) -> Result<()> {
+    cap_keepalive(session);
+    Ok(())
+  }
 
   /// 选定上游：恒为 app 容器（单 upstream，不做 LB）。
   async fn upstream_peer(&self, _session: &mut Session, _ctx: &mut ()) -> Result<Box<HttpPeer>> {
@@ -73,6 +90,24 @@ impl ProxyHttp for AppGateway {
       req.remove_header("X-Forwarded-For");
     }
     Ok(())
+  }
+
+  /// pingora 0.8.0 的默认实现在复用连接上出错时连 POST 也重试；照 0.9.0 的默认策略只重试幂等方法。
+  fn error_while_proxy(
+    &self,
+    peer: &HttpPeer,
+    session: &mut Session,
+    e: Box<pingora_core::Error>,
+    _ctx: &mut (),
+    client_reused: bool,
+  ) -> Box<pingora_core::Error> {
+    let mut e = e.more_context(format!("Peer: {peer}"));
+    if !session.req_header().method.is_idempotent() || session.as_ref().retry_buffer_truncated() {
+      e.set_retry(false);
+    } else {
+      e.retry.decide_reuse(client_reused);
+    }
+    e
   }
 
   /// 响应改写：补安全头，见 [`apply_security_headers`]。
@@ -122,6 +157,7 @@ impl ProxyHttp for HttpToHttps {
   fn new_ctx(&self) -> Self::CTX {}
 
   async fn request_filter(&self, session: &mut Session, _ctx: &mut ()) -> Result<bool> {
+    cap_keepalive(session);
     let req = session.req_header();
     let host = req.headers.get("host").and_then(|v| v.to_str().ok()).unwrap_or("");
     let path = req.uri.path_and_query().map(|p| p.as_str()).unwrap_or("/");
@@ -144,7 +180,13 @@ impl ProxyHttp for HttpToHttps {
 fn main() {
   env_logger::init();
 
-  let mut server = Server::new(None).unwrap();
+  // 默认宽限期 300 秒，docker 10 秒后就 SIGKILL；在那之前自己退出
+  let conf = ServerConf {
+    grace_period_seconds: Some(5),
+    graceful_shutdown_timeout_seconds: Some(1),
+    ..Default::default()
+  };
+  let mut server = Server::new_with_opt_and_conf(None::<Opt>, conf);
   server.bootstrap();
 
   // 443: TLS 终止 + 反代到 app
