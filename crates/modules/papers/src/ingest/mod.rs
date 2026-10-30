@@ -47,16 +47,39 @@ impl Generator {
       .redirect(reqwest::redirect::Policy::none())
       .build()
       .map_err(|e| format!("构造 HTTP 客户端失败：{e}"))?;
-    let daily_limit = match std::env::var("PAPERS_DAILY_LIMIT") {
-      Ok(v) => v.trim().parse().map_err(|_| format!("PAPERS_DAILY_LIMIT 不是数字：{v}"))?,
-      Err(_) => DEFAULT_DAILY_LIMIT,
-    };
+    let daily_limit = parse_daily_limit(std::env::var("PAPERS_DAILY_LIMIT").ok())?;
     Ok(Self {
       llm: Box::new(OpenAiChat::new(url, key, model.clone()).with_client(llm_http)),
       model,
       http,
       daily_limit,
     })
+  }
+}
+
+/// compose 在 `.env` 没写这个键时传进来的是空串（`${PAPERS_DAILY_LIMIT:-}`），按没设处理。
+fn parse_daily_limit(v: Option<String>) -> Result<usize, String> {
+  match v.as_deref().map(str::trim) {
+    None | Some("") => Ok(DEFAULT_DAILY_LIMIT),
+    Some(v) => v.parse().map_err(|_| format!("PAPERS_DAILY_LIMIT 不是数字：{v}")),
+  }
+}
+
+#[cfg(test)]
+mod daily_limit_tests {
+  use super::*;
+
+  #[test]
+  fn empty_or_unset_uses_default() {
+    assert_eq!(parse_daily_limit(None), Ok(DEFAULT_DAILY_LIMIT));
+    assert_eq!(parse_daily_limit(Some(String::new())), Ok(DEFAULT_DAILY_LIMIT));
+    assert_eq!(parse_daily_limit(Some(" ".into())), Ok(DEFAULT_DAILY_LIMIT));
+  }
+
+  #[test]
+  fn number_parses_and_garbage_errors() {
+    assert_eq!(parse_daily_limit(Some(" 5 ".into())), Ok(5));
+    assert!(parse_daily_limit(Some("abc".into())).is_err());
   }
 }
 
