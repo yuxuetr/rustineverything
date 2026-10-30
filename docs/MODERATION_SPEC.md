@@ -15,12 +15,11 @@
         ▼
    Markdown(props.untrusted = true)   ← Phase 4.2 新增 prop
         │
-        ▼  ① sanitize_user_html  (defense in depth)
-        │
         ▼
-   pulldown_cmark::Parser
+   pulldown_cmark::Parser（源文不做预处理）
         │
-        ▼  ② Event::Html fallback → span { "{h}" } (Dioxus 自动转义)
+        ▼  Event::Html fallback → span { "{h}" } (Dioxus 自动转义)；
+        │  链接 / 图片走 allowlist（sanitize.rs）
         │
         ▼
    render_stream → RSX 节点树
@@ -47,24 +46,14 @@ Event::Html(html) | Event::InlineHtml(html) => {
 `Event::Html("<script>...")`，不匹配任何注册组件，最终 RSX 输出
 `<span>&lt;script&gt;...&lt;/span&gt;` — 显示为文本，不执行。
 
-### 1.3 Defense in Depth — `sanitize_user_html`
+### 1.3 不再在解析前清洗（2026-10-30）
 
-`crates/widgets/src/sanitize.rs`。在 cmark 解析之前做一次字符串级清洗：
+原先在 cmark 解析前有一层字符串级的 `sanitize_user_html`（删 `<script>` / `<iframe>` / `<object>` / `<embed>` / `<style>` 整块和 `on*=` 属性）。它不认识代码块，会毁掉用户贴的代码：`` `let one=1;` `` 变成 `let`，代码块里的 `<script>` 示例整段消失。事件层本来就把所有原始 HTML 当文本输出，这一层没有挡住任何事件层挡不住的东西，所以删掉了。
 
-| 处理 | 规则 |
-| --- | --- |
-| `<script>` 块 | 整块删除（含属性、含跨行内容） |
-| `<iframe>` / `<object>` / `<embed>` 块 | 同上 |
-| `<style>` 块 | 同上（防 CSS 注入） |
-| 内联事件 `on*=...` | 三种 value 形式（`"..."` / `'...'` / 裸值）均删 |
-| `javascript:` URL | 替换为 `about:blank` |
-| `data:text/html` URL | 同上 |
-
-特性：
-- **UTF-8 安全**：通过字符串切片拼接，不破坏中文/emoji。
-- **大小写不敏感**：`<SCRIPT>` / `<sCrIpT>` 均被识别。
-- **MDX 组件白名单未受影响**：`<YouTube id="..." />` 等不在此处理范围（cmark 解析后由 registry 渲染）。
-- **代码块（` ``` `）** 中的字面 `<script>` 同样会被清洗，trade-off：教程作者请用 HTML 实体 `&lt;script&gt;` 或截图。
+现在用户内容的防线只有渲染层，测试在 `crates/widgets/src/mdx.rs`：
+- `untrusted_raw_html_never_becomes_markup`：script / iframe / object / embed / style / svg、各种 `on*=` 写法、大小写变体、块级与行内 HTML，渲染结果里没有任何真实的危险标签和 `on*` 属性。把 Html 分支临时改成 `dangerous_inner_html` 时它会红。
+- `untrusted_component_drops_event_attributes`：注册组件照常渲染，组件只读自己认识的属性。
+- `untrusted_code_is_kept_verbatim`：代码原样显示。
 
 ### 1.4 `dangerous_inner_html` 审计
 
@@ -88,7 +77,7 @@ use widgets::Markdown;
 rsx! { Markdown {
     content: user_body,
     blog_id: "comment".into(),
-    untrusted: true,           // ← 启用 sanitize_user_html
+    untrusted: true,           // ← 原始 HTML 当文本、URL 走白名单
 }}
 
 // 站点作者内容（blog / docs / lessons / cases）：
