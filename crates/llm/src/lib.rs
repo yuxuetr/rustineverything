@@ -148,14 +148,35 @@ impl LlmMessage {
   }
 }
 
+/// 一次调用的 token 用量。上游没给 `usage` 时两项都是 0。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LlmUsage {
+  /// 输入 token（OpenAI `prompt_tokens` / Anthropic `input_tokens`）
+  pub input_tokens: u64,
+  /// 输出 token，含推理 token（OpenAI `completion_tokens` / Anthropic `output_tokens`）
+  pub output_tokens: u64,
+}
+
+/// 助手回复与本次用量。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LlmReply {
+  pub text: String,
+  pub usage: LlmUsage,
+}
+
 /// 双模式统一接口。两个实现 ([`OpenAiChat`] / [`AnthropicChat`]) 各自
 /// 处理协议差异；上层只依赖该 trait。
 #[async_trait]
 pub trait LlmClient: Send + Sync {
   fn provider(&self) -> LlmProvider;
 
-  /// 发起一次聊天补全。返回助手回复文本。
-  async fn chat(&self, messages: Vec<LlmMessage>) -> AppResult<String>;
+  /// 发起一次聊天补全，返回回复文本和 token 用量。
+  async fn complete(&self, messages: Vec<LlmMessage>) -> AppResult<LlmReply>;
+
+  /// 只要回复文本、不关心用量时用这个。
+  async fn chat(&self, messages: Vec<LlmMessage>) -> AppResult<String> {
+    Ok(self.complete(messages).await?.text)
+  }
 }
 
 /// 从 env 构造默认客户端。`None` 表示没有任一协议被配置 — 调用方应做

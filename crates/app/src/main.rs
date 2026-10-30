@@ -126,6 +126,9 @@ fn compiled_modules() -> Vec<&'static str> {
   if cfg!(feature = "course") {
     ids.push("course");
   }
+  if cfg!(feature = "papers") {
+    ids.push("papers");
+  }
   ids
 }
 
@@ -164,6 +167,10 @@ fn main() {
       })
       .collect()
   });
+
+  // 论文解读在数据库里，异步取。
+  #[cfg(all(feature = "server", feature = "papers"))]
+  app_core::engines::doc_source::register_async_doc_source(module_papers::server::search_docs);
 
   // O10：课程同样经注册表进索引。只收标题 / 简介 / 标签——课时正文是付费内容，不进公开搜索。
   #[cfg(all(feature = "server", feature = "course"))]

@@ -55,6 +55,7 @@ pub fn ClassicShell() -> Element {
   let boards: Vec<(Route, &'static str)> = [
     ("embedded", Route::Embedded {}, "nav.embedded"),
     ("ai", Route::Ai {}, "nav.ai.rust_ai"),
+    ("papers", Route::Papers {}, "nav.papers"),
     ("web3", Route::Web3 {}, "nav.web3"),
     ("wasm", Route::Wasm {}, "nav.wasm"),
     ("cli", Route::Cli {}, "nav.cli"),

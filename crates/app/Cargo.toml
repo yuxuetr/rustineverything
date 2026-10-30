@@ -19,6 +19,7 @@ module-blog = { path = "../modules/blog" }
 module-podcast = { path = "../modules/podcast" }
 module-course = { path = "../modules/course", optional = true }
 module-forum = { path = "../modules/forum", optional = true }
+module-papers = { path = "../modules/papers", optional = true }
 module-admin = { path = "../modules/admin", optional = true }
 module-search = { path = "../modules/search" }
 module-cases = { path = "../modules/cases" }
@@ -44,7 +45,7 @@ tracing-subscriber = { workspace = true, optional = true }
 migration = { path = "../migration", optional = true }
 
 [features]
-default = ["web", "payments"]
+default = ["web", "payments", "papers"]
 web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 mobile = ["dioxus/mobile"]
@@ -57,6 +58,8 @@ course = ["accounts", "dep:module-course"]
 # 在线支付（PM4，默认开）：级联 module-course/payments。关闭时 /api/pay/* 不注册、
 # 购买 UI / 我的订单退化，权益仍可由 admin 手动授予。
 payments = ["course", "module-course/payments"]
+# 论文资讯（阶段 N）：数据在 Postgres 里，所以依赖 accounts。关闭时 /papers 404。
+papers = ["accounts", "dep:module-papers"]
 # 仅在 server 特性开启时，激活后端依赖和 core 的 server 特性
 server = [
     "dioxus/server",
@@ -66,6 +69,7 @@ server = [
     "module-podcast/server",
     "module-course?/server",
     "module-forum?/server",
+    "module-papers?/server",
     "module-admin?/server",
     "module-search/server",
     "module-cases/server",

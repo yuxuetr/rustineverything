@@ -331,3 +331,22 @@ export RUSTC_WRAPPER=sccache
 - [docs/](.) — 各模块 SPEC
 - [Todos.md](../Todos.md) — Roadmap + 各阶段验收门禁
 - [.github/workflows/ci.yml](../.github/workflows/ci.yml) — CI 配置（与构建路径同构）
+
+## 7. 论文采集（papers）
+
+`papers-ingest` 打在 app 镜像里（`/app/papers-ingest`），不在 app 进程里跑。每次运行：取 HF Daily Papers 某一天的列表入库，再给当天 upvotes 最高、还没生成的论文（最多 `PAPERS_DAILY_LIMIT` 篇，默认 20）读 arXiv 全文生成中英解读。模型共用 `OPENAI_LLM_*`。
+
+```cron
+# 每天 UTC 02:15 跑前一天（UTC）的列表；与 app 共用 .env 和数据库
+15 2 * * * cd /data/rie/rustineverything && docker compose run --rm --no-deps app /app/papers-ingest >> /data/rie/logs/papers-ingest.log 2>&1
+```
+
+- 补某一天：`docker compose run --rm --no-deps app /app/papers-ingest --date 2026-10-28`；只入库列表、不调模型加 `--list-only`。
+- 每次运行在 `paper_ingest_runs` 记一行（失败也记），看篇数、token 和耗时：
+
+  ```bash
+  docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "select run_on, fetched, inserted, generated, failed, input_tokens, output_tokens, duration_ms from paper_ingest_runs order by id desc limit 7"'
+  ```
+
+- 生成失败的论文 `status = failed`，原因在 `papers.error`；不会自动重试。要重试就把状态改回 `pending` 再跑那一天。
+

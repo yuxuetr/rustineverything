@@ -54,15 +54,16 @@ async fn openai_compatible_chat_round_trip() {
   assert_eq!(client.provider(), LlmProvider::OpenAi);
 
   let reply = client
-    .chat(vec![
+    .complete(vec![
       LlmMessage::system("你是简短回答的助手，请用一句话回答。"),
       LlmMessage::user("一加一等于几？只回答数字。"),
     ])
     .await
     .expect("OpenAI-compatible chat 应当成功");
 
-  println!("[openai-live] reply = {}", reply);
-  assert!(!reply.trim().is_empty(), "回复不应为空");
+  println!("[openai-live] reply = {} usage = {:?}", reply.text, reply.usage);
+  assert!(!reply.text.trim().is_empty(), "回复不应为空");
+  assert!(reply.usage.input_tokens > 0 && reply.usage.output_tokens > 0, "应当带回用量");
 }
 
 #[tokio::test]
@@ -82,13 +83,14 @@ async fn anthropic_compatible_chat_round_trip() {
   assert_eq!(client.provider(), LlmProvider::Anthropic);
 
   let reply = client
-    .chat(vec![
+    .complete(vec![
       LlmMessage::system("你是简短回答的助手，请用一句话回答。"),
       LlmMessage::user("一加一等于几？只回答数字。"),
     ])
     .await
     .expect("Anthropic-compatible chat 应当成功");
 
-  println!("[anthropic-live] reply = {}", reply);
-  assert!(!reply.trim().is_empty(), "回复不应为空");
+  println!("[anthropic-live] reply = {} usage = {:?}", reply.text, reply.usage);
+  assert!(!reply.text.trim().is_empty(), "回复不应为空");
+  assert!(reply.usage.input_tokens > 0 && reply.usage.output_tokens > 0, "应当带回用量");
 }

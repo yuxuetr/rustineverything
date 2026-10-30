@@ -14,6 +14,8 @@
 //! [`ExternalIndexedDoc`] 与注册表放这里，既不引入循环依赖，也让 search 只依赖
 //! `core` 抽象而非兄弟内容模块。
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{OnceLock, RwLock};
 
 /// 中立的索引文档。字段与 `module_search::indexer::IndexedDocument` 一一对齐，
@@ -31,7 +33,8 @@ pub struct ExternalIndexedDoc {
   pub created_at: String,
 }
 
-type SourceFn = Box<dyn Fn() -> Vec<ExternalIndexedDoc> + Send + Sync>;
+type DocsFuture = Pin<Box<dyn Future<Output = Vec<ExternalIndexedDoc>> + Send>>;
+type SourceFn = Box<dyn Fn() -> DocsFuture + Send + Sync>;
 
 fn registry() -> &'static RwLock<Vec<SourceFn>> {
   static REG: OnceLock<RwLock<Vec<SourceFn>>> = OnceLock::new();
@@ -46,28 +49,48 @@ where
   F: Fn() -> Vec<ExternalIndexedDoc> + Send + Sync + 'static,
 {
   if let Ok(mut guard) = registry().write() {
-    guard.push(Box::new(f));
+    guard.push(Box::new(move || {
+      let docs = f();
+      Box::pin(async move { docs })
+    }));
+  }
+}
+
+/// 注册一个要异步取数的来源（例如读数据库的论文）。
+pub fn register_async_doc_source<F, Fut>(f: F)
+where
+  F: Fn() -> Fut + Send + Sync + 'static,
+  Fut: Future<Output = Vec<ExternalIndexedDoc>> + Send + 'static,
+{
+  if let Ok(mut guard) = registry().write() {
+    guard.push(Box::new(move || Box::pin(f())));
   }
 }
 
 /// 汇总所有已注册来源的文档。`module-search` 在动态索引收集阶段调用。
 ///
 /// 锁中毒时返回空列表（索引降级，不阻塞），与既有 search 的 fail-soft 风格一致。
-pub fn collect_registered_docs() -> Vec<ExternalIndexedDoc> {
-  match registry().read() {
-    Ok(guard) => guard.iter().flat_map(|f| f()).collect(),
-    Err(_) => Vec::new(),
+pub async fn collect_registered_docs() -> Vec<ExternalIndexedDoc> {
+  // 先在锁内把各来源的 future 建好，再放开锁逐个 await
+  let futures: Vec<DocsFuture> = match registry().read() {
+    Ok(guard) => guard.iter().map(|f| f()).collect(),
+    Err(_) => return Vec::new(),
+  };
+  let mut out = Vec::new();
+  for fut in futures {
+    out.extend(fut.await);
   }
+  out
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
 
-  #[test]
-  fn register_and_collect_roundtrip() {
+  #[tokio::test]
+  async fn register_and_collect_roundtrip() {
     // 注意：全局注册表跨测试共享，这里只验证「注册后能取回自己注册的文档」。
-    let before = collect_registered_docs().len();
+    let before = collect_registered_docs().await.len();
     register_doc_source(|| {
       vec![ExternalIndexedDoc {
         kind: "test-kind".to_string(),
@@ -78,8 +101,19 @@ mod tests {
         created_at: "2026-01-01".to_string(),
       }]
     });
-    let after = collect_registered_docs();
-    assert!(after.len() > before);
+    register_async_doc_source(|| async {
+      vec![ExternalIndexedDoc {
+        kind: "test-kind".to_string(),
+        ref_id: "t2".to_string(),
+        title: "T".to_string(),
+        body: "body".to_string(),
+        url: "/t/2".to_string(),
+        created_at: "2026-01-01".to_string(),
+      }]
+    });
+    let after = collect_registered_docs().await;
+    assert_eq!(after.len(), before + 2);
     assert!(after.iter().any(|d| d.ref_id == "t1" && d.kind == "test-kind"));
+    assert!(after.iter().any(|d| d.ref_id == "t2"));
   }
 }

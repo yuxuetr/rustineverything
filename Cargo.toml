@@ -22,6 +22,7 @@ members = [
     "crates/modules/web3",
     "crates/modules/wasm",
     "crates/modules/cli",
+    "crates/modules/papers",
     "crates/migration",
     "crates/app",
 ]

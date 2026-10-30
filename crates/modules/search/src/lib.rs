@@ -19,6 +19,7 @@ pub fn module_of_kind(kind: &str) -> Option<&str> {
     "doc" => Some("docs"),
     "topic" => Some("forum"),
     "case" => Some("cases"),
+    "paper" => Some("papers"),
     "course" => Some("course"),
     k if BOARD_KINDS.contains(&k) => Some(k),
     _ => None,

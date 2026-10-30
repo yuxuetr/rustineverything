@@ -1,0 +1,51 @@
+[package]
+name = "module-papers"
+version = "0.1.0"
+edition = "2021"
+description = "论文资讯：HF Daily Papers 选题，读 arXiv 全文生成带出处的多语言解读"
+
+[dependencies]
+dioxus = { workspace = true, features = ["fullstack", "router"] }
+dioxus-shadcn = { workspace = true, features = ["badge", "empty", "spinner"] }
+serde = { workspace = true, features = ["derive"] }
+chrono = { workspace = true, features = ["serde"] }
+app-core = { path = "../../core" }
+widgets = { path = "../../widgets" }
+sea-orm = { workspace = true, optional = true }
+tracing = { workspace = true }
+serde_json = { workspace = true, optional = true }
+# ingest
+reqwest = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+dotenvy = { version = "0.15", optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+llm = { path = "../../llm", optional = true }
+scraper = { version = "0.23", optional = true }
+
+[features]
+server = [
+    "dioxus/server",
+    "dep:sea-orm",
+    "dep:serde_json",
+    "app-core/server",
+    "widgets/server",
+]
+# 采集与生成流水线、`papers-ingest` 二进制（服务器 cron 跑，app 不链接）
+ingest = [
+    "server",
+    "dep:reqwest",
+    "dep:tokio",
+    "dep:dotenvy",
+    "dep:tracing-subscriber",
+    "dep:llm",
+    "dep:scraper",
+]
+
+[[bin]]
+name = "papers-ingest"
+path = "src/bin/papers_ingest.rs"
+required-features = ["ingest"]
+
+[dev-dependencies]
+async-trait = "0.1"
+migration = { path = "../../migration" }
