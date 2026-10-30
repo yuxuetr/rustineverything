@@ -157,7 +157,7 @@ mod tests {
     fn provider(&self) -> llm::LlmProvider {
       llm::LlmProvider::OpenAi
     }
-    async fn chat(&self, _: Vec<llm::LlmMessage>) -> app_core::error::AppResult<String> {
+    async fn complete(&self, _: Vec<llm::LlmMessage>) -> app_core::error::AppResult<llm::LlmReply> {
       Err(app_core::error::AppError::other("LLM down"))
     }
   }

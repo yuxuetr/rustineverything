@@ -155,12 +155,7 @@ pub fn parse_mdx(content: &str) -> (PostMetadata, String) {
 pub fn Markdown(props: MarkdownProps) -> Element {
   // Phase 4.2：用户内容先经 sanitize_user_html 剥离危险 HTML，
   // 站点作者内容保持原状（信任站点编辑者）。
-  let raw_content = if props.untrusted {
-    crate::sanitize::sanitize_user_html(&props.content)
-  } else {
-    props.content.clone()
-  };
-  let (metadata, body) = parse_mdx(&raw_content);
+  let (metadata, body) = split_source(&props.content, props.untrusted);
 
   // 预处理：将 :::type 语法转换为 GFM alert 语法
   let body = convert_admonitions(&body);
@@ -190,6 +185,16 @@ pub fn Markdown(props: MarkdownProps) -> Element {
       // 路由切换重渲都会"换"一遍），而且替换后的 script 不会被再次执行 →
       // SPA 导航后 Prism/Mermaid 失效。改由 main.rs 里的 MutationObserver
       // 自动捕获新插入的 code/mermaid 块，覆盖首屏 + SPA 导航两个场景。
+  }
+}
+
+/// 拆出 frontmatter 和正文。用户内容没有 frontmatter：开头的 `---` 只是分隔线，
+/// 不能让评论 / 帖子设置页面标题，也不能把两条 `---` 之间的文字吞掉。
+fn split_source(content: &str, untrusted: bool) -> (PostMetadata, String) {
+  if untrusted {
+    (PostMetadata::default(), crate::sanitize::sanitize_user_html(content))
+  } else {
+    parse_mdx(content)
   }
 }
 
@@ -1065,6 +1070,18 @@ mod tests {
     {
       assert_eq!(image_src(bad, "comment", true), None, "{bad}");
     }
+  }
+
+  #[test]
+  fn untrusted_content_has_no_frontmatter() {
+    let (meta, body) = split_source("---\ntitle: 站点公告\n---\n普通评论", true);
+    assert!(meta.title.is_empty());
+    assert!(body.contains("普通评论") && body.contains("title: 站点公告"));
+    let (_, body) = split_source("---\n第一段\n\n---\n第二段", true);
+    assert!(body.contains("第一段") && body.contains("第二段"));
+    // 站点作者的内容照常解析 frontmatter
+    let (meta, _) = split_source("---\ntitle: 文章\n---\n正文", false);
+    assert_eq!(meta.title, "文章");
   }
 
   #[test]

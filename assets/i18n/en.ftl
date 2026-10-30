@@ -25,6 +25,7 @@ nav.ai.llm = LLMs
 nav.ai.inference = Inference
 nav.ai.agent = Agents
 nav.ai.rust_ai = Rust AI
+nav.papers = Papers
 mega.col.domains = Domains
 mega.col.learn = Learn
 mega.learn.docs = Docs

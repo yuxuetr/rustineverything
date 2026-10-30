@@ -29,7 +29,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use super::{
-  config::api_client_builder, LlmClient, LlmContentBlock, LlmMessage, LlmProvider, LlmRole,
+  config::api_client_builder, LlmClient, LlmContentBlock, LlmMessage, LlmProvider, LlmReply,
+  LlmRole, LlmUsage,
 };
 
 #[derive(Debug, Clone)]
@@ -120,6 +121,16 @@ struct ChatResponse {
   choices: Vec<Choice>,
   #[serde(default)]
   error: Option<ApiError>,
+  #[serde(default)]
+  usage: Option<WireUsage>,
+}
+
+#[derive(Deserialize)]
+struct WireUsage {
+  #[serde(default)]
+  prompt_tokens: u64,
+  #[serde(default)]
+  completion_tokens: u64,
 }
 
 #[derive(Deserialize)]
@@ -147,7 +158,7 @@ impl LlmClient for OpenAiChat {
     LlmProvider::OpenAi
   }
 
-  async fn chat(&self, messages: Vec<LlmMessage>) -> AppResult<String> {
+  async fn complete(&self, messages: Vec<LlmMessage>) -> AppResult<LlmReply> {
     if messages.is_empty() {
       return Err(AppError::validation("LLM 请求 messages 不能为空"));
     }
@@ -194,6 +205,10 @@ impl LlmClient for OpenAiChat {
       return Err(AppError::other(format!("LLM 服务返回错误（{}）: {}", err.kind, err.message)));
     }
 
+    let usage = parsed
+      .usage
+      .map(|u| LlmUsage { input_tokens: u.prompt_tokens, output_tokens: u.completion_tokens })
+      .unwrap_or_default();
     let answer = parsed.choices.into_iter().next().map(|c| c.message.content).unwrap_or_default();
 
     if answer.is_empty() {
@@ -203,7 +218,7 @@ impl LlmClient for OpenAiChat {
     }
 
     tracing::debug!(provider = "openai", len = answer.len(), "llm: chat ok");
-    Ok(answer)
+    Ok(LlmReply { text: answer, usage })
   }
 }
 
@@ -285,6 +300,29 @@ mod tests {
     let answer = client.chat(vec![LlmMessage::user("你好")]).await.expect("chat ok");
     assert_eq!(answer, "你好，我是 DeepSeek。");
     mock.assert_async().await;
+  }
+
+  #[tokio::test]
+  async fn complete_reports_usage() {
+    let mut server = mockito::Server::new_async().await;
+    let body = r#"{
+      "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+      "usage": {"prompt_tokens": 120, "completion_tokens": 45, "total_tokens": 165,
+                "completion_tokens_details": {"reasoning_tokens": 30}}
+    }"#;
+    let _m = server.mock("POST", "/v1/chat/completions").with_body(body).create_async().await;
+    let reply = build_chat(&server.url()).complete(vec![LlmMessage::user("x")]).await.unwrap();
+    assert_eq!(reply.text, "ok");
+    assert_eq!(reply.usage, LlmUsage { input_tokens: 120, output_tokens: 45 });
+
+    // 没有 usage 字段的兼容厂商：用量记 0，不报错
+    let _m = server
+      .mock("POST", "/v1/chat/completions")
+      .with_body(r#"{"choices":[{"message":{"role":"assistant","content":"ok"}}]}"#)
+      .create_async()
+      .await;
+    let reply = build_chat(&server.url()).complete(vec![LlmMessage::user("x")]).await.unwrap();
+    assert_eq!(reply.usage, LlmUsage::default());
   }
 
   #[tokio::test]
