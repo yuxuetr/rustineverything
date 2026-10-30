@@ -95,7 +95,7 @@ if !site_config_module_enabled("comments") { return Err(ServerFnError::new("disa
 
 ## 6. XSS 防护
 
-`content` 走 `widgets::sanitize_user_html` 过滤后写库（Phase 4.2）。前端渲染时
+`content` 原样写库，渲染时用 `Markdown { untrusted: true }`：原始 HTML 按文本输出，链接 / 图片走白名单（见 MODERATION_SPEC §1.3）。前端渲染时
 不用 `dangerous_inner_html`，而是 plain text + `[link](...)` markdown 子集。
 
 ## 7. 性能 / 容量

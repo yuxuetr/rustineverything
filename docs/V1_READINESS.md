@@ -18,7 +18,7 @@
 - ✅ 生产 Cookie `Secure` 标志（按 `BASE_URL` 是否 https）
 - ✅ 图片上传 MIME 嗅探白名单 + 5MB 上限 + 安全文件名
 - ✅ `user_identities.access_token` AES-GCM 加密存表
-- ✅ 用户 Markdown XSS 防护（`sanitize_user_html`，评论/论坛 5 处开启）
+- ✅ 用户 Markdown XSS 防护（`Markdown { untrusted: true }`：原始 HTML 当文本、URL 白名单，评论/论坛 5 处开启）
 - ✅ 用户创建事务化（user + identity 同事务）+ 回滚回归测试（`#[ignore]` live-DB）
 
 ## 3. 内容板块（Phase 6）

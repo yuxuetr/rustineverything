@@ -123,8 +123,8 @@ pub struct MarkdownProps {
   /// 当前文章 / 章节 / 案例 ID，用于解析图片相对路径。
   pub blog_id: String,
   /// Phase 4.2：来自用户的不受信内容（评论 / 话题 / 标注 等）。
-  /// 默认 `false`（站点作者内容，原样渲染）。`true` 时会在 cmark
-  /// 解析前调用 [`crate::sanitize::sanitize_user_html`] 剥离危险标签。
+  /// 默认 `false`（站点作者内容）。`true` 时原始 HTML 一律按文本输出，链接与图片走白名单，
+  /// 不解析 frontmatter，不画 mermaid，标题不出 h1、不能自定 id 和 class。
   #[props(default = false)]
   pub untrusted: bool,
 }
@@ -153,8 +153,6 @@ pub fn parse_mdx(content: &str) -> (PostMetadata, String) {
 
 #[component]
 pub fn Markdown(props: MarkdownProps) -> Element {
-  // Phase 4.2：用户内容先经 sanitize_user_html 剥离危险 HTML，
-  // 站点作者内容保持原状（信任站点编辑者）。
   let (metadata, body) = split_source(&props.content, props.untrusted);
 
   // 预处理：将 :::type 语法转换为 GFM alert 语法
@@ -192,7 +190,9 @@ pub fn Markdown(props: MarkdownProps) -> Element {
 /// 不能让评论 / 帖子设置页面标题，也不能把两条 `---` 之间的文字吞掉。
 fn split_source(content: &str, untrusted: bool) -> (PostMetadata, String) {
   if untrusted {
-    (PostMetadata::default(), crate::sanitize::sanitize_user_html(content))
+    // 原始 HTML 在渲染时按文本输出（render_stream 的 Html 分支），解析前不改源文：
+    // 字符串级的删除会毁掉用户贴的代码（`let one=1;` 被当成 `on*=` 属性）。
+    (PostMetadata::default(), content.to_string())
   } else {
     parse_mdx(content)
   }
@@ -1070,6 +1070,77 @@ mod tests {
     {
       assert_eq!(image_src(bad, "comment", true), None, "{bad}");
     }
+  }
+
+  /// 渲染结果里真正的标签（`<` 后跟字母）的名字和 `on*` 属性，
+  /// 转义成文本的 `&lt;script` 不算。
+  fn live_tags(html: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    for (i, _) in html.match_indices('<') {
+      let rest = &html[i + 1..];
+      if !rest.starts_with(|c: char| c.is_ascii_alphabetic()) {
+        continue;
+      }
+      let tag = &rest[..rest.find('>').unwrap_or(rest.len())];
+      let name: String = tag.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+      found.push(name.to_ascii_lowercase());
+      for attr in tag.split_whitespace().skip(1) {
+        let attr = attr.to_ascii_lowercase();
+        if attr.starts_with("on") && attr.contains('=') {
+          found.push(attr);
+        }
+      }
+    }
+    found
+  }
+
+  /// 用户内容里的原始 HTML 一律当文本输出：渲染出的真实标签里没有 script / iframe /
+  /// object / embed / style / svg，也没有任何 `on*=` 属性。只靠事件层，不靠解析前的字符串处理。
+  #[test]
+  fn untrusted_raw_html_never_becomes_markup() {
+    let payloads = [
+      "before <script>alert(1)</script> after",
+      "<script>\nalert(1)\n</script>",
+      "<SCRIPT>x</SCRIPT> <sCrIpT src=\"https://evil.com/x.js\"></sCrIpT>",
+      r#"<iframe src="https://evil.com"></iframe> ok"#,
+      "<object data='x.swf'></object><embed src='y' /> z",
+      "<style>body{display:none}</style> body",
+      r#"<a href="/x" onclick="alert(1)">link</a>"#,
+      r#"<img src="x" onerror='alert(1)'>"#,
+      "<img src=x onerror=alert(1)>",
+      "<svg onload=alert(1)><script>alert(2)</script>",
+      "<div>\n<img src=x onerror=alert(1)>\n</div>",
+      "text <span onmouseover=alert(1)>hover</span>",
+      "<Unregistered onload=\"alert(1)\" />",
+    ];
+    for payload in payloads {
+      let html = render_markdown(payload, true);
+      for tag in live_tags(&html) {
+        assert!(
+          !matches!(tag.as_str(), "script" | "iframe" | "object" | "embed" | "style" | "svg")
+            && !tag.starts_with("on"),
+          "{payload:?} 渲染出了 {tag:?}：{html}"
+        );
+      }
+    }
+  }
+
+  /// 注册组件在用户内容里照常渲染（YouTube 的 iframe 是组件自己的），用户写的
+  /// `on*` 属性不会带进去：组件只读取自己认识的属性。
+  #[test]
+  fn untrusted_component_drops_event_attributes() {
+    crate::components::register_default_components();
+    let html = render_markdown("<YouTube id=\"x\" onload=\"alert(1)\" />", true);
+    assert!(html.contains("src=\"https://www.youtube.com/embed/x\""), "{html}");
+    assert!(live_tags(&html).iter().all(|tag| !tag.starts_with("on")), "{html}");
+  }
+
+  /// 用户贴的代码原样显示：`let one=1;` 不会被当成事件属性删掉，代码里的 `<script>` 也在。
+  #[test]
+  fn untrusted_code_is_kept_verbatim() {
+    let html = render_markdown("`let one=1;`\n\n```html\n<script>alert(1)</script>\n```", true);
+    assert!(html.contains("let one=1;"), "{html}");
+    assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"), "{html}");
   }
 
   #[test]
