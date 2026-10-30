@@ -4,6 +4,8 @@
 
 use std::collections::HashMap;
 
+use app_core::error::with_sources;
+
 use crate::{
   OrderCall, OrderRequest, PayAction, PayError, PayRequest, PaymentProvider, RefundRequest,
   RefundResult,
@@ -42,8 +44,8 @@ async fn send(pr: &PayRequest, label: &str) -> Result<String, PayError> {
     builder = builder.body(pr.body.clone());
   }
   let resp =
-    builder.send().await.map_err(|e| PayError::Gateway(format!("请求{label}失败: {e}")))?;
-  resp.text().await.map_err(|e| PayError::Gateway(format!("读取{label}响应失败: {e}")))
+    builder.send().await.map_err(|e| PayError::Gateway(format!("请求{label}失败: {}", with_sources(&e))))?;
+  resp.text().await.map_err(|e| PayError::Gateway(format!("读取{label}响应失败: {}", with_sources(&e))))
 }
 
 /// 下单：`build_order` →（Direct 直接返回 / Http 发送后 `parse_order_response`）。

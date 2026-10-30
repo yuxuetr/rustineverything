@@ -3,6 +3,7 @@
 //! 输出给模型的文本每节以 `[§<节号>] <标题>` 开头，模型引用出处时只能用这些节号。
 //! 没有编号的节（Limitations 等）用标题当节号。公式换成 `$<LaTeX>$`。
 
+use app_core::error::with_sources;
 use scraper::{node::Node, ElementRef, Html, Selector};
 
 /// 这些块不进正文：参考文献、作者、脚注。
@@ -137,7 +138,7 @@ pub async fn fetch(
   arxiv_id: &str,
 ) -> Result<Option<(FullText, Option<i32>)>, String> {
   let url = format!("https://arxiv.org/html/{arxiv_id}");
-  let resp = client.get(&url).send().await.map_err(|e| format!("arXiv 请求失败：{e}"))?;
+  let resp = client.get(&url).send().await.map_err(|e| format!("arXiv 请求失败：{}", with_sources(&e)))?;
   let status = resp.status();
   if status == reqwest::StatusCode::NOT_FOUND {
     return Ok(None);
@@ -145,7 +146,7 @@ pub async fn fetch(
   if !status.is_success() {
     return Err(format!("arXiv 返回 {status}"));
   }
-  let html = resp.text().await.map_err(|e| format!("arXiv 响应读取失败：{e}"))?;
+  let html = resp.text().await.map_err(|e| format!("arXiv 响应读取失败：{}", with_sources(&e)))?;
   let version = version_in_html(&html, arxiv_id);
   Ok(parse(&html).map(|ft| (ft, version)))
 }

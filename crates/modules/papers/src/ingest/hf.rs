@@ -1,6 +1,7 @@
 //! Hugging Face Daily Papers 列表：`/api/daily_papers?date=YYYY-MM-DD`。
 
 use chrono::{DateTime, FixedOffset, NaiveDate};
+use app_core::error::with_sources;
 use serde::Deserialize;
 
 /// 每天最多取多少篇。实测 2026-10 每天 45–97 篇。
@@ -97,9 +98,9 @@ pub async fn fetch_daily(
   date: NaiveDate,
 ) -> Result<Vec<HfPaper>, String> {
   let url = format!("https://huggingface.co/api/daily_papers?date={date}&limit={HF_LIMIT}");
-  let resp = client.get(&url).send().await.map_err(|e| format!("HF 请求失败：{e}"))?;
+  let resp = client.get(&url).send().await.map_err(|e| format!("HF 请求失败：{}", with_sources(&e)))?;
   let status = resp.status();
-  let body = resp.text().await.map_err(|e| format!("HF 响应读取失败：{e}"))?;
+  let body = resp.text().await.map_err(|e| format!("HF 响应读取失败：{}", with_sources(&e)))?;
   if !status.is_success() {
     return Err(format!("HF 返回 {status}"));
   }

@@ -163,9 +163,41 @@ impl From<AppError> for dioxus::fullstack::ServerFnError {
 /// 便捷类型别名
 pub type AppResult<T> = Result<T, AppError>;
 
+/// 把错误连同 `source()` 链拼成一行。reqwest 的 Display 只有最外层
+/// （「error sending request for url (...)」），连接被拒、证书错误、超时看起来一样。
+pub fn with_sources(e: &dyn std::error::Error) -> String {
+  let mut out = e.to_string();
+  let mut cur = e.source();
+  while let Some(s) = cur {
+    out.push_str(": ");
+    out.push_str(&s.to_string());
+    cur = s.source();
+  }
+  out
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn with_sources_joins_chain() {
+    #[derive(Debug)]
+    struct Outer(std::io::Error);
+    impl fmt::Display for Outer {
+      fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("error sending request")
+      }
+    }
+    impl std::error::Error for Outer {
+      fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+      }
+    }
+    let e = Outer(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused"));
+    assert_eq!(with_sources(&e), "error sending request: refused");
+    assert_eq!(with_sources(&std::io::Error::other("plain")), "plain");
+  }
 
   #[test]
   fn validation_round_trip() {

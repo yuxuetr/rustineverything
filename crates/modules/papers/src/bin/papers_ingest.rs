@@ -91,6 +91,7 @@ async fn main() -> ExitCode {
   // arXiv 与 HF 都建议带上能联系到人的 User-Agent
   let http = match reqwest::Client::builder()
     .user_agent("rustineverything-papers/0.1 (+https://rustineverything.app)")
+    .connect_timeout(std::time::Duration::from_secs(10))
     .timeout(std::time::Duration::from_secs(60))
     .build()
   {
