@@ -48,14 +48,14 @@ tokio = { version = "1.49.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sea-orm = { version = "1.1.4", features = [ "sqlx-postgres", "runtime-tokio-rustls", "macros" ] }
-oauth2 = { version = "5.0.0", features = ["reqwest"] }
 chrono = { version = "0.4", features = ["serde"] }
 serde_yaml = "0.9"
 pulldown-latex = "0.7.1"
 rand = "0.9"
 sha2 = "0.10"
 base64 = "0.22"
-reqwest = { version = "0.12", features = ["json"] }
+# 只用 rustls：默认 feature 会带上 native-tls（Linux 上是 OpenSSL），且普通 Client::builder() 走它
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2", "charset", "system-proxy"] }
 jsonwebtoken = "9"
 tantivy = "0.27"
 tantivy-jieba = "0.19"
