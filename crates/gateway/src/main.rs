@@ -19,7 +19,10 @@
 //!   gateway 原先也按 IP 限流，但把静态资源算在内：一次冷加载约 57 个请求，
 //!   读配额 60/min 刷新一次就会 429，`/api/auth/me` 还被算进 10/min 的写配额
 
+use std::time::Duration;
+
 use async_trait::async_trait;
+use pingora_core::apps::HttpServerOptions;
 use pingora_core::server::configuration::{Opt, ServerConf};
 use pingora_core::server::Server;
 use pingora_core::upstreams::peer::HttpPeer;
@@ -36,7 +39,7 @@ const HTTP_BIND: &str = "0.0.0.0:80";
 
 const HSTS_VALUE: &str = "max-age=31536000; includeSubDomains";
 
-/// 下游 HTTP/1 keep-alive 连接两个请求之间最多空闲多久（秒）。
+/// 下游连接两个请求之间最多空闲多久（秒）：HTTP/1 keep-alive 与没有在途流的 h2 连接。
 const DOWNSTREAM_IDLE_SECS: u64 = 60;
 
 /// pingora 读完请求头后把 HTTP/1.1 keep-alive 设成无限（`Some(0)`），
@@ -90,24 +93,6 @@ impl ProxyHttp for AppGateway {
       req.remove_header("X-Forwarded-For");
     }
     Ok(())
-  }
-
-  /// pingora 0.8.0 的默认实现在复用连接上出错时连 POST 也重试；照 0.9.0 的默认策略只重试幂等方法。
-  fn error_while_proxy(
-    &self,
-    peer: &HttpPeer,
-    session: &mut Session,
-    e: Box<pingora_core::Error>,
-    _ctx: &mut (),
-    client_reused: bool,
-  ) -> Box<pingora_core::Error> {
-    let mut e = e.more_context(format!("Peer: {peer}"));
-    if !session.req_header().method.is_idempotent() || session.as_ref().retry_buffer_truncated() {
-      e.set_retry(false);
-    } else {
-      e.retry.decide_reuse(client_reused);
-    }
-    e
   }
 
   /// 响应改写：补安全头，见 [`apply_security_headers`]。
@@ -197,6 +182,12 @@ fn main() {
     .expect("加载 TLS 证书 / 私钥失败：检查路径与权限");
   tls.enable_h2();
   proxy.add_tls_with_settings(HTTPS_BIND, None, tls);
+  let mut opts = HttpServerOptions::default();
+  opts.h2_idle_timeout = Some(Duration::from_secs(DOWNSTREAM_IDLE_SECS));
+  let Some(app) = proxy.app_logic_mut() else {
+    unreachable!("http_proxy_service always holds its HttpProxy app");
+  };
+  app.server_options = Some(opts);
   server.add_service(proxy);
 
   // 80: HTTP→HTTPS 301
