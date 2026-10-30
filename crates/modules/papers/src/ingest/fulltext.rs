@@ -138,7 +138,8 @@ pub async fn fetch(
   arxiv_id: &str,
 ) -> Result<Option<(FullText, Option<i32>)>, String> {
   let url = format!("https://arxiv.org/html/{arxiv_id}");
-  let resp = client.get(&url).send().await.map_err(|e| format!("arXiv 请求失败：{}", with_sources(&e)))?;
+  let resp =
+    client.get(&url).send().await.map_err(|e| format!("arXiv 请求失败：{}", with_sources(&e)))?;
   let status = resp.status();
   if status == reqwest::StatusCode::NOT_FOUND {
     return Ok(None);

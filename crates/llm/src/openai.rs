@@ -193,8 +193,10 @@ impl LlmClient for OpenAiChat {
       .map_err(|e| AppError::other(format!("LLM HTTP 请求失败: {}", with_sources(&e))))?;
 
     let status = resp.status();
-    let text =
-      resp.text().await.map_err(|e| AppError::other(format!("LLM 响应读取失败: {}", with_sources(&e))))?;
+    let text = resp
+      .text()
+      .await
+      .map_err(|e| AppError::other(format!("LLM 响应读取失败: {}", with_sources(&e))))?;
 
     if !status.is_success() {
       tracing::warn!(provider = "openai", status = %status, body = %text, "llm: non-2xx response");
