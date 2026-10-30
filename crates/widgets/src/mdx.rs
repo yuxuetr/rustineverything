@@ -8,7 +8,8 @@
 
 use dioxus::prelude::*;
 use pulldown_cmark::{
-  BlockQuoteKind, CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd,
+  Alignment, BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, Options, Parser, Tag,
+  TagEnd,
 };
 use pulldown_latex::{push_mathml, Parser as LatexParser, Storage};
 use serde::{Deserialize, Serialize};
@@ -163,7 +164,7 @@ pub fn Markdown(props: MarkdownProps) -> Element {
   if !props.untrusted {
     assign_heading_ids(&mut events);
   }
-  let mut it = events.into_iter();
+  let mut it = number_footnotes(events).into_iter();
 
   // 渲染流，传入 blog_id；同时按顶层块编号注入 data-block-id 供标注定位
   let mut block_idx: usize = 1;
@@ -297,6 +298,116 @@ fn slugify(text: &str) -> String {
     .collect()
 }
 
+/// 脚注按第一次引用的顺序编号，标签换成编号（渲染出的 id 只含数字，用户写的标签
+/// 不进 id）；定义从原位置取出，按编号排到正文之后，前面加一条分隔线。
+/// 没被引用的定义排在最后，同一标签的重复定义只留第一条。
+fn number_footnotes(events: Vec<Event<'_>>) -> Vec<Event<'_>> {
+  let mut numbers: HashMap<String, usize> = HashMap::new();
+  for event in &events {
+    if let Event::FootnoteReference(label) = event {
+      let next = numbers.len() + 1;
+      numbers.entry(label.to_string()).or_insert(next);
+    }
+  }
+  let mut body = Vec::with_capacity(events.len());
+  let mut notes: Vec<(usize, Vec<Event<'_>>)> = Vec::new();
+  let mut it = events.into_iter();
+  while let Some(event) = it.next() {
+    match event {
+      Event::FootnoteReference(label) => {
+        let n = numbers.get(label.as_ref()).copied().unwrap_or_default();
+        body.push(Event::FootnoteReference(CowStr::from(n.to_string())));
+      }
+      Event::Start(Tag::FootnoteDefinition(label)) => {
+        let next = numbers.len() + 1;
+        let n = *numbers.entry(label.to_string()).or_insert(next);
+        let mut note = vec![Event::Start(Tag::FootnoteDefinition(CowStr::from(n.to_string())))];
+        for inner in it.by_ref() {
+          let end = matches!(inner, Event::End(TagEnd::FootnoteDefinition));
+          note.push(inner);
+          if end {
+            break;
+          }
+        }
+        if notes.iter().all(|(m, _)| *m != n) {
+          notes.push((n, note));
+        }
+      }
+      other => body.push(other),
+    }
+  }
+  if !notes.is_empty() {
+    notes.sort_by_key(|(n, _)| *n);
+    body.push(Event::Rule);
+    body.extend(notes.into_iter().flat_map(|(_, note)| note));
+  }
+  body
+}
+
+/// 表格：列对齐写进每个单元格；表头单元格是 `th`，表体显式包 `tbody`
+/// （浏览器会自己补 `tbody`，服务端不写就和 hydration 对不上）。
+fn render_table(
+  it: &mut std::vec::IntoIter<Event<'_>>,
+  aligns: &[Alignment],
+  blog_id: &str,
+  untrusted: bool,
+  block_idx: &mut usize,
+  block_id: Option<String>,
+) -> Element {
+  let bid = block_id.unwrap_or_default();
+  let has_bid = !bid.is_empty();
+  let mut head = Vec::new();
+  let mut rows = Vec::new();
+  let mut cells = Vec::new();
+  let mut in_head = false;
+  while let Some(event) = it.next() {
+    match event {
+      Event::Start(Tag::TableHead) => in_head = true,
+      Event::Start(Tag::TableCell) => {
+        let align = match aligns.get(cells.len()) {
+          Some(Alignment::Left) => "text-align:left",
+          Some(Alignment::Center) => "text-align:center",
+          Some(Alignment::Right) => "text-align:right",
+          _ => "",
+        };
+        let children = render_stream(it, blog_id, untrusted, block_idx, false);
+        cells.push(if in_head {
+          rsx! { th { class: "px-4 py-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-300",
+              style: if !align.is_empty() { "{align}" },
+              {children.into_iter()}
+          } }
+        } else {
+          rsx! { td { class: "px-4 py-3 text-sm",
+              style: if !align.is_empty() { "{align}" },
+              {children.into_iter()}
+          } }
+        });
+      }
+      Event::End(TagEnd::TableHead) => {
+        in_head = false;
+        head = std::mem::take(&mut cells);
+      }
+      Event::End(TagEnd::TableRow) => {
+        let row = std::mem::take(&mut cells);
+        rows.push(rsx! { tr { class: "border-b border-slate-200 dark:border-slate-800", {row.into_iter()} } });
+      }
+      Event::End(TagEnd::Table) => break,
+      _ => {}
+    }
+  }
+  rsx! {
+      div { class: "overflow-x-auto my-6",
+          table {
+              id: if has_bid { "{bid}" },
+              "data-block-id": if has_bid { "{bid}" },
+              class: "min-w-full border-collapse",
+              thead { class: "bg-slate-50 dark:bg-slate-800/50", tr { {head.into_iter()} } }
+              tbody { {rows.into_iter()} }
+          }
+      }
+  }
+}
+
 fn render_stream<'a>(
   it: &mut std::vec::IntoIter<Event<'a>>,
   blog_id: &str,
@@ -310,8 +421,14 @@ fn render_stream<'a>(
     match event {
             Event::Start(Tag::CodeBlock(kind)) => {
                 // 特殊处理代码块：收集原始文本用于 Copy 按钮
+                // info 串只取语言名：`rust,ignore`、`py title="x.py"` 后面的部分不是 class
                 let lang = match &kind {
-                    CodeBlockKind::Fenced(lang) => lang.to_string(),
+                    CodeBlockKind::Fenced(info) => info
+                        .split(|c: char| c == ',' || c == '{' || c.is_whitespace())
+                        .next()
+                        .filter(|lang| !lang.is_empty())
+                        .unwrap_or("text")
+                        .to_string(),
                     _ => "text".to_string(),
                 };
                 let mut code_text = String::new();
@@ -346,28 +463,9 @@ fn render_stream<'a>(
                 }
                 nodes.push(render_image(&dest_url, &title, &alt, blog_id, untrusted));
             }
-            Event::Start(Tag::TableHead) => {
-                // TableHead 内的 cell 需要渲染为 <th> 而非 <td>
-                let mut header_cells = Vec::new();
-                while let Some(event) = it.next() {
-                    match event {
-                        Event::Start(Tag::TableCell) => {
-                            let cell_children = render_stream(it, blog_id, untrusted, block_idx, false);
-                            header_cells.push(rsx! {
-                                th { class: "px-4 py-3 text-left text-sm font-semibold text-slate-700 dark:text-slate-300",
-                                    {cell_children.into_iter()}
-                                }
-                            });
-                        }
-                        Event::End(_) => break,
-                        _ => {}
-                    }
-                }
-                nodes.push(rsx! {
-                    thead { class: "bg-slate-50 dark:bg-slate-800/50",
-                        tr { {header_cells.into_iter()} }
-                    }
-                });
+            Event::Start(Tag::Table(aligns)) => {
+                let id = mint_block_id(top, block_idx);
+                nodes.push(render_table(it, &aligns, blog_id, untrusted, block_idx, id));
             }
             Event::Start(tag) => {
                 let id = mint_block_id(top, block_idx);
@@ -391,6 +489,13 @@ fn render_stream<'a>(
                     }
                 });
             }
+            Event::TaskListMarker(checked) => nodes.push(rsx! {
+                input { r#type: "checkbox", disabled: true, checked, class: "mr-2 align-middle" }
+            }),
+            // 标签已由 number_footnotes 换成编号
+            Event::FootnoteReference(n) => nodes.push(rsx! {
+                sup { id: "fnref-{n}", a { href: "#fn-{n}", class: "text-primary no-underline", "[{n}]" } }
+            }),
             Event::SoftBreak => nodes.push(rsx! { " " }),
             Event::HardBreak => nodes.push(rsx! { br {} }),
             Event::Rule => nodes.push(rsx! { hr { class: "my-8 border-slate-200 dark:border-slate-800" } }),
@@ -409,7 +514,6 @@ fn render_stream<'a>(
                 }
                 nodes.push(rsx! { span { "{h}" } });
             }
-            _ => {}
         }
   }
   nodes
@@ -450,29 +554,62 @@ fn render_tag(
   let bid = block_id.unwrap_or_default();
   let has_bid = !bid.is_empty();
   match tag {
-    Tag::Heading { level, id, .. } => {
-      // 用户内容最高到 h2：h1 留给页面标题（G7）；也不能自定 id（M1）。
+    Tag::Heading { level, id, classes, .. } => {
+      // 用户内容最高到 h2：h1 留给页面标题（G7）；也不能自定 id（M1）和 class
+      // （站点的样式类能把评论叠到页面上）。
       let l = if untrusted { (level as u32).max(2) } else { level as u32 };
       let anchor = id.filter(|_| !untrusted).map(|s| s.to_string()).unwrap_or_else(|| bid.clone());
       let has_anchor = !anchor.is_empty();
+      let class = if untrusted { String::new() } else { classes.join(" ") };
+      let has_class = !class.is_empty();
       match l {
         1 => rsx! { h1 {
             id: if has_anchor { "{anchor}" },
+            class: if has_class { "{class}" },
             "data-block-id": if has_bid { "{bid}" },
             {children.into_iter()}
         } },
         2 => rsx! { h2 {
             id: if has_anchor { "{anchor}" },
+            class: if has_class { "{class}" },
             "data-block-id": if has_bid { "{bid}" },
             {children.into_iter()}
         } },
-        _ => rsx! { h3 {
+        3 => rsx! { h3 {
             id: if has_anchor { "{anchor}" },
+            class: if has_class { "{class}" },
+            "data-block-id": if has_bid { "{bid}" },
+            {children.into_iter()}
+        } },
+        4 => rsx! { h4 {
+            id: if has_anchor { "{anchor}" },
+            class: if has_class { "{class}" },
+            "data-block-id": if has_bid { "{bid}" },
+            {children.into_iter()}
+        } },
+        5 => rsx! { h5 {
+            id: if has_anchor { "{anchor}" },
+            class: if has_class { "{class}" },
+            "data-block-id": if has_bid { "{bid}" },
+            {children.into_iter()}
+        } },
+        _ => rsx! { h6 {
+            id: if has_anchor { "{anchor}" },
+            class: if has_class { "{class}" },
             "data-block-id": if has_bid { "{bid}" },
             {children.into_iter()}
         } },
       }
     }
+    // 标签已由 number_footnotes 换成编号
+    Tag::FootnoteDefinition(n) => rsx! { div {
+        id: "fn-{n}",
+        "data-block-id": if has_bid { "{bid}" },
+        class: "flex gap-2 text-sm text-slate-600 dark:text-slate-400",
+        span { class: "shrink-0", "{n}." }
+        div { {children.into_iter()} }
+        a { href: "#fnref-{n}", class: "shrink-0 no-underline", "↩" }
+    } },
     Tag::Paragraph => {
       // 顶层 paragraph 始终包 <p>以保证块锁点；非顶层且单子节点时保持原优化。
       if !has_bid && children.len() == 1 {
@@ -517,24 +654,6 @@ fn render_tag(
     Tag::BlockQuote(kind) => {
       render_blockquote(kind, children, if has_bid { Some(bid.clone()) } else { None })
     }
-    Tag::Table(_) => rsx! {
-        div { class: "overflow-x-auto my-6",
-            table {
-                id: if has_bid { "{bid}" },
-                "data-block-id": if has_bid { "{bid}" },
-                class: "min-w-full border-collapse",
-                {children.into_iter()}
-            }
-        }
-    },
-    Tag::TableRow => rsx! {
-        tr { class: "border-b border-slate-200 dark:border-slate-800",
-            {children.into_iter()}
-        }
-    },
-    Tag::TableCell => rsx! {
-        td { class: "px-4 py-3 text-sm", {children.into_iter()} }
-    },
     Tag::Strong => rsx! { strong { {children.into_iter()} } },
     Tag::Emphasis => rsx! { em { {children.into_iter()} } },
     Tag::Strikethrough => rsx! { del { {children.into_iter()} } },
@@ -979,6 +1098,60 @@ mod tests {
     for entry in &outline {
       assert!(html.contains(&format!("id=\"{}\"", entry.id)), "缺少 id={}：{html}", entry.id);
     }
+  }
+
+  /// 任务列表的勾选框不能丢：`[x]` 是勾上的只读框，`[ ]` 是空框。
+  #[test]
+  fn task_list_renders_checkboxes() {
+    let html = render_markdown("- [x] done\n- [ ] todo", true);
+    assert_eq!(html.matches("type=\"checkbox\"").count(), 2, "{html}");
+    assert_eq!(html.matches("checked").count(), 1, "{html}");
+    assert!(html.contains("disabled"), "{html}");
+  }
+
+  /// 脚注按第一次引用的顺序编号（不按标签），引用链到文末的定义，定义链回引用；
+  /// id 只用编号，用户写的标签不进 id。
+  #[test]
+  fn footnotes_number_by_first_reference() {
+    let md = "a[^z] b[^a]\n\n[^a]: second\n\n[^z]: first\n\nafter";
+    let html = render_markdown(md, true);
+    assert!(html.contains("href=\"#fn-1\"") && html.contains("href=\"#fn-2\""), "{html}");
+    assert!(html.contains("id=\"fn-1\"") && html.contains("id=\"fnref-1\""), "{html}");
+    assert!(!html.contains("fn-z") && !html.contains("fn-a\""), "{html}");
+    let first = html.find("first").unwrap_or(0);
+    let second = html.find("second").unwrap_or(0);
+    let after = html.find("after").unwrap_or(usize::MAX);
+    assert!(after < first && first < second, "定义要按编号排在正文之后：{html}");
+  }
+
+  /// 表格的列对齐写进单元格，表头和表体都要。
+  #[test]
+  fn table_alignment_applies_to_cells() {
+    let html = render_markdown("| l | c | r |\n| :-- | :-: | --: |\n| 1 | 2 | 3 |", false);
+    assert_eq!(html.matches("text-align:center").count(), 2, "{html}");
+    assert_eq!(html.matches("text-align:right").count(), 2, "{html}");
+    assert_eq!(html.matches("<th ").count(), 3, "{html}");
+    assert!(html.contains("<tbody>"), "{html}");
+    assert_eq!(html.matches("<td").count(), 3, "{html}");
+  }
+
+  /// H4–H6 保持自己的级别；站点内容的 `{.class}` 生效，用户内容忽略。
+  #[test]
+  fn deep_headings_and_classes() {
+    let html = render_markdown("#### four {.note}\n\n##### five\n\n###### six", false);
+    assert!(html.contains("<h4") && html.contains("<h5") && html.contains("<h6"), "{html}");
+    assert!(html.contains("class=\"note\""), "{html}");
+    let html = render_markdown("#### four {.fixed}", true);
+    assert!(html.contains("<h4") && !html.contains("fixed\""), "{html}");
+  }
+
+  /// 代码块 info 串只取语言名：`rust,ignore` 与 `rust title="x"` 都是 rust。
+  #[test]
+  fn code_info_keeps_only_language() {
+    let html =
+      render_markdown("```rust,ignore\nfn a() {}\n```\n\n```py title=\"x.py\"\npass\n```", false);
+    assert!(html.contains("language-rust ") && html.contains("language-py "), "{html}");
+    assert!(!html.contains("ignore") && !html.contains("title="), "{html}");
   }
 
   /// M2：表格单元格里的 `<br/>` 是换行，不是文字。
