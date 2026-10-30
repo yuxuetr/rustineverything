@@ -2915,8 +2915,7 @@ pub async fn create_annotation(payload: AnnotationCreate) -> Result<Annotation, 
     use app_core::engines::moderation::ModerationLabel;
     use app_core::entities::annotation;
     use chrono::Utc;
-    use module_moderation::{enqueue_if_flagged, evaluate_submission};
-    use sdk::ModerationSubmission;
+    use module_moderation::enqueue_if_flagged;
     use sea_orm::{ActiveValue::Set, EntityTrait};
     let user = require_writer().await?;
 
@@ -2924,31 +2923,7 @@ pub async fn create_annotation(payload: AnnotationCreate) -> Result<Annotation, 
     // resource_kind + resource_path 组成 ref_path（便于 admin 复核时跳回原文）
     let ref_path = format!("{}:{}", payload.resource_kind, payload.resource_path);
     let note_content = payload.note.clone().unwrap_or_default();
-    let mod_outcome = if !note_content.trim().is_empty() {
-      let submission =
-        ModerationSubmission::new(&note_content).with_kind("annotation").with_ref_path(&ref_path);
-      let verdict = evaluate_submission(submission).await;
-      if verdict.label == ModerationLabel::Block {
-        tracing::warn!(
-            user = %user.nickname,
-            ref_path = %ref_path,
-            score = verdict.score,
-            reason = %verdict.reason,
-            "moderation: annotation BLOCKED"
-        );
-        return Err(ServerFnError::new(format!(
-          "标注被审核拒绝：{}",
-          if verdict.reason.is_empty() {
-            "未通过内容审核".to_string()
-          } else {
-            verdict.reason
-          }
-        )));
-      }
-      Some(verdict)
-    } else {
-      None
-    };
+    let mod_outcome = moderate_note(&note_content, &ref_path, &user.nickname).await?;
 
     let db = open_db().await?;
     let now = Utc::now().fixed_offset();
@@ -3024,6 +2999,47 @@ pub async fn delete_annotation(id: i64) -> Result<(), ServerFnError> {
   }
 }
 
+/// 标注 note 的审核，新建和编辑共用。空 note 不审（返回 None）；Block 直接拒绝。
+#[cfg(feature = "server")]
+async fn moderate_note(
+  note: &str,
+  ref_path: &str,
+  nickname: &str,
+) -> Result<Option<app_core::engines::moderation::Verdict>, ServerFnError> {
+  use module_moderation::evaluate_submission;
+  use sdk::ModerationSubmission;
+  if note.trim().is_empty() {
+    return Ok(None);
+  }
+  let submission = ModerationSubmission::new(note).with_kind("annotation").with_ref_path(ref_path);
+  let verdict = evaluate_submission(submission).await;
+  if verdict.is_block() {
+    tracing::warn!(
+        user = %nickname,
+        ref_path = %ref_path,
+        score = verdict.score,
+        reason = %verdict.reason,
+        "moderation: annotation BLOCKED"
+    );
+    return Err(ServerFnError::new(format!(
+      "标注被审核拒绝：{}",
+      if verdict.reason.is_empty() { "未通过内容审核".to_string() } else { verdict.reason }
+    )));
+  }
+  Ok(Some(verdict))
+}
+
+/// 编辑后的 `pending_review`：新内容被 Flag 就扣住；没 Flag 时保持原状——
+/// 已在队列里的仍等 admin 处理，不因为改了一次就自动放出。
+#[cfg(feature = "server")]
+fn pending_after_edit(
+  current: bool,
+  verdict: Option<&app_core::engines::moderation::Verdict>,
+) -> bool {
+  current
+    || verdict.is_some_and(|v| v.label == app_core::engines::moderation::ModerationLabel::Flag)
+}
+
 #[post("/api/annotations/update")]
 pub async fn update_annotation(
   id: i64,
@@ -3035,6 +3051,7 @@ pub async fn update_annotation(
   {
     use app_core::entities::annotation;
     use chrono::Utc;
+    use module_moderation::enqueue_if_flagged;
     use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
     let user = require_writer().await?;
     let db = open_db().await?;
@@ -3044,21 +3061,42 @@ pub async fn update_annotation(
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?
       .ok_or_else(|| ServerFnError::new("未找到标注".to_string()))?;
+    // 改 note 和新建一样过审核：否则可以先发无害内容，再改成别的并公开
+    let ref_path = format!("{}:{}", row.resource_kind, row.resource_path);
+    let verdict = match note.as_deref() {
+      Some(n) => moderate_note(n, &ref_path, &user.nickname).await?,
+      None => None,
+    };
+    let pending = pending_after_edit(row.pending_review, verdict.as_ref());
     let mut am: annotation::ActiveModel = row.into();
     if let Some(s) = style {
       am.style = Set(s);
     }
-    if let Some(n) = note {
+    if let Some(n) = note.clone() {
       am.note = Set(Some(n));
     }
     if let Some(v) = visibility {
       am.visibility = Set(normalize_visibility(Some(&v)));
     }
+    am.pending_review = Set(pending);
     am.updated_at = Set(Utc::now().fixed_offset());
     let updated = annotation::Entity::update(am)
       .exec(&db)
       .await
       .map_err(|e| ServerFnError::new(e.to_string()))?;
+    if let Some(v) = verdict {
+      enqueue_if_flagged(
+        &db,
+        &v,
+        "annotation",
+        Some(updated.id),
+        &ref_path,
+        Some(user.id),
+        note.as_deref().unwrap_or_default(),
+        &[],
+      )
+      .await;
+    }
     Ok(model_to_annotation(updated))
   }
   #[cfg(not(feature = "server"))]
@@ -3077,6 +3115,23 @@ mod tests {
   use super::*;
   use std::fs as stdfs;
   use tempfile::TempDir;
+
+  /// 编辑标注：Flag 扣住；Allow / 未改 note 保持原状，已扣住的不会因编辑放出。
+  #[test]
+  fn edited_annotation_pending_review() {
+    use app_core::engines::moderation::Verdict;
+    assert!(pending_after_edit(false, Some(&Verdict::flag(0.6, "spam"))));
+    assert!(!pending_after_edit(false, Some(&Verdict::allow())));
+    assert!(!pending_after_edit(false, None));
+    assert!(pending_after_edit(true, Some(&Verdict::allow())));
+    assert!(pending_after_edit(true, None));
+  }
+
+  /// 空白 note 不进审核，也不会被拒。
+  #[tokio::test]
+  async fn blank_note_skips_moderation() {
+    assert!(matches!(moderate_note("  \n", "blog:x", "u").await, Ok(None)));
+  }
 
   fn write(path: &Path, content: &str) {
     if let Some(parent) = path.parent() {
