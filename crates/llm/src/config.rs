@@ -23,10 +23,14 @@ const DEFAULT_MODEL: &str = "deepseek-chat";
 /// 默认 timeout。LLM 调用普遍较慢，但单次至多 30s；超过则上游有问题。
 pub(crate) const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
+/// 连接（含 TLS 握手）的超时：上游连不上时早点失败，不占满整个 30s。
+const CONNECT_TIMEOUT_SECS: u64 = 10;
+
 /// 调 LLM API 用的 HTTP 客户端配置：带超时，不跟随重定向。
 /// API 端点不该重定向；跟过去会把 API key 带到别处（`x-api-key` 跨域也不会被去掉）。
 pub(crate) fn api_client_builder() -> reqwest::ClientBuilder {
   reqwest::Client::builder()
+    .connect_timeout(std::time::Duration::from_secs(CONNECT_TIMEOUT_SECS))
     .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
     .redirect(reqwest::redirect::Policy::none())
 }

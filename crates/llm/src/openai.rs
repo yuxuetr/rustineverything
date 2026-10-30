@@ -23,7 +23,7 @@
 //! { "choices": [{"message": {"role": "assistant", "content": "..."}}] }
 //! ```
 
-use app_core::error::{AppError, AppResult};
+use app_core::error::{with_sources, AppError, AppResult};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -52,7 +52,11 @@ impl OpenAiChat {
     // 项目约定（CLAUDE.md::Rust HTTP Testing）：测试场景需用 `.no_proxy()`
     // 避免本地代理拦截 loopback；生产环境保持默认 client 行为。
     // 这里在测试时由 [`Self::with_client`] 注入 `.no_proxy()` 的 client。
-    let client = api_client_builder().build().unwrap_or_else(|_| Client::new());
+    // 只有 TLS 后端初始化失败才会走到回退；回退的客户端没有超时，也会跟随重定向，所以记 error
+    let client = api_client_builder().build().unwrap_or_else(|e| {
+      tracing::error!(provider = "openai", error = ?e, "llm: http client build failed, using default client");
+      Client::new()
+    });
     Self { base_url, api_key: api_key.into(), model: model.into(), client }
   }
 
@@ -186,11 +190,13 @@ impl LlmClient for OpenAiChat {
       .json(&body)
       .send()
       .await
-      .map_err(|e| AppError::other(format!("LLM HTTP 请求失败: {}", e)))?;
+      .map_err(|e| AppError::other(format!("LLM HTTP 请求失败: {}", with_sources(&e))))?;
 
     let status = resp.status();
-    let text =
-      resp.text().await.map_err(|e| AppError::other(format!("LLM 响应读取失败: {}", e)))?;
+    let text = resp
+      .text()
+      .await
+      .map_err(|e| AppError::other(format!("LLM 响应读取失败: {}", with_sources(&e))))?;
 
     if !status.is_success() {
       tracing::warn!(provider = "openai", status = %status, body = %text, "llm: non-2xx response");

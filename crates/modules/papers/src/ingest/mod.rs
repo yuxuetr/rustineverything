@@ -23,6 +23,8 @@ use crate::entities::{paper, paper_ingest_run, paper_summary};
 const ARXIV_INTERVAL: Duration = Duration::from_secs(3);
 /// 单次模型调用的超时：长论文抽取实测接近 30 秒，留足余量。
 const LLM_TIMEOUT: Duration = Duration::from_secs(600);
+/// 连接（含 TLS 握手）的超时：总超时很长，连不上时不该等满十分钟。
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// 每天默认最多生成几篇（`PAPERS_DAILY_LIMIT` 覆盖）。N0 实测每篇约 0.018 美元。
 const DEFAULT_DAILY_LIMIT: usize = 20;
 
@@ -43,6 +45,7 @@ impl Generator {
     let model = cfg.openai_model.unwrap_or_else(|| "deepseek-chat".into());
     // 和 crates/llm 一样不跟随重定向：这个客户端带着 API key
     let llm_http = reqwest::Client::builder()
+      .connect_timeout(CONNECT_TIMEOUT)
       .timeout(LLM_TIMEOUT)
       .redirect(reqwest::redirect::Policy::none())
       .build()
