@@ -41,8 +41,10 @@ impl Generator {
       return Err("OPENAI_LLM_BASE_URL / OPENAI_LLM_API_KEY 未设置".into());
     };
     let model = cfg.openai_model.unwrap_or_else(|| "deepseek-chat".into());
+    // 和 crates/llm 一样不跟随重定向：这个客户端带着 API key
     let llm_http = reqwest::Client::builder()
       .timeout(LLM_TIMEOUT)
+      .redirect(reqwest::redirect::Policy::none())
       .build()
       .map_err(|e| format!("构造 HTTP 客户端失败：{e}"))?;
     let daily_limit = match std::env::var("PAPERS_DAILY_LIMIT") {

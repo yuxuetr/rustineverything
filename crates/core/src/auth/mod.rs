@@ -280,6 +280,8 @@ impl AuthService {
     let http_client = reqwest::Client::builder()
       .connect_timeout(std::time::Duration::from_secs(5))
       .timeout(std::time::Duration::from_secs(15))
+      // token 端点不该重定向；跟过去会把 client_secret 和授权码发到别处
+      .redirect(reqwest::redirect::Policy::none())
       .build()?;
     tracing::debug!(provider = %provider.id(), "auth: token exchange initiated");
 

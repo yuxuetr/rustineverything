@@ -27,10 +27,9 @@ use app_core::error::{AppError, AppResult};
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 use super::{
-  config::DEFAULT_TIMEOUT_SECS, LlmClient, LlmContentBlock, LlmMessage, LlmProvider, LlmReply,
+  config::api_client_builder, LlmClient, LlmContentBlock, LlmMessage, LlmProvider, LlmReply,
   LlmRole, LlmUsage,
 };
 
@@ -53,10 +52,7 @@ impl OpenAiChat {
     // 项目约定（CLAUDE.md::Rust HTTP Testing）：测试场景需用 `.no_proxy()`
     // 避免本地代理拦截 loopback；生产环境保持默认 client 行为。
     // 这里在测试时由 [`Self::with_client`] 注入 `.no_proxy()` 的 client。
-    let client = Client::builder()
-      .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
-      .build()
-      .unwrap_or_else(|_| Client::new());
+    let client = api_client_builder().build().unwrap_or_else(|_| Client::new());
     Self { base_url, api_key: api_key.into(), model: model.into(), client }
   }
 

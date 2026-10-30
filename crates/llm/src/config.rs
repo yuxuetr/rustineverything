@@ -23,6 +23,14 @@ const DEFAULT_MODEL: &str = "deepseek-chat";
 /// 默认 timeout。LLM 调用普遍较慢，但单次至多 30s；超过则上游有问题。
 pub(crate) const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
+/// 调 LLM API 用的 HTTP 客户端配置：带超时，不跟随重定向。
+/// API 端点不该重定向；跟过去会把 API key 带到别处（`x-api-key` 跨域也不会被去掉）。
+pub(crate) fn api_client_builder() -> reqwest::ClientBuilder {
+  reqwest::Client::builder()
+    .timeout(std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+    .redirect(reqwest::redirect::Policy::none())
+}
+
 /// 全部 env 字段的解析结果。trim 后的空串视为未配置。
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LlmConfig {
@@ -85,6 +93,27 @@ fn read_nonempty(name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+  #[tokio::test]
+  async fn api_client_does_not_follow_redirects() {
+    let mut server = mockito::Server::new_async().await;
+    let _r = server
+      .mock("POST", "/v1/chat/completions")
+      .with_status(302)
+      .with_header("location", "/elsewhere")
+      .create_async()
+      .await;
+    let other = server.mock("POST", "/elsewhere").expect(0).create_async().await;
+    let client = api_client_builder().no_proxy().build().expect("client");
+    let resp = client
+      .post(format!("{}/v1/chat/completions", server.url()))
+      .header("x-api-key", "secret")
+      .send()
+      .await
+      .expect("response");
+    assert_eq!(resp.status(), 302);
+    other.assert_async().await;
+  }
+
   use super::*;
 
   #[test]
