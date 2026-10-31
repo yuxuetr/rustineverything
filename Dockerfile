@@ -84,6 +84,12 @@ COPY crates/app/Dioxus.toml crates/app/Dioxus.toml
 COPY crates/app/index.html crates/app/index.html
 COPY crates/app/package.json crates/app/package.json
 COPY crates/app/package-lock.json crates/app/package-lock.json
+# 安装 Tailwind 工具链。紧跟 package*.json：之前它在 `COPY crates/modules`（含源码）之后，
+# 任何模块源码改动都让这一层失效、重新下载。只要 lock 不变就命中缓存。
+# 官方源连不上时换镜像：--build-arg NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/
+# lock 里 resolved 的主机会被替换成这里的源，integrity 照常校验
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
+RUN cd crates/app && npm ci --no-audit --no-fund
 COPY crates/app/tailwind-input.css crates/app/tailwind-input.css
 # npm run build 先跑它生成 tailwind-sources.css（组件库源码的 @source 行，路径来自 cargo metadata）
 COPY scripts/tw-sources.mjs scripts/tw-sources.mjs
@@ -91,12 +97,6 @@ COPY crates/migration/Cargo.toml crates/migration/Cargo.toml
 COPY crates/modules ./crates/modules
 # build.rs 引用 ../../assets，提供占位避免预热阶段 panic
 RUN mkdir -p assets crates/app/assets
-
-# 安装 Tailwind 工具链（独立缓存层；package-lock 不变时跳过重装）
-# 官方源连不上时换镜像：--build-arg NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/
-# lock 里 resolved 的主机会被替换成这里的源，integrity 照常校验
-ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
-RUN cd crates/app && npm ci --no-audit --no-fund
 
 # COPY 剩余源码
 COPY crates/sdk/src crates/sdk/src
