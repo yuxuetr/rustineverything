@@ -93,6 +93,9 @@ COPY crates/modules ./crates/modules
 RUN mkdir -p assets crates/app/assets
 
 # 安装 Tailwind 工具链（独立缓存层；package-lock 不变时跳过重装）
+# 官方源连不上时换镜像：--build-arg NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/
+# lock 里 resolved 的主机会被替换成这里的源，integrity 照常校验
+ARG NPM_CONFIG_REGISTRY=https://registry.npmjs.org/
 RUN cd crates/app && npm ci --no-audit --no-fund
 
 # COPY 剩余源码
