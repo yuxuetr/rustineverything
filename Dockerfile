@@ -113,6 +113,16 @@ RUN cp -r assets/* crates/app/assets/ 2>/dev/null || true
 # 1. 编译 Tailwind CSS（产物落到 crates/app/assets/tailwind.css）
 RUN cd crates/app && npm run build
 
+# dx bundle 自己去 registry.npmjs.org 下 esbuild（dioxus-cli 0.7.9 的 src/esbuild.rs 写死了地址和 0.27.3），
+# 不走 NPM_CONFIG_REGISTRY。这里先用 npm 按同一个源取下来，放进 dx 的工具缓存目录，dx 看到就不再下载
+ENV DX_HOME=/opt/dx
+RUN arch=$(case "$(uname -m)" in x86_64) echo x64;; aarch64) echo arm64;; esac) \
+ && mkdir -p /opt/dx/tools/esbuild-0.27.3 /tmp/esbuild \
+ && cd /tmp/esbuild && npm pack --silent "@esbuild/linux-${arch}@0.27.3" \
+ && tar xzf "esbuild-linux-${arch}-0.27.3.tgz" package/bin/esbuild \
+ && mv package/bin/esbuild /opt/dx/tools/esbuild-0.27.3/esbuild \
+ && cd / && rm -rf /tmp/esbuild && /opt/dx/tools/esbuild-0.27.3/esbuild --version
+
 # 2. dx bundle：web 全栈 + release 优化，
 #    产物在 /tmp/target/dx/app/release/web/{public,server}
 #    功能分层（docs/FEATURE_TIERS.md）：默认完整站点；其他档位用 build-arg 传 feature 参数，如
