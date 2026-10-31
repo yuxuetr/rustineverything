@@ -200,7 +200,14 @@ fn read_md_file(path: &Path) -> Option<(String, String, String)> {
     path.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string()
   });
   let date = fm.get("date").cloned().unwrap_or_default();
-  let body = markdown_to_plain(&raw);
+  let mut body = markdown_to_plain(&raw);
+  // 描述、keywords、tags 只在 frontmatter 里时正文搜不到（如「PagedAttention」），
+  // 附在正文后面一起进索引。
+  let meta = widgets::parse_mdx(&raw).0;
+  for extra in meta.description.into_iter().chain(meta.keywords).chain(meta.tags) {
+    body.push('\n');
+    body.push_str(&extra);
+  }
   Some((title, body, date))
 }
 
@@ -537,6 +544,22 @@ mod tests {
     write_file(&path, "---\ntitle: From FM\n---\n\n# Other\n");
     let (title, _, _) = read_md_file(&path).expect("read");
     assert_eq!(title, "From FM");
+  }
+
+  #[test]
+  fn read_md_indexes_frontmatter_keywords_tags_description() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("a.md");
+    write_file(
+      &path,
+      "---\ntitle: T\ndescription: 块池与块表\nkeywords: [PagedAttention, slot_mapping]\ntags: [vllm]\n---\n\n正文\n",
+    );
+    let (_, body, _) = read_md_file(&path).expect("read");
+    assert!(body.contains("正文"));
+    assert!(body.contains("PagedAttention"), "body: {body}");
+    assert!(body.contains("slot_mapping"));
+    assert!(body.contains("vllm"));
+    assert!(body.contains("块池与块表"));
   }
 
   #[test]
