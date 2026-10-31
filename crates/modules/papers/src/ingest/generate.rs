@@ -55,6 +55,7 @@ fn add(total: &mut LlmUsage, u: LlmUsage) {
 /// 先问一次，`validate` 不过就带上问题再问一次。两次都不过返回最后的问题。
 async fn ask_validated<T>(
   llm: &dyn LlmClient,
+  stage: &'static str,
   system: &str,
   user: String,
   usage: &mut LlmUsage,
@@ -63,7 +64,20 @@ async fn ask_validated<T>(
   let mut messages = vec![LlmMessage::system(system), LlmMessage::user(user)];
   let mut last_problems = String::new();
   for attempt in 0..2 {
+    let input_chars: usize = messages.iter().map(|m| m.text_only().chars().count()).sum();
+    let started = std::time::Instant::now();
     let reply = llm.complete(messages.clone()).await.map_err(|e| format!("模型调用失败：{e}"))?;
+    // 单次调用的长度：自托管负载估算要用。output_tokens 远大于 reply_chars 时，多出来的是推理 token。
+    tracing::info!(
+      stage,
+      attempt,
+      input_chars,
+      reply_chars = reply.text.chars().count(),
+      input_tokens = reply.usage.input_tokens,
+      output_tokens = reply.usage.output_tokens,
+      elapsed_ms = started.elapsed().as_millis() as u64,
+      "papers: llm call"
+    );
     add(usage, reply.usage);
     let problems = match parse_digest(&reply.text) {
       Ok(d) => match validate(&d) {
@@ -90,9 +104,14 @@ pub async fn digest_en(
   sections: &[String],
   usage: &mut LlmUsage,
 ) -> Result<(PaperDigest, Checked), String> {
-  ask_validated(llm, &extract_system(), format!("Title: {title}\n\n{text}"), usage, |d| {
-    check_digest(d, sections, text)
-  })
+  ask_validated(
+    llm,
+    "extract",
+    &extract_system(),
+    format!("Title: {title}\n\n{text}"),
+    usage,
+    |d| check_digest(d, sections, text),
+  )
   .await
 }
 
@@ -104,7 +123,8 @@ pub async fn translate_zh(
 ) -> Result<PaperDigest, String> {
   let json = serde_json::to_string(en).map_err(|e| e.to_string())?;
   let (zh, ()) =
-    ask_validated(llm, TRANSLATE_SYSTEM, json, usage, |d| check_translation(en, d)).await?;
+    ask_validated(llm, "translate", TRANSLATE_SYSTEM, json, usage, |d| check_translation(en, d))
+      .await?;
   Ok(zh)
 }
 
