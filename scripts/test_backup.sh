@@ -85,5 +85,35 @@ sleep 1
 check "KEEP=2 再备份一次" 0 env KEEP=2 bash "$here/backup.sh"
 check "  各剩 2 份" 0 test "$(count 'db-*.dump')$(count 'uploads-*.tar.gz')" = 22
 
+# 异地副本：假 ssh 在本机直接跑接收端（把最后一个参数当 SSH_ORIGINAL_COMMAND），需要 age
+if command -v age > /dev/null && command -v age-keygen > /dev/null; then
+  export OFFSITE_DIR="$work/offsite"
+  recv() { SSH_ORIGINAL_COMMAND=$1 sh "$here/offsite_recv.sh"; }
+  age-keygen -o "$work/age.key" 2> /dev/null
+  age-keygen -y "$work/age.key" > "$work/age.pub"
+  ok_name=db-20261101-033001.dump.age
+  check "接收：路径穿越 → 拒" 1 sh -c "echo x | SSH_ORIGINAL_COMMAND='../db-20261101-033001.dump.age' sh '$here/offsite_recv.sh'"
+  check "接收：任意命令 → 拒" 1 sh -c "echo x | SSH_ORIGINAL_COMMAND='rm -rf /' sh '$here/offsite_recv.sh'"
+  check "接收：明文 → 拒" 1 sh -c "echo plain | SSH_ORIGINAL_COMMAND=$ok_name sh '$here/offsite_recv.sh'"
+  check "  拒收不留文件" 0 test -z "$(ls -A "$OFFSITE_DIR" 2> /dev/null)"
+
+  mkdir -p "$work/bin"
+  printf '#!/bin/sh\nfor a; do last=$a; done\nSSH_ORIGINAL_COMMAND=$last exec sh %s\n' "$here/offsite_recv.sh" > "$work/bin/ssh"
+  chmod +x "$work/bin/ssh"
+  sleep 1
+  check "备份 + 推异地" 0 env PATH="$work/bin:$PATH" OFFSITE_SSH=x@y OFFSITE_RECIPIENTS="$work/age.pub" \
+    OFFSITE_KEY=/dev/null bash "$here/backup.sh"
+  pushed=$(ls "$OFFSITE_DIR" | grep '^db-' | tail -1)
+  check "  解密后与本地 dump 一致" 0 sh -c "age -d -i '$work/age.key' '$OFFSITE_DIR/$pushed' | cmp - '$BACKUP_DIR/${pushed%.age}'"
+  check "  uploads 也推了" 0 test "$(ls "$OFFSITE_DIR" | grep -c '^uploads-.*\.tar\.gz\.age$')" = 1
+  check "公钥文件不存在 → 失败" 1 env PATH="$work/bin:$PATH" OFFSITE_SSH=x@y OFFSITE_RECIPIENTS="$work/none.pub" \
+    bash "$here/backup.sh"
+  for i in 1 2 3; do age -R "$work/age.pub" < /dev/null | recv "db-2020010$i-000000.dump.age" > /dev/null; done
+  check "接收：KEEP=2 再收一份" 0 sh -c "age -R '$work/age.pub' < /dev/null | KEEP=2 SSH_ORIGINAL_COMMAND=db-20991231-000000.dump.age sh '$here/offsite_recv.sh'"
+  check "  db 剩 2 份，最旧的删了" 0 test "$(ls "$OFFSITE_DIR" | grep -c '^db-')$(ls "$OFFSITE_DIR" | grep -c '^db-2020')" = 20
+else
+  echo "skip  异地副本（没有 age）"
+fi
+
 echo "pass=$pass fail=$fail"
 [ "$fail" = 0 ]

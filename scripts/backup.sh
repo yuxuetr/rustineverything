@@ -44,3 +44,17 @@ for prefix in db- uploads-; do
   find "$BACKUP_DIR" -maxdepth 1 -name "$prefix*" ! -name '*.tmp' -printf '%f\n' | sort -r | tail -n +$((KEEP + 1)) \
     | while read -r old; do rm -f "$BACKUP_DIR/$old" && log "删除旧备份 $old"; done
 done
+
+# 异地副本：设了 OFFSITE_SSH（如 rieoffsite@backup-host）才推。用 age 公钥加密后经 ssh 推送，
+# 对方是 scripts/offsite_recv.sh 强制命令；本机只有公钥，备份机只有密文。
+# 推送失败以 1 退出（cron 有记录），本地备份已经写好、不受影响。
+if [ -n "${OFFSITE_SSH:-}" ]; then
+  recipients=${OFFSITE_RECIPIENTS:-/data/rie/offsite.recipient}
+  key=${OFFSITE_KEY:-/root/.ssh/rie_offsite}
+  for f in "$db" "$uploads"; do
+    age -R "$recipients" "$f" \
+      | ssh -i "$key" -o BatchMode=yes -o IdentitiesOnly=yes "$OFFSITE_SSH" "$(basename "$f").age" \
+      || fail "异地副本 $(basename "$f") 推送失败"
+  done
+  log "异地副本已推送到 $OFFSITE_SSH"
+fi
