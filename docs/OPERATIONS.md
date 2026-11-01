@@ -72,7 +72,35 @@ MAILTO=you@example.com
 30 3 * * * /data/rie/rustineverything/scripts/backup.sh >> /data/rie/backups/backup.log 2>&1
 ```
 
-备份只在本机等于没备份：服务器整机出事（被入侵、磁盘坏）时它们一起没了，定期复制到另一台机器或对象存储。
+备份只在本机等于没备份：服务器整机出事（被入侵、磁盘坏）时它们一起没了。设了 `OFFSITE_SSH` 时，
+`backup.sh` 写完本地备份后用 [age](https://age-encryption.org) 公钥加密，经 ssh 推到备份机：
+
+- 服务器只放公钥（`/data/rie/offsite.recipient`），私钥只放在运维自己的电脑上；备份机只有密文。
+- 备份机上用单独的用户接收，`authorized_keys` 里把推送用的 key 限定为强制命令 `scripts/offsite_recv.sh`：
+  只认 `db-…dump.age` / `uploads-…tar.gz.age` 两种文件名，只收 age 文件，各保留最新 30 份（`KEEP`）。
+  推送方拿着这把 key 也不能执行别的命令、列目录或删文件。
+- 推送失败时 `backup.sh` 以 1 退出；本地备份已写好，不受影响。
+
+```bash
+# 备份机（root）
+useradd -m -s /bin/sh rieoffsite
+install -m 755 offsite_recv.sh /usr/local/bin/rie-offsite-recv
+echo 'restrict,command="/usr/local/bin/rie-offsite-recv" ssh-ed25519 AAAA... rie-offsite' \
+  >> /home/rieoffsite/.ssh/authorized_keys        # .ssh 700、文件 600，属主 rieoffsite
+
+# 服务器
+apt install age
+ssh-keygen -t ed25519 -N '' -C rie-offsite -f /root/.ssh/rie_offsite
+echo 'age1...' > /data/rie/offsite.recipient      # 公钥；私钥 age-keygen 生成后不上服务器
+ssh-keyscan -t ed25519 <备份机> >> /root/.ssh/known_hosts   # 先核对指纹
+```
+
+```cron
+30 3 * * * OFFSITE_SSH=rieoffsite@<备份机> /data/rie/rustineverything/scripts/backup.sh >> /data/rie/backups/backup.log 2>&1
+```
+
+恢复时从备份机取回 `.age` 文件，在有私钥的机器上 `age -d -i <私钥> db-<时间>.dump.age > db-<时间>.dump`，再按 2.2 恢复。
+备份机被入侵只会丢可用性（文件被删或被改坏），拿不到明文；改坏的副本解密时会报错，不会悄悄恢复出错误数据。
 
 ### 2.1 恢复演练
 
