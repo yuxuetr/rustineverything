@@ -2,7 +2,7 @@ use app_core::i18n::Language;
 use dioxus::prelude::*;
 use dioxus_shadcn::{Empty, EmptyDescription};
 
-use crate::digest::{mindmap_source, PaperDigest};
+use crate::digest::{MindNode, PaperDigest};
 use crate::server::{get_paper, list_papers, PaperCard, PaperDetail};
 
 fn use_language_signal() -> Signal<Language> {
@@ -146,7 +146,6 @@ fn PaperBody(paper: PaperDetail, wanted: String) -> Element {
   let d: &PaperDigest = &paper.digest;
   let id = &paper.arxiv_id;
   let version = paper.arxiv_version.map(|v| format!("v{v}")).unwrap_or_default();
-  let mindmap = format!("```mermaid\n{}\n```\n", mindmap_source(&d.mindmap));
   let authors = match paper.authors.len() {
     0 => String::new(),
     n if n > 6 => format!("{} et al.", paper.authors[..6].join(", ")),
@@ -226,7 +225,38 @@ fn PaperBody(paper: PaperDetail, wanted: String) -> Element {
           }
       }
       DigestSection { title: lang.pick("思维导图", "Mind map").to_string(),
-          div { class: "overflow-x-auto", widgets::Markdown { content: mindmap, blog_id: format!("papers/{id}") } }
+          div { class: "mm overflow-x-auto", {mind_node(&d.mindmap, 0, "")} }
+      }
+  }
+}
+
+/// 一级分支的颜色；子节点沿用所在分支的颜色。导图每层最多 6 个子节点（`MINDMAP_MAX_CHILDREN`）。
+const BRANCH_COLORS: [&str; 6] = ["#0d9488", "#2563eb", "#7c3aed", "#d97706", "#db2777", "#65a30d"];
+
+/// 思维导图的一个节点及其子树。样式在 `main.css` 的 `.mm` 段：
+/// 宽屏是从左往右的树，窄屏退成缩进大纲。
+fn mind_node(node: &MindNode, depth: usize, color: &str) -> Element {
+  // 二级及以下：有子节点的是小标题，叶子一律是标签，不管树有几层。
+  let level = match depth {
+    0 => "mm-root",
+    1 => "mm-d1",
+    _ if node.children.is_empty() => "mm-leaf",
+    _ => "mm-d2",
+  };
+  let style = if color.is_empty() { String::new() } else { format!("--c: {color}") };
+  rsx! {
+      div { class: "mm-node {level}", style: "{style}",
+          span { class: "mm-label", "{node.label}" }
+          if !node.children.is_empty() {
+              div { class: "mm-kids",
+                  for (i, child) in node.children.iter().enumerate() {
+                      {
+                          let c = if depth == 0 { BRANCH_COLORS[i % BRANCH_COLORS.len()] } else { color };
+                          mind_node(child, depth + 1, c)
+                      }
+                  }
+              }
+          }
       }
   }
 }

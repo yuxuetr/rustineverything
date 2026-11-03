@@ -76,3 +76,117 @@ a {
     -webkit-text-fill-color: transparent;
     background-clip: text;
 }
+
+/* === 论文页思维导图（papers pages.rs `mind_node`）===
+   宽屏：从左往右的树，圆角连线；窄屏：缩进大纲。
+   每个一级分支在 style 上带 --c，子节点继承。 */
+.mm {
+  --mm-line: 1.5px;
+  padding: 4px 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.mm-label {
+  display: inline-block;
+  max-width: 18em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: var(--foreground);
+}
+.mm-root > .mm-label {
+  padding: 7px 18px;
+  font-size: 15px;
+  font-weight: 700;
+  background: var(--foreground);
+  color: var(--background);
+}
+.mm-d1 > .mm-label {
+  padding: 4px 14px;
+  font-weight: 600;
+  background: var(--c);
+  color: #fff;
+}
+.mm-d2 > .mm-label {
+  font-weight: 600;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--c) 12%, var(--background));
+}
+.mm-leaf > .mm-label {
+  font-size: 13px;
+  padding: 1px 10px;
+  border: 1px solid var(--border);
+  background: var(--background);
+}
+
+@media (min-width: 640px) {
+  .mm-node { display: flex; align-items: center; }
+  .mm-kids {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    margin-left: 32px;
+  }
+  .mm-kids > .mm-node { position: relative; padding: 3px 0; }
+  /* 父节点到竖线的短横 */
+  .mm-kids::before {
+    content: "";
+    position: absolute;
+    left: -32px;
+    top: 50%;
+    width: 16px;
+    border-top: var(--mm-line) solid var(--c, var(--border));
+  }
+  .mm-root > .mm-kids::before { border-color: var(--border); }
+  /* 每个子节点：::before 横线，::after 竖线 */
+  .mm-kids > .mm-node::before,
+  .mm-kids > .mm-node::after {
+    content: "";
+    position: absolute;
+    left: -16px;
+  }
+  .mm-kids > .mm-node::before {
+    top: 50%;
+    width: 16px;
+    border-top: var(--mm-line) solid var(--c);
+  }
+  .mm-kids > .mm-node::after {
+    top: 0;
+    bottom: 0;
+    border-left: var(--mm-line) solid var(--c);
+  }
+  /* 首尾两个子节点用圆角拐角代替横线 */
+  .mm-kids > .mm-node:first-child::before,
+  .mm-kids > .mm-node:last-child::before { display: none; }
+  .mm-kids > .mm-node:first-child::after {
+    top: 50%;
+    width: 16px;
+    border-top: var(--mm-line) solid var(--c);
+    border-top-left-radius: 8px;
+  }
+  .mm-kids > .mm-node:last-child::after {
+    bottom: 50%;
+    width: 16px;
+    border-bottom: var(--mm-line) solid var(--c);
+    border-bottom-left-radius: 8px;
+  }
+  .mm-kids > .mm-node:only-child::before { display: block; }
+  .mm-kids > .mm-node:only-child::after { display: none; }
+}
+
+@media (max-width: 639.98px) {
+  .mm-kids {
+    margin: 4px 0 0 12px;
+    padding-left: 12px;
+    border-left: var(--mm-line) solid var(--c, var(--border));
+  }
+  .mm-root > .mm-kids { border-left-color: var(--border); }
+  .mm-kids > .mm-node { position: relative; padding: 3px 0; }
+  .mm-kids > .mm-node::before {
+    content: "";
+    position: absolute;
+    left: -12px;
+    top: 15px;
+    width: 10px;
+    border-top: var(--mm-line) solid var(--c);
+  }
+}

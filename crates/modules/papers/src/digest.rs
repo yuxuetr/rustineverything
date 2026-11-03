@@ -1,7 +1,6 @@
-//! 一篇论文的结构化解读（`paper_summaries.digest` 里存的 JSON）与思维导图源码。
+//! 一篇论文的结构化解读（`paper_summaries.digest` 里存的 JSON）。
 //!
-//! 模型只输出这份结构；思维导图的 mermaid 源码由 [`mindmap_source`] 生成并转义，
-//! 所以语法一定合法，不用在服务端跑 mermaid 校验。
+//! 思维导图只存 [`MindNode`] 树，页面直接渲染成 HTML（见 `pages.rs` 的 `mind_node`）。
 
 use serde::{Deserialize, Serialize};
 
@@ -56,43 +55,6 @@ pub fn clean_section(s: &str) -> &str {
   s.trim().trim_start_matches('§').trim()
 }
 
-/// 生成 mermaid `mindmap` 源码。标签里会被 mermaid 当成语法的字符换成空格，
-/// 每个节点都写成 `["..."]` 形状，避免标签被当成关键字或节点 id。
-pub fn mindmap_source(root: &MindNode) -> String {
-  fn label(s: &str) -> String {
-    let cleaned: String = s
-      .chars()
-      .map(|c| {
-        if matches!(c, '"' | '(' | ')' | '[' | ']' | '{' | '}' | '<' | '>' | '`') {
-          ' '
-        } else {
-          c
-        }
-      })
-      .collect();
-    let squashed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
-    if squashed.is_empty() {
-      "-".to_string()
-    } else {
-      squashed
-    }
-  }
-  fn walk(node: &MindNode, level: usize, out: &mut String) {
-    out.push('\n');
-    out.push_str(&"  ".repeat(level));
-    if level == 1 {
-      out.push_str("root");
-    }
-    out.push_str(&format!("[\"{}\"]", label(&node.label)));
-    for child in &node.children {
-      walk(child, level + 1, out);
-    }
-  }
-  let mut out = String::from("mindmap");
-  walk(root, 1, &mut out);
-  out
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -109,14 +71,5 @@ mod tests {
     assert_eq!(tree.depth(), 2);
     assert_eq!(tree.widest(), 3);
     assert_eq!(node("r", vec![]).depth(), 0);
-  }
-
-  #[test]
-  fn mindmap_escapes_syntax_characters() {
-    let tree = node("Root (v2)", vec![node("say \"hi\" [x] {y} <z> `q`", vec![node("", vec![])])]);
-    assert_eq!(
-      mindmap_source(&tree),
-      "mindmap\n  root[\"Root v2\"]\n    [\"say hi x y z q\"]\n      [\"-\"]"
-    );
   }
 }
