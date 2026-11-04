@@ -1,9 +1,13 @@
-//! 调模型：全文 → 英文解读，英文解读 → 其他语言。不合格时把问题告诉模型重写一次。
+//! 调模型：全文 → 英文解读，英文解读 → 其他语言；标题 + 摘要 → 主题与中文标题。
+//! 不合格时把问题告诉模型重写一次。
 
 use llm::{LlmClient, LlmMessage, LlmUsage};
+use serde::de::DeserializeOwned;
+use serde::Deserialize;
 
 use super::check::{check_digest, check_translation, Checked};
 use crate::digest::PaperDigest;
+use crate::topics::{MAX_TOPICS, TOPICS};
 
 /// 提示词版本，记进 `paper_summaries.prompt_version`；改提示词时加一。
 pub const PROMPT_VERSION: i32 = 1;
@@ -38,7 +42,7 @@ Keep the exact same JSON structure, keys and array lengths. Do not translate or 
 Mindmap labels stay under 30 Chinese characters. Return ONLY the JSON object.";
 
 /// 模型有时会包一层 ```json 代码块或在前后加话：取第一个 `{` 到最后一个 `}`。
-pub fn parse_digest(reply: &str) -> Result<PaperDigest, String> {
+fn parse_json<R: DeserializeOwned>(reply: &str) -> Result<R, String> {
   let start = reply.find('{').ok_or("reply has no JSON object")?;
   let end = reply.rfind('}').ok_or("reply has no JSON object")?;
   if end < start {
@@ -53,14 +57,14 @@ fn add(total: &mut LlmUsage, u: LlmUsage) {
 }
 
 /// 先问一次，`validate` 不过就带上问题再问一次。两次都不过返回最后的问题。
-async fn ask_validated<T>(
+async fn ask_validated<R: DeserializeOwned, T>(
   llm: &dyn LlmClient,
   stage: &'static str,
   system: &str,
   user: String,
   usage: &mut LlmUsage,
-  validate: impl Fn(&PaperDigest) -> Result<T, Vec<String>>,
-) -> Result<(PaperDigest, T), String> {
+  validate: impl Fn(&R) -> Result<T, Vec<String>>,
+) -> Result<(R, T), String> {
   let mut messages = vec![LlmMessage::system(system), LlmMessage::user(user)];
   let mut last_problems = String::new();
   for attempt in 0..2 {
@@ -79,7 +83,7 @@ async fn ask_validated<T>(
       "papers: llm call"
     );
     add(usage, reply.usage);
-    let problems = match parse_digest(&reply.text) {
+    let problems = match parse_json::<R>(&reply.text) {
       Ok(d) => match validate(&d) {
         Ok(extra) => return Ok((d, extra)),
         Err(p) => p,
@@ -126,6 +130,72 @@ pub async fn translate_zh(
     ask_validated(llm, "translate", TRANSLATE_SYSTEM, json, usage, |d| check_translation(en, d))
       .await?;
   Ok(zh)
+}
+
+/// 主题与中文标题。只看标题和摘要：分类用不着全文，补存量论文时也便宜。
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Classified {
+  pub topics: Vec<String>,
+  pub title_zh: String,
+}
+
+fn classify_system() -> String {
+  let list: String = TOPICS.iter().map(|t| format!("- {}: {}\n", t.slug, t.about_en)).collect();
+  format!(
+    "Classify a research paper for a Chinese tech site. Return ONLY a JSON object:
+{{\"topics\": [\"slug\"], \"title_zh\": \"...\"}}
+Topics (use the slugs exactly):
+{list}Rules:
+- 1 or {MAX_TOPICS} topics, the main one first. Pick a second one only if it is clearly also central.
+- \"other\" only when nothing else fits, and never together with another topic.
+- title_zh: the title in Simplified Chinese for engineers. Keep model, method, dataset and benchmark names in English. Keep a leading name before a colon (e.g. \"Foo: ...\" → \"Foo：...\")."
+  )
+}
+
+/// 主题必须在列表里、不重复、1 到 [`MAX_TOPICS`] 个，`other` 不和别的混用；中文标题非空。
+pub fn check_classified(c: &Classified) -> Result<(), Vec<String>> {
+  let mut problems = Vec::new();
+  if c.topics.is_empty() || c.topics.len() > MAX_TOPICS {
+    problems.push(format!("topics must have 1 to {MAX_TOPICS} entries"));
+  }
+  for (i, t) in c.topics.iter().enumerate() {
+    if crate::topics::find(t).is_none() {
+      problems.push(format!("unknown topic \"{t}\""));
+    }
+    if c.topics[..i].contains(t) {
+      problems.push(format!("duplicate topic \"{t}\""));
+    }
+  }
+  if c.topics.len() > 1 && c.topics.iter().any(|t| t == "other") {
+    problems.push("\"other\" cannot be combined with another topic".into());
+  }
+  if c.title_zh.trim().is_empty() {
+    problems.push("title_zh is empty".into());
+  }
+  if problems.is_empty() {
+    Ok(())
+  } else {
+    Err(problems)
+  }
+}
+
+pub async fn classify(
+  llm: &dyn LlmClient,
+  title: &str,
+  abstract_: &str,
+  usage: &mut LlmUsage,
+) -> Result<Classified, String> {
+  let (mut c, ()) = ask_validated(
+    llm,
+    "classify",
+    &classify_system(),
+    format!("Title: {title}\n\nAbstract: {abstract_}"),
+    usage,
+    check_classified,
+  )
+  .await?;
+  c.title_zh = c.title_zh.trim().to_string();
+  Ok(c)
 }
 
 #[cfg(test)]
@@ -178,5 +248,32 @@ mod tests {
     let mut usage = LlmUsage::default();
     let err = digest_en(&llm, "T", "x", &["3".into()], &mut usage).await.unwrap_err();
     assert!(err.contains("invalid JSON") || err.contains("no JSON"), "{err}");
+  }
+
+  #[tokio::test]
+  async fn classify_rejects_unknown_topic_then_accepts() {
+    let llm = Scripted(Mutex::new(vec![
+      r#"{"topics": ["robots"], "title_zh": "x"}"#,
+      r#"{"topics": ["agents", "code"], "title_zh": " 代码智能体 "}"#,
+    ]));
+    let mut usage = LlmUsage::default();
+    let c = classify(&llm, "T", "A", &mut usage).await.unwrap();
+    assert_eq!(c.topics, ["agents", "code"]);
+    assert_eq!(c.title_zh, "代码智能体");
+  }
+
+  #[test]
+  fn check_classified_rules() {
+    let c = |topics: &[&str], title: &str| Classified {
+      topics: topics.iter().map(|t| t.to_string()).collect(),
+      title_zh: title.into(),
+    };
+    assert!(check_classified(&c(&["llm"], "标题")).is_ok());
+    assert!(check_classified(&c(&["llm", "agents"], "标题")).is_ok());
+    assert!(check_classified(&c(&[], "标题")).is_err());
+    assert!(check_classified(&c(&["llm", "agents", "code"], "标题")).is_err());
+    assert!(check_classified(&c(&["llm", "llm"], "标题")).is_err());
+    assert!(check_classified(&c(&["llm", "other"], "标题")).is_err());
+    assert!(check_classified(&c(&["llm"], " ")).is_err());
   }
 }

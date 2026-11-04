@@ -10,5 +10,6 @@ pub mod entities;
 pub mod ingest;
 pub mod pages;
 pub mod server;
+pub mod topics;
 
-pub use pages::{PaperDetailPage, PapersIndexPage};
+pub use pages::{PaperDetailPage, PaperTopicPage, PapersIndexPage};

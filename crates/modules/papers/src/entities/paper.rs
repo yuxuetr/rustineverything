@@ -21,6 +21,10 @@ pub struct Model {
   /// `pending` / `done` / `failed` / `skipped`
   pub status: String,
   pub error: Option<String>,
+  /// 主题 slug 的 JSON 数组文本；NULL 表示还没分类
+  pub topics: Option<String>,
+  /// 中文标题；NULL 表示还没翻
+  pub title_zh: Option<String>,
   pub created_at: DateTimeWithTimeZone,
   pub updated_at: DateTimeWithTimeZone,
 }

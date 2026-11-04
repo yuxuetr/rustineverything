@@ -6,6 +6,7 @@
 //! papers-ingest --date 2026-10-28      # 指定日期，可重复
 //! papers-ingest --hf-dir saved/        # 从存下来的 <date>.json 导入（不带 --date 时导入目录里全部）
 //! papers-ingest --list-only            # 只入库列表，不调模型
+//! papers-ingest --classify             # 只给已生成、还没分类的论文补主题和中文标题
 //! ```
 //! 读 `DATABASE_URL`、`OPENAI_LLM_*`、`PAPERS_DAILY_LIMIT`（默认 20）；表由 app 启动时的迁移建好。
 
@@ -13,18 +14,20 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use chrono::NaiveDate;
-use module_papers::ingest::{run_day, Generator, HfSource};
+use module_papers::ingest::{classify_missing, run_day, Generator, HfSource};
 
 struct Args {
   dates: Vec<NaiveDate>,
   hf_dir: Option<PathBuf>,
   list_only: bool,
+  classify: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
   let mut dates = Vec::new();
   let mut hf_dir = None;
   let mut list_only = false;
+  let mut classify = false;
   let mut it = std::env::args().skip(1);
   while let Some(a) = it.next() {
     match a.as_str() {
@@ -35,6 +38,7 @@ fn parse_args() -> Result<Args, String> {
       }
       "--hf-dir" => hf_dir = Some(PathBuf::from(it.next().ok_or("--hf-dir 缺少值")?)),
       "--list-only" => list_only = true,
+      "--classify" => classify = true,
       other => return Err(format!("未知参数：{other}")),
     }
   }
@@ -44,7 +48,10 @@ fn parse_args() -> Result<Args, String> {
       None => vec![(chrono::Utc::now() - chrono::Duration::days(1)).date_naive()],
     };
   }
-  Ok(Args { dates, hf_dir, list_only })
+  if classify && (list_only || hf_dir.is_some()) {
+    return Err("--classify 不能和 --list-only / --hf-dir 一起用".into());
+  }
+  Ok(Args { dates, hf_dir, list_only, classify })
 }
 
 /// 目录里 `<YYYY-MM-DD>.json` 的日期，升序。
@@ -112,6 +119,32 @@ async fn main() -> ExitCode {
       }
     }
   };
+  if args.classify {
+    // 上面已保证 --classify 时没有 --list-only，generator 一定在
+    let Some(g) = generator.as_ref() else {
+      unreachable!("--classify excludes --list-only, so a generator was built")
+    };
+    return match classify_missing(&db, g).await {
+      Ok((ok, failed, usage)) => {
+        tracing::info!(
+          ok,
+          failed,
+          input_tokens = usage.input_tokens,
+          output_tokens = usage.output_tokens,
+          "papers: classify done"
+        );
+        if failed == 0 {
+          ExitCode::SUCCESS
+        } else {
+          ExitCode::FAILURE
+        }
+      }
+      Err(e) => {
+        tracing::error!(error = %e, "papers: classify failed");
+        ExitCode::FAILURE
+      }
+    };
+  }
   let source = match args.hf_dir {
     Some(dir) => HfSource::Dir(dir),
     None => HfSource::Api(http),

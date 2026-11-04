@@ -13,7 +13,7 @@ app-core = { path = "../../core" }
 widgets = { path = "../../widgets" }
 sea-orm = { workspace = true, optional = true }
 tracing = { workspace = true }
-serde_json = { workspace = true, optional = true }
+serde_json = { workspace = true }
 # ingest
 reqwest = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
@@ -26,7 +26,6 @@ scraper = { version = "0.23", optional = true }
 server = [
     "dioxus/server",
     "dep:sea-orm",
-    "dep:serde_json",
     "app-core/server",
     "widgets/server",
 ]

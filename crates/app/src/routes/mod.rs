@@ -75,6 +75,7 @@ absent_pages! {
 absent_pages! {
   Papers {},
   PaperDetail { arxiv_id: String },
+  PaperTopic { slug: String },
 }
 
 #[cfg(not(feature = "accounts"))]
@@ -247,6 +248,8 @@ pub enum Route {
         Papers {},
         #[route("/papers/:arxiv_id")]
         PaperDetail { arxiv_id: String },
+        #[route("/papers/topic/:slug")]
+        PaperTopic { slug: String },
 
         // 论坛：注意路由顺序，静态路径优先于 i32 动态参数
         #[route("/topics")]

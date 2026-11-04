@@ -14,19 +14,27 @@ const LIST_LIMIT: u64 = 200;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PaperCard {
   pub arxiv_id: String,
+  /// 界面语言的标题：中文界面有中文标题就用中文
   pub title: String,
   /// HF 日期，`YYYY-MM-DD`
   pub date: String,
   pub hf_upvotes: i32,
   /// 界面语言的一句话总结，没有就用英文
   pub tldr: String,
+  /// 主题 slug，见 `topics.rs`
+  pub topics: Vec<String>,
 }
 
 /// 单篇解读页的数据。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PaperDetail {
   pub arxiv_id: String,
+  /// 原文标题（英文）
   pub title: String,
+  pub title_zh: Option<String>,
+  pub topics: Vec<String>,
+  /// arXiv 首次发布时间，`YYYY-MM-DD`
+  pub published: String,
   pub authors: Vec<String>,
   pub date: String,
   pub hf_upvotes: i32,
@@ -42,16 +50,23 @@ pub struct PaperDetail {
   pub unverified_numbers: Vec<String>,
 }
 
-/// 最近的论文，按 HF 日期倒序、同一天按 upvotes 倒序。
+/// 最近的论文，按 HF 日期倒序、同一天按 upvotes 倒序。`topic` 为空时不按主题筛。
 #[post("/api/papers/list")]
-pub async fn list_papers(lang: String) -> Result<Vec<PaperCard>, ServerFnError> {
+pub async fn list_papers(lang: String, topic: String) -> Result<Vec<PaperCard>, ServerFnError> {
   #[cfg(feature = "server")]
   {
     use crate::entities::{paper, paper_summary};
     use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
     let db = open_db().await?;
-    let rows = paper::Entity::find()
-      .filter(paper::Column::Status.eq("done"))
+    let mut query = paper::Entity::find().filter(paper::Column::Status.eq("done"));
+    if !topic.is_empty() {
+      // 只接受列表里的 slug：它们只含小写字母、数字和 `-`，拼进 LIKE 不用转义
+      if crate::topics::find(&topic).is_none() {
+        return Ok(vec![]);
+      }
+      query = query.filter(paper::Column::Topics.contains(format!("\"{topic}\"")));
+    }
+    let rows = query
       .order_by_desc(paper::Column::FirstSeenOn)
       .order_by_desc(paper::Column::HfUpvotes)
       .limit(LIST_LIMIT)
@@ -73,12 +88,17 @@ pub async fn list_papers(lang: String) -> Result<Vec<PaperCard>, ServerFnError> 
             .and_then(|s| serde_json::from_str::<PaperDigest>(&s.digest).ok())
             .map(|d| d.tldr)
             .unwrap_or_default();
+          let title = match p.title_zh {
+            Some(zh) if lang == "zh" && !zh.is_empty() => zh,
+            _ => p.title,
+          };
           PaperCard {
             arxiv_id: p.arxiv_id,
-            title: p.title,
+            title,
             date: p.first_seen_on.to_string(),
             hf_upvotes: p.hf_upvotes,
             tldr,
+            topics: parse_topics(p.topics.as_deref()),
           }
         })
         .collect(),
@@ -86,7 +106,7 @@ pub async fn list_papers(lang: String) -> Result<Vec<PaperCard>, ServerFnError> 
   }
   #[cfg(not(feature = "server"))]
   {
-    let _ = lang;
+    let _ = (lang, topic);
     Ok(vec![])
   }
 }
@@ -123,6 +143,9 @@ pub async fn get_paper(
     Ok(Some(PaperDetail {
       arxiv_id: p.arxiv_id,
       title: p.title,
+      title_zh: p.title_zh.filter(|t| !t.is_empty()),
+      topics: parse_topics(p.topics.as_deref()),
+      published: p.published_at.date_naive().to_string(),
       authors: serde_json::from_str(&p.authors).unwrap_or_default(),
       date: p.first_seen_on.to_string(),
       hf_upvotes: p.hf_upvotes,
@@ -142,6 +165,12 @@ pub async fn get_paper(
   }
 }
 
+/// `papers.topics` 的 JSON 文本 → slug 列表；没分类或解析不了时为空。
+#[cfg(feature = "server")]
+fn parse_topics(json: Option<&str>) -> Vec<String> {
+  json.and_then(|j| serde_json::from_str(j).ok()).unwrap_or_default()
+}
+
 /// 要的语言，没有就英文。
 #[cfg(feature = "server")]
 fn pick_summary<'a>(
@@ -158,7 +187,8 @@ async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
   app_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
 }
 
-/// 全部已生成论文的 `/papers/<id>`，给 sitemap。数据库不可用时为空。
+/// 全部已生成论文的 `/papers/<id>` 与各主题页 `/papers/topic/<slug>`，给 sitemap。
+/// 数据库不可用时为空。
 #[cfg(feature = "server")]
 pub async fn sitemap_paths() -> Vec<String> {
   use crate::entities::paper;
@@ -174,7 +204,8 @@ pub async fn sitemap_paths() -> Vec<String> {
     .all(&db)
     .await
     .unwrap_or_default();
-  ids.into_iter().map(|id| format!("/papers/{id}")).collect()
+  let topic_pages = crate::topics::TOPICS.iter().map(|t| format!("/papers/topic/{}", t.slug));
+  topic_pages.chain(ids.into_iter().map(|id| format!("/papers/{id}"))).collect()
 }
 
 /// 搜索索引用的文档（kind = `paper`）：标题、摘要、各语言的一句话总结与要点。
@@ -200,7 +231,9 @@ pub async fn search_docs() -> Vec<app_core::engines::doc_source::ExternalIndexed
   papers
     .into_iter()
     .map(|(p, summaries)| {
-      let mut body = p.r#abstract.clone();
+      let mut body = p.title_zh.clone().unwrap_or_default();
+      body.push(' ');
+      body.push_str(&p.r#abstract);
       for s in summaries {
         if let Ok(d) = serde_json::from_str::<PaperDigest>(&s.digest) {
           body.push(' ');

@@ -190,3 +190,18 @@ a {
     border-top: var(--mm-line) solid var(--c);
   }
 }
+
+/* ── 论文主题：/papers 与主题页的主题导航（pt-chip），列表与详情页的主题标签（pt-tag） ── */
+.pt-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+.pt-chip {
+  display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 14px; line-height: 1.4;
+  border: 1px solid var(--border); color: var(--foreground); text-decoration: none;
+}
+.pt-chip:hover { border-color: var(--foreground); }
+.pt-chip-on, .pt-chip-on:hover { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
+.pt-tag {
+  display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; line-height: 1.5;
+  background: color-mix(in srgb, #0d9488 12%, var(--background)); color: color-mix(in srgb, #0d9488 75%, var(--foreground));
+  text-decoration: none;
+}
+.pt-tag:hover { text-decoration: underline; }
