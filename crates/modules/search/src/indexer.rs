@@ -4,7 +4,7 @@
 //! 输出格式 [`IndexedDocument`] 与引擎层的 schema 一一对应。
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
@@ -150,15 +150,6 @@ fn file_mtime_secs(path: &Path) -> u64 {
     .unwrap_or(0)
 }
 
-fn get_asset_root() -> PathBuf {
-  let p = PathBuf::from("assets");
-  if p.exists() {
-    p
-  } else {
-    PathBuf::from("../../assets")
-  }
-}
-
 /// 解析 frontmatter 中常见的标量字段(title / description / date),
 /// 不引入 serde_yaml 依赖以保持兼容,简单按行扫描。
 fn parse_frontmatter_kv(content: &str) -> std::collections::HashMap<String, String> {
@@ -264,7 +255,7 @@ use crate::BOARD_KINDS as BOARD_IDS;
 fn collect_boards_versioned() -> Vec<VersionedDoc> {
   let mut out = Vec::new();
   for board in BOARD_IDS {
-    let dir = get_asset_root().join("topics").join(board);
+    let dir = app_core::utils::get_asset_root().join("topics").join(board);
     let entries = match std::fs::read_dir(&dir) {
       Ok(e) => e,
       Err(_) => continue,

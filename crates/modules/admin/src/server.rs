@@ -134,16 +134,6 @@ pub fn check_self_role_change(
 // =============================================================
 
 #[cfg(feature = "server")]
-fn get_asset_root() -> PathBuf {
-  let p = PathBuf::from("assets");
-  if p.exists() {
-    p
-  } else {
-    PathBuf::from("../../assets")
-  }
-}
-
-#[cfg(feature = "server")]
 async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
   app_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
 }
@@ -968,7 +958,7 @@ pub async fn admin_get_moderation_settings(
     use app_core::session::require_admin;
     use app_core::settings::SiteConfig;
     let _ = require_admin().await?;
-    let path = get_asset_root().join("site.json");
+    let path = app_core::utils::get_asset_root().join("site.json");
     let config = SiteConfig::from_file(path.to_str().unwrap_or("assets/site.json"))
       .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(config.moderation)
@@ -998,7 +988,7 @@ pub async fn admin_set_moderation_settings(
     let _ = require_admin().await?;
     validate_moderation_settings(&settings).map_err(ServerFnError::new)?;
 
-    let path = get_asset_root().join("site.json");
+    let path = app_core::utils::get_asset_root().join("site.json");
     write_moderation_settings_to_site_json(&path, &settings).map_err(ServerFnError::new)?;
 
     // 立即生效：审核 pipeline 重建（重读 site.json + LLM env）

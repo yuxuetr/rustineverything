@@ -6,16 +6,6 @@ use std::fs;
 #[allow(unused_imports)]
 use std::path::PathBuf;
 
-/// 自动探测资产根目录
-#[allow(dead_code)]
-fn get_asset_root() -> PathBuf {
-  let mut path = PathBuf::from("assets");
-  if !path.exists() {
-    path = PathBuf::from("../../assets");
-  }
-  path
-}
-
 /// 允许上传的最大字节数（5MB）
 #[cfg(feature = "server")]
 const UPLOAD_MAX_BYTES: usize = 5 * 1024 * 1024;
@@ -167,7 +157,7 @@ pub async fn upload_image(name: String, data_base64: String) -> Result<String, S
     }
 
     // 8. 写盘
-    let dir_path = get_asset_root().join("uploads");
+    let dir_path = app_core::utils::get_asset_root().join("uploads");
     if !dir_path.exists() {
       fs::create_dir_all(&dir_path).map_err(|e| ServerFnError::new(e.to_string()))?;
     }
