@@ -1,9 +1,10 @@
 use crate::server::{
   admin_approve_moderation, admin_bulk_approve_moderation, admin_bulk_reject_moderation,
   admin_delete_comment, admin_delete_reply, admin_delete_topic, admin_get_moderation_settings,
-  admin_list_comments, admin_list_moderation_queue, admin_list_topics, admin_list_users,
-  admin_overview, admin_reject_moderation, admin_set_moderation_settings, admin_set_user_role,
-  AdminCommentRow, AdminTopicRow, AdminUserRow, ModerationQueueRow, ADMIN_PAGE_SIZE,
+  admin_list_comments, admin_list_moderation_queue, admin_list_replies, admin_list_topics,
+  admin_list_users, admin_overview, admin_reject_moderation, admin_set_moderation_settings,
+  admin_set_user_role, AdminCommentRow, AdminReplyRow, AdminTopicRow, AdminUserRow,
+  ModerationQueueRow, ADMIN_PAGE_SIZE,
 };
 use app_core::session::{SessionUser, ALL_ROLES};
 use app_core::settings::{LlmFailureAction, ModerationSettings, ModerationThresholdsConfig};
@@ -481,7 +482,7 @@ pub fn AdminTopicsPage() -> Element {
           }
 
           div { class: "mt-8 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/20 p-4 text-sm text-amber-800 dark:text-amber-300",
-              "提示:删除话题会级联删除所有回复。如需仅删除单条回复,请到话题详情页用管理员账号操作 `admin_delete_reply` 接口(下一期 PR 提供前端入口)。"
+              "提示：删除话题会级联删除所有回复。只删单条回复：点话题行的「N 回复」展开后逐条删除。"
           }
       }
   }
@@ -490,6 +491,8 @@ pub fn AdminTopicsPage() -> Element {
 #[component]
 fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) -> Element {
   let mut submitting = use_signal(|| false);
+  // 回复列表按需展开（管理页不走 SSR，点开才请求）
+  let mut show_replies = use_signal(|| false);
   let id = topic.id;
   let when = topic.last_reply_at.clone().unwrap_or_else(|| topic.created_at.clone());
   rsx! {
@@ -504,11 +507,21 @@ fn TopicRow(topic: AdminTopicRow, on_deleted: EventHandler<Result<(), String>>) 
                   span { "·" }
                   span { class: "text-slate-400", "#{topic.id}" }
                   span { "·" }
-                  span { "{topic.reply_count} 回复" }
+                  button {
+                      r#type: "button",
+                      class: "hover:text-primary hover:underline disabled:no-underline disabled:hover:text-inherit",
+                      disabled: topic.reply_count == 0,
+                      "aria-expanded": show_replies().to_string(),
+                      onclick: move |_| show_replies.toggle(),
+                      "{topic.reply_count} 回复"
+                  }
               }
               a { href: "/topics/{topic.id}",
                   class: "block text-sm font-semibold text-slate-900 dark:text-white truncate hover:text-primary",
                   "{topic.title}"
+              }
+              if show_replies() {
+                  TopicReplies { topic_id: id, on_deleted }
               }
           }
           div { class: "shrink-0",
@@ -576,10 +589,74 @@ fn ConfirmDelete(
   }
 }
 
-/// 暴露给 reply 删除入口（暂未在 UI 调用，但保留以便后续 PR 接入并保证函数被使用）
-#[allow(dead_code)]
-async fn delete_reply_from_admin(id: i32) -> Result<(), String> {
-  admin_delete_reply(id).await.map_err(|e| e.to_string())
+/// 话题管理里展开的回复列表：逐条删除（不删话题）。删除后重新拉取本列表，
+/// 并通知上层刷新话题行的回复数。
+#[component]
+fn TopicReplies(topic_id: i32, on_deleted: EventHandler<Result<(), String>>) -> Element {
+  let mut bump = use_signal(|| 0u32);
+  let res = use_resource(move || {
+    let _ = bump();
+    async move { admin_list_replies(topic_id).await }
+  });
+  let rows = res.read().clone();
+  rsx! {
+      div { class: "mt-3 ml-1 border-l-2 border-slate-200 dark:border-slate-700 pl-4 space-y-2",
+          match rows {
+              None => rsx! { p { class: "text-xs text-slate-400", "加载中..." } },
+              Some(Err(e)) => rsx! { p { class: "text-xs text-red-600", "加载回复失败: {e}" } },
+              Some(Ok(list)) if list.is_empty() => rsx! { p { class: "text-xs text-slate-400", "没有回复" } },
+              Some(Ok(list)) => rsx! {
+                  for r in list.into_iter() {
+                      ReplyRow {
+                          key: "{r.id}",
+                          reply: r,
+                          on_deleted: move |msg: Result<(), String>| {
+                              if msg.is_ok() {
+                                  bump.with_mut(|n| *n = n.wrapping_add(1));
+                              }
+                              on_deleted.call(msg);
+                          },
+                      }
+                  }
+              },
+          }
+      }
+  }
+}
+
+#[component]
+fn ReplyRow(reply: AdminReplyRow, on_deleted: EventHandler<Result<(), String>>) -> Element {
+  let mut submitting = use_signal(|| false);
+  let id = reply.id;
+  let excerpt: String = reply.content.chars().take(120).collect();
+  rsx! {
+      div { class: "flex items-start gap-3 text-sm",
+          div { class: "flex-1 min-w-0",
+              div { class: "text-xs text-slate-500 mb-0.5",
+                  span { class: "font-semibold text-slate-700 dark:text-slate-200", "{reply.author}" }
+                  " · {reply.created_at} · #{id}"
+              }
+              p { class: "text-slate-700 dark:text-slate-300 break-words", "{excerpt}" }
+          }
+          div { class: "shrink-0",
+              ConfirmDelete {
+                  title: "删除这条回复？".to_string(),
+                  description: format!("{} 的回复「{}」将被永久删除，话题保留。", reply.author, excerpt),
+                  busy: submitting(),
+                  on_confirm: move |_| {
+                      spawn(async move {
+                          submitting.set(true);
+                          match admin_delete_reply(id).await {
+                              Ok(()) => on_deleted.call(Ok(())),
+                              Err(e) => on_deleted.call(Err(format!("删除失败: {}", e))),
+                          }
+                          submitting.set(false);
+                      });
+                  },
+              }
+          }
+      }
+  }
 }
 
 // =============================================================
