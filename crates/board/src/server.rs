@@ -37,14 +37,9 @@ struct FrontMatter {
 
 #[allow(dead_code)]
 fn parse_frontmatter(content: &str) -> FrontMatter {
-  if !content.starts_with("---") {
-    return FrontMatter::default();
-  }
-  let parts: Vec<&str> = content.splitn(3, "---").collect();
-  if parts.len() < 3 {
-    return FrontMatter::default();
-  }
-  serde_yaml::from_str(parts[1]).unwrap_or_default()
+  widgets::split_frontmatter(content)
+    .and_then(|(yaml, _)| serde_yaml::from_str(yaml).ok())
+    .unwrap_or_default()
 }
 
 /// 文章目录下的正文文件，`index.mdx` 优先。

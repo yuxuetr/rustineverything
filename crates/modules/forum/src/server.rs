@@ -174,15 +174,13 @@ fn get_asset_root() -> PathBuf {
 #[cfg(feature = "server")]
 fn extract_title_line(content: &str) -> Option<String> {
   // 尝试 frontmatter `title: xxx`
-  if content.starts_with("---") {
-    if let Some(rest) = content.split("---").nth(1) {
-      for line in rest.lines() {
-        let line = line.trim();
-        if let Some(value) = line.strip_prefix("title:") {
-          let t = value.trim().trim_matches(|c| c == '"' || c == '\'');
-          if !t.is_empty() {
-            return Some(t.to_string());
-          }
+  if let Some((rest, _)) = widgets::split_frontmatter(content) {
+    for line in rest.lines() {
+      let line = line.trim();
+      if let Some(value) = line.strip_prefix("title:") {
+        let t = value.trim().trim_matches(|c| c == '"' || c == '\'');
+        if !t.is_empty() {
+          return Some(t.to_string());
         }
       }
     }

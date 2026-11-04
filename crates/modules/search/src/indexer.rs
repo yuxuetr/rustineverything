@@ -163,15 +163,9 @@ fn get_asset_root() -> PathBuf {
 /// 不引入 serde_yaml 依赖以保持兼容,简单按行扫描。
 fn parse_frontmatter_kv(content: &str) -> std::collections::HashMap<String, String> {
   let mut map = std::collections::HashMap::new();
-  if !content.starts_with("---") {
+  let Some((fm, _)) = widgets::split_frontmatter(content) else {
     return map;
-  }
-  let after = &content[3..];
-  let end = match after.find("\n---") {
-    Some(e) => e,
-    None => return map,
   };
-  let fm = &after[..end];
   for line in fm.lines() {
     let line = line.trim();
     if line.is_empty() || line.starts_with('#') {

@@ -80,18 +80,14 @@ struct MetaEntry {
 /// 解析 frontmatter（YAML between --- delimiters）
 #[cfg(feature = "server")]
 pub(crate) fn parse_doc_frontmatter(content: &str, file: &std::path::Path) -> (DocMeta, String) {
-  if !content.starts_with("---") {
+  let Some((yaml, body)) = widgets::split_frontmatter(content) else {
     return (DocMeta::default(), content.to_string());
-  }
-  let parts: Vec<&str> = content.splitn(3, "---").collect();
-  if parts.len() < 3 {
-    return (DocMeta::default(), content.to_string());
-  }
-  let meta: DocMeta = serde_yaml::from_str(parts[1]).unwrap_or_else(|e| {
+  };
+  let meta: DocMeta = serde_yaml::from_str(yaml).unwrap_or_else(|e| {
     tracing::warn!(file = %file.display(), error = %e, "doc frontmatter: invalid YAML, metadata ignored");
     DocMeta::default()
   });
-  (meta, parts[2].to_string())
+  (meta, body.to_string())
 }
 
 /// 正文里第一个 `# ` 标题。

@@ -2,16 +2,7 @@
 
 /// 去除 Markdown frontmatter (`---\n...\n---\n`)。
 pub fn strip_frontmatter(raw: &str) -> &str {
-  if !raw.starts_with("---") {
-    return raw;
-  }
-  let after = &raw[3..];
-  if let Some(end) = after.find("\n---") {
-    let rest_start = end + 4;
-    let rest = &after[rest_start..];
-    return rest.strip_prefix('\n').unwrap_or(rest);
-  }
-  raw
+  widgets::split_frontmatter(raw).map_or(raw, |(_, body)| body)
 }
 
 /// 简单 Markdown -> 纯文本转换:
