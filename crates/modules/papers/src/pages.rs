@@ -4,6 +4,7 @@ use dioxus_shadcn::{Empty, EmptyDescription};
 
 use crate::digest::{MindNode, PaperDigest};
 use crate::server::{get_paper, list_papers, PaperCard, PaperDetail};
+use crate::topics::{self, Topic, TOPICS};
 
 fn use_language_signal() -> Signal<Language> {
   try_use_context::<Signal<Language>>().unwrap_or_else(|| Signal::new(Language::Zh))
@@ -35,21 +36,88 @@ pub fn PapersIndexPage() -> Element {
       section { class: "py-12 min-h-screen bg-white dark:bg-slate-950",
           div { class: "mx-auto max-w-4xl px-4 sm:px-6 lg:px-8",
               h1 { class: "text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white", "{title}" }
-              p { class: "mt-3 mb-10 text-slate-600 dark:text-slate-400", "{subtitle}" }
-              SuspenseBoundary { fallback: |_| rsx! {}, PaperList {} }
+              p { class: "mt-3 text-slate-600 dark:text-slate-400", "{subtitle}" }
+              TopicNav { current: String::new() }
+              SuspenseBoundary { fallback: |_| rsx! {}, PaperList { topic: String::new() } }
           }
       }
   }
 }
 
+/// `/papers/topic/:slug`：一个主题下的论文。
 #[component]
-fn PaperList() -> Element {
+pub fn PaperTopicPage(slug: String) -> Element {
+  let lang = use_language_signal()();
+  let Some(topic) = topics::find(&slug) else {
+    return rsx! { widgets::NotFound { message: lang.pick("没有这个主题", "Topic not found").to_string() } };
+  };
+  let name = topic_name(topic, lang);
+  let about = lang.pick(topic.about_zh, topic.about_en);
+  let title = format!("{name} · {}", lang.pick("论文速递", "Papers"));
+  rsx! {
+      widgets::PageMeta {
+          title,
+          description: about.to_string(),
+          path: format!("/papers/topic/{}", topic.slug),
+      }
+      section { class: "py-12 min-h-screen bg-white dark:bg-slate-950",
+          div { class: "mx-auto max-w-4xl px-4 sm:px-6 lg:px-8",
+              a { href: "/papers", class: "text-sm text-slate-500 hover:underline", {lang.pick("← 论文速递", "← Papers")} }
+              h1 { class: "mt-4 text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white", "{name}" }
+              p { class: "mt-3 text-slate-600 dark:text-slate-400", "{about}" }
+              TopicNav { current: topic.slug.to_string() }
+              SuspenseBoundary { fallback: |_| rsx! {}, PaperList { topic: topic.slug.to_string() } }
+          }
+      }
+  }
+}
+
+fn topic_name(t: &Topic, lang: Language) -> &'static str {
+  match lang {
+    Language::Zh => t.zh,
+    Language::En => t.en,
+  }
+}
+
+/// 全部主题的链接；`current` 是当前主题页的 slug，总览页为空（高亮「全部」）。
+#[component]
+fn TopicNav(current: String) -> Element {
+  let lang = use_language_signal()();
+  let all_class = if current.is_empty() { "pt-chip pt-chip-on" } else { "pt-chip" };
+  rsx! {
+      nav { class: "pt-nav mt-6 mb-10", aria_label: lang.pick("主题", "Topics"),
+          a { class: all_class, href: "/papers", {lang.pick("全部", "All")} }
+          for t in TOPICS {
+              a {
+                  key: "{t.slug}",
+                  class: if t.slug == current { "pt-chip pt-chip-on" } else { "pt-chip" },
+                  href: "/papers/topic/{t.slug}",
+                  {topic_name(t, lang)}
+              }
+          }
+      }
+  }
+}
+
+/// 论文的主题标签，点了去主题页。
+#[component]
+fn TopicTags(slugs: Vec<String>) -> Element {
+  let lang = use_language_signal()();
+  rsx! {
+      for t in slugs.iter().filter_map(|s| topics::find(s)) {
+          a { key: "{t.slug}", class: "pt-tag", href: "/papers/topic/{t.slug}", {topic_name(t, lang)} }
+      }
+  }
+}
+
+#[component]
+fn PaperList(topic: String) -> Element {
   let lang_signal = use_language_signal();
   let lang = lang_signal();
-  let res = use_server_future(move || {
+  let res = use_server_future(use_reactive!(|topic| {
     let code = lang_code(lang_signal()).to_string();
-    async move { list_papers(code).await }
-  })?;
+    async move { list_papers(code, topic).await }
+  }))?;
   let papers = match res() {
     Some(Ok(list)) => list,
     Some(Err(_)) => {
@@ -81,6 +149,9 @@ fn PaperList() -> Element {
                           }
                           if !p.tldr.is_empty() {
                               p { class: "mt-1 text-sm text-slate-600 dark:text-slate-400", "{p.tldr}" }
+                          }
+                          if !p.topics.is_empty() {
+                              div { class: "mt-2 flex flex-wrap gap-1.5", TopicTags { slugs: p.topics.clone() } }
                           }
                       }
                   }
@@ -123,11 +194,13 @@ fn PaperDetailLoaded(arxiv_id: String) -> Element {
     async move { get_paper(arxiv_id, code).await }
   }))?;
   match res() {
+    // 已经在 SuspenseBoundary 里，用 PageMetaTags（PageMeta 自带的那层会让 hydration 错位）
     Some(Ok(Some(paper))) => rsx! {
-        widgets::PageMeta {
-            title: paper.title.clone(),
+        widgets::PageMetaTags {
+            title: display_title(&paper, lang).to_string(),
             description: paper.digest.tldr.clone(),
             path: format!("/papers/{}", paper.arxiv_id),
+            schema: Some(paper_schema(&paper, lang)),
         }
         PaperBody { paper, wanted: lang_code(lang).to_string() }
     },
@@ -138,6 +211,44 @@ fn PaperDetailLoaded(arxiv_id: String) -> Element {
       rsx! { widgets::NotFound { message: lang.pick("没有这篇论文", "Paper not found").to_string() } }
     }
   }
+}
+
+/// 中文界面有中文标题时用中文，否则原文标题。
+fn display_title(paper: &PaperDetail, lang: Language) -> &str {
+  match (&paper.title_zh, lang) {
+    (Some(zh), Language::Zh) => zh,
+    _ => &paper.title,
+  }
+}
+
+/// 页面的 JSON-LD：本页是一篇解读（`Article`），讲的是 arXiv 上那篇论文（`about`）。
+fn paper_schema(paper: &PaperDetail, lang: Language) -> serde_json::Value {
+  let id = &paper.arxiv_id;
+  let authors: Vec<serde_json::Value> =
+    paper.authors.iter().map(|a| serde_json::json!({ "@type": "Person", "name": a })).collect();
+  let keywords: Vec<&str> =
+    paper.topics.iter().filter_map(|s| topics::find(s)).map(|t| topic_name(t, lang)).collect();
+  let mut about = serde_json::json!({
+    "@type": "ScholarlyArticle",
+    "name": paper.title,
+    "url": format!("https://arxiv.org/abs/{id}"),
+    "identifier": format!("arXiv:{id}"),
+    "author": authors,
+    "datePublished": paper.published,
+  });
+  if let Some(zh) = &paper.title_zh {
+    about["alternateName"] = zh.as_str().into();
+  }
+  serde_json::json!({
+    "@type": "Article",
+    "headline": display_title(paper, lang),
+    "description": paper.digest.tldr,
+    "inLanguage": match lang { Language::Zh => "zh-CN", Language::En => "en" },
+    "datePublished": paper.date,
+    "keywords": keywords,
+    "about": about,
+    "isPartOf": { "@type": "CollectionPage", "name": lang.pick("论文速递", "Papers") },
+  })
 }
 
 #[component]
@@ -155,7 +266,18 @@ fn PaperBody(paper: PaperDetail, wanted: String) -> Element {
   let link = "underline decoration-slate-300 hover:decoration-slate-500";
   rsx! {
       a { href: "/papers", class: "text-sm text-slate-500 hover:underline", {lang.pick("← 论文速递", "← Papers")} }
-      h1 { class: "mt-4 text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white break-words", "{paper.title}" }
+      h1 { class: "mt-4 text-2xl md:text-3xl font-extrabold text-slate-900 dark:text-white break-words", "{display_title(&paper, lang)}" }
+      // 原文标题：用 hidden 而不是 if。切换语言时 if 块在 hydration 后被增删，
+      // dioxus 0.7.9 报 `cannot reclaim ElementId`（2026-11-04 本地二分确认）。
+      p {
+          class: "mt-2 text-slate-600 dark:text-slate-400 break-words",
+          lang: "en",
+          hidden: display_title(&paper, lang) == paper.title,
+          "{paper.title}"
+      }
+      if !paper.topics.is_empty() {
+          div { class: "mt-3 flex flex-wrap gap-1.5", TopicTags { slugs: paper.topics.clone() } }
+      }
       if !authors.is_empty() {
           p { class: "mt-2 text-sm text-slate-500 break-words", "{authors}" }
       }
@@ -282,6 +404,7 @@ mod tests {
       date: date.into(),
       hf_upvotes: 0,
       tldr: String::new(),
+      topics: Vec::new(),
     }
   }
 

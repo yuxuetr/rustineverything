@@ -45,6 +45,8 @@ pub async fn upsert_day(
     has_html: Set(None),
     status: Set("pending".into()),
     error: Set(None),
+    topics: Set(None),
+    title_zh: Set(None),
     created_at: Set(now),
     updated_at: Set(now),
   });

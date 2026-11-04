@@ -3,7 +3,7 @@
 use dioxus::prelude::*;
 
 use crate::components::module_gate::ModuleGate;
-use module_papers::{PaperDetailPage, PapersIndexPage};
+use module_papers::{PaperDetailPage, PaperTopicPage, PapersIndexPage};
 
 #[component]
 pub fn Papers() -> Element {
@@ -13,4 +13,9 @@ pub fn Papers() -> Element {
 #[component]
 pub fn PaperDetail(arxiv_id: String) -> Element {
   rsx! { ModuleGate { id: "papers".to_string(), PaperDetailPage { arxiv_id } } }
+}
+
+#[component]
+pub fn PaperTopic(slug: String) -> Element {
+  rsx! { ModuleGate { id: "papers".to_string(), PaperTopicPage { slug } } }
 }

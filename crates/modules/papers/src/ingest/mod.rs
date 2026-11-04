@@ -206,6 +206,8 @@ async fn generate_one(
     Some((ft, version)) => (ft.text, ft.sections, true, version),
     None => (format!("[§Abstract]\n{}", p.r#abstract), Vec::new(), false, None),
   };
+  let classified = generate::classify(g.llm.as_ref(), &p.title, &p.r#abstract, usage).await?;
+  let topics = serde_json::to_string(&classified.topics).map_err(|e| e.to_string())?;
   let (en, checked) =
     generate::digest_en(g.llm.as_ref(), &p.title, &text, &sections, usage).await?;
   let zh = generate::translate_zh(g.llm.as_ref(), &en, usage).await?;
@@ -245,6 +247,8 @@ async fn generate_one(
     status: Set("done".into()),
     has_html: Set(Some(has_html)),
     arxiv_version: Set(version),
+    topics: Set(Some(topics)),
+    title_zh: Set(Some(classified.title_zh)),
     error: Set(None),
     updated_at: Set(now),
     ..Default::default()
@@ -253,6 +257,50 @@ async fn generate_one(
   .await
   .map_err(|e| format!("更新论文状态失败：{e}"))?;
   txn.commit().await.map_err(|e| e.to_string())
+}
+
+/// 给已经生成解读、还没分类的论文补主题和中文标题（加分类之前生成的那批）。
+/// 单篇失败只记日志，下次再跑会重试；返回（成功，失败，token 用量）。
+pub async fn classify_missing(
+  db: &DatabaseConnection,
+  g: &Generator,
+) -> Result<(usize, usize, LlmUsage), String> {
+  let todo = paper::Entity::find()
+    .filter(paper::Column::Status.eq("done"))
+    .filter(paper::Column::Topics.is_null())
+    .order_by_desc(paper::Column::FirstSeenOn)
+    .all(db)
+    .await
+    .map_err(|e| format!("读取待分类论文失败：{e}"))?;
+  let (mut ok, mut failed, mut usage) = (0, 0, LlmUsage::default());
+  for p in todo {
+    let id = p.arxiv_id.clone();
+    let result = async {
+      let c = generate::classify(g.llm.as_ref(), &p.title, &p.r#abstract, &mut usage).await?;
+      paper::ActiveModel {
+        arxiv_id: Set(p.arxiv_id),
+        topics: Set(Some(serde_json::to_string(&c.topics).map_err(|e| e.to_string())?)),
+        title_zh: Set(Some(c.title_zh)),
+        ..Default::default()
+      }
+      .update(db)
+      .await
+      .map_err(|e| format!("写入分类失败：{e}"))?;
+      Ok::<_, String>(c.topics)
+    }
+    .await;
+    match result {
+      Ok(topics) => {
+        ok += 1;
+        tracing::info!(%id, ?topics, "papers: classified");
+      }
+      Err(e) => {
+        failed += 1;
+        tracing::warn!(%id, error = %e, "papers: classify failed");
+      }
+    }
+  }
+  Ok((ok, failed, usage))
 }
 
 async fn mark_failed(db: &DatabaseConnection, arxiv_id: &str, error: &str) -> Result<(), String> {

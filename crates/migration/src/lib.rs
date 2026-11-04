@@ -37,6 +37,7 @@ mod m20260721_000008_users_token_version;
 mod m20261020_000009_order_product;
 mod m20261029_000010_pending_review;
 mod m20261029_000011_papers;
+mod m20261104_000012_paper_topics;
 
 pub struct Migrator;
 
@@ -55,6 +56,7 @@ impl MigratorTrait for Migrator {
       Box::new(m20261020_000009_order_product::Migration),
       Box::new(m20261029_000010_pending_review::Migration),
       Box::new(m20261029_000011_papers::Migration),
+      Box::new(m20261104_000012_paper_topics::Migration),
     ]
   }
 }
@@ -80,6 +82,7 @@ mod tests {
         "m20261020_000009_order_product".to_string(),
         "m20261029_000010_pending_review".to_string(),
         "m20261029_000011_papers".to_string(),
+        "m20261104_000012_paper_topics".to_string(),
       ]
     );
   }
