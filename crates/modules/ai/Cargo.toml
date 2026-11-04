@@ -13,3 +13,6 @@ server = [
     "dioxus/server",
     "board/server",
 ]
+
+[lints]
+workspace = true

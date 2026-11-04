@@ -30,3 +30,6 @@ server = [
     "dep:tantivy-jieba",
     "app-core/server",
 ]
+
+[lints]
+workspace = true

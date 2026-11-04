@@ -25,3 +25,6 @@ server = [
     "widgets/server",
     "app-core/server",
 ]
+
+[lints]
+workspace = true

@@ -21,3 +21,6 @@ server = [
     "dep:serde_yaml",
     "widgets/server",
 ]
+
+[lints]
+workspace = true

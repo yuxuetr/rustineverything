@@ -27,3 +27,6 @@ server = [
 ]
 
 [dev-dependencies]
+
+[lints]
+workspace = true

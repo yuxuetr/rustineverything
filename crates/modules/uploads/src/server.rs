@@ -193,6 +193,7 @@ pub async fn upload_image(name: String, data_base64: String) -> Result<String, S
 // ========== Tests ==========
 
 #[cfg(all(test, feature = "server"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
   use super::*;
 

@@ -23,3 +23,6 @@ app-core = { path = "../core", features = ["server"] }
 [dev-dependencies]
 mockito = "1.5"
 dotenvy = "0.15"
+
+[lints]
+workspace = true

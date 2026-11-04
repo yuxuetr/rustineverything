@@ -23,3 +23,6 @@ server = [
     "app-core/server",
     "dep:module-moderation",
 ]
+
+[lints]
+workspace = true

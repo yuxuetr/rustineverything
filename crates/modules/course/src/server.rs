@@ -3098,6 +3098,7 @@ pub async fn update_annotation(
 // =============================================================
 
 #[cfg(all(test, feature = "server"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
   use super::*;
   use std::fs as stdfs;

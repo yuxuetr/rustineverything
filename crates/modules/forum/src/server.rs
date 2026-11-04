@@ -735,6 +735,7 @@ pub async fn list_my_topics() -> Result<Vec<TopicSummary>, ServerFnError> {
 // =============================================================
 
 #[cfg(all(test, feature = "server"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
   use super::*;
 

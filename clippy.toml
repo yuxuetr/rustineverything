@@ -1,0 +1,4 @@
+# 测试代码里 unwrap / expect 是允许的（失败即测试失败）；非测试代码由 workspace lints 的
+# clippy::unwrap_used / expect_used 拦下。
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

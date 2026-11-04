@@ -14,3 +14,6 @@ tracing = { workspace = true }
 
 [features]
 server = ["dioxus/server", "dep:tokio", "app-core/server", "widgets/server"]
+
+[lints]
+workspace = true

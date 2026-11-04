@@ -334,7 +334,9 @@ pub async fn get_doc_content(path: String) -> Result<Option<DocContentResponse>,
 
 // ========== Tests ==========
 
+// clippy 的 allow-unwrap-in-tests 只认 `#[cfg(test)]`，组合 cfg 要手动放开
 #[cfg(all(test, feature = "server"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
   use super::*;
   use std::path::Path;
