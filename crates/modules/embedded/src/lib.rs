@@ -3,7 +3,6 @@
 
 use board::{Board, BoardArticle, BoardIndex, FeaturedCrate};
 use dioxus::prelude::*;
-use sdk::AppModule;
 
 pub const BOARD: Board = Board {
   id: "embedded",
@@ -27,14 +26,6 @@ pub fn EmbeddedIndexPage() -> Element {
 #[component]
 pub fn EmbeddedArticlePage(slug: String) -> Element {
   rsx! { BoardArticle { board: BOARD, slug } }
-}
-
-pub struct EmbeddedModule;
-
-impl AppModule for EmbeddedModule {
-  fn name(&self) -> &'static str {
-    "Embedded"
-  }
 }
 
 #[cfg(test)]

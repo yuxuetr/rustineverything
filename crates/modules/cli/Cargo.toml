@@ -7,7 +7,6 @@ description = "CLI 工具内容板块（clap / ratatui / indicatif）"
 [dependencies]
 dioxus = { workspace = true, features = ["fullstack", "router"] }
 board = { path = "../../board" }
-sdk = { path = "../../sdk" }
 
 [features]
 server = [

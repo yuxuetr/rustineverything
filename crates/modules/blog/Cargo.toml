@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 dioxus = { workspace = true, features = ["fullstack", "router"] }
 serde = { workspace = true, features = ["derive"] }
-sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
 tokio = { workspace = true, features = ["full"], optional = true }
 # Phase 8.5：sharing DirListingCache helper with other server fns

@@ -3,7 +3,6 @@
 
 use board::{Board, BoardArticle, BoardIndex, FeaturedCrate};
 use dioxus::prelude::*;
-use sdk::AppModule;
 
 pub const BOARD: Board = Board {
   id: "web3",
@@ -27,14 +26,6 @@ pub fn Web3IndexPage() -> Element {
 #[component]
 pub fn Web3ArticlePage(slug: String) -> Element {
   rsx! { BoardArticle { board: BOARD, slug } }
-}
-
-pub struct Web3Module;
-
-impl AppModule for Web3Module {
-  fn name(&self) -> &'static str {
-    "Web3"
-  }
 }
 
 #[cfg(test)]

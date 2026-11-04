@@ -9,7 +9,6 @@ dioxus-shadcn = { workspace = true, features = ["alert", "button", "command", "d
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tokio = { workspace = true, features = ["full"], optional = true }
-sdk = { path = "../../sdk" }
 app-core = { path = "../../core" }
 widgets = { path = "../../widgets" }
 sea-orm = { workspace = true, optional = true }

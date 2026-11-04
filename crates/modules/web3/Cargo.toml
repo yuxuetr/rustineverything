@@ -7,7 +7,6 @@ description = "Web3 内容板块（alloy / solana / substrate / 合约）"
 [dependencies]
 dioxus = { workspace = true, features = ["fullstack", "router"] }
 board = { path = "../../board" }
-sdk = { path = "../../sdk" }
 
 [features]
 server = [
