@@ -1070,16 +1070,6 @@ impl std::error::Error for EscapedLatexError<'_> {}
 // 等文字样式组件都走 [`crate::components`] 下的 `MdxComponent` 实现，
 // `render_text_style_component` 不再需要。
 
-// Phase 2.2 后只在单测中使用；生产路径走 `parse_attrs`。保留以便
-// 未来有需要调试全属性提取。
-#[allow(dead_code)]
-fn extract_attr(html: &str, attr: &str) -> Option<String> {
-  let pattern = format!("{}=\"", attr);
-  let start = html.find(&pattern)? + pattern.len();
-  let end = html[start..].find('"')?;
-  Some(html[start..start + end].to_string())
-}
-
 #[cfg(test)]
 mod tests {
   #[test]
@@ -1518,12 +1508,6 @@ mod tests {
   fn parse_attrs_no_attrs_is_empty() {
     let attrs = parse_attrs("<NoAttrs />");
     assert!(attrs.is_empty());
-  }
-
-  #[test]
-  fn extract_attr_basic() {
-    assert_eq!(extract_attr(r#"<X id="42" />"#, "id"), Some("42".to_string()));
-    assert_eq!(extract_attr(r#"<X id="42" />"#, "missing"), None);
   }
 
   #[test]

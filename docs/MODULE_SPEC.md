@@ -140,7 +140,8 @@ pub fn BlogIndex() -> Element {
 
 ### 6.3 搜索索引 (Search Indexer)
 
-`crates/modules/search/src/indexer.rs::collect_documents` 在汇总后按
+`crates/modules/search/src/engine.rs` 建索引 / 增量刷新时，文件来源与动态来源分别经
+`filter_versioned_by_enabled` / `filter_documents_by_enabled` 按
 `default_module_engine().enabled_ids()` 过滤。kind → module id 映射：
 
 | `IndexedDocument.kind` | Module ID |

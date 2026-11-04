@@ -409,29 +409,6 @@ async fn collect_registered_external() -> Vec<IndexedDocument> {
     .collect()
 }
 
-/// 汇总所有可索引文档。
-///
-/// Phase 3.4：读取 `site.json::modules.<id>.enabled`，过滤掉关闭的模块。
-/// kind → module id 映射：blog→blog / doc→docs / topic→forum / case→cases。
-pub async fn collect_documents() -> Result<Vec<IndexedDocument>, String> {
-  let file_docs = collect_file_documents();
-  #[cfg(feature = "server")]
-  let dyn_docs = collect_dyn_documents().await;
-  #[cfg(not(feature = "server"))]
-  let dyn_docs: Vec<IndexedDocument> = Vec::new();
-
-  let mut all: Vec<IndexedDocument> = file_docs.into_iter().map(|v| v.doc).collect();
-  all.extend(dyn_docs);
-
-  #[cfg(feature = "server")]
-  {
-    let enabled = app_core::engines::module::default_module_engine().enabled_ids();
-    all = filter_documents_by_enabled(all, &enabled);
-  }
-
-  Ok(all)
-}
-
 /// 收集所有文件来源的索引文档（带 mtime，供 Phase 7.3.3 增量索引使用）。
 ///
 /// 来源：blog / boards (`embedded`/`ai`/...) / doc。不包含 cases / topics
@@ -475,7 +452,7 @@ pub fn filter_versioned_by_enabled(
 /// Phase 3.4：按 module id 过滤已汇总的索引文档，便于上层显式调用。
 ///
 /// `enabled_module_ids` 来自 [`app_core::engines::module::ModuleEngine::enabled_ids`]。
-/// kind → module id 同 [`collect_documents`]。该函数纯逻辑，便于单测覆盖。
+/// kind → module id：blog→blog / doc→docs / topic→forum / case→cases。该函数纯逻辑，便于单测覆盖。
 pub fn filter_documents_by_enabled(
   docs: Vec<IndexedDocument>,
   enabled_module_ids: &[String],
