@@ -24,6 +24,8 @@ const MAIN_CSS: Asset = asset!("/assets/css/main.css");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 const MATH_CSS: Asset = asset!("/assets/css/math.css");
 const PRISM_CSS: Asset = asset!("/assets/css/prism-tomorrow.min.css");
+/// Prism core + 语言包合成的一个文件（带哈希、长缓存），由引导脚本在页面出现代码块时才加载
+const PRISM_JS: Asset = asset!("/assets/js/prism.bundle.min.js");
 
 /// 全局一次性引导脚本：初始化 mermaid，对**整个文档**开 MutationObserver，
 /// 一旦 DOM 中出现未处理的 `<code class="language-*">` 或 `.mermaid` 块就
@@ -32,9 +34,9 @@ const PRISM_CSS: Asset = asset!("/assets/css/prism-tomorrow.min.css");
 /// 设计要点：
 /// - **只挂载一次**（在 App 根的 document::Script 里），避免 mdx 组件级别
 ///   的 Script 引起 dioxus-document props-change 警告且无法重跑。
-/// - prism 是 defer 脚本，首次 sweep 等到 DOMContentLoaded（此时 defer 脚本
-///   已执行完）；mermaid 不在 head 里，首次见到 `.mermaid` 块时才注入
-///   `<script>`，加载完再 sweep（G3，mermaid 3MB，多数页面用不到）。
+/// - prism 和 mermaid 都不在 head 里：首次见到代码块 / `.mermaid` 块时才注入
+///   `<script>`，加载完再 sweep（G3，mermaid 3MB；prism 40KB，列表页用不到）。
+///   prism 的地址带哈希，由 App 在脚本前写进 `window.__rie_prism_src`。
 /// - 代码块 / mermaid 块的内容是 `dangerous_inner_html`（见 widgets mdx.rs），
 ///   Dioxus 不跟踪其子节点，这里改写才不会弄坏 hydration。
 /// - 是否处理过按源码比较（WeakMap），SPA 导航复用节点换内容时会重新处理。
@@ -44,8 +46,9 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
   // 复用同一节点换内容，所以按源码比较而不是打一次性标记。
   var seen = window.__rie_seen || (window.__rie_seen = new WeakMap());
   function tryHighlight(root){
-    if(!window.Prism) return;
     var nodes = (root || document).querySelectorAll('code[class*="language-"]');
+    if(nodes.length === 0) return;
+    if(!window.Prism || typeof window.Prism.highlightElement !== 'function'){ loadPrism(); return; }
     for(var i = 0; i < nodes.length; i++){
       var src = nodes[i].textContent;
       if(seen.get(nodes[i]) === src) continue;
@@ -72,6 +75,16 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
       return;
     }
     try { window.mermaid.run({nodes: hits}); } catch(e) {}
+  }
+  // 按需加载 prism：只请求一次，加载完再扫一遍。manual 让它不自己扫全页，统一由 sweep 处理。
+  function loadPrism(){
+    if(window.__rie_prism_loading || !window.__rie_prism_src) return;
+    window.__rie_prism_loading = true;
+    window.Prism = window.Prism || {manual: true};
+    var s = document.createElement('script');
+    s.src = window.__rie_prism_src;
+    s.onload = sweep;
+    document.head.appendChild(s);
   }
   // 按需加载 mermaid：只请求一次，加载完再扫一遍。
   function loadMermaid(){
@@ -431,6 +444,8 @@ pub fn use_session_user() -> Signal<Option<SessionUser>> {
 /// "Changing the props of `Style {}` / `Script {}` is not supported" 警告。
 #[component]
 fn HeadAssets() -> Element {
+  // asset 路径只含 [A-Za-z0-9./_-]，可直接放进单引号字符串
+  let prism_src = PRISM_JS.to_string();
   rsx! {
       // Head links
       document::Link { rel: "icon", href: FAVICON }
@@ -469,25 +484,13 @@ fn HeadAssets() -> Element {
       // pulldown-latex math fonts & styles
       document::Link { rel: "stylesheet", href: MATH_CSS }
 
-      // PrismJS for syntax highlighting (core + language packs, served via /js)。
-      // 全部 defer（G3）：不阻塞首屏，按文档顺序在 DOMContentLoaded 前执行完。
+      // PrismJS 样式常驻（很小）；脚本由下面的引导脚本按需加载。
       document::Link { rel: "stylesheet", href: PRISM_CSS }
-      document::Script { src: "/js/prism.min.js", defer: true }
-      document::Script { src: "/js/prism-rust.min.js", defer: true }
-      document::Script { src: "/js/prism-bash.min.js", defer: true }
-      document::Script { src: "/js/prism-toml.min.js", defer: true }
-      document::Script { src: "/js/prism-json.min.js", defer: true }
-      document::Script { src: "/js/prism-yaml.min.js", defer: true }
-      document::Script { src: "/js/prism-python.min.js", defer: true }
-      // M4：旧博客的 Swift / React / TS 代码；tsx 依赖 jsx 与 typescript，须排在其后。
-      document::Script { src: "/js/prism-swift.min.js", defer: true }
-      document::Script { src: "/js/prism-jsx.min.js", defer: true }
-      document::Script { src: "/js/prism-typescript.min.js", defer: true }
-      document::Script { src: "/js/prism-tsx.min.js", defer: true }
 
       // 全局 rehighlight / mermaid 触发器。**只挂载一次**，靠 MutationObserver
       // 自动捕获后续插入到 DOM 的代码块 / mermaid 块（含 SPA 路由切换换入的内容）。
-      // mermaid（3MB）由它在页面首次出现 `.mermaid` 块时再加载。
+      // prism / mermaid 都由它在页面首次出现对应块时再加载。
+      document::Script { "window.__rie_prism_src='{prism_src}';" }
       document::Script { {GLOBAL_REHIGHLIGHT_BOOT_SCRIPT} }
 
       // 运行时标注运行时（PR-D）；晚于 wasm 加载时由 `__rieAnnoPending` 补上
