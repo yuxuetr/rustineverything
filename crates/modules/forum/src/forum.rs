@@ -2,7 +2,7 @@ use crate::server::{
   create_topic, get_topic, list_my_topics, list_tags, list_topics, list_topics_by_ref, post_reply,
   NewTopicInput, Reply, TagSummary, TopicDetail, TopicRef, TopicSummary,
 };
-use app_core::i18n::Language;
+use app_core::i18n::{t, Language};
 use app_core::session::SessionUser;
 use dioxus::prelude::*;
 use dioxus_shadcn::{
@@ -26,85 +26,6 @@ fn use_auth_modal_ctx() -> Option<Signal<bool>> {
 
 fn use_language_ctx() -> Language {
   try_use_context::<Signal<Language>>().map(|s| s()).unwrap_or(Language::Zh)
-}
-
-/// Forum-scoped static translations.
-fn tf(lang: Language, key: &str) -> &'static str {
-  match (lang, key) {
-    (Language::En, "forum.title") => "Forum",
-    (_, "forum.title") => "论坛",
-    (Language::En, "forum.subtitle") => "Discuss, share, and grow together",
-    (_, "forum.subtitle") => "交流、分享、共同进步",
-    (Language::En, "forum.my_topics") => "My Topics",
-    (_, "forum.my_topics") => "我的话题",
-    (Language::En, "forum.post_topic") => "Post Topic",
-    (_, "forum.post_topic") => "发起话题",
-    (Language::En, "forum.popular_tags") => "Popular Tags",
-    (_, "forum.popular_tags") => "热门标签",
-    (Language::En, "forum.loading") => "Loading...",
-    (_, "forum.loading") => "加载中...",
-    (Language::En, "forum.related") => "💬 Related discussions",
-    (_, "forum.related") => "💬 关联讨论",
-    (Language::En, "forum.start_discussion") => "Start a discussion",
-    (_, "forum.start_discussion") => "发起讨论",
-    (Language::En, "forum.related_empty") => "No discussions about this page yet — start one!",
-    (_, "forum.related_empty") => "还没有围绕本页的讨论，欢迎发起一个！",
-    (Language::En, "forum.load_failed") => "Failed to load. Please try again later.",
-    (_, "forum.load_failed") => "加载失败，请稍后重试",
-    (Language::En, "forum.retry") => "Retry",
-    (_, "forum.retry") => "重试",
-    (Language::En, "forum.no_tags") => "No tags yet",
-    (_, "forum.no_tags") => "暂无标签",
-    (Language::En, "forum.no_topics") => "No topics yet — be the first to post!",
-    (_, "forum.no_topics") => "还没有话题，第一个发表的就是你！",
-    (Language::En, "forum.back_all") => "← All Topics",
-    (_, "forum.back_all") => "← 全部话题",
-    (Language::En, "forum.not_found") => "Topic not found",
-    (_, "forum.not_found") => "话题不存在或已被删除",
-    (Language::En, "forum.my_topics_empty") => "You haven't posted any topics yet",
-    (_, "forum.my_topics_empty") => "你还没有发表过话题",
-    (Language::En, "forum.post_first") => "Post Your First Topic",
-    (_, "forum.post_first") => "发起第一个话题",
-    (Language::En, "forum.replies") => "replies",
-    (_, "forum.replies") => "回复",
-    (Language::En, "forum.write_reply") => "Write a Reply",
-    (_, "forum.write_reply") => "撰写回复",
-    (Language::En, "forum.post_reply") => "Post Reply",
-    (_, "forum.post_reply") => "发表回复",
-    (Language::En, "forum.pending_review") => {
-      "Submitted. It will appear after a moderator approves it."
-    }
-    (_, "forum.pending_review") => "已提交，管理员审核通过后显示",
-    (Language::En, "forum.submitting") => "Submitting...",
-    (_, "forum.submitting") => "提交中...",
-    (Language::En, "forum.login_to_reply") => "Log in to reply to topics",
-    (_, "forum.login_to_reply") => "登录后才能回复话题",
-    (Language::En, "forum.login") => "Log In",
-    (_, "forum.login") => "登录",
-    (Language::En, "forum.please_login") => "Please Log In",
-    (_, "forum.please_login") => "请先登录",
-    (Language::En, "forum.login_to_post") => "Log in to post a topic",
-    (_, "forum.login_to_post") => "登录后才能发起话题",
-    (Language::En, "forum.title_label") => "Title",
-    (_, "forum.title_label") => "标题",
-    (Language::En, "forum.tag_label") => "Tag",
-    (_, "forum.tag_label") => "标签",
-    (Language::En, "forum.edit") => "Edit",
-    (_, "forum.edit") => "编辑",
-    (Language::En, "forum.preview") => "Preview",
-    (_, "forum.preview") => "预览",
-    (Language::En, "forum.publish_topic") => "Publish Topic",
-    (_, "forum.publish_topic") => "发布话题",
-    (Language::En, "forum.publishing") => "Publishing...",
-    (_, "forum.publishing") => "发布中...",
-    (Language::En, "forum.new_topic_title") => "New Topic",
-    (_, "forum.new_topic_title") => "发起话题",
-    (Language::En, "forum.ref_note") => "This topic will be linked to the content above",
-    (_, "forum.ref_note") => "本话题将关联以上原文",
-    (Language::En, "forum.topics_under_tag") => "topics under this tag",
-    (_, "forum.topics_under_tag") => "个话题",
-    _ => "—",
-  }
 }
 
 // =============================================================
@@ -131,12 +52,12 @@ fn LoadFailedState(on_retry: EventHandler<()>) -> Element {
   let lang = use_language_ctx();
   rsx! {
       div { class: "py-16 text-center",
-          p { class: "text-slate-500 dark:text-slate-400 mb-4", "{tf(lang, \"forum.load_failed\")}" }
+          p { class: "text-slate-500 dark:text-slate-400 mb-4", "{t(lang, \"forum.load_failed\")}" }
           button {
               r#type: "button",
               class: button_class(ButtonVariant::Outline, ButtonSize::Sm, UiDensity::Comfortable, ""),
               onclick: move |_| on_retry.call(()),
-              "{tf(lang, \"forum.retry\")}"
+              "{t(lang, \"forum.retry\")}"
           }
       }
   }
@@ -233,7 +154,7 @@ fn TopicCard(topic: TopicSummary) -> Element {
   } = topic;
   let detail_href = format!("/topics/{}", id);
   let when = last_reply_at.unwrap_or_else(|| created_at.clone());
-  let reply_label = format!("{} {}", reply_count, tf(lang, "forum.replies"));
+  let reply_label = format!("{} {}", reply_count, t(lang, "forum.replies"));
   rsx! {
       div { class: card_class("group rounded-xl p-5 shadow-none hover:border-primary/50 hover:shadow-sm transition-all"),
           div { class: "flex gap-4",
@@ -299,8 +220,8 @@ pub fn TopicsIndexPage() -> Element {
 
   rsx! {
       widgets::PageMeta {
-          title: tf(lang, "forum.title").to_string(),
-          description: tf(lang, "forum.subtitle").to_string(),
+          title: t(lang, "forum.title").to_string(),
+          description: t(lang, "forum.subtitle").to_string(),
           path: "/topics".to_string(),
       }
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
@@ -308,19 +229,19 @@ pub fn TopicsIndexPage() -> Element {
               // Hero
               div { class: "flex items-start justify-between mb-8 flex-wrap gap-4",
                   div {
-                      h1 { class: "text-3xl font-extrabold text-slate-900 dark:text-white", "{tf(lang, \"forum.title\")}" }
-                      p { class: "mt-2 text-slate-600 dark:text-slate-400", "{tf(lang, \"forum.subtitle\")}" }
+                      h1 { class: "text-3xl font-extrabold text-slate-900 dark:text-white", "{t(lang, \"forum.title\")}" }
+                      p { class: "mt-2 text-slate-600 dark:text-slate-400", "{t(lang, \"forum.subtitle\")}" }
                   }
                   div { class: "flex items-center gap-3",
                       if is_logged_in {
                           a { href: "/me/topics",
                               class: button_class(ButtonVariant::Outline, ButtonSize::Md, UiDensity::Comfortable, "font-semibold"),
-                              "{tf(lang, \"forum.my_topics\")}"
+                              "{t(lang, \"forum.my_topics\")}"
                           }
                       }
                       a { href: "/topics/new",
                           class: "inline-flex items-center rounded-md btn-flow px-4 py-2 text-sm font-semibold transition-all",
-                          "{tf(lang, \"forum.post_topic\")}"
+                          "{t(lang, \"forum.post_topic\")}"
                       }
                   }
               }
@@ -330,12 +251,12 @@ pub fn TopicsIndexPage() -> Element {
                   // Tag cloud (left)
                   aside { class: "lg:sticky lg:top-20 lg:self-start",
                       div { class: "rounded-xl border border-slate-300 dark:border-slate-700 p-5 bg-slate-100 dark:bg-slate-800",
-                          h3 { class: "text-base font-extrabold text-slate-900 dark:text-slate-100 mb-3", "{tf(lang, \"forum.popular_tags\")}" }
+                          h3 { class: "text-base font-extrabold text-slate-900 dark:text-slate-100 mb-3", "{t(lang, \"forum.popular_tags\")}" }
                           match tags {
-                              None => rsx! { div { class: "text-sm text-slate-400", "{tf(lang, \"forum.loading\")}" } },
-                              Some(Err(())) => rsx! { div { class: "text-sm text-slate-400", "{tf(lang, \"forum.load_failed\")}" } },
+                              None => rsx! { div { class: "text-sm text-slate-400", "{t(lang, \"forum.loading\")}" } },
+                              Some(Err(())) => rsx! { div { class: "text-sm text-slate-400", "{t(lang, \"forum.load_failed\")}" } },
                               Some(Ok(list)) if list.is_empty() => rsx! {
-                                  div { class: "text-sm text-slate-400", "{tf(lang, \"forum.no_tags\")}" }
+                                  div { class: "text-sm text-slate-400", "{t(lang, \"forum.no_tags\")}" }
                               },
                               Some(Ok(list)) => rsx! {
                                   div { class: "flex flex-wrap gap-2",
@@ -353,7 +274,7 @@ pub fn TopicsIndexPage() -> Element {
                           None => rsx! { Loading {} },
                           Some(Err(())) => rsx! { LoadFailedState { on_retry: move |_| topics_res.restart() } },
                           Some(Ok(list)) if list.is_empty() => rsx! {
-                              EmptyState { message: tf(lang, "forum.no_topics").to_string() }
+                              EmptyState { message: t(lang, "forum.no_topics").to_string() }
                           },
                           Some(Ok(list)) => rsx! {
                               div { class: "space-y-4",
@@ -401,7 +322,7 @@ pub fn TopicsByTagPage(tag: String) -> Element {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
               div { class: "mb-6",
-                  a { href: "/topics", class: "text-sm text-primary hover:underline", "{tf(lang, \"forum.back_all\")}" }
+                  a { href: "/topics", class: "text-sm text-primary hover:underline", "{t(lang, \"forum.back_all\")}" }
               }
               h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-2",
                   "#{tag}"
@@ -409,9 +330,9 @@ pub fn TopicsByTagPage(tag: String) -> Element {
               if let Some(Ok(ref list)) = topics {
                   p { class: "text-sm text-slate-500 dark:text-slate-400 mb-6",
                       if lang == Language::En {
-                          "{list.len()} {tf(lang, \"forum.topics_under_tag\")}"
+                          "{list.len()} {t(lang, \"forum.topics_under_tag\")}"
                       } else {
-                          "该标签下共 {list.len()} {tf(lang, \"forum.topics_under_tag\")}"
+                          "该标签下共 {list.len()} {t(lang, \"forum.topics_under_tag\")}"
                       }
                   }
               }
@@ -448,16 +369,16 @@ pub fn MyTopicsPage() -> Element {
   rsx! {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
-              h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "{tf(lang, \"forum.my_topics\")}" }
+              h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "{t(lang, \"forum.my_topics\")}" }
               match topics {
                   None => rsx! { Loading {} },
                   Some(Err(())) => rsx! { LoadFailedState { on_retry: move |_| res.restart() } },
                   Some(Ok(list)) if list.is_empty() => rsx! {
                       div { class: "text-center py-16",
-                          p { class: "text-slate-500 dark:text-slate-400 mb-4", "{tf(lang, \"forum.my_topics_empty\")}" }
+                          p { class: "text-slate-500 dark:text-slate-400 mb-4", "{t(lang, \"forum.my_topics_empty\")}" }
                           a { href: "/topics/new",
                               class: "inline-flex items-center px-4 py-2 rounded-lg btn-flow text-sm font-semibold transition-all",
-                              "{tf(lang, \"forum.post_first\")}"
+                              "{t(lang, \"forum.post_first\")}"
                           }
                       }
                   },
@@ -485,7 +406,7 @@ pub fn TopicDetailPage(id: i32) -> Element {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
               div { class: "mb-6",
-                  a { href: "/topics", class: "text-sm text-primary hover:underline", "{tf(lang, \"forum.back_all\")}" }
+                  a { href: "/topics", class: "text-sm text-primary hover:underline", "{t(lang, \"forum.back_all\")}" }
               }
               SuspenseBoundary {
                   fallback: |_| rsx! { Loading {} },
@@ -518,7 +439,7 @@ fn TopicDetailLoaded(id: i32) -> Element {
             on_replied: move |new_detail: TopicDetail| replied.set(Some(new_detail)),
         }
     },
-    None => rsx! { widgets::NotFound { message: tf(lang, "forum.not_found") } },
+    None => rsx! { widgets::NotFound { message: t(lang, "forum.not_found") } },
   }
 }
 
@@ -539,9 +460,9 @@ fn TopicDetailBody(detail: TopicDetail, on_replied: EventHandler<TopicDetail>) -
   let lang = use_language_ctx();
   let blog_id = format!("topic:{}", id);
   let replies_heading = if lang == Language::En {
-    format!("{} {}", replies.len(), tf(lang, "forum.replies"))
+    format!("{} {}", replies.len(), t(lang, "forum.replies"))
   } else {
-    format!("{} 条{}", replies.len(), tf(lang, "forum.replies"))
+    format!("{} 条{}", replies.len(), t(lang, "forum.replies"))
   };
   rsx! {
       article {
@@ -643,7 +564,7 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
         Ok(posted) => {
           content.set(String::new());
           if posted.pending_review {
-            notice.set(Some(tf(lang, "forum.pending_review").to_string()));
+            notice.set(Some(t(lang, "forum.pending_review").to_string()));
           }
           on_replied.call(posted.topic);
         }
@@ -658,12 +579,12 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
   if !is_logged_in {
     return rsx! {
         div { class: card_class("rounded-xl p-6 text-center shadow-none"),
-            p { class: "text-sm text-slate-500 dark:text-slate-400 mb-3", "{tf(lang, \"forum.login_to_reply\")}" }
+            p { class: "text-sm text-slate-500 dark:text-slate-400 mb-3", "{t(lang, \"forum.login_to_reply\")}" }
             if let Some(mut auth) = auth_modal {
                 Button {
                     onclick: move |_| auth.set(true),
                     class: "font-semibold",
-                    "{tf(lang, \"forum.login\")}"
+                    "{t(lang, \"forum.login\")}"
                 }
             }
         }
@@ -673,13 +594,13 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
   rsx! {
       div { class: card_class("rounded-xl overflow-hidden shadow-none"),
           div { class: "px-5 py-3 border-b border-border bg-muted/50",
-              span { class: "text-sm font-medium text-slate-700 dark:text-slate-300", "{tf(lang, \"forum.write_reply\")}" }
+              span { class: "text-sm font-medium text-slate-700 dark:text-slate-300", "{t(lang, \"forum.write_reply\")}" }
           }
           div { class: "px-5 py-4",
               Textarea {
                   class: "h-32 border-0 bg-transparent px-0 focus-visible:ring-0 resize-y",
                   placeholder: "Markdown...",
-                  "aria-label": tf(lang, "forum.write_reply"),
+                  "aria-label": t(lang, "forum.write_reply"),
                   value: content(),
                   on_value_change: move |v: String| content.set(v),
               }
@@ -696,7 +617,7 @@ fn ReplyComposer(topic_id: i32, on_replied: EventHandler<TopicDetail>) -> Elemen
                   class: if submitting() { "" } else { "btn-flow" },
                   disabled: submitting(),
                   onclick: handle_submit,
-                  if submitting() { "{tf(lang, \"forum.submitting\")}" } else { "{tf(lang, \"forum.post_reply\")}" }
+                  if submitting() { "{t(lang, \"forum.submitting\")}" } else { "{t(lang, \"forum.post_reply\")}" }
               }
           }
       }
@@ -762,7 +683,7 @@ pub fn NewTopicPage() -> Element {
         Ok(summary) if summary.pending_review => {
           title.set(String::new());
           content.set(String::new());
-          notice.set(Some(tf(lang, "forum.pending_review").to_string()));
+          notice.set(Some(t(lang, "forum.pending_review").to_string()));
         }
         Ok(summary) => {
           let url = format!("/topics/{}", summary.id);
@@ -781,13 +702,13 @@ pub fn NewTopicPage() -> Element {
         section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
             LocalContainer {
                 div { class: card_class("max-w-md mx-auto rounded-xl p-8 text-center shadow-none"),
-                    h2 { class: "text-xl font-bold text-slate-900 dark:text-white mb-2", "{tf(lang, \"forum.please_login\")}" }
-                    p { class: "text-sm text-slate-500 dark:text-slate-400 mb-4", "{tf(lang, \"forum.login_to_post\")}" }
+                    h2 { class: "text-xl font-bold text-slate-900 dark:text-white mb-2", "{t(lang, \"forum.please_login\")}" }
+                    p { class: "text-sm text-slate-500 dark:text-slate-400 mb-4", "{t(lang, \"forum.login_to_post\")}" }
                     if let Some(mut a) = auth_modal {
                         Button {
                             onclick: move |_| a.set(true),
                             class: "font-semibold",
-                            "{tf(lang, \"forum.login\")}"
+                            "{t(lang, \"forum.login\")}"
                         }
                     }
                 }
@@ -807,9 +728,9 @@ pub fn NewTopicPage() -> Element {
       section { class: "py-10 min-h-screen bg-white dark:bg-slate-950",
           LocalContainer {
               div { class: "mb-6",
-                  a { href: "/topics", class: "text-sm text-primary hover:underline", "{tf(lang, \"forum.back_all\")}" }
+                  a { href: "/topics", class: "text-sm text-primary hover:underline", "{t(lang, \"forum.back_all\")}" }
               }
-              h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "{tf(lang, \"forum.new_topic_title\")}" }
+              h1 { class: "text-2xl font-extrabold text-slate-900 dark:text-white mb-6", "{t(lang, \"forum.new_topic_title\")}" }
 
               if has_ref {
                   div { class: "mb-6",
@@ -820,13 +741,13 @@ pub fn NewTopicPage() -> Element {
                               title: path_clone.clone().unwrap_or_default(),
                           }
                       }
-                      p { class: "mt-2 text-xs text-slate-500", "{tf(lang, \"forum.ref_note\")}" }
+                      p { class: "mt-2 text-xs text-slate-500", "{t(lang, \"forum.ref_note\")}" }
                   }
               }
 
               // 标题
               div { class: "mb-4",
-                  label { r#for: "topic-title", class: "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5", "{tf(lang, \"forum.title_label\")}" }
+                  label { r#for: "topic-title", class: "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5", "{t(lang, \"forum.title_label\")}" }
                   Input {
                       id: "topic-title",
                       r#type: "text",
@@ -837,7 +758,7 @@ pub fn NewTopicPage() -> Element {
               }
               // Tag
               div { class: "mb-4",
-                  label { r#for: "topic-tag", class: "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5", "{tf(lang, \"forum.tag_label\")}" }
+                  label { r#for: "topic-tag", class: "block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5", "{t(lang, \"forum.tag_label\")}" }
                   Input {
                       id: "topic-tag",
                       r#type: "text",
@@ -858,8 +779,8 @@ pub fn NewTopicPage() -> Element {
                   value: editor_tab.clone(),
                   on_value_change: move |v: String| is_preview.set(v == "preview"),
                   TabsList { class: "h-8 mb-2",
-                      TabsTrigger { value: "edit", class: "py-1 text-xs", "{tf(lang, \"forum.edit\")}" }
-                      TabsTrigger { value: "preview", class: "py-1 text-xs", "{tf(lang, \"forum.preview\")}" }
+                      TabsTrigger { value: "edit", class: "py-1 text-xs", "{t(lang, \"forum.edit\")}" }
+                      TabsTrigger { value: "preview", class: "py-1 text-xs", "{t(lang, \"forum.preview\")}" }
                   }
                   TabsContent { value: editor_tab, class: "mt-0",
                       if !is_preview() {
@@ -867,7 +788,7 @@ pub fn NewTopicPage() -> Element {
                               class: "h-64 font-mono",
                               value: content(),
                               placeholder: "Markdown...",
-                              "aria-label": tf(lang, "forum.edit"),
+                              "aria-label": t(lang, "forum.edit"),
                               on_value_change: move |v: String| content.set(v),
                           }
                       } else {
@@ -891,7 +812,7 @@ pub fn NewTopicPage() -> Element {
                       class: if submitting() { "" } else { "btn-flow" },
                       disabled: submitting(),
                       onclick: handle_submit,
-                      if submitting() { "{tf(lang, \"forum.publishing\")}" } else { "{tf(lang, \"forum.publish_topic\")}" }
+                      if submitting() { "{t(lang, \"forum.publishing\")}" } else { "{t(lang, \"forum.publish_topic\")}" }
                   }
               }
           }
@@ -924,17 +845,17 @@ pub fn DiscussionPanel(resource_kind: String, resource_path: String) -> Element 
   rsx! {
       section { class: "mt-12 border-t border-slate-200 dark:border-slate-800 pt-8",
           div { class: "flex items-center justify-between mb-5",
-              h3 { class: "text-lg font-bold text-slate-900 dark:text-white", "{tf(lang, \"forum.related\")}" }
+              h3 { class: "text-lg font-bold text-slate-900 dark:text-white", "{t(lang, \"forum.related\")}" }
               a { href: "{new_href}",
                   class: "inline-flex items-center px-3 py-1.5 rounded-lg btn-flow text-xs font-semibold transition-all",
-                  "{tf(lang, \"forum.start_discussion\")}"
+                  "{t(lang, \"forum.start_discussion\")}"
               }
           }
           match topics {
-              None => rsx! { div { class: "text-sm text-slate-400", "{tf(lang, \"forum.loading\")}" } },
+              None => rsx! { div { class: "text-sm text-slate-400", "{t(lang, \"forum.loading\")}" } },
               Some(list) if list.is_empty() => rsx! {
                   div { class: "text-sm text-slate-500 dark:text-slate-400 py-4 text-center",
-                      "{tf(lang, \"forum.related_empty\")}"
+                      "{t(lang, \"forum.related_empty\")}"
                   }
               },
               Some(list) => rsx! {

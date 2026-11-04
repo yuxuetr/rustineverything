@@ -1,7 +1,7 @@
 use crate::server::{
   get_case, list_case_categories, list_case_tags, list_cases, Case, CaseSummary, TagSummary,
 };
-use app_core::i18n::Language;
+use app_core::i18n::{t, Language};
 use dioxus::prelude::try_use_context;
 use dioxus::prelude::*;
 use dioxus_shadcn::{
@@ -12,64 +12,6 @@ use widgets::Markdown;
 
 fn use_language_ctx() -> Language {
   try_use_context::<Signal<Language>>().map(|s| s()).unwrap_or(Language::Zh)
-}
-
-fn tc(lang: Language, key: &str) -> &'static str {
-  match (lang, key) {
-        // 页面标题
-        (Language::En, "case.load_failed")    => "Failed to load. Please try again later.",
-        (Language::Zh, "case.load_failed")    => "加载失败，请稍后再试",
-        (Language::En, "case.title")          => "Rust Project Showcase",
-        (Language::Zh, "case.title")          => "Rust 项目案例库",
-        (Language::En, "case.subtitle")       => "Discover real-world Rust frontend, backend, fullstack, AI, Web3, CLI, embedded and tooling projects.",
-        (Language::Zh, "case.subtitle")       => "发现真实世界中的 Rust 前端、后端、全栈、AI、Web3、CLI、嵌入式和工具项目。",
-        (Language::En, "case.submit")         => "Submit Your Project",
-        (Language::Zh, "case.submit")         => "提交你的项目",
-        // 搜索
-        (Language::En, "case.search")         => "Search by name, description, category or tag...",
-        (Language::Zh, "case.search")         => "搜索项目名称、描述、分类或标签...",
-        // 过滤
-        (Language::En, "case.all")            => "All",
-        (Language::Zh, "case.all")            => "全部",
-        (Language::En, "case.filter")         => "Filter by Tag",
-        (Language::Zh, "case.filter")         => "标签筛选",
-        (Language::En, "case.no_tags")        => "No tags",
-        (Language::Zh, "case.no_tags")        => "暂无标签",
-        (Language::En, "case.loading")        => "Loading...",
-        (Language::Zh, "case.loading")        => "加载中...",
-        (Language::En, "case.clear")          => "Clear",
-        (Language::Zh, "case.clear")          => "清除",
-        // 卡片
-        (Language::En, "case.detail")         => "Details",
-        (Language::Zh, "case.detail")         => "详情",
-        (Language::En, "case.featured")       => "⭐ Featured",
-        (Language::Zh, "case.featured")       => "⭐ 精选",
-        (Language::En, "case.featured_label") => "Featured",
-        (Language::Zh, "case.featured_label") => "精选",
-        // 无结果
-        (Language::En, "case.empty")          => "No matching cases found.",
-        (Language::Zh, "case.empty")          => "暂无匹配案例。",
-        // 详情页
-        (Language::En, "case.not_found")      => "Case not found",
-        (Language::Zh, "case.not_found")      => "案例未找到",
-        (Language::En, "case.back")           => "← Back to Showcase",
-        (Language::Zh, "case.back")           => "← 返回案例库",
-        (Language::En, "case.view_repo")      => "View Repo",
-        (Language::Zh, "case.view_repo")      => "查看仓库",
-        (Language::En, "case.visit_site")     => "Visit Site",
-        (Language::Zh, "case.visit_site")     => "访问网站",
-        (Language::En, "case.author_prefix")  => "Author: ",
-        (Language::Zh, "case.author_prefix")  => "作者：",
-        (Language::En, "case.no_readme")      => "No README provided for this case.",
-        (Language::Zh, "case.no_readme")      => "该案例暂未提供 README.md。",
-        (Language::En, "case.project_info")   => "Project Info",
-        (Language::Zh, "case.project_info")   => "项目信息",
-        (Language::En, "case.cat_field")      => "Category",
-        (Language::Zh, "case.cat_field")      => "分类",
-        (Language::En, "case.lang_field")     => "Language",
-        (Language::Zh, "case.lang_field")     => "语言",
-        _ => "",
-    }
 }
 
 fn category_label(lang: Language, c: &str) -> &'static str {
@@ -178,8 +120,8 @@ pub fn CasesIndexPage() -> Element {
 
   rsx! {
       widgets::PageMeta {
-          title: tc(lang, "case.title"),
-          description: tc(lang, "case.subtitle"),
+          title: t(lang, "case.title"),
+          description: t(lang, "case.subtitle"),
           path: "/case".to_string(),
       }
       section { class: "py-12 min-h-screen bg-white dark:bg-slate-950",
@@ -187,9 +129,9 @@ pub fn CasesIndexPage() -> Element {
               div { class: "flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-8",
                   div {
                       p { class: "text-sm font-semibold uppercase tracking-widest text-flow mb-2", "Showcase" }
-                      h1 { class: "text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white", "{tc(lang, \"case.title\")}" }
+                      h1 { class: "text-3xl md:text-4xl font-extrabold text-slate-900 dark:text-white", "{t(lang, \"case.title\")}" }
                       p { class: "mt-3 max-w-2xl text-slate-600 dark:text-slate-400",
-                          "{tc(lang, \"case.subtitle\")}"
+                          "{t(lang, \"case.subtitle\")}"
                       }
                   }
                   a {
@@ -200,7 +142,7 @@ pub fn CasesIndexPage() -> Element {
                       svg { class: "w-4 h-4", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                           path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M12 4v16m8-8H4" }
                       }
-                      "{tc(lang, \"case.submit\")}"
+                      "{t(lang, \"case.submit\")}"
                   }
               }
 
@@ -208,8 +150,8 @@ pub fn CasesIndexPage() -> Element {
                   Input {
                       r#type: "search",
                       value: query(),
-                      placeholder: tc(lang, "case.search"),
-                      "aria-label": tc(lang, "case.search"),
+                      placeholder: t(lang, "case.search"),
+                      "aria-label": t(lang, "case.search"),
                       class: "h-12 rounded-xl px-4",
                       on_value_change: move |v: String| query.set(v),
                   }
@@ -217,7 +159,7 @@ pub fn CasesIndexPage() -> Element {
 
               div { class: "mb-8 flex flex-wrap gap-2",
                   CategoryChip {
-                      label: tc(lang, "case.all").to_string(),
+                      label: t(lang, "case.all").to_string(),
                       value: None,
                       count: None,
                       current: selected_category(),
@@ -241,10 +183,10 @@ pub fn CasesIndexPage() -> Element {
               }
 
               div { class: "mb-6 flex flex-wrap items-center gap-2",
-                  h2 { class: "text-sm font-bold text-slate-900 dark:text-white mr-2", "{tc(lang, \"case.filter\")}" }
+                  h2 { class: "text-sm font-bold text-slate-900 dark:text-white mr-2", "{t(lang, \"case.filter\")}" }
                   match tags {
                       Some(list) if list.is_empty() => rsx! {
-                          p { class: "text-sm text-slate-500 dark:text-slate-400", "{tc(lang, \"case.no_tags\")}" }
+                          p { class: "text-sm text-slate-500 dark:text-slate-400", "{t(lang, \"case.no_tags\")}" }
                       },
                       Some(list) => rsx! {
                           for tag in list.iter() {
@@ -256,7 +198,7 @@ pub fn CasesIndexPage() -> Element {
                               }
                           }
                       },
-                      None => rsx! { p { class: "text-sm text-slate-400", "{tc(lang, \"case.loading\")}" } },
+                      None => rsx! { p { class: "text-sm text-slate-400", "{t(lang, \"case.loading\")}" } },
                   }
                   if selected_tag().is_some() {
                       Button {
@@ -264,7 +206,7 @@ pub fn CasesIndexPage() -> Element {
                           size: ButtonSize::Sm,
                           class: "h-auto min-h-0 px-1 text-xs text-primary",
                           onclick: move |_| selected_tag.set(None),
-                          "{tc(lang, \"case.clear\")}"
+                          "{t(lang, \"case.clear\")}"
                       }
                   }
               }
@@ -298,7 +240,7 @@ fn CasesGrid(query: String, category: Option<String>, tag: Option<String>) -> El
   if list.is_empty() {
     rsx! {
         Empty { class: "rounded-2xl py-20",
-            EmptyDescription { "{tc(lang, \"case.empty\")}" }
+            EmptyDescription { "{t(lang, \"case.empty\")}" }
         }
     }
   } else {
@@ -403,7 +345,7 @@ fn CaseCard(case: CaseSummary) -> Element {
               div { class: "mb-3 flex items-center gap-2 flex-wrap",
                   span { class: "rounded-full px-2.5 py-1 text-[11px] font-bold {badge}", "{emoji} {cat_label}" }
                   if case.favorite {
-                      span { class: "rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white", "{tc(lang, \"case.featured\")}" }
+                      span { class: "rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold text-white", "{t(lang, \"case.featured\")}" }
                   }
                   span { class: "rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider", "{case.language}" }
               }
@@ -446,7 +388,7 @@ fn CaseCard(case: CaseSummary) -> Element {
                       }
                       a { href: "{href}",
                           class: "inline-flex items-center gap-1 rounded-lg btn-flow px-3 py-1.5 text-[11px] font-bold transition-colors",
-                          "{tc(lang, \"case.detail\")}"
+                          "{t(lang, \"case.detail\")}"
                           svg { class: "w-3 h-3", fill: "none", stroke: "currentColor", view_box: "0 0 24 24",
                               path { stroke_linecap: "round", stroke_linejoin: "round", stroke_width: "2", d: "M9 5l7 7-7 7" }
                           }
@@ -491,12 +433,12 @@ fn CaseDetailLoaded(slug: String, footer: Element) -> Element {
         }
         CaseDetailBody { case, footer: footer.clone() }
     },
-    Some(Err(_)) => rsx! { widgets::LoadFailed { message: tc(lang, "case.load_failed") } },
+    Some(Err(_)) => rsx! { widgets::LoadFailed { message: t(lang, "case.load_failed") } },
     _ => rsx! {
-        widgets::NotFound { message: tc(lang, "case.not_found") }
+        widgets::NotFound { message: t(lang, "case.not_found") }
         div { class: "text-center",
             a { href: "/case", class: button_class(ButtonVariant::Primary, ButtonSize::Md, UiDensity::Comfortable, "font-semibold"),
-                "{tc(lang, \"case.back\")}"
+                "{t(lang, \"case.back\")}"
             }
         }
     },
@@ -510,7 +452,7 @@ fn CaseDetailBody(case: Case, footer: Element) -> Element {
   let markdown_id = format!("case:{}", case.slug);
   rsx! {
       div { class: "max-w-5xl mx-auto",
-          a { href: "/case", class: "text-sm font-semibold text-primary hover:underline", "{tc(lang, \"case.back\")}" }
+          a { href: "/case", class: "text-sm font-semibold text-primary hover:underline", "{t(lang, \"case.back\")}" }
           div { class: "mt-6 overflow-hidden rounded-3xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50",
               div { class: if case.cover_url.is_some() { "grid grid-cols-1 lg:grid-cols-[1.2fr_1fr] gap-0" } else { "grid grid-cols-1" },
                   div { class: "p-8 md:p-10",
@@ -523,7 +465,7 @@ fn CaseDetailBody(case: Case, footer: Element) -> Element {
                           }
                           if case.favorite {
                               span { class: "rounded-full bg-rose-100 dark:bg-rose-900/30 px-3 py-1 text-xs font-semibold text-rose-700 dark:text-rose-300",
-                                  "{tc(lang, \"case.featured_label\")}"
+                                  "{t(lang, \"case.featured_label\")}"
                               }
                           }
                       }
@@ -542,7 +484,7 @@ fn CaseDetailBody(case: Case, footer: Element) -> Element {
                               target: "_blank",
                               rel: "noopener noreferrer",
                               class: "inline-flex rounded-lg bg-slate-900 dark:bg-white px-4 py-2 text-sm font-semibold text-white dark:text-slate-900 hover:opacity-90",
-                              "{tc(lang, \"case.view_repo\")}"
+                              "{t(lang, \"case.view_repo\")}"
                           }
                           if let Some(site) = case.website.as_ref() {
                               a {
@@ -550,12 +492,12 @@ fn CaseDetailBody(case: Case, footer: Element) -> Element {
                                   target: "_blank",
                                   rel: "noopener noreferrer",
                                   class: button_class(ButtonVariant::Outline, ButtonSize::Md, UiDensity::Comfortable, "font-semibold hover:border-primary"),
-                                  "{tc(lang, \"case.visit_site\")}"
+                                  "{t(lang, \"case.visit_site\")}"
                               }
                           }
                       }
                       div { class: "mt-5 text-sm text-slate-500 dark:text-slate-400",
-                          "{tc(lang, \"case.author_prefix\")}"
+                          "{t(lang, \"case.author_prefix\")}"
                           if let Some(author_url) = case.author_url.as_ref() {
                               a { href: "{author_url}", target: "_blank", rel: "noopener noreferrer", class: "hover:text-primary", "{case.author}" }
                           } else {
@@ -580,19 +522,19 @@ fn CaseDetailBody(case: Case, footer: Element) -> Element {
                   if let Some(readme) = case.readme_md.as_ref() {
                       Markdown { content: crate::text::demote_h1(readme), blog_id: markdown_id }
                   } else {
-                      div { class: "text-slate-500 dark:text-slate-400", "{tc(lang, \"case.no_readme\")}" }
+                      div { class: "text-slate-500 dark:text-slate-400", "{t(lang, \"case.no_readme\")}" }
                   }
               }
               aside { class: "lg:sticky lg:top-20 lg:self-start space-y-4",
                   div { class: "rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 p-5",
-                      h2 { class: "text-sm font-bold text-slate-900 dark:text-white mb-3", "{tc(lang, \"case.project_info\")}" }
+                      h2 { class: "text-sm font-bold text-slate-900 dark:text-white mb-3", "{t(lang, \"case.project_info\")}" }
                       dl { class: "space-y-3 text-sm",
                           div {
-                              dt { class: "text-slate-500 dark:text-slate-400", "{tc(lang, \"case.cat_field\")}" }
+                              dt { class: "text-slate-500 dark:text-slate-400", "{t(lang, \"case.cat_field\")}" }
                               dd { class: "font-semibold text-slate-900 dark:text-white", "{category}" }
                           }
                           div {
-                              dt { class: "text-slate-500 dark:text-slate-400", "{tc(lang, \"case.lang_field\")}" }
+                              dt { class: "text-slate-500 dark:text-slate-400", "{t(lang, \"case.lang_field\")}" }
                               dd { class: "font-semibold text-slate-900 dark:text-white", "{case.language}" }
                           }
                           if case.stars > 0 {
