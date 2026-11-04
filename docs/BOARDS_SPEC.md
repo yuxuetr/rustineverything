@@ -21,7 +21,7 @@ Phase 6 把 Rust 应用领域拆成 5 个垂直板块（嵌入式 / AI / Web3 / 
 
 ```
 crates/modules/<board>/src/
-├── lib.rs        ── 模块声明 + impl AppModule
+├── lib.rs        ── 模块声明
 ├── <board>.rs    ── Dioxus UI 组件（落地页 + 详情页占位）
 ├── server.rs     ── 2 个 server fn + ArticleSummary 结构
 └── text.rs       ── 5 个纯函数 helpers + Subtopic / FeaturedCrate 数据

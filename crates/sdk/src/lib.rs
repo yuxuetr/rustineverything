@@ -1,5 +1,4 @@
-//! 业务模块共享的类型：审核提交 [`ModerationSubmission`] / [`ImageRef`]，
-//! 以及模块初始化约定 [`AppModule`]。
+//! 业务模块共享的类型：审核提交 [`ModerationSubmission`] / [`ImageRef`]。
 use serde::{Deserialize, Serialize};
 
 /// 提交给审核的内容（评论 / 话题 / 标注等业务模块 → `module-moderation`）。
