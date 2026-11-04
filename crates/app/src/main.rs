@@ -115,6 +115,12 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
 })();
 "#;
 
+/// 见 HeadAssets：`?lang=` 优先、其次 `site_lang` cookie，英文时把 `<html lang>` 改成 `en`。
+const LANG_BOOT_SCRIPT: &str =
+  "(function(){try{var q=new URLSearchParams(location.search).get('lang');\
+var c=(document.cookie.match(/(?:^|; )site_lang=([^;]*)/)||[])[1];\
+var l=(q==='en'||q==='zh')?q:c;if(l==='en')document.documentElement.lang='en';}catch(e){}})();";
+
 /// 本次编译带进来的模块 id（docs/FEATURE_TIERS.md DL2）。导航 / ModuleGate / sitemap /
 /// 搜索只认这个集合；site.json 的模块开关只能在其中再关。
 fn compiled_modules() -> Vec<&'static str> {
@@ -432,6 +438,8 @@ pub fn use_session_user() -> Signal<Option<SessionUser>> {
 #[component]
 fn HeadAssets() -> Element {
   rsx! {
+      // <html lang> 跟首屏语言走（index.html 写死 zh-CN）；规则同 i18n::pick_language
+      document::Script { {LANG_BOOT_SCRIPT} }
       // Head links
       document::Link { rel: "icon", href: FAVICON }
       // feed 自动发现（O4）：/feed.xml 是 Atom。
@@ -511,25 +519,6 @@ fn auth_modal(show: Signal<bool>) -> Element {
 #[component]
 fn App() -> Element {
   init_i18n();
-
-  // 语言持久化恢复：论坛等模块用 `<a href>` 整页跳转（如 /topics/new、
-  // 评论/回复后的重定向）会重载整个应用，内存中的 `Signal<Language>`
-  // 会被重置为默认 Zh。这里在挂载后从 `site_lang` cookie（LangPicker
-  // 切换时写入）恢复用户选择，保证跳转 / 刷新后仍是英文页面。
-  {
-    let mut lang = crate::i18n::use_i18n();
-    use_effect(move || {
-      let saved = widgets::browser::cookie("site_lang");
-      let want = if saved.as_deref() == Some("en") {
-        crate::i18n::Language::En
-      } else {
-        crate::i18n::Language::Zh
-      };
-      if *lang.peek() != want {
-        lang.set(want);
-      }
-    });
-  }
 
   let show_auth = use_signal(|| false);
   use_context_provider(|| show_auth);
