@@ -145,11 +145,17 @@ pub fn build_atom_feed(
   out
 }
 
-/// 构造 `robots.txt` 文本：允许所有爬虫，sitemap 链接到当前 base_url。
+/// 构造 `robots.txt` 文本：允许所有爬虫，挡掉要登录的页面（爬到也只有登录提示，
+/// 占抓取配额），sitemap 链接到当前 base_url。
 pub fn build_robots_txt(base_url: &str) -> String {
   let sitemap = join_url(base_url, "/sitemap.xml");
-  format!("User-agent: *\nAllow: /\n\nSitemap: {}\n", sitemap)
+  let disallow: String = ROBOTS_DISALLOW.iter().map(|p| format!("Disallow: {p}\n")).collect();
+  format!("User-agent: *\nAllow: /\n{disallow}\nSitemap: {sitemap}\n")
 }
+
+/// 只有登录用户有意义的路径（管理后台、个人页、发帖页）。`/api/` 不挡：搜索引擎渲染页面时
+/// 客户端会调 server fn，挡了可能拿不到内容。
+const ROBOTS_DISALLOW: &[&str] = &["/admin", "/me/", "/topics/new"];
 
 /// Atom 的 `<updated>` 必须是 RFC 3339 日期时间（G7）。内容 frontmatter 多为
 /// `YYYY-MM-DD`，补成当天 0 点 UTC；已带时间的原样输出。
@@ -260,14 +266,11 @@ mod tests {
 
   #[test]
   fn robots_txt_includes_sitemap_url() {
-    assert_eq!(
-      build_robots_txt("https://example.com"),
-      "User-agent: *\nAllow: /\n\nSitemap: https://example.com/sitemap.xml\n"
-    );
+    let expected =
+      "User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /me/\nDisallow: /topics/new\n\
+                    \nSitemap: https://example.com/sitemap.xml\n";
+    assert_eq!(build_robots_txt("https://example.com"), expected);
     // 末尾斜杠也能正确处理
-    assert_eq!(
-      build_robots_txt("https://example.com/"),
-      "User-agent: *\nAllow: /\n\nSitemap: https://example.com/sitemap.xml\n"
-    );
+    assert_eq!(build_robots_txt("https://example.com/"), expected);
   }
 }
