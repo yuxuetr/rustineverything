@@ -79,7 +79,7 @@ tags: [rust, welcome]
 
 代码块支持：
 
-- 语言高亮（PrismJS 在 `assets/js/prism-*.min.js`）
+- 语言高亮（PrismJS core + 语言包合在 `assets/js/prism.bundle.min.js`，页面出现代码块时才加载；加语言见文件头注释）
 - 代码 Copy 按钮
 - ```mermaid 块自动调用 `mermaid.run`
 
