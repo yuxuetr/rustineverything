@@ -3,7 +3,9 @@ use dioxus_shadcn::{
   badge_class, card_class, BadgeVariant, Empty, EmptyDescription, Spinner, SpinnerSize, TreeItem,
 };
 
-use crate::server::{get_doc_content, list_doc_tree, DocTreeNode};
+use crate::server::{
+  doc_nav, get_doc_content, list_doc_volumes, DocTreeNode, DocVolume, CARD_CHAPTERS,
+};
 use widgets::Markdown;
 
 use app_core::i18n::{t, Language};
@@ -49,7 +51,7 @@ pub fn Docs() -> Element {
 #[component]
 fn DocsIndexInner() -> Element {
   let lang = current_lang();
-  let tree = use_server_future(|| async move { list_doc_tree().await.unwrap_or_default() })?;
+  let tree = use_server_future(|| async move { list_doc_volumes().await.unwrap_or_default() })?;
 
   rsx! {
       div { class: "max-w-7xl mx-auto flex",
@@ -57,9 +59,9 @@ fn DocsIndexInner() -> Element {
               aside { class: "hidden lg:block shrink-0 w-64 sticky top-14 h-[calc(100vh-3.5rem)] overflow-y-auto border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 pt-8 pb-12 px-4",
                   nav {
                       h3 { class: "text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 px-3 mb-4", "{t(lang, \"docs.nav\")}" }
-                      if let Some(ref nodes) = tree() {
-                          for node in nodes.iter() {
-                              {render_sidebar_link(node, "")}
+                      if let Some(ref vols) = tree() {
+                          for vol in vols.iter() {
+                              {render_sidebar_link(vol)}
                           }
                       }
                   }
@@ -78,10 +80,10 @@ fn DocsIndexInner() -> Element {
 
                       // 分类卡片
                       match tree() {
-                          Some(nodes) if !nodes.is_empty() => rsx! {
+                          Some(vols) if !vols.is_empty() => rsx! {
                               div { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6",
-                                  for node in nodes.iter() {
-                                      {render_doc_card(node)}
+                                  for vol in vols.iter() {
+                                      {render_doc_card(vol)}
                                   }
                               }
                           },
@@ -101,9 +103,10 @@ fn DocsIndexInner() -> Element {
 }
 
 /// 侧栏链接：一级分类项
-fn render_sidebar_link(node: &DocTreeNode, _active: &str) -> Element {
+fn render_sidebar_link(vol: &DocVolume) -> Element {
+  let node = &vol.node;
   let href = if node.has_content { doc_href(&node.path) } else { "/docs".to_string() };
-  let child_count = count_leaves(node);
+  let child_count = vol.pages;
 
   rsx! {
       Link {
@@ -117,27 +120,17 @@ fn render_sidebar_link(node: &DocTreeNode, _active: &str) -> Element {
   }
 }
 
-/// 统计节点下的叶子文档数
-fn count_leaves(node: &DocTreeNode) -> usize {
-  if node.children.is_empty() {
-    return if node.has_content { 1 } else { 0 };
-  }
-  let mut count = if node.has_content { 1 } else { 0 };
-  for child in &node.children {
-    count += count_leaves(child);
-  }
-  count
-}
-
-/// 文档分类卡片
-fn render_doc_card(node: &DocTreeNode) -> Element {
+/// 卷卡片：标题、页数、前几章
+fn render_doc_card(vol: &DocVolume) -> Element {
   let lang = current_lang();
+  let node = &vol.node;
   let href = if node.has_content { doc_href(&node.path) } else { "/docs".to_string() };
-  let child_count = count_leaves(node);
+  let child_count = vol.pages;
 
-  // 子项标题列表（最多显示 5 个）
-  let child_titles: Vec<String> = node.children.iter().take(5).map(|c| c.title.clone()).collect();
-  let has_more = node.children.len() > 5;
+  // 子项标题列表（服务端多给一个，用来判断有没有更多）
+  let child_titles: Vec<String> =
+    node.children.iter().take(CARD_CHAPTERS).map(|c| c.title.clone()).collect();
+  let has_more = node.children.len() > CARD_CHAPTERS;
 
   rsx! {
       Link {
@@ -216,7 +209,12 @@ pub fn DocPage(path: Vec<String>, footer: Element) -> Element {
 /// 有正文的节点值为站内路径（可导航），没有正文的值为 `group:<path>`（只展开）。
 #[component]
 fn DocTree(active_path: String) -> Element {
-  let tree = use_server_future(|| async move { list_doc_tree().await.unwrap_or_default() })?;
+  // 只取当前卷的完整子树；同一卷内跳页 volume 不变，不会重取
+  let volume = active_path.split('/').next().unwrap_or_default().to_string();
+  let tree =
+    use_server_future(use_reactive!(
+      |volume| async move { doc_nav(volume).await.unwrap_or_default() }
+    ))?;
   let Some(nodes) = tree() else {
     return VNode::empty();
   };

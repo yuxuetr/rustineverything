@@ -43,7 +43,7 @@ pub use registry::{
   clear_for_tests, list_registered, register, registered_count, ComponentRegistry, MdxComponent,
 };
 pub use seo::{
-  build_canonical, get_seo_base_url, inject_seo, page_title, website_schema, PageMeta,
+  build_canonical, get_seo_base_url, inject_seo, lang_path, page_title, website_schema, PageMeta,
   PageMetaTags, SITE_NAME,
 };
 pub use status::{LoadFailed, NotFound};

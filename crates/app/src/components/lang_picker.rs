@@ -17,7 +17,7 @@ use crate::i18n::{t, use_i18n, Language};
 /// 语言 cookie 名（与 App 启动时的恢复逻辑保持一致）。
 /// 论坛等模块用 `<a href>` 整页跳转会重置内存中的语言信号，
 /// 写入 cookie 后可在下次加载时恢复，避免回退到中文。
-const LANG_COOKIE_NAME: &str = "site_lang";
+use crate::i18n::LANG_COOKIE as LANG_COOKIE_NAME;
 
 /// 可选语言表：`(枚举, cookie 值, 顶部按钮短标签, 下拉项完整名称)`。
 ///

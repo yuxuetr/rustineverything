@@ -128,6 +128,12 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
 })();
 "#;
 
+/// 见 HeadAssets：`?lang=` 优先、其次 `site_lang` cookie，英文时把 `<html lang>` 改成 `en`。
+const LANG_BOOT_SCRIPT: &str =
+  "(function(){try{var q=new URLSearchParams(location.search).get('lang');\
+var c=(document.cookie.match(/(?:^|; )site_lang=([^;]*)/)||[])[1];\
+var l=(q==='en'||q==='zh')?q:c;if(l==='en')document.documentElement.lang='en';}catch(e){}})();";
+
 /// 当前主题的 CSS。以前用 `use_resource` 在 hydration 之后才拉，SSR 的 HTML 里没有
 /// 主题变量，每次打开页面都先按默认色绘制、再跳成主题色（背景灰 → 白、主色变色）。
 /// 现在首屏经 `use_server_future` 随 SSR 下发；用户切换主题（`ThemeVersion` 变化）时
@@ -483,6 +489,8 @@ fn HeadAssets() -> Element {
   // asset 路径只含 [A-Za-z0-9./_-]，可直接放进单引号字符串
   let prism_src = PRISM_JS.to_string();
   rsx! {
+      // <html lang> 跟首屏语言走（index.html 写死 zh-CN）；规则同 i18n::pick_language
+      document::Script { {LANG_BOOT_SCRIPT} }
       // 暗色偏好在首次绘制前就加到 <html> 上（同步内联脚本，规则同
       // widgets::browser::dark_mode_preference）。以前只在 wasm 加载后的 use_effect 里设，
       // 暗色用户每次打开页面先看到一屏白。
@@ -554,25 +562,6 @@ fn auth_modal(show: Signal<bool>) -> Element {
 #[component]
 fn App() -> Element {
   init_i18n();
-
-  // 语言持久化恢复：论坛等模块用 `<a href>` 整页跳转（如 /topics/new、
-  // 评论/回复后的重定向）会重载整个应用，内存中的 `Signal<Language>`
-  // 会被重置为默认 Zh。这里在挂载后从 `site_lang` cookie（LangPicker
-  // 切换时写入）恢复用户选择，保证跳转 / 刷新后仍是英文页面。
-  {
-    let mut lang = crate::i18n::use_i18n();
-    use_effect(move || {
-      let saved = widgets::browser::cookie("site_lang");
-      let want = if saved.as_deref() == Some("en") {
-        crate::i18n::Language::En
-      } else {
-        crate::i18n::Language::Zh
-      };
-      if *lang.peek() != want {
-        lang.set(want);
-      }
-    });
-  }
 
   let show_auth = use_signal(|| false);
   use_context_provider(|| show_auth);

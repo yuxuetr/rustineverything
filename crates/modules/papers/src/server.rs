@@ -187,7 +187,8 @@ async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
   app_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
 }
 
-/// 全部已生成论文的 `(/papers/<id>, 更新日期)` 与各主题页（无日期），给 sitemap。
+/// 全部已生成论文的 `(/papers/<id>, 更新日期)` 与各主题页（无日期），以及它们和 `/papers` 的
+/// 英文版（`?lang=en`），给 sitemap。
 /// 数据库不可用时为空。
 #[cfg(feature = "server")]
 pub async fn sitemap_paths() -> Vec<(String, Option<String>)> {
@@ -207,13 +208,19 @@ pub async fn sitemap_paths() -> Vec<(String, Option<String>)> {
     .unwrap_or_default();
   let topic_pages =
     crate::topics::TOPICS.iter().map(|t| (format!("/papers/topic/{}", t.slug), None));
-  topic_pages
+  let zh: Vec<(String, Option<String>)> = topic_pages
     .chain(
       rows
         .into_iter()
         .map(|(id, at)| (format!("/papers/{id}"), Some(at.format("%Y-%m-%d").to_string()))),
     )
-    .collect()
+    .collect();
+  // 论文页有英文版（`?lang=en`，docs/I18N_URLS.md），一并列出；中文 /papers 在模块静态路径里
+  let en: Vec<(String, Option<String>)> = std::iter::once(("/papers".to_string(), None))
+    .chain(zh.iter().cloned())
+    .map(|(p, m)| (widgets::lang_path(&p, true), m))
+    .collect();
+  zh.into_iter().chain(en).collect()
 }
 
 /// 搜索索引用的文档（kind = `paper`）：标题、摘要、各语言的一句话总结与要点。
