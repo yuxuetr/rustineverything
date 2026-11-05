@@ -247,20 +247,113 @@ pub(crate) fn scan_doc_dir(
     .collect()
 }
 
+/// 整棵文档树（约 2000 个节点）。页面不用它：侧栏用 [`doc_nav`]，首页用 [`list_doc_volumes`]；
+/// sitemap 在服务端直接调用。
 #[post("/api/docs/tree")]
 pub async fn list_doc_tree() -> Result<Vec<DocTreeNode>, ServerFnError> {
   #[cfg(feature = "server")]
   {
-    let docs_dir = app_core::utils::content_dir("docs");
-    if !docs_dir.exists() {
-      return Ok(vec![]);
-    }
-    Ok(scan_doc_dir(&docs_dir, "", 1))
+    Ok((*cached_tree()).clone())
   }
   #[cfg(not(feature = "server"))]
   {
     Ok(vec![])
   }
+}
+
+/// 侧栏数据：各卷的一级节点，只有 `volume` 这一卷带完整子树（见 [`nav_tree`]）。
+#[post("/api/docs/nav")]
+pub async fn doc_nav(volume: String) -> Result<Vec<DocTreeNode>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    Ok(nav_tree(&cached_tree(), &volume))
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = volume;
+    Ok(vec![])
+  }
+}
+
+/// 文档首页的卷卡片（见 [`volume_cards`]）。
+#[post("/api/docs/volumes")]
+pub async fn list_doc_volumes() -> Result<Vec<DocVolume>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    Ok(volume_cards(&cached_tree()))
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    Ok(vec![])
+  }
+}
+
+/// 文档首页一张卷卡片：卷节点（只留前 [`CARD_CHAPTERS`] 个章、不含更深层）与全卷页数。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DocVolume {
+  pub node: DocTreeNode,
+  pub pages: usize,
+}
+
+/// 卡片列出的章数；多留一个，页面据此判断要不要显示「更多」。
+pub const CARD_CHAPTERS: usize = 5;
+
+/// 侧栏用的树：每卷只留一级节点，`volume` 那一卷保留完整子树；description 全部清空
+/// （侧栏不显示）。整棵树连 description 序列化约 1.9 MB，曾让每个文档页 HTML 达 4 MB。
+pub fn nav_tree(full: &[DocTreeNode], volume: &str) -> Vec<DocTreeNode> {
+  fn strip(n: &DocTreeNode, deep: bool) -> DocTreeNode {
+    DocTreeNode {
+      slug: n.slug.clone(),
+      title: n.title.clone(),
+      path: n.path.clone(),
+      has_content: n.has_content,
+      description: String::new(),
+      children: if deep { n.children.iter().map(|c| strip(c, true)).collect() } else { Vec::new() },
+    }
+  }
+  full.iter().map(|n| strip(n, n.path == volume)).collect()
+}
+
+/// 有正文的节点数（含自身）
+pub fn count_pages(node: &DocTreeNode) -> usize {
+  node.has_content as usize + node.children.iter().map(count_pages).sum::<usize>()
+}
+
+/// 首页卡片：每卷保留 description 与前 `CARD_CHAPTERS + 1` 个章（章下不再展开）。
+pub fn volume_cards(full: &[DocTreeNode]) -> Vec<DocVolume> {
+  full
+    .iter()
+    .map(|n| DocVolume {
+      pages: count_pages(n),
+      node: DocTreeNode {
+        children: n
+          .children
+          .iter()
+          .take(CARD_CHAPTERS + 1)
+          .map(|c| DocTreeNode { children: Vec::new(), description: String::new(), ..c.clone() })
+          .collect(),
+        ..n.clone()
+      },
+    })
+    .collect()
+}
+
+/// 扫描结果按 (index.md / index.mdx / _meta.json, mtime) 缓存：扫一遍要读约 2000 个文件的
+/// frontmatter，缓存命中时只剩一次目录遍历的 stat。
+#[cfg(feature = "server")]
+static TREE_CACHE: app_core::utils::DirListingCache<Vec<DocTreeNode>> =
+  app_core::utils::DirListingCache::new();
+
+#[cfg(feature = "server")]
+fn cached_tree() -> std::sync::Arc<Vec<DocTreeNode>> {
+  let docs_dir = app_core::utils::content_dir("docs");
+  if !docs_dir.exists() {
+    return std::sync::Arc::new(Vec::new());
+  }
+  let fp = app_core::utils::fingerprint_for_dir(&docs_dir, |p| {
+    matches!(p.file_name().and_then(|n| n.to_str()), Some("index.md" | "index.mdx" | "_meta.json"))
+  });
+  TREE_CACHE.get_or_rebuild(fp, || scan_doc_dir(&docs_dir, "", 1))
 }
 
 /// 文档路径 `path`（相对 docs 根目录，来自公开接口的请求体）对应的
@@ -285,26 +378,18 @@ pub fn doc_lastmod(path: &str) -> Option<String> {
 }
 
 /// `path` 在它所属的一级分类里按侧栏顺序（先序：分类首页、章、章下的节）的前后两篇，
-/// 只取有正文的节点，不跨分类。只扫这个分类的目录，不扫整棵树（S2）。
+/// 只取有正文的节点，不跨分类（S2）。`tree` 是整棵文档树（`scan_doc_dir(root, "", 1)`）。
 #[cfg(feature = "server")]
-fn doc_neighbors(docs_root: &std::path::Path, path: &str) -> (Option<DocLink>, Option<DocLink>) {
+fn doc_neighbors(tree: &[DocTreeNode], path: &str) -> (Option<DocLink>, Option<DocLink>) {
   let path = path.trim_end_matches('/');
   let Some(top) = path.split('/').next().filter(|s| !s.is_empty()) else {
     return (None, None);
   };
-  let top_dir = docs_root.join(top);
-  let (title, _, _) = extract_doc_info(&top_dir);
-  let root = DocTreeNode {
-    slug: top.to_string(),
-    title: title.unwrap_or_else(|| top.to_string()),
-    path: top.to_string(),
-    has_content: top_dir.join("index.md").exists() || top_dir.join("index.mdx").exists(),
-    description: String::new(),
-    // 与 list_doc_tree 里一级分类的子树相同（一级在第 1 层，子项从第 2 层扫）
-    children: scan_doc_dir(&top_dir, top, 2),
+  let Some(root) = tree.iter().find(|n| n.path == top) else {
+    return (None, None);
   };
   let mut pages = Vec::new();
-  collect_pages(&root, &mut pages);
+  collect_pages(root, &mut pages);
   let Some(i) = pages.iter().position(|n| n.path == path) else {
     return (None, None);
   };
@@ -335,7 +420,7 @@ pub async fn get_doc_content(path: String) -> Result<Option<DocContentResponse>,
       fs::read_to_string(&filepath).map_err(|e| ServerFnError::new(format!("读取失败: {}", e)))?;
     let (mut meta, content) = parse_doc_frontmatter(&raw, &filepath);
     fill_missing_meta(&mut meta, &content);
-    let (prev, next) = doc_neighbors(&docs_root, &path);
+    let (prev, next) = doc_neighbors(&cached_tree(), &path);
     Ok(Some(DocContentResponse { content, meta, prev, next }))
   }
   #[cfg(not(feature = "server"))]
@@ -386,6 +471,31 @@ mod tests {
   }
 
   #[test]
+  fn nav_tree_keeps_only_the_active_volume_deep() {
+    let tmp = TempDir::new().unwrap();
+    let docs = tmp.path();
+    write_index(&docs.join("tokio"), Some("title: tokio\ndescription: d"), "");
+    write_index(&docs.join("tokio/01-a"), Some("title: A\ndescription: da"), "");
+    write_index(&docs.join("tokio/01-a/x"), Some("title: X"), "");
+    write_index(&docs.join("axum"), Some("title: axum"), "");
+    write_index(&docs.join("axum/01-b"), Some("title: B"), "");
+    let full = scan_doc_dir(docs, "", 1);
+    let nav = nav_tree(&full, "tokio");
+    let tokio = nav.iter().find(|n| n.path == "tokio").unwrap();
+    let axum = nav.iter().find(|n| n.path == "axum").unwrap();
+    assert_eq!(tokio.children[0].children[0].path, "tokio/01-a/x");
+    assert!(axum.children.is_empty(), "其它卷只留一级节点");
+    assert!(tokio.description.is_empty() && tokio.children[0].description.is_empty());
+    assert!(nav_tree(&full, "").iter().all(|n| n.children.is_empty()));
+
+    let cards = volume_cards(&full);
+    let t = cards.iter().find(|c| c.node.path == "tokio").unwrap();
+    assert_eq!(t.pages, 3);
+    assert_eq!(t.node.description, "d");
+    assert!(t.node.children[0].children.is_empty());
+  }
+
+  #[test]
   fn neighbors_follow_sidebar_order_within_one_category() {
     let tmp = TempDir::new().unwrap();
     let docs = tmp.path();
@@ -395,8 +505,9 @@ mod tests {
     write_index(&docs.join("tokio/01-a/x"), Some("title: X"), "");
     write_index(&docs.join("axum"), Some("title: axum"), "");
     // 02-b 没有 index.md：不是一页，跳过
+    let tree = scan_doc_dir(docs, "", 1);
     let order = |p: &str| {
-      let (prev, next) = doc_neighbors(docs, p);
+      let (prev, next) = doc_neighbors(&tree, p);
       (prev.map(|l| l.path), next.map(|l| l.path))
     };
     assert_eq!(order("tokio"), (None, Some("tokio/01-a".into())));
@@ -406,7 +517,7 @@ mod tests {
     assert_eq!(order("axum"), (None, None));
     assert_eq!(order(""), (None, None));
     assert_eq!(order("tokio/nope"), (None, None));
-    let (_, next) = doc_neighbors(docs, "tokio");
+    let (_, next) = doc_neighbors(&tree, "tokio");
     assert_eq!(next.map(|l| l.title), Some("A".to_string()));
   }
 
