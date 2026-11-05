@@ -18,7 +18,7 @@ use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
 use crate::server::get_about_page;
 use module_ai::{AiArticlePage, AiIndexPage};
-use module_blog::server::{get_blog_content, list_blog_posts};
+use module_blog::server::{get_blog_content, list_blog_page};
 use module_cases::cases::{CaseDetailPage, CasesIndexPage};
 use module_cli::{CliArticlePage, CliIndexPage};
 #[cfg(feature = "course")]
@@ -396,41 +396,39 @@ fn BlogIndexInner() -> Element {
   }
 }
 
-/// 博客文章列表（重构 B2）：`list_blog_posts` 经 `use_server_future` 服务端预取，
-/// 标签筛选 / 分页仍是客户端 signal 交互。置于 SuspenseBoundary 内。
+/// 博客文章列表：首屏一页经 `use_server_future` 随 SSR 下发（只含当前页 + 标签计数）；
+/// 之后切标签 / 翻页直接调 `list_blog_page`，拿到后再替换，旧内容保留到新数据到达，
+/// 不走挂起（`use_server_future` 依赖变化会重新挂起，整栏闪成 fallback）。
 #[component]
 fn BlogList() -> Element {
   let lang = use_i18n();
 
-  let posts_res = use_server_future(|| async move { list_blog_posts().await.unwrap_or_default() })?;
-  let posts = posts_res().unwrap_or_default();
-
+  let first =
+    use_server_future(
+      || async move { list_blog_page(String::new(), 0).await.unwrap_or_default() },
+    )?;
+  let mut loaded = use_signal::<Option<module_blog::server::BlogPage>>(|| None);
   let mut active_tag = use_signal::<Option<String>>(|| None);
-  let mut current_page = use_signal(|| 0usize);
-  const PAGE_SIZE: usize = 10;
-
-  // 汇总全部标签
-  let all_tags: Vec<String> = {
-    let mut seen = std::collections::BTreeSet::new();
-    for post in posts.iter() {
-      for t in post.tags.iter() {
-        seen.insert(t.clone());
+  // 标签 252 个、大多只有 1 篇：默认只列 2 篇以上的（和当前选中的），其余收在「更多」里
+  let mut all_tags_open = use_signal(|| false);
+  let mut load = move |tag: Option<String>, page: usize| {
+    active_tag.set(tag.clone());
+    spawn(async move {
+      match list_blog_page(tag.unwrap_or_default(), page).await {
+        Ok(p) => loaded.set(Some(p)),
+        Err(e) => tracing::warn!("blog: list_blog_page failed: {e}"),
       }
-    }
-    seen.into_iter().collect()
+    });
   };
 
-  // 按标签过滤
-  let filtered: Vec<_> = match active_tag() {
-    Some(ref tag) => posts.iter().filter(|p| p.tags.contains(tag)).cloned().collect(),
-    None => posts.clone(),
-  };
-
-  // 分页
-  let total_pages = filtered.len().div_ceil(PAGE_SIZE).max(1);
-  let safe_page = current_page().min(total_pages - 1);
-  let paged: Vec<_> =
-    filtered.iter().skip(safe_page * PAGE_SIZE).take(PAGE_SIZE).cloned().collect();
+  let data = loaded().unwrap_or_else(|| first().unwrap_or_default());
+  let all_tags = data.tags.clone();
+  let paged = data.posts.clone();
+  let total_pages = data.pages;
+  let safe_page = data.page;
+  let total = data.total;
+  let matched = data.matched;
+  let rare_tags = all_tags.iter().filter(|(_, n)| *n < 2).count();
 
   rsx! {
       // 4列网格：标签(1列=25%) | 文章列表(3列=75%)
@@ -454,31 +452,42 @@ fn BlogList() -> Element {
                                                   button {
                                                       r#type: "button",
                                                       "aria-pressed": is_all.to_string(),
-                                                      onclick: move |_| { active_tag.set(None); current_page.set(0); },
+                                                      onclick: move |_| load(None, 0),
                                                       class: tag_chip_class(is_all),
                                                       "{label_all}"
-                                                      span { class: "opacity-60", "{posts.len()}" }
+                                                      span { class: "opacity-60", "{total}" }
                                                   }
                                               }
                                           }
                                           // 各 tag chip
-                                          for tag in all_tags.iter() {
+                                          for (tag, count) in all_tags.iter().filter(|(t, n)| {
+                                              all_tags_open() || *n >= 2 || active_tag().as_deref() == Some(t.as_str())
+                                          }) {
                                               {
                                                   let t = tag.clone();
                                                   let t2 = tag.clone();
-                                                  let count = posts.iter().filter(|p| p.tags.contains(&t)).count();
                                                   let is_active = active_tag().as_deref() == Some(tag.as_str());
                                                   rsx! {
                                                       button {
                                                           key: "{t}",
                                                           r#type: "button",
                                                           "aria-pressed": is_active.to_string(),
-                                                          onclick: move |_| { active_tag.set(Some(t.clone())); current_page.set(0); },
+                                                          onclick: move |_| load(Some(t.clone()), 0),
                                                           class: tag_chip_class(is_active),
                                                           "{t2}"
                                                           span { class: "opacity-60", "{count}" }
                                                       }
                                                   }
+                                              }
+                                          }
+                                          if rare_tags > 0 {
+                                              button {
+                                                  r#type: "button",
+                                                  "aria-expanded": all_tags_open().to_string(),
+                                                  onclick: move |_| all_tags_open.toggle(),
+                                                  class: "rounded-full px-3 py-1 text-xs font-medium text-primary hover:underline",
+                                                  // 文字用一个表达式切换，不用 if 分支（hydration 后增删节点会触发 reclaim ElementId 报错）
+                                                  {if all_tags_open() { t(lang(), "blog.fewer_tags") } else { format!("{} {rare_tags}", t(lang(), "blog.more_tags")) }}
                                               }
                                           }
                                       }
@@ -491,7 +500,7 @@ fn BlogList() -> Element {
                               // 头部：标题 + 计数
                               div { class: "flex items-center justify-between px-5 pt-5 pb-3",
                                   h3 { class: "text-sm font-semibold text-slate-700 dark:text-slate-200", "{t(lang(), \"blog.articles\")}" }
-                                  span { class: "text-xs text-slate-400 tabular-nums", "{filtered.len()} / {posts.len()}" }
+                                  span { class: "text-xs text-slate-400 tabular-nums", "{matched} / {total}" }
                               }
                               div { class: "border-t border-slate-200 dark:border-slate-800" }
 
@@ -537,7 +546,7 @@ fn BlogList() -> Element {
                                           size: ButtonSize::Sm,
                                           disabled: safe_page == 0,
                                           "aria-label": t(lang(), "blog.prev_page"),
-                                          onclick: move |_| { if current_page() > 0 { current_page.set(current_page() - 1); } },
+                                          onclick: move |_| if safe_page > 0 { load(active_tag(), safe_page - 1) },
                                           "←"
                                       }
                                       span { class: "text-xs text-slate-400 tabular-nums", "{safe_page + 1} / {total_pages}" }
@@ -546,7 +555,7 @@ fn BlogList() -> Element {
                                           size: ButtonSize::Sm,
                                           disabled: safe_page + 1 >= total_pages,
                                           "aria-label": t(lang(), "blog.next_page"),
-                                          onclick: move |_| { if current_page() + 1 < total_pages { current_page.set(current_page() + 1); } },
+                                          onclick: move |_| if safe_page + 1 < total_pages { load(active_tag(), safe_page + 1) },
                                           "→"
                                       }
                                   }

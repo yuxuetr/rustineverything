@@ -14,7 +14,7 @@ use crate::components::view::Container;
 use crate::i18n::{t, use_i18n};
 use crate::routes::Route;
 use crate::taxonomy::{ecosystem_by_id, ecosystem_of_case_category, ecosystems};
-use module_blog::server::{list_blog_posts, BlogPostSummary};
+use module_blog::server::{latest_blog_posts, BlogPostSummary};
 use module_cases::server::{list_cases, CaseSummary};
 #[cfg(feature = "course")]
 use module_course::server::{list_courses, CourseSummary};
@@ -301,8 +301,8 @@ pub fn CommunityFeed(blog: bool, forum: bool) -> Element {
 #[component]
 fn BlogColumn() -> Element {
   let lang = use_i18n();
-  let res = use_server_future(|| async move { list_blog_posts().await.unwrap_or_default() })?;
-  let posts: Vec<BlogPostSummary> = res().unwrap_or_default().into_iter().take(4).collect();
+  let res = use_server_future(|| async move { latest_blog_posts(4).await.unwrap_or_default() })?;
+  let posts: Vec<BlogPostSummary> = res().unwrap_or_default();
   rsx! {
       if posts.is_empty() {
           p { class: "text-sm text-slate-400 py-6 text-center", "{t(lang(), \"home.community.blog_empty\")}" }

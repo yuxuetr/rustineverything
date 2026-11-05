@@ -26,6 +26,50 @@ pub struct BlogPostSummary {
   pub tags: Vec<String>,
 }
 
+/// 列表页一页的数据：只下发当前页的文章，外加全部标签及篇数（筛选栏用）。
+/// 以前列表页把 164 篇的元数据全放进 hydration 数据（约 100 KB），只为在客户端分页。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct BlogPage {
+  pub posts: Vec<BlogPostSummary>,
+  /// 全部文章数
+  pub total: usize,
+  /// 按标签筛选后的文章数
+  pub matched: usize,
+  /// 实际返回的页（越界时收到最后一页），从 0 开始
+  pub page: usize,
+  /// 筛选后的总页数，至少 1
+  pub pages: usize,
+  /// 全部标签及篇数，按标签名排序
+  pub tags: Vec<(String, usize)>,
+}
+
+pub const BLOG_PAGE_SIZE: usize = 10;
+
+/// 从按日期倒序的全量列表里取一页；`tag` 为空表示不筛选。
+pub fn page_of(posts: &[BlogPostSummary], tag: &str, page: usize) -> BlogPage {
+  let mut tags = std::collections::BTreeMap::<&str, usize>::new();
+  for t in posts.iter().flat_map(|p| p.tags.iter()) {
+    *tags.entry(t.as_str()).or_default() += 1;
+  }
+  let matched: Vec<&BlogPostSummary> =
+    posts.iter().filter(|p| tag.is_empty() || p.tags.iter().any(|t| t == tag)).collect();
+  let pages = matched.len().div_ceil(BLOG_PAGE_SIZE).max(1);
+  let page = page.min(pages - 1);
+  BlogPage {
+    posts: matched
+      .iter()
+      .skip(page * BLOG_PAGE_SIZE)
+      .take(BLOG_PAGE_SIZE)
+      .map(|p| (*p).clone())
+      .collect(),
+    total: posts.len(),
+    matched: matched.len(),
+    page,
+    pages,
+    tags: tags.into_iter().map(|(t, n)| (t.to_string(), n)).collect(),
+  }
+}
+
 /// Phase 8.5：博客列表的 mtime 缓存。fingerprint = 所有
 /// `assets/posts/*/index.{md,mdx}` 的 (path, mtime) 排序。
 /// 内容修改 / 新增 / 删除任意一种都会失配并触发重建。
@@ -84,16 +128,31 @@ fn build_blog_list(posts_dir: &std::path::Path) -> Vec<BlogPostSummary> {
 /// 命中时省掉 N 次 `read_to_string` + `serde_yaml::from_str`。
 #[server]
 pub async fn list_blog_posts() -> Result<Vec<BlogPostSummary>, ServerFnError> {
+  Ok((*cached_posts()).clone())
+}
+
+/// 列表页的一页（见 [`BlogPage`]）。
+#[server]
+pub async fn list_blog_page(tag: String, page: usize) -> Result<BlogPage, ServerFnError> {
+  Ok(page_of(&cached_posts(), &tag, page))
+}
+
+/// 最新 `n` 篇（首页用，最多 20）。
+#[server]
+pub async fn latest_blog_posts(n: usize) -> Result<Vec<BlogPostSummary>, ServerFnError> {
+  Ok(cached_posts().iter().take(n.min(20)).cloned().collect())
+}
+
+#[cfg(feature = "server")]
+fn cached_posts() -> std::sync::Arc<Vec<BlogPostSummary>> {
   let posts_dir = app_core::utils::content_dir("posts");
   if !posts_dir.exists() {
-    return Ok(Vec::new());
+    return std::sync::Arc::new(Vec::new());
   }
   let fp = app_core::utils::fingerprint_for_dir(&posts_dir, |p| {
     matches!(p.file_name().and_then(|n| n.to_str()), Some("index.md" | "index.mdx"))
   });
-  let cached: std::sync::Arc<Vec<BlogPostSummary>> =
-    BLOG_LIST_CACHE.get_or_rebuild(fp, || build_blog_list(&posts_dir));
-  Ok((*cached).clone())
+  BLOG_LIST_CACHE.get_or_rebuild(fp, || build_blog_list(&posts_dir))
 }
 
 /// 文章源文件 `posts/<id>/index.mdx`（优先）或 `index.md`。`id` 必须是单段 slug：
@@ -125,6 +184,35 @@ pub async fn get_blog_content(id: String) -> Result<Option<String>, ServerFnErro
 
 #[cfg(test)]
 mod tests {
+  fn summary(slug: &str, tags: &[&str]) -> super::BlogPostSummary {
+    super::BlogPostSummary {
+      slug: slug.into(),
+      title: slug.into(),
+      description: String::new(),
+      date: String::new(),
+      updated: String::new(),
+      tags: tags.iter().map(|t| t.to_string()).collect(),
+    }
+  }
+
+  #[test]
+  fn page_of_filters_paginates_and_clamps() {
+    let posts: Vec<_> = (0..23)
+      .map(|i| summary(&format!("p{i}"), if i % 2 == 0 { &["Rust"] } else { &["AI", "Rust"] }))
+      .collect();
+    let all = super::page_of(&posts, "", 0);
+    assert_eq!((all.total, all.matched, all.pages, all.posts.len()), (23, 23, 3, 10));
+    assert_eq!(all.tags, vec![("AI".to_string(), 11), ("Rust".to_string(), 23)]);
+    let last = super::page_of(&posts, "", 2);
+    assert_eq!((last.page, last.posts.len(), last.posts[0].slug.as_str()), (2, 3, "p20"));
+    // 越界收到最后一页，而不是空页
+    assert_eq!(super::page_of(&posts, "", 99).page, 2);
+    let ai = super::page_of(&posts, "AI", 1);
+    assert_eq!((ai.matched, ai.pages, ai.page, ai.posts.len()), (11, 2, 1, 1));
+    assert_eq!(super::page_of(&posts, "nope", 0).posts.len(), 0);
+    assert_eq!(super::page_of(&[], "", 0).pages, 1);
+  }
+
   use super::*;
 
   #[test]
