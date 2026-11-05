@@ -56,6 +56,8 @@ blog.articles = 文章
 blog.no_results = 没有匹配该标签的文章
 blog.prev_page = 上一页
 blog.next_page = 下一页
+blog.more_tags = 更多标签
+blog.fewer_tags = 收起
 
 # ── 页脚 ──
 footer.tagline = 专注 Rust 工业实战与 AI 生态：案例、课程、文档、社区一站式聚合。

@@ -57,7 +57,11 @@ pub async fn get_seo_base_url() -> Result<String, ServerFnError> {
 pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
   let canonical = build_canonical(meta.canonical.as_deref(), path, base_url);
   let json_ld = build_json_ld(meta, &canonical, base_url);
-  let image = meta.image.as_deref().filter(|s| !s.is_empty()).map(|s| absolute_url(s, base_url));
+  // 文章没配图时用站点默认分享图，分享卡片不至于空白
+  let image = absolute_url(
+    meta.image.as_deref().filter(|s| !s.is_empty()).unwrap_or(DEFAULT_OG_IMAGE),
+    base_url,
+  );
 
   rsx! {
       crate::browser::PageTitle { title: page_title(&meta.title) }
@@ -81,21 +85,18 @@ pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
               document::Meta { property: "og:description", content: "{desc}" }
           }
       }
-      if let Some(img) = image.as_ref() {
-          document::Meta { property: "og:image", content: "{img}" }
-      }
+      document::Meta { property: "og:image", content: "{image}" }
+      document::Meta { property: "og:site_name", content: SITE_NAME }
 
       // ── Twitter Card ──
-      document::Meta { name: "twitter:card", content: if image.is_some() { "summary_large_image" } else { "summary" } }
+      document::Meta { name: "twitter:card", content: "summary_large_image" }
       document::Meta { name: "twitter:title", content: "{meta.title}" }
       if let Some(desc) = meta.description.as_ref() {
           if !desc.is_empty() {
               document::Meta { name: "twitter:description", content: "{desc}" }
           }
       }
-      if let Some(img) = image.as_ref() {
-          document::Meta { name: "twitter:image", content: "{img}" }
-      }
+      document::Meta { name: "twitter:image", content: "{image}" }
 
       // ── Canonical link ──
       document::Link { rel: "canonical", href: "{canonical}" }
@@ -110,6 +111,9 @@ pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
 /// 站名，作为所有页面 `<title>` 的后缀（与 `Dioxus.toml` / `site.json` 一致）。
 pub const SITE_NAME: &str = "Rust in Everything";
 
+/// 页面没有自己的图时的分享图（1200×630，`assets/images/og-default.jpg`）。
+pub const DEFAULT_OG_IMAGE: &str = "/images/og-default.jpg";
+
 /// 列表 / 落地页的元信息：`<title>`（`{title} - 站名`）、description、
 /// og:title / og:description / og:url 与 canonical。文章页用 [`inject_seo`]。
 /// `schema` 是可选的 schema.org 对象（G8），输出为 JSON-LD，`@context` 与 `url` 自动补上。
@@ -123,10 +127,13 @@ pub fn PageMeta(
   description: String,
   path: String,
   #[props(default)] schema: Option<serde_json::Value>,
+  /// 分享图（站内路径或绝对 URL）；不给用站点默认图
+  #[props(default)]
+  image: Option<String>,
 ) -> Element {
   rsx! {
       SuspenseBoundary { fallback: |_| VNode::empty(),
-          PageMetaTags { title, description, path, schema }
+          PageMetaTags { title, description, path, schema, image }
       }
   }
 }
@@ -138,6 +145,9 @@ pub fn PageMetaTags(
   description: String,
   path: String,
   #[props(default)] schema: Option<serde_json::Value>,
+  /// 分享图（站内路径或绝对 URL）；不给用站点默认图
+  #[props(default)]
+  image: Option<String>,
 ) -> Element {
   let base_url_res =
     use_server_future(|| async move { get_seo_base_url().await.unwrap_or_default() })?;
@@ -145,15 +155,23 @@ pub fn PageMetaTags(
   let canonical = build_canonical(None, &path, &base_url);
   let full_title = page_title(&title);
   let json_ld = schema.as_ref().and_then(|v| page_json_ld(v, &canonical));
+  let image =
+    absolute_url(image.as_deref().filter(|s| !s.is_empty()).unwrap_or(DEFAULT_OG_IMAGE), &base_url);
   rsx! {
       crate::browser::PageTitle { title: full_title.clone() }
       if !description.is_empty() {
           document::Meta { name: "description", content: "{description}" }
           document::Meta { property: "og:description", content: "{description}" }
+          document::Meta { name: "twitter:description", content: "{description}" }
       }
       document::Meta { property: "og:title", content: "{full_title}" }
       document::Meta { property: "og:type", content: "website" }
       document::Meta { property: "og:url", content: "{canonical}" }
+      document::Meta { property: "og:site_name", content: SITE_NAME }
+      document::Meta { property: "og:image", content: "{image}" }
+      document::Meta { name: "twitter:card", content: "summary_large_image" }
+      document::Meta { name: "twitter:title", content: "{full_title}" }
+      document::Meta { name: "twitter:image", content: "{image}" }
       document::Link { rel: "canonical", href: "{canonical}" }
       if let Some(ld) = json_ld {
           document::Script { r#type: "application/ld+json", "{ld}" }

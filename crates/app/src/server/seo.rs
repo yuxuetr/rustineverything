@@ -52,25 +52,29 @@ async fn collect_content_entries(is_on: impl Fn(&str) -> bool) -> Vec<ContentEnt
   entries
 }
 
-/// 没有日期的详情页（文档 / 案例 / 课程详情与公开课节）：只进 sitemap（不带 lastmod），
-/// 不进 feed。需要购买的课节不收录。
-async fn collect_detail_paths(is_on: impl Fn(&str) -> bool) -> Vec<String> {
+/// 详情页（文档 / 案例 / 课程详情与公开课节 / 论文）：只进 sitemap，不进 feed。
+/// 第二项是 lastmod（文档取文件 mtime、论文取更新时间），没有就空。需要购买的课节不收录。
+async fn collect_detail_paths(is_on: impl Fn(&str) -> bool) -> Vec<(String, Option<String>)> {
   let mut paths = Vec::new();
   if is_on("docs") {
-    paths.extend(doc_paths(&module_docs::server::list_doc_tree().await.unwrap_or_default()));
+    let tree = module_docs::server::list_doc_tree().await.unwrap_or_default();
+    paths.extend(doc_paths(&tree).into_iter().map(|p| {
+      let lastmod = module_docs::server::doc_lastmod(&p);
+      (format!("/docs/{p}"), lastmod)
+    }));
   }
   if is_on("cases") {
     let cases = module_cases::server::list_cases(None, None, None).await.unwrap_or_default();
-    paths.extend(cases.into_iter().map(|c| format!("/case/{}", c.slug)));
+    paths.extend(cases.into_iter().map(|c| (format!("/case/{}", c.slug), None)));
   }
   #[cfg(feature = "course")]
   if is_on("course") {
     let courses = module_course::server::list_courses().await.unwrap_or_default();
     for c in courses {
-      paths.push(format!("/course/{}", c.slug));
+      paths.push((format!("/course/{}", c.slug), None));
       // G6：访客能读的课节（免费课程全部、付费课程的试看课节）
       if let Some(course) = module_course::server::read_course(&c.slug) {
-        paths.extend(course.open_lesson_paths());
+        paths.extend(course.open_lesson_paths().into_iter().map(|p| (p, None)));
       }
     }
   }
@@ -81,12 +85,12 @@ async fn collect_detail_paths(is_on: impl Fn(&str) -> bool) -> Vec<String> {
   paths
 }
 
-/// 文档树里有正文的节点 → `/docs/<path>`（深度优先，父在子前）。
+/// 文档树里有正文的节点 → 相对 docs 根的路径（深度优先，父在子前）。
 fn doc_paths(nodes: &[module_docs::server::DocTreeNode]) -> Vec<String> {
   let mut out = Vec::new();
   for n in nodes {
     if n.has_content && !n.path.is_empty() {
-      out.push(format!("/docs/{}", n.path));
+      out.push(n.path.clone());
     }
     out.extend(doc_paths(&n.children));
   }
@@ -121,7 +125,19 @@ async fn sitemap_handler(base: String) -> axum::response::Response {
   }
   // G6：生态落地页不是模块，不在 ModuleSpec 里，单独列出。
   static_paths.extend(crate::taxonomy::ecosystems().iter().map(|e| format!("/ecosystem/{}", e.id)));
-  static_paths.extend(collect_detail_paths(is_on).await);
+  let mut entries = entries;
+  for (path, lastmod) in collect_detail_paths(is_on).await {
+    match lastmod {
+      Some(date) => entries.push(ContentEntry {
+        url_path: path,
+        title: String::new(),
+        description: String::new(),
+        date,
+        tags: Vec::new(),
+      }),
+      None => static_paths.push(path),
+    }
+  }
   let static_paths_ref: Vec<&str> = static_paths.iter().map(String::as_str).collect();
 
   let xml = build_sitemap_xml(&entries, &static_paths_ref, &base);
@@ -327,10 +343,7 @@ mod tests {
       ),
       node("empty-dir", false, vec![node("empty-dir/leaf", true, vec![])]),
     ];
-    assert_eq!(
-      doc_paths(&tree),
-      vec!["/docs/basics", "/docs/basics/ownership", "/docs/empty-dir/leaf"]
-    );
+    assert_eq!(doc_paths(&tree), vec!["basics", "basics/ownership", "empty-dir/leaf"]);
   }
 
   /// 验收（O4）：sitemap 的详情页条目 = 各来源计数之和，用真实 assets 独立计数比对。
@@ -355,16 +368,20 @@ mod tests {
 
     let paths = collect_detail_paths(|_| true).await;
     let courses = if cfg!(feature = "course") { count_dirs("courses") } else { 0 };
-    let open_lessons =
-      paths.iter().filter(|p| p.starts_with("/course/") && p.matches('/').count() == 4).count();
+    let open_lessons = paths
+      .iter()
+      .filter(|(p, _)| p.starts_with("/course/") && p.matches('/').count() == 4)
+      .count();
+    // 文档都带 lastmod（文件 mtime）
+    assert!(paths.iter().filter(|(p, _)| p.starts_with("/docs/")).all(|(_, m)| m.is_some()));
     assert_eq!(paths.len(), docs + count_dirs("cases") + courses + open_lessons);
     // G6：示例付费课程只有第一课是试看。
     if cfg!(feature = "course") {
-      let has = |p: &str| paths.iter().any(|x| x == p);
+      let has = |p: &str| paths.iter().any(|(x, _)| x == p);
       assert!(has("/course/rust-basics/01-fundamentals/01-what-is-rust"));
       assert!(!has("/course/rust-basics/02-ownership/01-borrow-rules"), "付费课节不收录");
     }
-    assert_eq!(collect_detail_paths(|_| false).await, Vec::<String>::new());
+    assert!(collect_detail_paths(|_| false).await.is_empty());
   }
 
   /// 非根目录下 index.md(x) 的数量（根 index 是 /docs 本身，已在静态路径里）。

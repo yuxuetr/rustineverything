@@ -433,6 +433,7 @@ fn TopicDetailLoaded(id: i32) -> Element {
             title: d.title.clone(),
             description: d.content.chars().take(120).collect::<String>(),
             path: format!("/topics/{}", d.id),
+            schema: Some(topic_schema(&d)),
         }
         TopicDetailBody {
             detail: d,
@@ -905,4 +906,27 @@ fn urlencode(s: &str) -> String {
     }
   }
   out
+}
+
+/// 帖子页的 schema.org `DiscussionForumPosting`（搜索结果里的讨论区富摘要）。
+/// 时间是站点时区的 `YYYY-MM-DD HH:MM`，换成 ISO 8601 的 `T` 分隔。
+fn topic_schema(d: &crate::server::TopicDetail) -> serde_json::Value {
+  let iso = |t: &str| t.replacen(' ', "T", 1);
+  serde_json::json!({
+    "@type": "DiscussionForumPosting",
+    "headline": d.title,
+    "text": d.content.chars().take(500).collect::<String>(),
+    "author": { "@type": "Person", "name": d.author },
+    "datePublished": iso(&d.created_at),
+    "dateModified": iso(&d.updated_at),
+    "keywords": d.tag,
+    "inLanguage": "zh-CN",
+    "commentCount": d.replies.len(),
+    "comment": d.replies.iter().take(20).map(|r| serde_json::json!({
+      "@type": "Comment",
+      "text": r.content.chars().take(300).collect::<String>(),
+      "author": { "@type": "Person", "name": r.author },
+      "datePublished": iso(&r.created_at),
+    })).collect::<Vec<_>>(),
+  })
 }

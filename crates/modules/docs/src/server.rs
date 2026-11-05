@@ -271,6 +271,15 @@ fn resolve_doc_file(docs_root: &std::path::Path, path: &str) -> Option<PathBuf> 
   })
 }
 
+/// 文档页的最后修改日期（`index.md` 的 mtime，UTC `YYYY-MM-DD`），给 sitemap 的 lastmod。
+/// 内容随 git / rsync 部署，只有改过的文件 mtime 会变。
+#[cfg(feature = "server")]
+pub fn doc_lastmod(path: &str) -> Option<String> {
+  let file = resolve_doc_file(&app_core::utils::content_dir("docs"), path)?;
+  let modified = std::fs::metadata(file).ok()?.modified().ok()?;
+  Some(chrono::DateTime::<chrono::Utc>::from(modified).format("%Y-%m-%d").to_string())
+}
+
 /// `path` 在它所属的一级分类里按侧栏顺序（先序：分类首页、章、章下的节）的前后两篇，
 /// 只取有正文的节点，不跨分类。只扫这个分类的目录，不扫整棵树（S2）。
 #[cfg(feature = "server")]

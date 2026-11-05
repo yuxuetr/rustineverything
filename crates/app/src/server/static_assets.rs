@@ -10,21 +10,24 @@ use tower_http::services::ServeDir;
 
 /// 挂载静态资源目录。`assets_root` 为资产根目录（启动期解析）。
 pub fn mount(router: Router, assets_root: &str) -> Router {
+  // 文件名不带哈希：浏览器缓存一段时间，过期后靠 Last-Modified 复验（304）。
+  // 文章图片 / 音频改动很少，一天；上传文件可能被审核撤下，一小时；字体基本不变，30 天。
   let router = router
-    .nest_service("/images", ServeDir::new(format!("{}/images", assets_root)))
-    .nest_service("/posts", ServeDir::new(app_core::utils::content_dir("posts")))
-    // 脚本文件名不带哈希：每次使用前向服务端确认（未变时 304），改版后立即生效
+    .nest("/images", cached(ServeDir::new(format!("{}/images", assets_root)), DAY))
+    .nest("/posts", cached(ServeDir::new(app_core::utils::content_dir("posts")), DAY))
+    // 只剩 annotations / mermaid 两个无哈希脚本：每次使用前向服务端确认（未变时 304），改版后立即生效
+    .nest("/js", cached(ServeDir::new(format!("{}/js", assets_root)), "no-cache"))
     .nest(
-      "/js",
-      Router::new()
-        .fallback_service(ServeDir::new(format!("{}/js", assets_root)))
-        .layer(middleware::map_response(cache_control("no-cache"))),
+      "/uploads",
+      cached(ServeDir::new(format!("{}/uploads", assets_root)), "public, max-age=3600"),
     )
-    .nest_service("/uploads", ServeDir::new(format!("{}/uploads", assets_root)))
-    .nest_service("/audio", ServeDir::new(format!("{}/audio", assets_root)))
-    .nest_service("/podcasts", ServeDir::new(format!("{}/podcasts", assets_root)))
-    .nest_service("/cases", ServeDir::new(format!("{}/cases", assets_root)))
-    .nest_service("/assets/font", ServeDir::new(format!("{}/font", assets_root)));
+    .nest("/audio", cached(ServeDir::new(format!("{}/audio", assets_root)), DAY))
+    .nest("/podcasts", cached(ServeDir::new(format!("{}/podcasts", assets_root)), DAY))
+    .nest("/cases", cached(ServeDir::new(format!("{}/cases", assets_root)), DAY))
+    .nest(
+      "/assets/font",
+      cached(ServeDir::new(format!("{}/font", assets_root)), "public, max-age=2592000"),
+    );
   // 课时文件只在 course 层提供（未编译课程时整个目录不对外）。
   #[cfg(feature = "course")]
   let router = router.nest(
@@ -36,6 +39,13 @@ pub fn mount(router: Router, assets_root: &str) -> Router {
       .layer(middleware::map_response(cache_control("private, no-cache"))),
   );
   router
+}
+
+const DAY: &str = "public, max-age=86400";
+
+/// 目录服务 + 固定的 `Cache-Control`
+fn cached(dir: ServeDir, value: &'static str) -> Router {
+  Router::new().fallback_service(dir).layer(middleware::map_response(cache_control(value)))
 }
 
 /// 给响应设置固定的 `Cache-Control`
@@ -84,6 +94,18 @@ mod tests {
     let res = get(tmp.path().to_str().unwrap(), "/js/a.js").await;
     assert_eq!(res.status(), StatusCode::OK);
     assert_eq!(cache_control(&res), Some("no-cache"));
+  }
+
+  /// 文章图片等无哈希文件给一天缓存，过期后复验；改为长缓存前要先给文件名加哈希。
+  #[tokio::test]
+  async fn images_cached_for_a_day() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    std::fs::create_dir_all(tmp.path().join("images")).unwrap();
+    std::fs::write(tmp.path().join("images/a.png"), "1").unwrap();
+    let res = get(tmp.path().to_str().unwrap(), "/images/a.png").await;
+    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(cache_control(&res), Some("public, max-age=86400"));
+    assert!(res.headers().contains_key(header::LAST_MODIFIED));
   }
 
   /// 课时文件按用户鉴权，共享缓存（CDN / 反代）不得存，否则会把付费内容发给未购用户。

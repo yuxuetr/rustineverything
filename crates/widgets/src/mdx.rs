@@ -569,6 +569,18 @@ fn render_image(dest_url: &str, title: &str, alt: &str, blog_id: &str, untrusted
   let Some(src) = image_src(dest_url, blog_id, untrusted) else {
     return rsx! { span { class: "text-red-500", "[image rejected: unsafe URL]" } };
   };
+  // 动图用 `![说明](demo.mp4)` 写成短视频：同样画面 H.264 比 GIF 小一个数量级
+  if is_video(&src) {
+    return rsx! {
+        figure { class: "my-8",
+            video { src: "{src}", "aria-label": "{alt}", autoplay: true, muted: true, "loop": true, playsinline: true, preload: "metadata",
+                class: "rounded-2xl shadow-xl mx-auto border border-slate-200 dark:border-slate-800 max-w-full" }
+            if !title.is_empty() {
+                figcaption { class: "text-center text-sm text-slate-500 mt-3 italic", "{title}" }
+            }
+        }
+    };
+  }
   rsx! {
       figure { class: "my-8",
           // 长文图多（迁移后最多一篇 17 张），首屏外的不先下载
@@ -707,6 +719,12 @@ fn render_tag(
 /// 相对路径解析到文章资产目录。不可信内容只允许本站上传的图片
 /// （[`crate::sanitize::is_upload_image_url`]，SEC-09）：其余站内路径会被浏览者
 /// 的浏览器带 cookie 请求（如 `/api/auth/logout`），外部图片会泄露浏览者 IP。
+/// 图片语法指向 mp4 / webm 时按视频渲染（忽略查询串与大小写）
+fn is_video(src: &str) -> bool {
+  let path = src.split(['?', '#']).next().unwrap_or(src).to_ascii_lowercase();
+  path.ends_with(".mp4") || path.ends_with(".webm")
+}
+
 fn image_src(url: &str, blog_id: &str, untrusted: bool) -> Option<String> {
   if untrusted {
     return crate::sanitize::is_upload_image_url(url).then(|| url.to_string());
@@ -1088,6 +1106,14 @@ mod tests {
     assert_eq!(super::split_frontmatter("---\ntitle: a\n"), None, "没闭合");
     assert_eq!(super::split_frontmatter("# no frontmatter"), None);
     assert_eq!(super::split_frontmatter("----\nx\n---\n"), None);
+  }
+
+  #[test]
+  fn video_extensions_render_as_video() {
+    assert!(super::is_video("/posts/a/demo.mp4"));
+    assert!(super::is_video("/posts/a/Demo.WEBM?v=2"));
+    assert!(!super::is_video("/posts/a/demo.gif"));
+    assert!(!super::is_video("/posts/a/mp4.png"));
   }
 
   use super::*;

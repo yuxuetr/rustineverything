@@ -36,15 +36,33 @@ pub fn use_theme_version() -> Signal<u32> {
 /// 主题下拉。展示当前激活主题，点击展开列表，点击列表项写 cookie + bump version。
 #[component]
 pub fn ThemePicker() -> Element {
+  // 列表随 SSR 下发：以前 hydration 后才拉，按钮晚出现、把右侧导航项往左挤一下。
+  // 单独一层 boundary，挂起只影响这个按钮。
+  rsx! {
+      SuspenseBoundary { fallback: |_| VNode::empty(), ThemePickerInner {} }
+  }
+}
+
+#[component]
+fn ThemePickerInner() -> Element {
   let mut version = use_theme_version();
   let lang = use_i18n();
 
-  // 拉取可用主题列表，依赖 version 以便切换后刷新激活态。
-  let themes_res = use_resource(move || {
-    let _v = version();
-    async move { list_available_themes().await.unwrap_or_default() }
+  let first =
+    use_server_future(|| async move { list_available_themes().await.unwrap_or_default() })?;
+  // 切换后重取（激活态变了）；旧列表保留到新数据到达
+  let mut loaded = use_signal::<Option<Vec<ThemeInfo>>>(|| None);
+  use_effect(move || {
+    if version() == 0 {
+      return;
+    }
+    spawn(async move {
+      if let Ok(list) = list_available_themes().await {
+        loaded.set(Some(list));
+      }
+    });
   });
-  let themes: Vec<ThemeInfo> = themes_res.read().as_ref().cloned().unwrap_or_default();
+  let themes: Vec<ThemeInfo> = loaded().unwrap_or_else(|| first().unwrap_or_default());
 
   let active = themes.iter().find(|t| t.is_active);
   let active_id = active.map(|t| t.id.clone()).unwrap_or_default();
