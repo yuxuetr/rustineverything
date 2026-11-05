@@ -581,6 +581,23 @@ fn render_image(dest_url: &str, title: &str, alt: &str, blog_id: &str, untrusted
         }
     };
   }
+  // `x.light.webp` 配一张同目录的 `x.dark.webp`：两张都输出，按站点主题（html 上的 `dark` class）只显示一张
+  if let Some(dark_src) = dark_variant(&src).filter(|_| !untrusted) {
+    return rsx! {
+        figure { class: "my-8",
+            // 这类图（卷首架构图）字小，正文列放不下：点开看原图
+            a { href: "{src}", target: "_blank", rel: "noopener", class: "dark:hidden",
+                img { src: "{src}", alt: "{alt}", loading: "lazy", decoding: "async", class: "rounded-2xl shadow-xl mx-auto border border-slate-200 cursor-zoom-in" }
+            }
+            a { href: "{dark_src}", target: "_blank", rel: "noopener", class: "hidden dark:block",
+                img { src: "{dark_src}", alt: "{alt}", loading: "lazy", decoding: "async", class: "rounded-2xl shadow-xl mx-auto border border-slate-800 cursor-zoom-in" }
+            }
+            if !title.is_empty() {
+                figcaption { class: "text-center text-sm text-slate-500 mt-3 italic", "{title}" }
+            }
+        }
+    };
+  }
   rsx! {
       figure { class: "my-8",
           // 长文图多（迁移后最多一篇 17 张），首屏外的不先下载
@@ -590,6 +607,14 @@ fn render_image(dest_url: &str, title: &str, alt: &str, blog_id: &str, untrusted
           }
       }
   }
+}
+
+/// 文件名里的 `.light.` 换成 `.dark.`，得到暗色版的地址；不是浅色版就返回 `None`。
+fn dark_variant(src: &str) -> Option<String> {
+  let (dir, name) = src.rsplit_once('/').unwrap_or(("", src));
+  let (stem, ext) = name.split_once(".light.")?;
+  let sep = if dir.is_empty() && !src.starts_with('/') { "" } else { "/" };
+  Some(format!("{dir}{sep}{stem}.dark.{ext}"))
 }
 
 fn render_tag(
@@ -1116,11 +1141,34 @@ mod tests {
     assert!(!super::is_video("/posts/a/mp4.png"));
   }
 
+  #[test]
+  fn light_image_pairs_with_dark_variant() {
+    assert_eq!(
+      super::dark_variant("/docs-files/burn/arch.light.webp").as_deref(),
+      Some("/docs-files/burn/arch.dark.webp")
+    );
+    assert_eq!(super::dark_variant("arch.light.png").as_deref(), Some("arch.dark.png"));
+    assert_eq!(super::dark_variant("/a.light/b.webp"), None, "目录名里的 .light. 不算");
+    assert_eq!(super::dark_variant("/posts/a/arch.webp"), None);
+  }
+
   use super::*;
 
   fn render_markdown(content: &str, untrusted: bool) -> String {
     let content = content.to_string();
     dioxus_ssr::render_element(rsx! { Markdown { content, blog_id: "t", untrusted } })
+  }
+
+  /// 浅色图带出暗色图，各自只在对应主题下显示；用户内容不配对。
+  #[test]
+  fn light_image_renders_both_themes() {
+    let html = render_markdown("![架构](/docs-files/burn/arch.light.webp \"示意图\")", false);
+    assert!(html.contains("src=\"/docs-files/burn/arch.light.webp\""), "{html}");
+    assert!(html.contains("src=\"/docs-files/burn/arch.dark.webp\""), "{html}");
+    assert!(html.contains("dark:hidden") && html.contains("hidden dark:block"), "{html}");
+    assert_eq!(html.matches("<figcaption").count(), 1);
+    let one = render_markdown("![架构](/docs-files/burn/arch.webp)", false);
+    assert_eq!(one.matches("<img").count(), 1);
   }
 
   /// G7：用户内容（评论 / 话题）不产生 h1，页面只有自己的一个 h1。
