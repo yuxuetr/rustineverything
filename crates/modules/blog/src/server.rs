@@ -5,16 +5,6 @@ use std::fs;
 #[allow(unused_imports)]
 use std::path::PathBuf;
 
-/// 自动探测资产根目录
-#[allow(dead_code)]
-fn get_asset_root() -> PathBuf {
-  let mut path = PathBuf::from("assets");
-  if !path.exists() {
-    path = PathBuf::from("../../assets");
-  }
-  path
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BlogPostSummary {
   pub slug: String,

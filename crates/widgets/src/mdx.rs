@@ -130,16 +130,28 @@ pub struct MarkdownProps {
   pub untrusted: bool,
 }
 
+/// 拆出开头的 YAML frontmatter：第一行是 `---`，到下一个只有 `---` 的行为止。
+/// 返回 `(yaml, 正文)`；没有 frontmatter 或没闭合时返回 `None`。全站解析 frontmatter
+/// 都走这里：以前各处用 `splitn(3, "---")`，YAML 值里出现 `---` 就会切错。
+pub fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
+  let rest = content.strip_prefix("---")?;
+  let rest = rest.strip_prefix("\r\n").or_else(|| rest.strip_prefix('\n'))?;
+  let mut offset = 0;
+  for line in rest.split_inclusive('\n') {
+    if line.trim_end() == "---" {
+      return Some((&rest[..offset], &rest[offset + line.len()..]));
+    }
+    offset += line.len();
+  }
+  None
+}
+
 /// 解析 frontmatter + 正文。frontmatter 为可选 YAML（`---` 分隔）。
 pub fn parse_mdx(content: &str) -> (PostMetadata, String) {
-  if !content.starts_with("---") {
+  let Some((yaml, body)) = split_frontmatter(content) else {
     return (PostMetadata::default(), content.to_string());
-  }
-  let parts: Vec<&str> = content.splitn(3, "---").collect();
-  if parts.len() < 3 {
-    return (PostMetadata::default(), content.to_string());
-  }
-  let mut metadata: PostMetadata = match serde_yaml::from_str(parts[1]) {
+  };
+  let mut metadata: PostMetadata = match serde_yaml::from_str(yaml) {
     Ok(m) => m,
     Err(e) => {
       tracing::warn!(error = %e, "frontmatter: invalid YAML, metadata ignored");
@@ -148,7 +160,7 @@ pub fn parse_mdx(content: &str) -> (PostMetadata, String) {
   };
   normalize_date_field(&mut metadata.date);
   normalize_date_field(&mut metadata.updated);
-  let body = parts[2].trim().to_string();
+  let body = body.trim().to_string();
   (metadata, body)
 }
 
@@ -1076,18 +1088,26 @@ impl std::error::Error for EscapedLatexError<'_> {}
 // 等文字样式组件都走 [`crate::components`] 下的 `MdxComponent` 实现，
 // `render_text_style_component` 不再需要。
 
-// Phase 2.2 后只在单测中使用；生产路径走 `parse_attrs`。保留以便
-// 未来有需要调试全属性提取。
-#[allow(dead_code)]
-fn extract_attr(html: &str, attr: &str) -> Option<String> {
-  let pattern = format!("{}=\"", attr);
-  let start = html.find(&pattern)? + pattern.len();
-  let end = html[start..].find('"')?;
-  Some(html[start..start + end].to_string())
-}
-
 #[cfg(test)]
 mod tests {
+  #[test]
+  fn split_frontmatter_needs_delimiter_lines() {
+    assert_eq!(super::split_frontmatter("---\ntitle: a\n---\nbody"), Some(("title: a\n", "body")));
+    // YAML 值里的 `---` 不算结束
+    assert_eq!(
+      super::split_frontmatter("---\ntitle: a --- b\n---\n\nbody\n---\n"),
+      Some(("title: a --- b\n", "\nbody\n---\n"))
+    );
+    assert_eq!(
+      super::split_frontmatter("---\r\ntitle: a\r\n---\r\nbody"),
+      Some(("title: a\r\n", "body"))
+    );
+    assert_eq!(super::split_frontmatter("---\n---\nbody"), Some(("", "body")));
+    assert_eq!(super::split_frontmatter("---\ntitle: a\n"), None, "没闭合");
+    assert_eq!(super::split_frontmatter("# no frontmatter"), None);
+    assert_eq!(super::split_frontmatter("----\nx\n---\n"), None);
+  }
+
   #[test]
   fn video_extensions_render_as_video() {
     assert!(super::is_video("/posts/a/demo.mp4"));
@@ -1514,12 +1534,6 @@ mod tests {
   fn parse_attrs_no_attrs_is_empty() {
     let attrs = parse_attrs("<NoAttrs />");
     assert!(attrs.is_empty());
-  }
-
-  #[test]
-  fn extract_attr_basic() {
-    assert_eq!(extract_attr(r#"<X id="42" />"#, "id"), Some("42".to_string()));
-    assert_eq!(extract_attr(r#"<X id="42" />"#, "missing"), None);
   }
 
   #[test]

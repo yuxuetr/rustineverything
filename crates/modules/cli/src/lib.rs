@@ -3,7 +3,6 @@
 
 use board::{Board, BoardArticle, BoardIndex, FeaturedCrate};
 use dioxus::prelude::*;
-use sdk::AppModule;
 
 pub const BOARD: Board = Board {
   id: "cli",
@@ -27,14 +26,6 @@ pub fn CliIndexPage() -> Element {
 #[component]
 pub fn CliArticlePage(slug: String) -> Element {
   rsx! { BoardArticle { board: BOARD, slug } }
-}
-
-pub struct CliModule;
-
-impl AppModule for CliModule {
-  fn name(&self) -> &'static str {
-    "CLI"
-  }
 }
 
 #[cfg(test)]

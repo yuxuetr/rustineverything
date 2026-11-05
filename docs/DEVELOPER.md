@@ -35,7 +35,7 @@
 ├── crates/
 │   ├── app/                # 前端入口 (Dioxus App + Axum Server 路由)
 │   ├── core/               # 核心逻辑 (SeaORM Entities、认证、会话、主题、配置)
-│   ├── sdk/                # 业务模块共享类型 (AppModule、审核提交 ModerationSubmission)
+│   ├── sdk/                # 业务模块共享类型（审核提交 ModerationSubmission / ImageRef）
 │   └── modules/            # 业务领域模块 (blog, podcast, course, forum, moderation ...)
 └── docs/                   # 开发者文档
 ```

@@ -67,6 +67,15 @@ pub struct AdminCommentRow {
   pub created_at: String,
 }
 
+/// 话题下的一条回复（话题管理里展开后逐条删除）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AdminReplyRow {
+  pub id: i32,
+  pub author: String,
+  pub content: String,
+  pub created_at: String,
+}
+
 /// 话题行
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AdminTopicRow {
@@ -132,16 +141,6 @@ pub fn check_self_role_change(
 // =============================================================
 // Server-only helpers
 // =============================================================
-
-#[cfg(feature = "server")]
-fn get_asset_root() -> PathBuf {
-  let p = PathBuf::from("assets");
-  if p.exists() {
-    p
-  } else {
-    PathBuf::from("../../assets")
-  }
-}
 
 #[cfg(feature = "server")]
 async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
@@ -498,6 +497,53 @@ pub async fn admin_delete_topic(id: i32) -> Result<(), ServerFnError> {
   {
     let _ = id;
     Err(ServerFnError::new("server only".to_string()))
+  }
+}
+
+/// 某话题的全部回复（按时间正序），给话题管理逐条删除用。
+#[post("/api/admin/replies/list")]
+pub async fn admin_list_replies(topic_id: i32) -> Result<Vec<AdminReplyRow>, ServerFnError> {
+  #[cfg(feature = "server")]
+  {
+    use app_core::entities::{topic_reply, user as user_entity};
+    use app_core::session::require_admin;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+
+    let _ = require_admin().await?;
+    let db = open_db().await?;
+    let rows = topic_reply::Entity::find()
+      .filter(topic_reply::Column::TopicId.eq(topic_id))
+      .order_by_asc(topic_reply::Column::CreatedAt)
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let mut user_ids: Vec<i32> = rows.iter().map(|r| r.user_id).collect();
+    user_ids.sort();
+    user_ids.dedup();
+    let users: std::collections::HashMap<i32, String> = user_entity::Entity::find()
+      .filter(user_entity::Column::Id.is_in(user_ids))
+      .all(&db)
+      .await
+      .map_err(|e| ServerFnError::new(e.to_string()))?
+      .into_iter()
+      .map(|u| (u.id, u.nickname))
+      .collect();
+    Ok(
+      rows
+        .into_iter()
+        .map(|r| AdminReplyRow {
+          id: r.id,
+          author: users.get(&r.user_id).cloned().unwrap_or_else(|| "已注销".to_string()),
+          content: r.content,
+          created_at: fmt_dt(r.created_at),
+        })
+        .collect(),
+    )
+  }
+  #[cfg(not(feature = "server"))]
+  {
+    let _ = topic_id;
+    Ok(vec![])
   }
 }
 
@@ -968,7 +1014,7 @@ pub async fn admin_get_moderation_settings(
     use app_core::session::require_admin;
     use app_core::settings::SiteConfig;
     let _ = require_admin().await?;
-    let path = get_asset_root().join("site.json");
+    let path = app_core::utils::get_asset_root().join("site.json");
     let config = SiteConfig::from_file(path.to_str().unwrap_or("assets/site.json"))
       .map_err(|e| ServerFnError::new(e.to_string()))?;
     Ok(config.moderation)
@@ -998,7 +1044,7 @@ pub async fn admin_set_moderation_settings(
     let _ = require_admin().await?;
     validate_moderation_settings(&settings).map_err(ServerFnError::new)?;
 
-    let path = get_asset_root().join("site.json");
+    let path = app_core::utils::get_asset_root().join("site.json");
     write_moderation_settings_to_site_json(&path, &settings).map_err(ServerFnError::new)?;
 
     // 立即生效：审核 pipeline 重建（重读 site.json + LLM env）

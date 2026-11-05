@@ -12,7 +12,6 @@ tracing = { workspace = true }
 serde_yaml = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"], optional = true }
-sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
 app-core = { path = "../../core" }
 
@@ -28,3 +27,6 @@ server = [
     "widgets/server",
     "app-core/server",
 ]
+
+[lints]
+workspace = true

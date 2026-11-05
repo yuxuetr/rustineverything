@@ -4604,7 +4604,6 @@ dependencies = [
  "dioxus-shadcn",
  "futures",
  "module-moderation",
- "sdk",
  "sea-orm",
  "serde",
  "serde_json",
@@ -4619,7 +4618,6 @@ version = "0.1.0"
 dependencies = [
  "board",
  "dioxus",
- "sdk",
 ]
 
 [[package]]
@@ -4628,7 +4626,6 @@ version = "0.1.0"
 dependencies = [
  "app-core",
  "dioxus",
- "sdk",
  "serde",
  "tokio",
  "tracing",
@@ -4642,7 +4639,6 @@ dependencies = [
  "app-core",
  "dioxus",
  "dioxus-shadcn",
- "sdk",
  "serde",
  "serde_yaml",
  "tempfile",
@@ -4656,7 +4652,6 @@ version = "0.1.0"
 dependencies = [
  "board",
  "dioxus",
- "sdk",
 ]
 
 [[package]]
@@ -4706,7 +4701,6 @@ dependencies = [
  "chrono",
  "dioxus",
  "dioxus-shadcn",
- "sdk",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -4722,7 +4716,6 @@ version = "0.1.0"
 dependencies = [
  "board",
  "dioxus",
- "sdk",
 ]
 
 [[package]]
@@ -4815,7 +4808,6 @@ dependencies = [
  "chrono",
  "dioxus",
  "dioxus-shadcn",
- "sdk",
  "serde",
  "serde_yaml",
  "tempfile",
@@ -4830,7 +4822,6 @@ dependencies = [
  "app-core",
  "dioxus",
  "dioxus-shadcn",
- "sdk",
  "sea-orm",
  "serde",
  "serde_json",
@@ -4864,7 +4855,6 @@ version = "0.1.0"
 dependencies = [
  "board",
  "dioxus",
- "sdk",
 ]
 
 [[package]]
@@ -4873,7 +4863,6 @@ version = "0.1.0"
 dependencies = [
  "board",
  "dioxus",
- "sdk",
 ]
 
 [[package]]

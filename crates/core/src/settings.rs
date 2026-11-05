@@ -21,9 +21,7 @@ pub struct SiteConfig {
   /// 默认主题 id（见 [`crate::engines::theme::THEMES`]）；访客可用 cookie 覆盖。
   #[serde(default = "default_theme")]
   pub theme: String,
-  /// 当前生效布局（Phase 3.3）：默认 `"classic"`。
-  /// 受 [`crate::engines::layout::LayoutEngine`] 注册项约束；不存在时
-  /// `LayoutShell` 应回退到 classic。
+  /// 当前生效布局（Phase 3.3）：`"classic"`（默认）或 `"minimal"`；其它值回退到 classic。
   #[serde(default = "default_layout")]
   pub active_layout: String,
   pub default_language: String,

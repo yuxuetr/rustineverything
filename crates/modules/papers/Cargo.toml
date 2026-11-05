@@ -48,3 +48,6 @@ required-features = ["ingest"]
 [dev-dependencies]
 async-trait = "0.1"
 migration = { path = "../../migration" }
+
+[lints]
+workspace = true

@@ -1,16 +1,6 @@
 pub mod podcast;
 pub mod server;
 
-use sdk::AppModule;
-
-pub struct PodcastModule;
-
-impl AppModule for PodcastModule {
-  fn name(&self) -> &'static str {
-    "Podcast"
-  }
-}
-
 /// 把本模块导出的 MDX 嵌入组件注册到 widgets 全局注册表。
 ///
 /// 调用点：`crates/app/src/main.rs` 启动期一次。该函数幂等。
