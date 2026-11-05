@@ -4,7 +4,7 @@
 //! 输出格式 [`IndexedDocument`] 与引擎层的 schema 一一对应。
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
@@ -150,28 +150,13 @@ fn file_mtime_secs(path: &Path) -> u64 {
     .unwrap_or(0)
 }
 
-fn get_asset_root() -> PathBuf {
-  let p = PathBuf::from("assets");
-  if p.exists() {
-    p
-  } else {
-    PathBuf::from("../../assets")
-  }
-}
-
 /// 解析 frontmatter 中常见的标量字段(title / description / date),
 /// 不引入 serde_yaml 依赖以保持兼容,简单按行扫描。
 fn parse_frontmatter_kv(content: &str) -> std::collections::HashMap<String, String> {
   let mut map = std::collections::HashMap::new();
-  if !content.starts_with("---") {
+  let Some((fm, _)) = widgets::split_frontmatter(content) else {
     return map;
-  }
-  let after = &content[3..];
-  let end = match after.find("\n---") {
-    Some(e) => e,
-    None => return map,
   };
-  let fm = &after[..end];
   for line in fm.lines() {
     let line = line.trim();
     if line.is_empty() || line.starts_with('#') {
@@ -270,7 +255,7 @@ use crate::BOARD_KINDS as BOARD_IDS;
 fn collect_boards_versioned() -> Vec<VersionedDoc> {
   let mut out = Vec::new();
   for board in BOARD_IDS {
-    let dir = get_asset_root().join("topics").join(board);
+    let dir = app_core::utils::get_asset_root().join("topics").join(board);
     let entries = match std::fs::read_dir(&dir) {
       Ok(e) => e,
       Err(_) => continue,
@@ -424,29 +409,6 @@ async fn collect_registered_external() -> Vec<IndexedDocument> {
     .collect()
 }
 
-/// 汇总所有可索引文档。
-///
-/// Phase 3.4：读取 `site.json::modules.<id>.enabled`，过滤掉关闭的模块。
-/// kind → module id 映射：blog→blog / doc→docs / topic→forum / case→cases。
-pub async fn collect_documents() -> Result<Vec<IndexedDocument>, String> {
-  let file_docs = collect_file_documents();
-  #[cfg(feature = "server")]
-  let dyn_docs = collect_dyn_documents().await;
-  #[cfg(not(feature = "server"))]
-  let dyn_docs: Vec<IndexedDocument> = Vec::new();
-
-  let mut all: Vec<IndexedDocument> = file_docs.into_iter().map(|v| v.doc).collect();
-  all.extend(dyn_docs);
-
-  #[cfg(feature = "server")]
-  {
-    let enabled = app_core::engines::module::default_module_engine().enabled_ids();
-    all = filter_documents_by_enabled(all, &enabled);
-  }
-
-  Ok(all)
-}
-
 /// 收集所有文件来源的索引文档（带 mtime，供 Phase 7.3.3 增量索引使用）。
 ///
 /// 来源：blog / boards (`embedded`/`ai`/...) / doc。不包含 cases / topics
@@ -490,7 +452,7 @@ pub fn filter_versioned_by_enabled(
 /// Phase 3.4：按 module id 过滤已汇总的索引文档，便于上层显式调用。
 ///
 /// `enabled_module_ids` 来自 [`app_core::engines::module::ModuleEngine::enabled_ids`]。
-/// kind → module id 同 [`collect_documents`]。该函数纯逻辑，便于单测覆盖。
+/// kind → module id：blog→blog / doc→docs / topic→forum / case→cases。该函数纯逻辑，便于单测覆盖。
 pub fn filter_documents_by_enabled(
   docs: Vec<IndexedDocument>,
   enabled_module_ids: &[String],

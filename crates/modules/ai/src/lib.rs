@@ -3,7 +3,6 @@
 
 use board::{Board, BoardArticle, BoardIndex, FeaturedCrate};
 use dioxus::prelude::*;
-use sdk::AppModule;
 
 pub const BOARD: Board = Board {
   id: "ai",
@@ -27,14 +26,6 @@ pub fn AiIndexPage() -> Element {
 #[component]
 pub fn AiArticlePage(slug: String) -> Element {
   rsx! { BoardArticle { board: BOARD, slug } }
-}
-
-pub struct AiModule;
-
-impl AppModule for AiModule {
-  fn name(&self) -> &'static str {
-    "AI"
-  }
 }
 
 #[cfg(test)]

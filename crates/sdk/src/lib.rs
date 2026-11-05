@@ -1,5 +1,4 @@
-//! 业务模块共享的类型：审核提交 [`ModerationSubmission`] / [`ImageRef`]，
-//! 以及模块初始化约定 [`AppModule`]。
+//! 业务模块共享的类型：审核提交 [`ModerationSubmission`] / [`ImageRef`]。
 use serde::{Deserialize, Serialize};
 
 /// 提交给审核的内容（评论 / 话题 / 标注等业务模块 → `module-moderation`）。
@@ -70,17 +69,6 @@ impl ModerationSubmission {
   pub fn push_image(mut self, image: ImageRef) -> Self {
     self.images.push(image);
     self
-  }
-}
-
-/// 内置业务模块 Trait
-/// 用于规范 博客、播客、论坛等模块的初始化
-pub trait AppModule {
-  fn name(&self) -> &'static str;
-
-  /// 模块初始化钩子（例如初始化数据库表）
-  fn init(&self) -> Result<(), Box<dyn std::error::Error>> {
-    Ok(())
   }
 }
 

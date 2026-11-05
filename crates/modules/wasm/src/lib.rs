@@ -3,7 +3,6 @@
 
 use board::{Board, BoardArticle, BoardIndex, FeaturedCrate};
 use dioxus::prelude::*;
-use sdk::AppModule;
 
 pub const BOARD: Board = Board {
   id: "wasm",
@@ -27,14 +26,6 @@ pub fn WasmIndexPage() -> Element {
 #[component]
 pub fn WasmArticlePage(slug: String) -> Element {
   rsx! { BoardArticle { board: BOARD, slug } }
-}
-
-pub struct WasmModule;
-
-impl AppModule for WasmModule {
-  fn name(&self) -> &'static str {
-    "WASM"
-  }
 }
 
 #[cfg(test)]

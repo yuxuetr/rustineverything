@@ -249,6 +249,7 @@ pub async fn get_episode_by_id(id: i32) -> Result<Option<Episode>, ServerFnError
 // ========== Tests ==========
 
 #[cfg(all(test, feature = "server"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
   use super::*;
   use std::path::Path;

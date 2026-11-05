@@ -35,7 +35,7 @@
 | `doc` | `assets/docs/<path>/index.{md,mdx}`(递归,跳过 `_xxx`/`.xxx`) | 相对路径 |
 | `topic` | DB `topics`(全表) | topic id |
 
-未在本期纳入:课程 lesson、评论、标注。后续追加时仅扩展 `indexer.rs::collect_documents`,无需触动 schema。
+未在本期纳入:课程 lesson、评论、标注。后续追加时仅扩展 `indexer.rs` 的 `collect_file_documents` / `collect_dyn_documents`,无需触动 schema。
 
 ## 5. API 契约
 ### `POST /api/search/query`

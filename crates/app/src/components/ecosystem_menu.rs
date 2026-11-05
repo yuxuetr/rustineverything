@@ -26,6 +26,17 @@ pub fn EcosystemMenu(eco: Ecosystem, enabled: Vec<String>) -> Element {
     eco.domains.iter().filter(|d| enabled.iter().any(|e| e == d.module_id)).cloned().collect();
   let on = |id: &str| enabled.iter().any(|e| e == id);
 
+  // 当前页属于这个生态（任一领域页或其子页、生态落地页）时，触发按钮按选中态显示，
+  // 与普通导航项一致；以前在 /papers、/ai 等页面顶栏没有任何选中项。
+  let current = use_route::<Route>().to_string();
+  let active = current == format!("/ecosystem/{}", eco.id)
+    || eco.domains.iter().any(|d| path_within(&current, &d.route.to_string()));
+  let button_class = if active {
+    "inline-flex items-center gap-1 px-2 h-14 text-[var(--color-primary)] font-bold border-b-2 border-[var(--color-primary)] transition-colors"
+  } else {
+    "inline-flex items-center gap-1 px-2 h-14 text-slate-700 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white transition-colors"
+  };
+
   let item_class = "block px-2 py-1.5 rounded-md text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors";
   let col_title =
     "text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2";
@@ -33,7 +44,7 @@ pub fn EcosystemMenu(eco: Ecosystem, enabled: Vec<String>) -> Element {
   rsx! {
       div { class: "relative group h-14 flex items-center",
           button {
-              class: "inline-flex items-center gap-1 px-2 h-14 text-slate-700 hover:text-slate-900 dark:text-slate-200 dark:hover:text-white transition-colors",
+              class: "{button_class}",
               aria_haspopup: "true",
               "{label}"
               svg {
@@ -89,5 +100,25 @@ pub fn EcosystemMenu(eco: Ecosystem, enabled: Vec<String>) -> Element {
               }
           }
       }
+  }
+}
+
+/// `current` 是 `section` 本身或其下的页面（按路径段，`/papers-x` 不算 `/papers` 之下）。
+fn path_within(current: &str, section: &str) -> bool {
+  let current = current.split(['?', '#']).next().unwrap_or(current);
+  current == section || current.strip_prefix(section).is_some_and(|rest| rest.starts_with('/'))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::path_within;
+
+  #[test]
+  fn path_within_matches_by_segment() {
+    assert!(path_within("/papers", "/papers"));
+    assert!(path_within("/papers/topic/agents", "/papers"));
+    assert!(path_within("/ai?tag=x", "/ai"));
+    assert!(!path_within("/papers-old", "/papers"));
+    assert!(!path_within("/blog", "/papers"));
   }
 }

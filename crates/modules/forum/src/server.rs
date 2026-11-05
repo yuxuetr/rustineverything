@@ -159,30 +159,17 @@ pub fn validate_new_reply(content: &str) -> Result<(), String> {
 // Server-only helpers
 // =============================================================
 
-#[allow(dead_code)]
-#[cfg(feature = "server")]
-fn get_asset_root() -> PathBuf {
-  let p = PathBuf::from("assets");
-  if p.exists() {
-    p
-  } else {
-    PathBuf::from("../../assets")
-  }
-}
-
 /// 从 frontmatter / 课程 YAML / 一级标题中尽力提取标题
 #[cfg(feature = "server")]
 fn extract_title_line(content: &str) -> Option<String> {
   // 尝试 frontmatter `title: xxx`
-  if content.starts_with("---") {
-    if let Some(rest) = content.split("---").nth(1) {
-      for line in rest.lines() {
-        let line = line.trim();
-        if let Some(value) = line.strip_prefix("title:") {
-          let t = value.trim().trim_matches(|c| c == '"' || c == '\'');
-          if !t.is_empty() {
-            return Some(t.to_string());
-          }
+  if let Some((rest, _)) = widgets::split_frontmatter(content) {
+    for line in rest.lines() {
+      let line = line.trim();
+      if let Some(value) = line.strip_prefix("title:") {
+        let t = value.trim().trim_matches(|c| c == '"' || c == '\'');
+        if !t.is_empty() {
+          return Some(t.to_string());
         }
       }
     }
@@ -213,7 +200,7 @@ fn read_index_title(dir: &Path) -> Option<String> {
 /// 按 ref_kind/ref_path 反查标题；找不到则用 path 兜底
 #[cfg(feature = "server")]
 fn resolve_ref_title(kind: &str, path: &str) -> String {
-  let root = get_asset_root();
+  let root = app_core::utils::get_asset_root();
   let fallback = || path.to_string();
   // 包一层 sub_root：blog → posts/, doc → docs/, ...
   let courses = app_core::utils::content_dir("courses");
@@ -748,6 +735,7 @@ pub async fn list_my_topics() -> Result<Vec<TopicSummary>, ServerFnError> {
 // =============================================================
 
 #[cfg(all(test, feature = "server"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
   use super::*;
 

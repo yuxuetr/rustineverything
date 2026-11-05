@@ -1,5 +1,5 @@
 use crate::server::{get_episode_by_id, list_episodes, Episode};
-use app_core::i18n::Language;
+use app_core::i18n::{t, Language};
 use dioxus::prelude::try_use_context;
 use dioxus::prelude::*;
 use dioxus_shadcn::{
@@ -22,43 +22,6 @@ fn tag_chip_class(active: bool) -> String {
 /// 从 context 获取当前语言，默认中文
 fn use_language_ctx() -> Language {
   try_use_context::<Signal<Language>>().map(|s| s()).unwrap_or(Language::Zh)
-}
-
-/// 播客页面静态翻译
-fn tp(lang: Language, key: &str) -> &'static str {
-  match (lang, key) {
-    (Language::En, "podcast.title") => "Rust Deep Podcast",
-    (Language::Zh, "podcast.title") => "Rust 深度播客",
-    (Language::En, "podcast.subtitle") => {
-      "Explore the frontiers of technology, listen to ideas that resonate"
-    }
-    (Language::Zh, "podcast.subtitle") => "探索技术边界，聆听思维回响",
-    (Language::En, "podcast.more") => "Episodes",
-    (Language::Zh, "podcast.more") => "节目列表",
-    (Language::En, "podcast.guest") => "Guest",
-    (Language::Zh, "podcast.guest") => "嘉宾",
-    (Language::En, "podcast.empty") => "No episodes yet",
-    (Language::Zh, "podcast.empty") => "暂无节目",
-    (Language::En, "podcast.all") => "All",
-    (Language::Zh, "podcast.all") => "全部",
-    (Language::En, "podcast.filter") => "Filter by tag",
-    (Language::Zh, "podcast.filter") => "标签筛选",
-    (Language::En, "podcast.prev") => "Previous page",
-    (Language::Zh, "podcast.prev") => "上一页",
-    (Language::En, "podcast.next") => "Next page",
-    (Language::Zh, "podcast.next") => "下一页",
-    (Language::En, "podcast.not_found") => "Podcast episode not found",
-    (Language::Zh, "podcast.not_found") => "找不到该播客节目",
-    (Language::En, "podcast.loading") => "Loading…",
-    (Language::Zh, "podcast.loading") => "加载中…",
-    (Language::En, "podcast.featured") => "Featured Podcast",
-    (Language::Zh, "podcast.featured") => "推荐播客",
-    (Language::En, "podcast.no_audio") => "Audio for this episode is not available yet",
-    (Language::Zh, "podcast.no_audio") => "本期音频暂未上线",
-    (Language::En, "podcast.no_results") => "No episodes match this tag",
-    (Language::Zh, "podcast.no_results") => "没有匹配该标签的节目",
-    _ => "",
-  }
 }
 
 #[component]
@@ -88,15 +51,15 @@ pub fn PodcastPage(footer: Element) -> Element {
   let lang = use_language_ctx();
   rsx! {
       widgets::PageMeta {
-          title: tp(lang, "podcast.title").to_string(),
-          description: tp(lang, "podcast.subtitle").to_string(),
+          title: t(lang, "podcast.title").to_string(),
+          description: t(lang, "podcast.subtitle").to_string(),
           path: "/podcast".to_string(),
       }
       section { class: "py-12 bg-[var(--color-bg)] transition-colors duration-300",
           LocalContainer {
               LocalSectionTitle {
-                  title: tp(lang, "podcast.title").to_string(),
-                  subtitle: Some(tp(lang, "podcast.subtitle").to_string())
+                  title: t(lang, "podcast.title").to_string(),
+                  subtitle: Some(t(lang, "podcast.subtitle").to_string())
               }
               SuspenseBoundary {
                   fallback: |_| rsx! {
@@ -154,7 +117,7 @@ fn PodcastBody() -> Element {
   rsx! {
               match current_episode {
                   None => rsx! {
-                      Empty { class: "py-20", EmptyDescription { "{tp(lang, \"podcast.empty\")}" } }
+                      Empty { class: "py-20", EmptyDescription { "{t(lang, \"podcast.empty\")}" } }
                   },
                   Some(active) => rsx! {
                       // 2列布局：左=播放器+标签（sticky），右=节目列表（sticky）
@@ -168,7 +131,7 @@ fn PodcastBody() -> Element {
                                   div { class: "p-8 md:p-10",
                                       if let Some(ref guest) = active.guest {
                                           div { class: "text-xs font-bold text-primary uppercase tracking-widest mb-3",
-                                              "{tp(lang, \"podcast.guest\")}: {guest}"
+                                              "{t(lang, \"podcast.guest\")}: {guest}"
                                           }
                                       }
                                       h2 { class: "text-2xl md:text-3xl font-bold tracking-tight text-white leading-snug",
@@ -202,7 +165,7 @@ fn PodcastBody() -> Element {
                                                   "Your browser does not support the audio element."
                                               }
                                           } else {
-                                              p { class: "text-sm text-slate-400", "{tp(lang, \"podcast.no_audio\")}" }
+                                              p { class: "text-sm text-slate-400", "{t(lang, \"podcast.no_audio\")}" }
                                           }
                                       }
                                   }
@@ -212,7 +175,7 @@ fn PodcastBody() -> Element {
                               if !all_tags.is_empty() {
                                   div { class: card_class("rounded-2xl p-5 shadow-none"),
                                       p { class: "text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3",
-                                          "{tp(lang, \"podcast.filter\")}"
+                                          "{t(lang, \"podcast.filter\")}"
                                       }
                                       div { class: "flex flex-wrap gap-2",
                                           // "全部" chip
@@ -224,7 +187,7 @@ fn PodcastBody() -> Element {
                                                       "aria-pressed": is_all.to_string(),
                                                       onclick: move |_| active_tag.set(None),
                                                       class: tag_chip_class(is_all),
-                                                      "{tp(lang, \"podcast.all\")}"
+                                                      "{t(lang, \"podcast.all\")}"
                                                       span { class: "opacity-60", "{episodes.len()}" }
                                                   }
                                               }
@@ -259,7 +222,7 @@ fn PodcastBody() -> Element {
 
                               div { class: "flex items-center justify-between px-5 pt-5 pb-3",
                                   h3 { class: "text-sm font-semibold text-[var(--color-text)]",
-                                      "{tp(lang, \"podcast.more\")}"
+                                      "{t(lang, \"podcast.more\")}"
                                   }
                                   span { class: "text-xs text-slate-400 tabular-nums",
                                       "{filtered.len()} / {episodes.len()}"
@@ -270,7 +233,7 @@ fn PodcastBody() -> Element {
                               div { class: "divide-y divide-slate-200 dark:divide-slate-800",
                                   if paged.is_empty() {
                                       div { class: "text-center text-slate-400 text-sm py-10",
-                                          "{tp(lang, \"podcast.no_results\")}"
+                                          "{t(lang, \"podcast.no_results\")}"
                                       }
                                   }
                                   for episode in paged.iter() {
@@ -321,7 +284,7 @@ fn PodcastBody() -> Element {
                                           variant: ButtonVariant::Ghost,
                                           size: ButtonSize::Sm,
                                           disabled: safe_page == 0,
-                                          "aria-label": tp(lang, "podcast.prev"),
+                                          "aria-label": t(lang, "podcast.prev"),
                                           onclick: move |_| { if current_page() > 0 { current_page.set(current_page() - 1); } },
                                           "←"
                                       }
@@ -332,7 +295,7 @@ fn PodcastBody() -> Element {
                                           variant: ButtonVariant::Ghost,
                                           size: ButtonSize::Sm,
                                           disabled: safe_page + 1 >= total_pages,
-                                          "aria-label": tp(lang, "podcast.next"),
+                                          "aria-label": t(lang, "podcast.next"),
                                           onclick: move |_| { if current_page() + 1 < total_pages { current_page.set(current_page() + 1); } },
                                           "→"
                                       }
@@ -356,7 +319,7 @@ pub fn PodcastCard(id: i32) -> Element {
     Some(Some(ep)) => rsx! {
         div { class: card_class("not-prose my-8 p-6 rounded-2xl flex flex-col md:flex-row gap-6 items-center"),
             div { class: "flex-1 w-full",
-                div { class: "text-xs font-bold text-primary uppercase tracking-widest mb-2", "{tp(lang, \"podcast.featured\")}" }
+                div { class: "text-xs font-bold text-primary uppercase tracking-widest mb-2", "{t(lang, \"podcast.featured\")}" }
                 h4 { class: "text-xl font-extrabold text-slate-900 dark:text-white mb-2", "{ep.title}" }
                 div { class: "text-sm text-slate-500 mb-4", "{ep.date} · {ep.duration}" }
                 if let Some(ref url) = ep.url {
@@ -367,12 +330,12 @@ pub fn PodcastCard(id: i32) -> Element {
     },
     Some(None) => rsx! {
         Alert { variant: AlertVariant::Warning, class: "not-prose my-8",
-            AlertDescription { variant: AlertVariant::Warning, "{tp(lang, \"podcast.not_found\")} (#{id})" }
+            AlertDescription { variant: AlertVariant::Warning, "{t(lang, \"podcast.not_found\")} (#{id})" }
         }
     },
     None => rsx! {
         div { class: "not-prose my-8 p-4 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-500",
-            "{tp(lang, \"podcast.loading\")}"
+            "{t(lang, \"podcast.loading\")}"
         }
     },
   }

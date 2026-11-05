@@ -12,15 +12,6 @@ use crate::sort_by_date_desc;
 use crate::ArticleSummary;
 
 #[allow(dead_code)]
-fn topics_root() -> PathBuf {
-  let mut path = PathBuf::from("assets");
-  if !path.exists() {
-    path = PathBuf::from("../../assets");
-  }
-  path.join("topics")
-}
-
-#[allow(dead_code)]
 #[derive(Debug, serde::Deserialize, Default)]
 struct FrontMatter {
   #[serde(default)]
@@ -37,14 +28,9 @@ struct FrontMatter {
 
 #[allow(dead_code)]
 fn parse_frontmatter(content: &str) -> FrontMatter {
-  if !content.starts_with("---") {
-    return FrontMatter::default();
-  }
-  let parts: Vec<&str> = content.splitn(3, "---").collect();
-  if parts.len() < 3 {
-    return FrontMatter::default();
-  }
-  serde_yaml::from_str(parts[1]).unwrap_or_default()
+  widgets::split_frontmatter(content)
+    .and_then(|(yaml, _)| serde_yaml::from_str(yaml).ok())
+    .unwrap_or_default()
 }
 
 /// 文章目录下的正文文件，`index.mdx` 优先。
@@ -103,7 +89,7 @@ pub async fn list_board_articles(board: String) -> Result<Vec<ArticleSummary>, S
   if !app_core::utils::is_safe_slug(&board) {
     return Err(ServerFnError::new("无效的板块标识".to_string()));
   }
-  let root = topics_root();
+  let root = app_core::utils::get_asset_root().join("topics");
   let fp = app_core::utils::fingerprint_for_dir(&root, |p| {
     matches!(p.file_name().and_then(|n| n.to_str()), Some("index.md" | "index.mdx"))
   });
@@ -129,13 +115,14 @@ pub async fn get_board_article(
   board: String,
   slug: String,
 ) -> Result<Option<String>, ServerFnError> {
-  read_article(&topics_root(), &board, &slug).map_err(|e| {
+  read_article(&app_core::utils::get_asset_root().join("topics"), &board, &slug).map_err(|e| {
     tracing::error!(board = %board, slug = %slug, error = %e, "board: read article failed");
     ServerFnError::new("读取失败".to_string())
   })
 }
 
 #[cfg(all(test, feature = "server"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
   use super::*;
 
@@ -170,7 +157,7 @@ mod tests {
   /// 内容校验：frontmatter 解析失败会静默退化为空标题（曾因描述里未转义的 `"` 发生）。
   #[test]
   fn every_real_article_has_a_title() {
-    let all = build_all(&topics_root());
+    let all = build_all(&app_core::utils::get_asset_root().join("topics"));
     assert!(!all.is_empty(), "找不到 assets/topics");
     let untitled: Vec<String> = all
       .iter()

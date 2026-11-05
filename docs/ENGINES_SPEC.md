@@ -240,4 +240,4 @@ Phase 1C 完成时：
 - `crates/core/src/engines/content.rs:80` — `ContentEngine`
 - `crates/core/src/engines/moderation.rs:78` — `ModerationEngine`
 - `crates/core/src/engines/search.rs:42` — `SearchEngine`
-- `crates/sdk/src/lib.rs` — `ModerationSubmission` / `ImageRef` / `AppModule`（R5 起仅剩共享类型）
+- `crates/sdk/src/lib.rs` — `ModerationSubmission` / `ImageRef`（共享类型；`AppModule` 2026-11-05 删除）

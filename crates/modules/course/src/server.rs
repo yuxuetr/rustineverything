@@ -521,22 +521,9 @@ fn rewrite_one_url(url: &str, base: &str) -> String {
 /// 解析 markdown 中的 frontmatter (YAML between ---)
 #[cfg(feature = "server")]
 pub(crate) fn parse_frontmatter_lesson(content: &str) -> (LessonFrontmatter, String) {
-  if !content.starts_with("---") {
-    return (LessonFrontmatter::default(), content.to_string());
-  }
-  let parts: Vec<&str> = content.splitn(3, "---").collect();
-  if parts.len() < 3 {
-    return (LessonFrontmatter::default(), content.to_string());
-  }
-  #[cfg(feature = "server")]
-  {
-    let meta: LessonFrontmatter = serde_yaml::from_str(parts[1]).unwrap_or_default();
-    (meta, parts[2].to_string())
-  }
-  #[cfg(not(feature = "server"))]
-  {
-    // 客户端不解析 YAML（避免引入 serde_yaml 到 client target）
-    return (LessonFrontmatter::default(), parts[2].to_string());
+  match widgets::split_frontmatter(content) {
+    Some((yaml, body)) => (serde_yaml::from_str(yaml).unwrap_or_default(), body.to_string()),
+    None => (LessonFrontmatter::default(), content.to_string()),
   }
 }
 
@@ -3111,6 +3098,7 @@ pub async fn update_annotation(
 // =============================================================
 
 #[cfg(all(test, feature = "server"))]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
   use super::*;
   use std::fs as stdfs;

@@ -7,18 +7,16 @@
 //!
 //! - [`theme`]：CSS 聚合（按主题栈）
 //! - [`module`]：业务模块开关 + 元数据（Navbar / sitemap 通过 [`module::ModuleSpec`] 单点读取）
-//! - [`layout`]：Classic / Minimal 布局选择
-//! - [`moderation`]：审核 verdict / pipeline 数据结构
-//! - [`search`]：搜索栈状态（具体 SearchEngine 在 module-search 里）
+//! - [`moderation`]：审核 verdict 与阈值（流水线在 module-moderation）
 //!
 //! ## 历史
 //! - Phase 8.7：删除 `EngineRegistry` / `EngineContext` / `Engine` trait（死代码）；
 //!   删除 `core::engines::content::ComponentRegistry`（与 `widgets::registry` 重复）。
+//! - 2026-11-05：删除从未被使用的 `layout`（LayoutEngine）、`search`（SearchSource /
+//!   SearchEngine，module-search 自有实现）与 `ModerationStage` / `ModerationEngine`。
 
 // 子引擎模块。
 pub mod doc_source;
-pub mod layout;
 pub mod moderation;
 pub mod module;
-pub mod search;
 pub mod theme;

@@ -55,3 +55,6 @@ dioxus-ssr = "0.7.9"
 
 [features]
 server = ["dioxus/server"]
+
+[lints]
+workspace = true

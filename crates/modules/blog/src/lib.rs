@@ -4,13 +4,3 @@
 //! 内容页 (`Blog`) 直接 `use widgets::Markdown` 即可。
 
 pub mod server;
-
-use sdk::AppModule;
-
-pub struct BlogModule;
-
-impl AppModule for BlogModule {
-  fn name(&self) -> &'static str {
-    "Blog"
-  }
-}

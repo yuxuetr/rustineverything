@@ -20,6 +20,11 @@ on:
 permissions:
   contents: read
 
+# 同一 PR 推新提交时取消还在跑的旧一轮；main 上每个提交都跑完。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   # 覆盖 .cargo/config.toml 中的开发者本地路径，让 CI 走默认 target/。
@@ -50,9 +55,10 @@ jobs:
         with:
           components: clippy
           targets: wasm32-unknown-unknown
+      # 三个 job 各用一个 key：共用一个 key 时三者都编译、都抢着写同一份缓存，只有一份留下
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci-server
+          shared-key: ci-clippy
       # Phase 7.7：收敛到 0-warning 后强校验（`-D warnings`）。测试 setup 的
       # 例外已用就地 #[allow] 标注。
       - name: cargo clippy --features server --workspace
@@ -68,7 +74,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci-server
+          shared-key: ci-test
       # 项目约定（Todos.md / scripts/）：`--test-threads=1` 避免全局
       # registry / DB 单例并发污染。
       - name: cargo test --features server --workspace
@@ -84,7 +90,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci-server
+          shared-key: ci-tiers
       # 仅 check 而非完整 build，CI 速度更快；产物的最终编译由部署管线负责。
       # 功能分层（docs/FEATURE_TIERS.md）：basic / accounts / course / 完整四档 ×
       # server / web 两端都必须编译通过且无 warning，防止 cfg 门控被新代码无意识破坏。
@@ -92,3 +98,38 @@ jobs:
       - name: feature tiers (scripts/check_tiers.sh)
         run: ./scripts/check_tiers.sh
 
+  # 网关不在 workspace 里（自带 Cargo.lock，tokio 锁在 1.54 以下，见 crates/gateway），
+  # 上面的 --workspace 不覆盖它；之前只有改到网关路径时 release.yml 的镜像构建碰一下。
+  gateway:
+    name: Gateway (clippy + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/gateway
+          shared-key: ci-gateway
+      - name: fmt
+        run: cargo fmt --manifest-path crates/gateway/Cargo.toml -- --check
+      - name: clippy
+        run: cargo clippy --manifest-path crates/gateway/Cargo.toml --all-targets --locked -- -D warnings
+      - name: test
+        run: cargo test --manifest-path crates/gateway/Cargo.toml --locked
+
+  # 依赖安全公告（RustSec）。有漏洞即红；暂不能修的写进 .cargo/audit.toml 并注明原因。
+  # 两份锁都查：网关的依赖树和主 workspace 不同。
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: workspace
+        run: cargo audit
+      - name: gateway
+        run: cargo audit --file crates/gateway/Cargo.lock

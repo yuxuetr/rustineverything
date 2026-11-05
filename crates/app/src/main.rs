@@ -24,6 +24,8 @@ const MAIN_CSS: Asset = asset!("/assets/css/main.css");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 const MATH_CSS: Asset = asset!("/assets/css/math.css");
 const PRISM_CSS: Asset = asset!("/assets/css/prism-tomorrow.min.css");
+/// Prism core + 语言包合成的一个文件（带哈希、长缓存），由引导脚本在页面出现代码块时才加载
+const PRISM_JS: Asset = asset!("/assets/js/prism.bundle.min.js");
 
 /// 全局一次性引导脚本：初始化 mermaid，对**整个文档**开 MutationObserver，
 /// 一旦 DOM 中出现未处理的 `<code class="language-*">` 或 `.mermaid` 块就
@@ -32,9 +34,9 @@ const PRISM_CSS: Asset = asset!("/assets/css/prism-tomorrow.min.css");
 /// 设计要点：
 /// - **只挂载一次**（在 App 根的 document::Script 里），避免 mdx 组件级别
 ///   的 Script 引起 dioxus-document props-change 警告且无法重跑。
-/// - prism 是 defer 脚本，首次 sweep 等到 DOMContentLoaded（此时 defer 脚本
-///   已执行完）；mermaid 不在 head 里，首次见到 `.mermaid` 块时才注入
-///   `<script>`，加载完再 sweep（G3，mermaid 3MB，多数页面用不到）。
+/// - prism 和 mermaid 都不在 head 里：首次见到代码块 / `.mermaid` 块时才注入
+///   `<script>`，加载完再 sweep（G3，mermaid 3MB；prism 40KB，列表页用不到）。
+///   prism 的地址带哈希，由 App 在脚本前写进 `window.__rie_prism_src`。
 /// - 代码块 / mermaid 块的内容是 `dangerous_inner_html`（见 widgets mdx.rs），
 ///   Dioxus 不跟踪其子节点，这里改写才不会弄坏 hydration。
 /// - 是否处理过按源码比较（WeakMap），SPA 导航复用节点换内容时会重新处理。
@@ -44,8 +46,9 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
   // 复用同一节点换内容，所以按源码比较而不是打一次性标记。
   var seen = window.__rie_seen || (window.__rie_seen = new WeakMap());
   function tryHighlight(root){
-    if(!window.Prism) return;
     var nodes = (root || document).querySelectorAll('code[class*="language-"]');
+    if(nodes.length === 0) return;
+    if(!window.Prism || typeof window.Prism.highlightElement !== 'function'){ loadPrism(); return; }
     for(var i = 0; i < nodes.length; i++){
       var src = nodes[i].textContent;
       if(seen.get(nodes[i]) === src) continue;
@@ -72,6 +75,16 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
       return;
     }
     try { window.mermaid.run({nodes: hits}); } catch(e) {}
+  }
+  // 按需加载 prism：只请求一次，加载完再扫一遍。manual 让它不自己扫全页，统一由 sweep 处理。
+  function loadPrism(){
+    if(window.__rie_prism_loading || !window.__rie_prism_src) return;
+    window.__rie_prism_loading = true;
+    window.Prism = window.Prism || {manual: true};
+    var s = document.createElement('script');
+    s.src = window.__rie_prism_src;
+    s.onload = sweep;
+    document.head.appendChild(s);
   }
   // 按需加载 mermaid：只请求一次，加载完再扫一遍。
   function loadMermaid(){
@@ -120,6 +133,42 @@ const LANG_BOOT_SCRIPT: &str =
   "(function(){try{var q=new URLSearchParams(location.search).get('lang');\
 var c=(document.cookie.match(/(?:^|; )site_lang=([^;]*)/)||[])[1];\
 var l=(q==='en'||q==='zh')?q:c;if(l==='en')document.documentElement.lang='en';}catch(e){}})();";
+
+/// 当前主题的 CSS。以前用 `use_resource` 在 hydration 之后才拉，SSR 的 HTML 里没有
+/// 主题变量，每次打开页面都先按默认色绘制、再跳成主题色（背景灰 → 白、主色变色）。
+/// 现在首屏经 `use_server_future` 随 SSR 下发；用户切换主题（`ThemeVersion` 变化）时
+/// 直接调 server fn 拿新 CSS 替换，不重新挂起。
+///
+/// 注意：**不能**用 `document::Style`（变更 props 会触发警告且不更新 DOM）；用普通
+/// `style` + `dangerous_inner_html`：CSS 落在 <body> 仍全局生效，且 vdom diff 正常更新内容。
+#[component]
+fn ThemeStyle() -> Element {
+  let version = crate::components::theme_picker::use_theme_version();
+  let first =
+    use_server_future(|| async move { get_aggregated_theme_css().await.unwrap_or_default() })?;
+  let mut switched = use_signal::<Option<String>>(|| None);
+  use_effect(move || {
+    // 首次挂载时 version 为 0，用 SSR 的那份；之后每次切换重取
+    if version() == 0 {
+      return;
+    }
+    spawn(async move {
+      match get_aggregated_theme_css().await {
+        Ok(css) => switched.set(Some(css)),
+        Err(e) => tracing::warn!(error = ?e, "frontend: failed to fetch theme"),
+      }
+    });
+  });
+  let css = switched().unwrap_or_else(|| first().unwrap_or_default());
+  rsx! {
+      style { id: "wasm-theme-style", dangerous_inner_html: "{css}" }
+  }
+}
+
+/// 见 HeadAssets：首次绘制前按 `localStorage.theme`（没有则跟随系统）加 `dark` class。
+const DARK_MODE_BOOT_SCRIPT: &str = "(function(){try{var t=localStorage.getItem('theme');\
+var d=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;\
+if(d)document.documentElement.classList.add('dark');}catch(e){}})();";
 
 /// 本次编译带进来的模块 id（docs/FEATURE_TIERS.md DL2）。导航 / ModuleGate / sitemap /
 /// 搜索只认这个集合；site.json 的模块开关只能在其中再关。
@@ -437,9 +486,15 @@ pub fn use_session_user() -> Signal<Option<SessionUser>> {
 /// "Changing the props of `Style {}` / `Script {}` is not supported" 警告。
 #[component]
 fn HeadAssets() -> Element {
+  // asset 路径只含 [A-Za-z0-9./_-]，可直接放进单引号字符串
+  let prism_src = PRISM_JS.to_string();
   rsx! {
       // <html lang> 跟首屏语言走（index.html 写死 zh-CN）；规则同 i18n::pick_language
       document::Script { {LANG_BOOT_SCRIPT} }
+      // 暗色偏好在首次绘制前就加到 <html> 上（同步内联脚本，规则同
+      // widgets::browser::dark_mode_preference）。以前只在 wasm 加载后的 use_effect 里设，
+      // 暗色用户每次打开页面先看到一屏白。
+      document::Script { {DARK_MODE_BOOT_SCRIPT} }
       // Head links
       document::Link { rel: "icon", href: FAVICON }
       // feed 自动发现（O4）：/feed.xml 是 Atom。
@@ -477,25 +532,13 @@ fn HeadAssets() -> Element {
       // pulldown-latex math fonts & styles
       document::Link { rel: "stylesheet", href: MATH_CSS }
 
-      // PrismJS for syntax highlighting (core + language packs, served via /js)。
-      // 全部 defer（G3）：不阻塞首屏，按文档顺序在 DOMContentLoaded 前执行完。
+      // PrismJS 样式常驻（很小）；脚本由下面的引导脚本按需加载。
       document::Link { rel: "stylesheet", href: PRISM_CSS }
-      document::Script { src: "/js/prism.min.js", defer: true }
-      document::Script { src: "/js/prism-rust.min.js", defer: true }
-      document::Script { src: "/js/prism-bash.min.js", defer: true }
-      document::Script { src: "/js/prism-toml.min.js", defer: true }
-      document::Script { src: "/js/prism-json.min.js", defer: true }
-      document::Script { src: "/js/prism-yaml.min.js", defer: true }
-      document::Script { src: "/js/prism-python.min.js", defer: true }
-      // M4：旧博客的 Swift / React / TS 代码；tsx 依赖 jsx 与 typescript，须排在其后。
-      document::Script { src: "/js/prism-swift.min.js", defer: true }
-      document::Script { src: "/js/prism-jsx.min.js", defer: true }
-      document::Script { src: "/js/prism-typescript.min.js", defer: true }
-      document::Script { src: "/js/prism-tsx.min.js", defer: true }
 
       // 全局 rehighlight / mermaid 触发器。**只挂载一次**，靠 MutationObserver
       // 自动捕获后续插入到 DOM 的代码块 / mermaid 块（含 SPA 路由切换换入的内容）。
-      // mermaid（3MB）由它在页面首次出现 `.mermaid` 块时再加载。
+      // prism / mermaid 都由它在页面首次出现对应块时再加载。
+      document::Script { "window.__rie_prism_src='{prism_src}';" }
       document::Script { {GLOBAL_REHIGHLIGHT_BOOT_SCRIPT} }
 
       // 运行时标注运行时（PR-D）；晚于 wasm 加载时由 `__rieAnnoPending` 补上
@@ -527,8 +570,8 @@ fn App() -> Element {
   let _ = use_search_open_provider();
 
   // Phase 3.1：ThemeVersion context。Navbar 的 ThemePicker 切换后 bump 该 Signal，
-  // 下面的 theme_css use_resource 将重新拉取聚合 CSS。
-  let theme_version = use_theme_version_provider();
+  // ThemeStyle 据此重取聚合 CSS。
+  let _ = use_theme_version_provider();
 
   // 全局用户会话
   let user: Signal<Option<SessionUser>> = use_signal(|| None);
@@ -552,46 +595,14 @@ fn App() -> Element {
     });
   }
 
-  // 拉取当前主题 CSS（内置主题）。订阅 theme_version 以便切换重拉。
-  //
-  // 重构 B6 评估：保留 use_resource，**不** 迁移到 use_server_future。理由：该调用
-  // 位于 App 根组件，`use_server_future` 的 `?` 需要祖先 SuspenseBoundary，会把整个
-  // 应用根挂起（blast radius 极大）；且它订阅 theme_version signal 以支持用户
-  // 实时切主题（客户端交互）。主题 CSS 通过 <style> 注入，首屏 FOUC 可接受。
-  let theme_css = use_resource(move || {
-    let _ = theme_version();
-    async move {
-      let result = get_aggregated_theme_css().await;
-      match &result {
-        Ok(css) => tracing::debug!(len = css.len(), "frontend: fetched theme CSS"),
-        Err(e) => tracing::warn!(error = ?e, "frontend: failed to fetch theme"),
-      }
-      result.unwrap_or_default()
-    }
-  });
-
-  // 原生渲染：读取当前 theme CSS，由下面的 RSX 直接输出为 <style> 节点。
-  // Phase 8.8：项目当前是 web-first via dioxus_fullstack（SSR + WASM hydration）。
-  // 原措辞「保留 desktop / mobile 等跨平台能力」与现状不符；浏览器操作
-  // 统一走 `widgets::browser`（web-sys），不用 eval：站点 CSP 不含 'unsafe-eval'。
-  let theme_css_value: String = theme_css.read().as_ref().cloned().unwrap_or_default();
-
   rsx! {
       // 静态 head 资源（图标 / CSS / 脚本）。抽到独立 memoized 组件，避免随 App
       // 重渲（主题 / 语言切换会 bump 信号触发 App 重渲）反复重挂 document::Style /
       // Script，进而触发 dioxus-document "Changing the props … is not supported" 警告。
       HeadAssets {}
 
-      // 当前内置主题的 CSS（随用户切换变化，必须留在 App 内响应式渲染）。
-      // 注意：**不能**用 `document::Style`（变更 props 会触发警告且不更新 DOM）；
-      // 改用普通 `style` + `dangerous_inner_html`：CSS 落在 <body> 仍全局生效，
-      // 且 vdom diff 正常更新内容。
-      if !theme_css_value.is_empty() {
-          style {
-              id: "wasm-theme-style",
-              dangerous_inner_html: "{theme_css_value}",
-          }
-      }
+      // 当前主题的 CSS 随 SSR 输出（自带一层只包住它的 SuspenseBoundary，挂起不波及整站）。
+      SuspenseBoundary { fallback: |_| VNode::empty(), ThemeStyle {} }
 
       // Main router entry
       Router::<Route> {}
