@@ -10,6 +10,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tracing = { workspace = true }
 serde_yaml = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["full"], optional = true }
 sdk = { path = "../../sdk" }
 widgets = { path = "../../widgets" }
@@ -23,6 +24,7 @@ server = [
     "dioxus/server",
     "dep:tokio",
     "dep:serde_yaml",
+    "dep:chrono",
     "widgets/server",
     "app-core/server",
 ]

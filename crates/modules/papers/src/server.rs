@@ -187,25 +187,33 @@ async fn open_db() -> Result<sea_orm::DatabaseConnection, ServerFnError> {
   app_core::db::get_or_init_pool().await.map_err(|e| ServerFnError::new(e.to_string()))
 }
 
-/// 全部已生成论文的 `/papers/<id>` 与各主题页 `/papers/topic/<slug>`，给 sitemap。
+/// 全部已生成论文的 `(/papers/<id>, 更新日期)` 与各主题页（无日期），给 sitemap。
 /// 数据库不可用时为空。
 #[cfg(feature = "server")]
-pub async fn sitemap_paths() -> Vec<String> {
+pub async fn sitemap_paths() -> Vec<(String, Option<String>)> {
   use crate::entities::paper;
   use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
   let Ok(db) = app_core::db::get_or_init_pool().await else {
     return Vec::new();
   };
-  let ids: Vec<String> = paper::Entity::find()
+  let rows: Vec<(String, chrono::DateTime<chrono::FixedOffset>)> = paper::Entity::find()
     .select_only()
     .column(paper::Column::ArxivId)
+    .column(paper::Column::UpdatedAt)
     .filter(paper::Column::Status.eq("done"))
     .into_tuple()
     .all(&db)
     .await
     .unwrap_or_default();
-  let topic_pages = crate::topics::TOPICS.iter().map(|t| format!("/papers/topic/{}", t.slug));
-  topic_pages.chain(ids.into_iter().map(|id| format!("/papers/{id}"))).collect()
+  let topic_pages =
+    crate::topics::TOPICS.iter().map(|t| (format!("/papers/topic/{}", t.slug), None));
+  topic_pages
+    .chain(
+      rows
+        .into_iter()
+        .map(|(id, at)| (format!("/papers/{id}"), Some(at.format("%Y-%m-%d").to_string()))),
+    )
+    .collect()
 }
 
 /// 搜索索引用的文档（kind = `paper`）：标题、摘要、各语言的一句话总结与要点。

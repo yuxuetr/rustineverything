@@ -4713,6 +4713,7 @@ name = "module-docs"
 version = "0.1.0"
 dependencies = [
  "app-core",
+ "chrono",
  "dioxus",
  "dioxus-shadcn",
  "sdk",
@@ -4746,6 +4747,7 @@ dependencies = [
  "sdk",
  "sea-orm",
  "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "widgets",

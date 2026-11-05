@@ -296,18 +296,17 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
           Some(Ok(Some(resp))) => rsx! {
               div { class: "flex justify-center gap-10",
                   article { class: "min-w-0 flex-1 max-w-3xl",
-                      // SEO：title / description / canonical / og 由 PageMeta 输出（服务端已从正文补齐），
-                      // 这里只补 keywords 与 og:image。
+                      // SEO：title / description / canonical / og / JSON-LD 由 PageMetaTags 输出
+                      // （服务端已从正文补齐），这里只补 keywords。
                       widgets::PageMetaTags {
                           title: resp.meta.title.clone(),
                           description: resp.meta.description.clone(),
                           path: format!("/docs/{}", doc_path_for_meta),
+                          schema: Some(doc_schema(&resp.meta)),
+                          image: resp.meta.image.clone(),
                       }
                       if !resp.meta.keywords.is_empty() {
                           document::Meta { name: "keywords", content: "{resp.meta.keywords.join(\", \")}" }
-                      }
-                      if let Some(ref img) = resp.meta.image {
-                          document::Meta { property: "og:image", content: "{img}" }
                       }
                       if let Some(ref src) = resp.meta.source {
                           a {
@@ -373,4 +372,28 @@ fn is_path_within(node: &DocTreeNode, active_path: &str) -> bool {
     return true;
   }
   node.children.iter().any(|c| is_path_within(c, active_path))
+}
+
+/// 文档页的 schema.org `TechArticle`；锁了源码版本的页面带上 `about`（对应的 crate 与版本）。
+fn doc_schema(meta: &crate::server::DocMeta) -> serde_json::Value {
+  let mut v = serde_json::json!({
+    "@type": "TechArticle",
+    "headline": meta.title,
+    "description": meta.description,
+    "inLanguage": "zh-CN",
+    "isPartOf": { "@type": "WebSite", "name": widgets::SITE_NAME },
+  });
+  if !meta.keywords.is_empty() {
+    v["keywords"] = meta.keywords.join(", ").into();
+  }
+  if let Some(src) = &meta.source {
+    v["about"] = serde_json::json!({
+      "@type": "SoftwareSourceCode",
+      "name": src.krate,
+      "version": src.version,
+      "url": format!("https://docs.rs/{}/{}", src.krate, src.version),
+      "programmingLanguage": "Rust",
+    });
+  }
+  v
 }
