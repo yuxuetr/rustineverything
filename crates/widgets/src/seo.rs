@@ -130,10 +130,14 @@ pub fn PageMeta(
   /// 分享图（站内路径或绝对 URL）；不给用站点默认图
   #[props(default)]
   image: Option<String>,
+  /// 页面有中英两版（英文版是 `path?lang=en`）时给 `Some(当前是否英文)`：输出 hreflang，
+  /// canonical 指向当前语言那一版（docs/I18N_URLS.md）。`None`：只有中文版。
+  #[props(default)]
+  bilingual: Option<bool>,
 ) -> Element {
   rsx! {
       SuspenseBoundary { fallback: |_| VNode::empty(),
-          PageMetaTags { title, description, path, schema, image }
+          PageMetaTags { title, description, path, schema, image, bilingual }
       }
   }
 }
@@ -148,11 +152,20 @@ pub fn PageMetaTags(
   /// 分享图（站内路径或绝对 URL）；不给用站点默认图
   #[props(default)]
   image: Option<String>,
+  /// 见 [`PageMeta`] 的同名参数
+  #[props(default)]
+  bilingual: Option<bool>,
 ) -> Element {
   let base_url_res =
     use_server_future(|| async move { get_seo_base_url().await.unwrap_or_default() })?;
   let base_url = base_url_res().unwrap_or_default();
-  let canonical = build_canonical(None, &path, &base_url);
+  let canonical = build_canonical(None, &lang_path(&path, bilingual == Some(true)), &base_url);
+  let alternates = bilingual.map(|_| {
+    (
+      build_canonical(None, &path, &base_url),
+      build_canonical(None, &lang_path(&path, true), &base_url),
+    )
+  });
   let full_title = page_title(&title);
   let json_ld = schema.as_ref().and_then(|v| page_json_ld(v, &canonical));
   let image =
@@ -173,9 +186,24 @@ pub fn PageMetaTags(
       document::Meta { name: "twitter:title", content: "{full_title}" }
       document::Meta { name: "twitter:image", content: "{image}" }
       document::Link { rel: "canonical", href: "{canonical}" }
+      if let Some((zh, en)) = alternates {
+          document::Link { rel: "alternate", hreflang: "zh-CN", href: "{zh}" }
+          document::Link { rel: "alternate", hreflang: "en", href: "{en}" }
+          document::Link { rel: "alternate", hreflang: "x-default", href: "{zh}" }
+          document::Meta { property: "og:locale", content: if bilingual == Some(true) { "en_US" } else { "zh_CN" } }
+      }
       if let Some(ld) = json_ld {
           document::Script { r#type: "application/ld+json", "{ld}" }
       }
+  }
+}
+
+/// 英文版的路径：`path?lang=en`（已有查询串时用 `&`）。
+pub fn lang_path(path: &str, en: bool) -> String {
+  match (en, path.contains('?')) {
+    (false, _) => path.to_string(),
+    (true, false) => format!("{path}?lang=en"),
+    (true, true) => format!("{path}&lang=en"),
   }
 }
 
@@ -283,6 +311,13 @@ fn build_json_ld(meta: &PostMetadata, canonical: &str, base_url: &str) -> Option
 
 #[cfg(test)]
 mod tests {
+  #[test]
+  fn lang_path_appends_query() {
+    assert_eq!(super::lang_path("/papers", false), "/papers");
+    assert_eq!(super::lang_path("/papers", true), "/papers?lang=en");
+    assert_eq!(super::lang_path("/papers?topic=x", true), "/papers?topic=x&lang=en");
+  }
+
   use super::*;
 
   fn meta_minimal(title: &str) -> PostMetadata {

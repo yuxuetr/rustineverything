@@ -32,6 +32,7 @@ pub fn PapersIndexPage() -> Element {
           title: title.to_string(),
           description: subtitle.to_string(),
           path: "/papers".to_string(),
+          bilingual: Some(lang == Language::En),
       }
       section { class: "py-12 min-h-screen bg-white dark:bg-slate-950",
           div { class: "mx-auto max-w-4xl px-4 sm:px-6 lg:px-8",
@@ -59,6 +60,7 @@ pub fn PaperTopicPage(slug: String) -> Element {
           title,
           description: about.to_string(),
           path: format!("/papers/topic/{}", topic.slug),
+          bilingual: Some(lang == Language::En),
       }
       section { class: "py-12 min-h-screen bg-white dark:bg-slate-950",
           div { class: "mx-auto max-w-4xl px-4 sm:px-6 lg:px-8",
@@ -201,6 +203,7 @@ fn PaperDetailLoaded(arxiv_id: String) -> Element {
             description: paper.digest.tldr.clone(),
             path: format!("/papers/{}", paper.arxiv_id),
             schema: Some(paper_schema(&paper, lang)),
+            bilingual: Some(lang == Language::En),
         }
         PaperBody { paper, wanted: lang_code(lang).to_string() }
     },
