@@ -188,8 +188,9 @@ pub fn PageMetaTags(
       document::Link { rel: "canonical", href: "{canonical}" }
       if let Some((zh, en)) = alternates {
           document::Link { rel: "alternate", hreflang: "zh-CN", href: "{zh}" }
+          // 不写 x-default：它与 zh-CN 同一个 href，document::Link 按 href+rel 去重，
+          // 只会留下一条（见 docs/I18N_URLS.md）
           document::Link { rel: "alternate", hreflang: "en", href: "{en}" }
-          document::Link { rel: "alternate", hreflang: "x-default", href: "{zh}" }
           document::Meta { property: "og:locale", content: if bilingual == Some(true) { "en_US" } else { "zh_CN" } }
       }
       if let Some(ld) = json_ld {

@@ -15,7 +15,10 @@
    `?lang=en|zh` 查询参数 > `site_lang` cookie > 中文。服务端从当前请求
    （`FullstackContext`）读，客户端从 `location.search` / `document.cookie` 读，规则同一个纯函数。
 2. **只给论文页开英文 URL**：`/papers?lang=en`、`/papers/<id>?lang=en`、`/papers/topic/<slug>?lang=en`。
-   - 这些页面输出 `<link rel="alternate" hreflang="zh-CN|en|x-default">`，canonical 指向各自语言的 URL。
+   - 这些页面输出 `<link rel="alternate" hreflang="zh-CN|en">`，canonical 指向各自语言的 URL。
+   - 不输出 `x-default`：它的 href 与 zh-CN 相同，而 `document::Link` 按 href+rel 去重
+     （dioxus-document 0.7.9 `should_insert_link`），第二条会被丢掉。x-default 对 Google 是可选项，
+     两种语言、默认中文的情况下不影响收录。
    - sitemap 给论文页加英文 URL。
    - 其它页面带 `?lang=en` 也能用（界面英文），但不宣告 hreflang，canonical 仍是无参数的中文 URL，
      不会形成重复收录。
@@ -30,5 +33,5 @@
 ## 验收
 
 - `curl -H 'Cookie: site_lang=en' /papers` 的 HTML 是英文界面；无 JS 打开与有 JS 打开的语言一致。
-- `/papers/<id>?lang=en` 的 SSR HTML 含英文解读、`hreflang` 三条、canonical 带 `?lang=en`。
+- `/papers/<id>?lang=en` 的 SSR HTML 含英文解读、`hreflang` 两条（zh-CN、en）、canonical 带 `?lang=en`。
 - 切语言、SPA 导航后无 hydration 报错。
