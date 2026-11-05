@@ -15,6 +15,8 @@ pub fn mount(router: Router, assets_root: &str) -> Router {
   let router = router
     .nest("/images", cached(ServeDir::new(format!("{}/images", assets_root)), DAY))
     .nest("/posts", cached(ServeDir::new(app_core::utils::content_dir("posts")), DAY))
+    // 文档卷里的图（卷首页的架构图等）。`/docs` 本身是页面路由，文件走单独的前缀。
+    .nest("/docs-files", cached(ServeDir::new(app_core::utils::content_dir("docs")), DAY))
     // 只剩 annotations / mermaid 两个无哈希脚本：每次使用前向服务端确认（未变时 304），改版后立即生效
     .nest("/js", cached(ServeDir::new(format!("{}/js", assets_root)), "no-cache"))
     .nest(
