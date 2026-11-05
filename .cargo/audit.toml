@@ -1,0 +1,10 @@
+# cargo audit 的忽略项：每条写明为什么现在不修，以及什么时候该重看（CI 的 audit job 读这个文件）。
+[advisories]
+ignore = [
+  # rkyv 0.7.46：只出现在 Cargo.lock（rust_decimal 的可选依赖），任何 feature 组合的构建图里都没有
+  # （`cargo tree -i rkyv --target all -e all --all-features` 为空）。重看：它出现在 cargo tree 里时。
+  "RUSTSEC-2026-0235",
+  # rsa 0.9.10 Marvin 时序侧信道，上游没有修复版。module-payment 只用私钥做 PKCS#1 v1.5 签名、
+  # 不做解密，签名内容由服务端生成。重看：rsa 0.10 正式版发布时升级。
+  "RUSTSEC-2023-0071",
+]

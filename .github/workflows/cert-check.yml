@@ -1,9 +1,11 @@
 # 阶段 V：每天查线上证书剩余天数，少于 20 天就失败（GitHub 给仓库所有者发邮件）。
-# 不需要任何密钥。上线前只能手动触发（站点还连不上会直接失败），上线后加上 schedule。
+# 不需要任何密钥。站点已上线（2026-10），每天 UTC 01:00 跑一次，也可手动触发。
 
 name: Cert check
 
 on:
+  schedule:
+    - cron: "0 1 * * *"
   workflow_dispatch:
 
 permissions:
