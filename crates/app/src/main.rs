@@ -66,6 +66,7 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
       if(seen.get(all[i]) === src) continue;
       seen.set(all[i], src);
       all[i].removeAttribute('data-processed');
+      all[i].setAttribute('data-rie-theme', window.__rie_mermaid_theme || '');
       hits.push(all[i]);
     }
     if(hits.length === 0) return;
@@ -95,11 +96,30 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
     s.onload = sweep;
     document.head.appendChild(s);
   }
+  // mermaid 的主题跟 <html class="dark"> 走。主题是 initialize 时定的、画进 svg 里的，
+  // 换主题要重新 initialize，再把已画好的图还原成源码重画。
+  function mermaidTheme(){
+    return document.documentElement.classList.contains('dark') ? 'dark' : 'default';
+  }
   function bootMermaid(){
-    if(window.mermaid && typeof window.mermaid.initialize === 'function' && !window.__rie_mermaid_init){
-      window.__rie_mermaid_init = true;
-      try { window.mermaid.initialize({startOnLoad: false, theme: 'default'}); } catch(e) {}
+    if(!window.mermaid || typeof window.mermaid.initialize !== 'function') return;
+    var theme = mermaidTheme();
+    if(window.__rie_mermaid_theme === theme) return;
+    window.__rie_mermaid_theme = theme;
+    try { window.mermaid.initialize({startOnLoad: false, theme: theme}); } catch(e) {}
+  }
+  // 按每块提交时记下的主题判断，不看全局主题：DOM 观察器的 sweep 可能先一步
+  // 用新主题 initialize 过了。
+  function rethemeMermaid(){
+    var theme = mermaidTheme();
+    var all = document.querySelectorAll('pre.mermaid');
+    for(var i = 0; i < all.length; i++){
+      var src = seen.get(all[i]);
+      if(src === undefined || all[i].getAttribute('data-rie-theme') === theme) continue;
+      all[i].textContent = src;
+      seen.delete(all[i]);
     }
+    sweep();
   }
   function sweep(){
     bootMermaid();
@@ -124,6 +144,11 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
       }, 30);
     });
     window.__rie_obs.observe(document.body || document.documentElement, {childList: true, subtree: true});
+  }
+  // 切换暗色模式只改 <html> 的 class
+  if(typeof MutationObserver === 'function' && !window.__rie_theme_obs){
+    window.__rie_theme_obs = new MutationObserver(rethemeMermaid);
+    window.__rie_theme_obs.observe(document.documentElement, {attributes: true, attributeFilter: ['class']});
   }
 })();
 "#;
