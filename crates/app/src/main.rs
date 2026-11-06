@@ -75,7 +75,17 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
       loadMermaid();
       return;
     }
-    try { window.mermaid.run({nodes: hits}); } catch(e) {}
+    try { Promise.resolve(window.mermaid.run({nodes: hits})).then(function(){ keepReadable(hits); }, function(){}); } catch(e) {}
+  }
+  // mermaid 的 svg 是 width:100% 加 max-width:自身宽度，手机上大图会被压到字看不清。
+  // 给一个最小宽度（自身宽度和 560px 取小），容器 overflow-x-auto，窄屏上横向滑动；
+  // 正文列比 560px 宽，桌面不受影响，小图也不会被放大。
+  function keepReadable(nodes){
+    for(var i = 0; i < nodes.length; i++){
+      var svg = nodes[i].querySelector('svg');
+      var vb = svg && svg.viewBox && svg.viewBox.baseVal;
+      if(vb && vb.width > 0) svg.style.minWidth = Math.min(vb.width, 560) + 'px';
+    }
   }
   // 按需加载 prism：只请求一次，加载完再扫一遍。manual 让它不自己扫全页，统一由 sweep 处理。
   function loadPrism(){
@@ -101,12 +111,29 @@ const GLOBAL_REHIGHLIGHT_BOOT_SCRIPT: &str = r#"
   function mermaidTheme(){
     return document.documentElement.classList.contains('dark') ? 'dark' : 'default';
   }
+  // 思维导图按分支取 cScale0..11 上色（默认是彩虹色，暗色主题里还有一支接近底色），
+  // 换成站点的低饱和色：浅色用 Tailwind 200 档配深字，暗色用 800 档配浅字；根节点用 Rust 橙。
+  var MINDMAP_FILLS = {
+    'default': ['#BAE6FD','#BBF7D0','#DDD6FE','#FDE68A','#FECACA','#99F6E4','#FBCFE8','#E7E5E4'],
+    'dark': ['#075985','#166534','#5B21B6','#92400E','#991B1B','#115E59','#9D174D','#57534E']
+  };
+  function themeVariables(theme){
+    var fills = MINDMAP_FILLS[theme], label = theme === 'dark' ? '#E7E5E4' : '#292524';
+    var vars = {git0: '#C2410C', gitBranchLabel0: '#FFFFFF'};
+    for(var i = 0; i < 12; i++){
+      vars['cScale' + i] = fills[i % fills.length];
+      vars['cScaleLabel' + i] = label;
+    }
+    return vars;
+  }
   function bootMermaid(){
     if(!window.mermaid || typeof window.mermaid.initialize !== 'function') return;
     var theme = mermaidTheme();
     if(window.__rie_mermaid_theme === theme) return;
     window.__rie_mermaid_theme = theme;
-    try { window.mermaid.initialize({startOnLoad: false, theme: theme}); } catch(e) {}
+    try {
+      window.mermaid.initialize({startOnLoad: false, theme: theme, themeVariables: themeVariables(theme)});
+    } catch(e) {}
   }
   // 按每块提交时记下的主题判断，不看全局主题：DOM 观察器的 sweep 可能先一步
   // 用新主题 initialize 过了。
