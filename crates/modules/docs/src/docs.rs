@@ -293,7 +293,9 @@ fn DocPageInner(path: Vec<String>, footer: Element) -> Element {
       match content() {
           Some(Ok(Some(resp))) => rsx! {
               div { class: "flex justify-center gap-10",
-                  article { class: "min-w-0 flex-1 max-w-3xl",
+                  // 正文只有中文：英文界面下 <html> 是 lang="en"，正文这层必须自己标 zh-CN，
+                  // 否则读屏软件按英文念中文。将来有英文正文时，这里跟正文语言一起改。
+                  article { class: "min-w-0 flex-1 max-w-3xl", lang: "zh-CN",
                       // SEO：title / description / canonical / og / JSON-LD 由 PageMetaTags 输出
                       // （服务端已从正文补齐），这里只补 keywords。
                       widgets::PageMetaTags {
