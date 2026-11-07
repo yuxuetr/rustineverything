@@ -8,14 +8,14 @@
 # 恢复和演练见 scripts/restore_drill.sh。
 #
 # 环境变量：BACKUP_DIR（默认 /data/rie/backups）、KEEP（默认 14）、
-#           PG_CONTAINER（默认 rie-postgres）、APP_CONTAINER（默认 rie-app）
+#           PG_CONTAINER（默认 dioxuspress-postgres）、APP_CONTAINER（默认 dioxuspress-app）
 # 退出码：0 = 两份都写好；1 = 有问题，不留半成品文件，也不清理旧备份。
 set -euo pipefail
 
 BACKUP_DIR=${BACKUP_DIR:-/data/rie/backups}
 KEEP=${KEEP:-14}
-PG_CONTAINER=${PG_CONTAINER:-rie-postgres}
-APP_CONTAINER=${APP_CONTAINER:-rie-app}
+PG_CONTAINER=${PG_CONTAINER:-dioxuspress-postgres}
+APP_CONTAINER=${APP_CONTAINER:-dioxuspress-app}
 
 log() { echo "backup: $*"; }
 fail() { log "ERROR: $*" >&2; exit 1; }

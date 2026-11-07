@@ -19,7 +19,7 @@
 #     postgres-data → /var/lib/postgresql/data
 #     app-uploads   → /app/assets/uploads（用户上传图片，挂卷而非镜像层）
 
-name: rustineverything
+name: dioxuspress
 
 # 日志轮转：docker 默认 json-file 不限大小，长期运行会占满磁盘。每个容器最多 5 × 10MB。
 x-logging: &default-logging
@@ -31,7 +31,7 @@ x-logging: &default-logging
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: rie-postgres
+    container_name: dioxuspress-postgres
     restart: unless-stopped
     logging: *default-logging
     environment:
@@ -53,14 +53,14 @@ services:
       retries: 12
       start_period: 10s
     networks:
-      - rie-net
+      - dioxuspress-net
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    image: rustineverything:latest
-    container_name: rie-app
+    image: dioxuspress:latest
+    container_name: dioxuspress-app
     restart: unless-stopped
     logging: *default-logging
     depends_on:
@@ -132,10 +132,10 @@ services:
       # 就能绕过限流。不经反代、需要直接对外时设 APP_BIND=0.0.0.0。
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8080}:8080"
     networks:
-      - rie-net
+      - dioxuspress-net
 
 networks:
-  rie-net:
+  dioxuspress-net:
     driver: bridge
 
 volumes:

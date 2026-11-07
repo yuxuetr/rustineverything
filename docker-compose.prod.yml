@@ -18,14 +18,14 @@ services:
 
   app:
     build: !reset null
-    image: ghcr.io/yuxuetr/rie-app:${RIE_TAG:-latest}
+    image: ghcr.io/yuxuetr/dioxuspress-app:${RIE_TAG:-latest}
     mem_limit: 768m
     volumes:
       - ${CONTENT_HOST_DIR:?CONTENT_HOST_DIR 必须指向内容仓库}:/app/content:ro
 
   gateway:
-    image: ghcr.io/yuxuetr/rie-gateway:${RIE_TAG:-latest}
-    container_name: rie-gateway
+    image: ghcr.io/yuxuetr/dioxuspress-gateway:${RIE_TAG:-latest}
+    container_name: dioxuspress-gateway
     restart: unless-stopped
     network_mode: host
     mem_limit: 128m

@@ -6,16 +6,16 @@
 # 同名的 uploads-<时间>.tar.gz 一起检查。
 #
 # 真正恢复（停 app 后）：
-#   docker exec -i rie-postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' < db-<时间>.dump
-#   docker run --rm -v rustineverything_app-uploads:/data -v "$PWD":/in:ro alpine \
+#   docker exec -i dioxuspress-postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' < db-<时间>.dump
+#   docker run --rm -v dioxuspress_app-uploads:/data -v "$PWD":/in:ro alpine \
 #     tar xzf /in/uploads-<时间>.tar.gz -C /data --strip-components=1
 #
 # 环境变量同 backup.sh。退出码：0 = 全部对上；1 = 有出入或导入失败。
 set -euo pipefail
 
 BACKUP_DIR=${BACKUP_DIR:-/data/rie/backups}
-PG_CONTAINER=${PG_CONTAINER:-rie-postgres}
-APP_CONTAINER=${APP_CONTAINER:-rie-app}
+PG_CONTAINER=${PG_CONTAINER:-dioxuspress-postgres}
+APP_CONTAINER=${APP_CONTAINER:-dioxuspress-app}
 DRILL_DB=rie_restore_drill
 
 log() { echo "restore_drill: $*"; }
