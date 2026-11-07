@@ -30,34 +30,28 @@ use serde::{Deserialize, Serialize};
 /// server-only: 从当前请求上下文的 Cookie 中解析 SessionUser
 #[cfg(all(feature = "server", feature = "accounts"))]
 fn current_session_user() -> Option<SessionUser> {
-  use app_core::session::parse_session_from_cookie_header;
-  use dioxus::fullstack::FullstackContext;
-
-  let ctx = FullstackContext::current()?;
-  let parts = ctx.parts_mut();
-  let cookie_str = parts.headers.get("cookie").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
-  drop(parts);
-  parse_session_from_cookie_header(cookie_str.as_deref())
+  app_core::session::current_session_user()
 }
 
 /// server-only: 读当前请求 Cookie 头中指定 key 的值（Phase 3.1 主题覆盖用）。
+/// 使用 `get_all("cookie")` 兼容 HTTP/2 多条 `cookie` 头（RFC 9113 §8.2.3）。
 #[cfg(feature = "server")]
 fn read_request_cookie(name: &str) -> Option<String> {
   use dioxus::fullstack::FullstackContext;
   let ctx = FullstackContext::current()?;
   let parts = ctx.parts_mut();
-  let cookie_str = parts.headers.get("cookie").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+  let found = parts
+    .headers
+    .get_all("cookie")
+    .iter()
+    .filter_map(|v| v.to_str().ok())
+    .flat_map(|raw| raw.split(';'))
+    .find_map(|pair| {
+      let (k, v) = pair.trim().split_once('=')?;
+      (k == name && !v.is_empty()).then(|| v.to_string())
+    });
   drop(parts);
-  let raw = cookie_str?;
-  for pair in raw.split(';') {
-    let pair = pair.trim();
-    if let Some((k, v)) = pair.split_once('=') {
-      if k == name && !v.is_empty() {
-        return Some(v.to_string());
-      }
-    }
-  }
-  None
+  found
 }
 
 /// Cookie 名（Phase 3.1）：存储用户选择的主题 id。

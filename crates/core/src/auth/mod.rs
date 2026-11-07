@@ -132,23 +132,29 @@ pub struct AuthConfig {
 
 impl AuthConfig {
   /// 从环境变量动态读取 provider 的 client_id 和 client_secret
-  /// 约定：{PROVIDER}_CLIENT_ID, {PROVIDER}_CLIENT_SECRET (全大写)
+  /// 约定：{PROVIDER}_CLIENT_ID, {PROVIDER}_CLIENT_SECRET (全大写，空白视为未配置)
   #[cfg(feature = "server")]
   pub fn get_credentials(provider: &str) -> crate::error::AppResult<(String, String)> {
     let upper = provider.to_uppercase();
     let client_id = std::env::var(format!("{}_CLIENT_ID", upper))
-      .map_err(|_| format!("未配置环境变量: {}_CLIENT_ID", upper))?;
+      .ok()
+      .map(|s| s.trim().to_string())
+      .filter(|s| !s.is_empty())
+      .ok_or_else(|| format!("未配置环境变量: {}_CLIENT_ID", upper))?;
     let client_secret = std::env::var(format!("{}_CLIENT_SECRET", upper))
-      .map_err(|_| format!("未配置环境变量: {}_CLIENT_SECRET", upper))?;
+      .ok()
+      .map(|s| s.trim().to_string())
+      .filter(|s| !s.is_empty())
+      .ok_or_else(|| format!("未配置环境变量: {}_CLIENT_SECRET", upper))?;
     Ok((client_id, client_secret))
   }
 
-  /// 检查 provider 是否已配置凭据
+  /// 检查 provider 是否已配置非空凭据（docker-compose 未设变量时会传空字符串）
   #[cfg(feature = "server")]
   pub fn has_credentials(provider: &str) -> bool {
     let upper = provider.to_uppercase();
-    std::env::var(format!("{}_CLIENT_ID", upper)).is_ok()
-      && std::env::var(format!("{}_CLIENT_SECRET", upper)).is_ok()
+    let non_empty = |key: String| std::env::var(key).ok().is_some_and(|v| !v.trim().is_empty());
+    non_empty(format!("{}_CLIENT_ID", upper)) && non_empty(format!("{}_CLIENT_SECRET", upper))
   }
 
   /// 构建回调 URL

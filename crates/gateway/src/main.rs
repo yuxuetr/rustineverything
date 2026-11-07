@@ -92,6 +92,7 @@ impl ProxyHttp for AppGateway {
       // 拿不到客户端地址也要清掉伪造 XFF
       req.remove_header("X-Forwarded-For");
     }
+    coalesce_cookie_headers(req);
     Ok(())
   }
 
@@ -110,6 +111,30 @@ impl ProxyHttp for AppGateway {
 /// 写给 app 的客户端地址只要 IP：带端口时每条 TCP 连接都不一样，app 按它分桶限流就等于没限。
 fn forwarded_ip(addr: &pingora_core::protocols::l4::socket::SocketAddr) -> Option<String> {
   Some(addr.as_inet()?.ip().to_string())
+}
+
+/// RFC 9113 §8.2.3：HTTP/2 允许浏览器把多个 cookie 拆成多条 `cookie` 头（提升 HPACK 压缩率）；
+/// 转为 HTTP/1.1 发往上游前必须按 `; ` 合并为单条 `Cookie` 头，否则上游 `headers.get("cookie")`
+/// 只读到第一条（如 `site_lang` / `site_theme`），丢掉后面的 `session` cookie。
+fn coalesce_cookie_headers(req: &mut RequestHeader) {
+  let mut iter = req.headers.get_all("cookie").into_iter();
+  let Some(first) = iter.next() else { return };
+  let Some(second) = iter.next() else { return };
+  let mut joined = String::new();
+  for v in [first, second].into_iter().chain(iter) {
+    if let Ok(s) = v.to_str() {
+      let s = s.trim();
+      if !s.is_empty() {
+        if !joined.is_empty() {
+          joined.push_str("; ");
+        }
+        joined.push_str(s);
+      }
+    }
+  }
+  if !joined.is_empty() {
+    req.insert_header("Cookie", joined).ok();
+  }
 }
 
 /// 安全响应头：
@@ -250,5 +275,22 @@ mod tests {
     assert_eq!(header(&resp, "x-content-type-options"), Some("nosniff"));
     assert_eq!(header(&resp, "referrer-policy"), Some("strict-origin-when-cross-origin"));
     assert_eq!(header(&resp, "strict-transport-security"), Some(HSTS_VALUE));
+  }
+
+  /// RFC 9113 §8.2.3：多条 HTTP/2 `cookie` 头必须合并为单条 `; ` 分隔的 `Cookie` 头。
+  #[test]
+  fn coalesces_multiple_h2_cookie_headers() {
+    let mut req = RequestHeader::build("POST", b"/api/auth/me", None).unwrap();
+    req.append_header("cookie", "site_lang=zh").unwrap();
+    req.append_header("cookie", "theme=ocean").unwrap();
+    req.append_header("cookie", "session=jwt_token").unwrap();
+
+    coalesce_cookie_headers(&mut req);
+
+    assert_eq!(req.headers.get_all("cookie").iter().count(), 1);
+    assert_eq!(
+      req.headers.get("cookie").and_then(|v| v.to_str().ok()),
+      Some("site_lang=zh; theme=ocean; session=jwt_token")
+    );
   }
 }
