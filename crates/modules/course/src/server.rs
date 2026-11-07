@@ -1237,14 +1237,7 @@ pub struct LessonProgress {
 /// server-only: 从请求 cookie 提取当前用户
 #[cfg(feature = "server")]
 fn current_session_user() -> Option<app_core::session::SessionUser> {
-  use app_core::session::parse_session_from_cookie_header;
-  use dioxus::fullstack::FullstackContext;
-
-  let ctx = FullstackContext::current()?;
-  let parts = ctx.parts_mut();
-  let cookie_str = parts.headers.get("cookie").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
-  drop(parts);
-  parse_session_from_cookie_header(cookie_str.as_deref())
+  app_core::session::current_session_user()
 }
 
 /// 限制：仅 admin / member 可写进度与标注。

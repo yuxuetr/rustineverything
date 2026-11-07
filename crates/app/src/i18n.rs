@@ -26,12 +26,14 @@ fn initial_language() -> Language {
       .uri
       .query()
       .and_then(|q| q.split('&').find_map(|kv| kv.strip_prefix("lang=")).map(str::to_string));
-    let cookie = parts.headers.get("cookie").and_then(|v| v.to_str().ok()).and_then(|raw| {
-      raw
-        .split(';')
-        .find_map(|kv| kv.trim().strip_prefix(LANG_COOKIE)?.strip_prefix('='))
-        .map(str::to_string)
-    });
+    let cookie = parts
+      .headers
+      .get_all("cookie")
+      .iter()
+      .filter_map(|v| v.to_str().ok())
+      .flat_map(|raw| raw.split(';'))
+      .find_map(|kv| kv.trim().strip_prefix(LANG_COOKIE)?.strip_prefix('='))
+      .map(str::to_string);
     drop(parts);
     pick_language(query.as_deref(), cookie.as_deref())
   }

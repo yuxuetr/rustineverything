@@ -170,15 +170,23 @@ pub fn parse_session_from_cookie_header(cookie_header: Option<&str>) -> Option<S
 
 /// 从当前 Dioxus FullstackContext 的 Cookie 中解析 SessionUser。
 /// 上层 server fn 可统一调用此函数，避免每个模块复制 cookie 解析逻辑。
+///
+/// 使用 `get_all("cookie")` 遍历全部 Cookie 头：HTTP/2（RFC 9113 §8.2.3）允许浏览器
+/// 把多个 cookie 拆成多条同名 header，若只调 `.get("cookie")` 会漏掉非首条的 `session=`。
 #[cfg(feature = "server")]
 pub fn current_session_user() -> Option<SessionUser> {
   use dioxus::fullstack::FullstackContext;
 
   let ctx = FullstackContext::current()?;
   let parts = ctx.parts_mut();
-  let cookie_str = parts.headers.get("cookie").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
+  let token = parts
+    .headers
+    .get_all("cookie")
+    .iter()
+    .filter_map(|v| v.to_str().ok())
+    .find_map(extract_session_cookie);
   drop(parts);
-  parse_session_from_cookie_header(cookie_str.as_deref())
+  token.and_then(|t| verify_jwt(&t).ok())
 }
 
 /// 要求当前请求带有合法 SessionUser；否则返回中文错误。

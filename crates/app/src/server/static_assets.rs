@@ -62,7 +62,14 @@ fn cache_control(value: &'static str) -> impl Fn(Response) -> std::future::Ready
 /// SEC-02：课时目录里的正文 / 音视频 / 代码 / 附件与 `get_lesson` 同权限，
 /// 无权时按不存在处理，不暴露付费课时的文件名。
 async fn guard_course_file(req: Request, next: Next) -> Response {
-  let cookie = req.headers().get(header::COOKIE).and_then(|v| v.to_str().ok());
+  let joined: String = req
+    .headers()
+    .get_all(header::COOKIE)
+    .iter()
+    .filter_map(|v| v.to_str().ok())
+    .collect::<Vec<_>>()
+    .join("; ");
+  let cookie = (!joined.is_empty()).then_some(joined.as_str());
   if module_course::server::may_serve_course_file(req.uri().path(), cookie).await {
     next.run(req).await
   } else {
