@@ -381,7 +381,7 @@ fn doc_schema(meta: &crate::server::DocMeta) -> serde_json::Value {
     "headline": meta.title,
     "description": meta.description,
     "inLanguage": "zh-CN",
-    "isPartOf": { "@type": "WebSite", "name": widgets::SITE_NAME },
+    "isPartOf": { "@type": "WebSite", "name": widgets::site_name() },
   });
   if !meta.keywords.is_empty() {
     v["keywords"] = meta.keywords.join(", ").into();

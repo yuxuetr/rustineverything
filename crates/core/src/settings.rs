@@ -169,7 +169,7 @@ impl SiteConfig {
 impl Default for SiteConfig {
   fn default() -> Self {
     Self {
-      site_name: "Rust in Everything".to_string(),
+      site_name: "DioxusPress".to_string(),
       site_description: "".to_string(),
       theme: default_theme(),
       active_layout: DEFAULT_LAYOUT.to_string(),
