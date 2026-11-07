@@ -119,12 +119,12 @@ scripts/restore_drill.sh /data/rie/backups/db-20261023-033000.dump
 
 ```bash
 # 数据库：变量在容器里展开（单引号）；宿主 shell / cron 不会加载 .env
-docker exec -i rie-postgres \
+docker exec -i dioxuspress-postgres \
   sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner' \
   < /data/rie/backups/db-<时间>.dump
 
 # 上传：卷名带 compose 项目名前缀（docker volume ls 可查）；写成 app-uploads 会新建一个空卷
-docker run --rm -v rustineverything_app-uploads:/data -v /data/rie/backups:/in:ro alpine \
+docker run --rm -v dioxuspress_app-uploads:/data -v /data/rie/backups:/in:ro alpine \
   tar xzf /in/uploads-<时间>.tar.gz -C /data --strip-components=1
 ```
 

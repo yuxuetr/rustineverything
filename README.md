@@ -43,10 +43,15 @@
 ## 快速开始
 
 ```bash
+# 0. 克隆仓库
+git clone https://github.com/yuxuetr/DioxusPress.git
+cd DioxusPress
+
 # 1. 安装 Dioxus CLI
 cargo install dioxus-cli
 
-# 2. 配置环境变量（DATABASE_URL、JWT_SECRET、BASE_URL、OAuth 凭据等）
+# 2. 配置站点名称与模块（按需修改 assets/site.json 的 site_name、theme 等）
+#    配置环境变量（DATABASE_URL、JWT_SECRET、BASE_URL、OAuth 凭据等）
 cp .env.example .env
 
 # 3. 启动 PostgreSQL（应用启动时自动执行数据库迁移）

@@ -19,14 +19,14 @@
 # Tailwind v4 需要 Node ≥ 20，trixie 自带 nodejs 20，亦满足。
 #
 # 构建：
-#   docker build -t rustineverything:latest .
+#   docker build -t dioxuspress:latest .
 #
 # 运行（最小）：
 #   docker run --rm -p 8080:8080 \
 #     -e DATABASE_URL=postgres://user:pass@postgres:5432/app \
 #     -e JWT_SECRET=$(openssl rand -hex 32) \
 #     -e BASE_URL=https://example.com \
-#     rustineverything:latest
+#     dioxuspress:latest
 #
 # `docker-compose.yml` 会把 postgres + 本 app 串起来。
 

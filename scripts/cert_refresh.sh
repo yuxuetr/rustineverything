@@ -9,7 +9,7 @@
 #   DYNADOT_API_KEY  必填（从 CERT_ENV_FILE 读，默认 /data/rie/cert.env）
 #   CERT_DIR         fullchain.pem / privkey.pem 所在目录，默认 /data/rie/certs
 #   DOMAIN           默认 rustineverything.app
-#   RESTART_CMD      替换后执行，默认 docker restart rie-gateway
+#   RESTART_CMD      替换后执行，默认 docker restart dioxuspress-gateway
 #   CERT_URL         覆盖下载地址（测试用，可为 file://）；默认 Dynadot 永久下载链接
 #   CA_FILE          覆盖信任根（测试用）；默认系统信任库
 #
@@ -21,7 +21,7 @@ CERT_ENV_FILE=${CERT_ENV_FILE:-/data/rie/cert.env}
 [ -f "$CERT_ENV_FILE" ] && . "$CERT_ENV_FILE"
 CERT_DIR=${CERT_DIR:-/data/rie/certs}
 DOMAIN=${DOMAIN:-rustineverything.app}
-RESTART_CMD=${RESTART_CMD:-docker restart rie-gateway}
+RESTART_CMD=${RESTART_CMD:-docker restart dioxuspress-gateway}
 
 log() { echo "cert_refresh: $*"; }
 fail() { log "ERROR: $*" >&2; exit 1; }

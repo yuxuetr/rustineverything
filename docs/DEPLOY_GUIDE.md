@@ -19,7 +19,7 @@
 `--build-arg APP_FEATURES="..."`，例如只要博客 / 文档 / 播客、不要数据库：
 
 ```bash
-docker build --build-arg APP_FEATURES="--no-default-features" -t rie-app:basic .
+docker build --build-arg APP_FEATURES="--no-default-features" -t dioxuspress-app:basic .
 ```
 
 basic 档只需要 `BASE_URL`，不连库、不要求 `JWT_SECRET`，`/healthz` 返回 `"db":"disabled"`（正常）；搜索索引在启动时增量刷新。
@@ -37,8 +37,8 @@ basic 档只需要 `BASE_URL`，不连库、不要求 `JWT_SECRET`，`/healthz` 
 ### 3.1 准备 .env
 
 ```bash
-git clone https://github.com/<owner>/rustineverything.app.git
-cd rustineverything.app
+git clone https://github.com/yuxuetr/DioxusPress.git
+cd DioxusPress
 cp .env.example .env
 $EDITOR .env
 ```
@@ -101,9 +101,9 @@ docker compose exec postgres psql -U $POSTGRES_USER -d $POSTGRES_DB \
 服务器上把两个仓库并排克隆，框架的 `.env` 指向内容仓库：
 
 ```bash
-git clone https://github.com/<owner>/rustineverything.app.git
+git clone https://github.com/yuxuetr/DioxusPress.git
 git clone git@github.com:<owner>/<content-repo>.git   # 私有仓库：服务器上配一把只读 deploy key
-cd rustineverything.app
+cd DioxusPress
 echo 'CONTENT_HOST_DIR=../<content-repo>' >> .env
 docker compose up -d --build
 ```
@@ -121,9 +121,9 @@ compose 把 `CONTENT_HOST_DIR` 只读挂到容器的 `/app/content`（app 设 `C
 
 服务器上不编译（app 镜像要几 GB 内存构建）。镜像由 `.github/workflows/release.yml` 在 CI 构建，
 `docker-compose.prod.yml` 叠加在基础文件上：app 用 ghcr 镜像（accounts 档）、postgres 不开端口、
-加 `rie-gateway`（host 网络监听 80 / 443）、各服务设内存上限。
+加 `dioxuspress-gateway`（host 网络监听 80 / 443）、各服务设内存上限。
 
-**发布镜像**：打 tag 推上去，CI 构建 linux/amd64 的 `ghcr.io/<owner>/rie-app` 与 `rie-gateway`，
+**发布镜像**：打 tag 推上去，CI 构建 linux/amd64 的 `ghcr.io/<owner>/dioxuspress-app` 与 `dioxuspress-gateway`，
 标签为 tag 名、短 sha 和 `latest`。第一次发布后在 GitHub 的 Packages 页把两个包设为 Public，服务器才能免登录拉取。
 
 ```bash
@@ -192,18 +192,18 @@ MAILTO=you@example.com
 适用于已有托管 postgres / RDS / Supabase 的场景。
 
 ```bash
-docker build -t rustineverything:latest .
+docker build -t dioxuspress:latest .
 
-docker run -d --name rie-app \
+docker run -d --name dioxuspress-app \
   -p 8080:8080 \
   -e DATABASE_URL='postgres://<user>:<pass>@<host>:5432/<db>' \
   -e JWT_SECRET='<32+ 字符随机>' \
   -e BASE_URL='https://example.com' \
   -e GITHUB_CLIENT_ID='...' \
   -e GITHUB_CLIENT_SECRET='...' \
-  -v rie-uploads:/app/assets/uploads \
+  -v dioxuspress-uploads:/app/assets/uploads \
   -v /srv/<content-repo>:/app/content:ro -e CONTENT_DIR=/app/content \
-  rustineverything:latest
+  dioxuspress:latest
 ```
 
 挂卷 `/app/assets/uploads` 让用户图片在容器重启 / 滚动升级时不丢。内容仓库的挂载见 §3.5；不挂则显示镜像里的示例内容。
