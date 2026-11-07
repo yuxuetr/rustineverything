@@ -86,7 +86,7 @@ pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
           }
       }
       document::Meta { property: "og:image", content: "{image}" }
-      document::Meta { property: "og:site_name", content: SITE_NAME }
+      document::Meta { property: "og:site_name", content: site_name() }
 
       // ── Twitter Card ──
       document::Meta { name: "twitter:card", content: "summary_large_image" }
@@ -108,8 +108,24 @@ pub fn inject_seo(meta: &PostMetadata, path: &str, base_url: &str) -> Element {
   }
 }
 
-/// 站名，作为所有页面 `<title>` 的后缀（与 `Dioxus.toml` / `site.json` 一致）。
-pub const SITE_NAME: &str = "Rust in Everything";
+/// 从 `assets/site.json` 读取站名（作为顶栏、页脚、Atom feed、schema.org 与所有页面
+/// `<title>` 的后缀）；未配置或为空时回退到开源引擎名 `"DioxusPress"`。
+pub fn site_name() -> &'static str {
+  use std::sync::OnceLock;
+  static NAME: OnceLock<String> = OnceLock::new();
+  NAME.get_or_init(|| {
+    #[derive(serde::Deserialize)]
+    struct PartialSite {
+      site_name: Option<String>,
+    }
+    serde_json::from_str::<PartialSite>(include_str!("../../../assets/site.json"))
+      .ok()
+      .and_then(|s| s.site_name)
+      .map(|s| s.trim().to_string())
+      .filter(|s| !s.is_empty())
+      .unwrap_or_else(|| "DioxusPress".to_string())
+  })
+}
 
 /// 页面没有自己的图时的分享图（1200×630，`assets/images/og-default.jpg`）。
 pub const DEFAULT_OG_IMAGE: &str = "/images/og-default.jpg";
@@ -180,7 +196,7 @@ pub fn PageMetaTags(
       document::Meta { property: "og:title", content: "{full_title}" }
       document::Meta { property: "og:type", content: "website" }
       document::Meta { property: "og:url", content: "{canonical}" }
-      document::Meta { property: "og:site_name", content: SITE_NAME }
+      document::Meta { property: "og:site_name", content: site_name() }
       document::Meta { property: "og:image", content: "{image}" }
       document::Meta { name: "twitter:card", content: "summary_large_image" }
       document::Meta { name: "twitter:title", content: "{full_title}" }
@@ -210,7 +226,7 @@ pub fn lang_path(path: &str, en: bool) -> String {
 
 /// 首页的 schema.org `WebSite`（G8）。
 pub fn website_schema() -> serde_json::Value {
-  serde_json::json!({ "@type": "WebSite", "name": SITE_NAME, "inLanguage": "zh-CN" })
+  serde_json::json!({ "@type": "WebSite", "name": site_name(), "inLanguage": "zh-CN" })
 }
 
 /// PageMeta 的 JSON-LD：补 `@context` 与 `url`，序列化后转义 `<`。只接受对象。
@@ -230,10 +246,11 @@ fn ld_json_text(value: &serde_json::Value) -> Option<String> {
 
 /// `{title} - 站名`；空标题只用站名。
 pub fn page_title(title: &str) -> String {
+  let name = site_name();
   if title.is_empty() {
-    SITE_NAME.to_string()
+    name.to_string()
   } else {
-    format!("{title} - {SITE_NAME}")
+    format!("{title} - {name}")
   }
 }
 

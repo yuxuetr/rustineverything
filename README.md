@@ -1,6 +1,8 @@
-# Rust in Everything
+# DioxusPress
 
-专注 Rust 工业实战与 AI 生态的 Dioxus 全栈内容站：博客、文档、课程、案例、播客与社区一站式聚合。
+基于 Dioxus 0.7 的全栈 Rust 内容与社区引擎：博客、文档、课程、案例、播客、论文资讯与论坛社区一站式聚合。
+
+> **官方线上站点**：[Rust in Everything (`rustineverything.app`)](https://rustineverything.app) —— 通过 [`assets/site.json`](assets/site.json) 配置运行。其他开发者只需修改 `assets/site.json` 中的 `site_name`、`site_description`、`theme` 等字段，即可快速定制并部署自己的全栈内容社区站。
 
 ## 技术栈
 

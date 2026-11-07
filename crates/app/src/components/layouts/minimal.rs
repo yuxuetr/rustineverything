@@ -44,7 +44,7 @@ pub fn MinimalShell() -> Element {
                       Link {
                           to: Route::Home {},
                           class: "font-extrabold tracking-tight text-flow text-sm",
-                          "Rust in Everything"
+                          "{widgets::site_name()}"
                       }
                       div { class: "flex items-center gap-2",
                           SearchButton {}

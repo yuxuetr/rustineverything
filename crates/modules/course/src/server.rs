@@ -188,7 +188,7 @@ impl Course {
       "name": self.title,
       "description": self.description,
       "inLanguage": "zh-CN",
-      "provider": { "@type": "Organization", "name": widgets::SITE_NAME },
+      "provider": { "@type": "Organization", "name": widgets::site_name() },
     });
     if self.is_paid() {
       let offer = |amount: i64, currency: &str| {
@@ -1938,16 +1938,17 @@ pub async fn create_tip_order(
       pricing.quote(&provider, region).map_err(|key| ServerFnError::new(key.to_string()))?;
     let gateway = module_payment::host::from_env(&provider).map_err(pay_err)?;
     let db = open_db().await?;
+    let site = widgets::site_name();
     let subject = match region {
-      Region::Mainland => "打赏 · Rust in Everything",
-      Region::Overseas => "Tip · Rust in Everything",
+      Region::Mainland => format!("打赏 · {site}"),
+      Region::Overseas => format!("Tip · {site}"),
     };
     let checkout = Checkout {
       user_id: user.id,
       kind: crate::product::ProductKind::Tip,
       return_path: source.clone(),
       product_ref: source,
-      subject: subject.to_string(),
+      subject,
       price,
       provider,
       scene,
@@ -3146,7 +3147,7 @@ mod tests {
     let v = course.schema();
     assert_eq!(v["@type"], "Course");
     assert_eq!(v["name"], "C");
-    assert_eq!(v["provider"]["name"], widgets::SITE_NAME);
+    assert_eq!(v["provider"]["name"], widgets::site_name());
     assert_eq!(v["offers"][0]["price"], "99.50");
     assert_eq!(v["offers"][0]["priceCurrency"], "CNY");
     assert_eq!(v["offers"][1]["price"], "14.99");
